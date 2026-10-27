@@ -167,7 +167,7 @@ The figures are drawn on the server from the snapshot, never screenshots of the 
 profile is drawn in Python to the rules `contracts/fixtures/planning/profile.json` already pins, so it picks the same line the web does.
 
 **The 3D capture:** the server has no GPU. In the editor, *Open 3D* opens the existing 3D window (`feature/viewer3d`) framed down
-the best approach; *Capture* renders one frame at 1600 × 1000 and uploads it (`view_3d`), with its camera's heading, tilt and range and the
+the best approach; *Capture* renders one frame at the page's shape (1600 × 887, §17) and uploads it (`view_3d`), with its camera's heading, tilt and range and the
 tileset's survey and year. Cesium must draw with `preserveDrawingBuffer` for the capture, and its imagery is fetched with CORS (Mapbox
 allows it), or the canvas cannot be read. A server-side render of the point cloud, so the book can be regenerated unattended, is later.
 
@@ -527,19 +527,37 @@ and its window), `capture3d.js` (the view down the approach, the frame, the came
 server the capture's `pose` (`survey_routes._pose`) and the page's caption (`compile._view3d`).
 
 - **The 3D window is the planning one's** (`feature/viewer3d/Viewer3D`), opened on the LZ's target as the editor's map has it, streamed
-  as the planning 3D view streams it, in a dialog at the page's shape (16:10). It opens **looking down the best approach**: facing the
+  as the planning 3D view streams it, in a dialog at the page's shape. It opens **looking down the best approach**: facing the
   field's best approach, 20° down (the 3D view's own opening is 35° from the north-west), framed as the 3D view frames an LZ; *LZ* flies
   back to that look. Without a best approach it opens as the 3D view does. The admin turns it as they want it.
-- **Capture draws one frame at 1,600 × 1,000**: the middle of the view cut to 16:10, drawn finer than its window where the window is
-  narrower (Cesium's resolution scale, at most four times), read in the frame's own postRender from a buffer kept for it
-  (`preserveDrawingBuffer`, asked for only by this window), then the window's own resolution put back. A browser that will not let the
-  canvas be read (imagery without leave to) is said, and nothing is kept.
+- **Capture draws one frame at 1,600 × 887, the page's 3D box's shape** (3.79 × 2.10 in, `survey_style.css`'s `.view3d`, which crops a
+  picture of another shape to fill it: the first captures were 16:10 and lost an eighth of their height on the page). The middle of the
+  view is cut to that shape, drawn finer than its window where the window is narrower (Cesium's resolution scale, at most four times)
+  **with the detail to match**: Cesium judges a tile by its error over the pixel ratio, so a finer frame alone drew the window's tiles
+  larger; the point cloud's and the globe's error are lowered by as much while the capture waits (8 s at most) for the finer tiles,
+  then put back with the window's resolution. Read in the frame's own postRender (from a buffer kept for it, `preserveDrawingBuffer`,
+  which the review found the read does not need but costs nothing), **with the camera as that frame was drawn** (a flight still under
+  way was read a frame or more later). A frame that never comes (a lost WebGL context stops Cesium's drawing) is said after 15 s; the
+  capture once waited for ever, with Cancel off.
+- **The window closes while it captures**: Cancel and Escape give up the frame and the upload (aborted, and timed out after 2 minutes),
+  and keep nothing. Escape never reaches the survey book under the window (`Dialog` keeps it to itself whether or not it closes: it once
+  closed the book while a capture was kept). Capture is offered only while the viewer it would read stands: a new point cloud (the
+  target moved) waits for its viewer. A failure is said in the frame's own words, or the server's, never as a lost connection.
 - **Kept with the camera that took it**: a `view_3d` PNG (the server checks it is one and keeps it as sent), its heading as the
-  asset's, and its `pose`: heading and pitch, its distance from the LZ's middle, and the LiDAR survey it shows, taken from the snapshot's
-  obstacles (the 3D view and the obstacles choose the same survey for a place, the newest covering it). A pose is a capture's alone,
-  checked as it comes and never changed after; capture again to change it.
-- **One 3D view a page**: a new capture takes the place of the last, which is kept on the server (a published page may show it). The
-  page prints the newest, captioned the way it looks and with its survey: "3D · LOOKING 090°T · LIDAR GA_STATEWIDE_B3_2018".
-- **Not verifiable here**: anything WebGL draws cannot be seen from an agent session (AGENTS.md §14), so the frame itself, Mapbox's
-  imagery being readable, and how the capture looks on the page want a person's eye: open a survey, *Open 3D*, Capture, and look at the
-  page's preview. The flow is held by tests with the viewer and the frame stood in for.
+  asset's, and its `pose`: heading and pitch, its distance from the LZ's middle where the server gives the LZ's frame (a streamed survey's
+  own sphere is a whole state, whose distance the server would refuse), and the LiDAR survey it shows, taken from the snapshot's
+  obstacles **only where the window is streamed** (both then choose the newest survey covering the place; a built point cloud may come
+  from a downloaded collection of several, so it names none). A pose is a capture's alone, checked as it comes and never changed after;
+  capture again to change it.
+- **One 3D view a page**: a new capture takes the place of the last, which is kept on the server (a published page may show it). Two at
+  once go one after the other (each takes the survey's row first), and taking the 3D view off takes off every capture still live: two
+  kept at once once left the older to come back. The page prints the newest, captioned the way it looks, rounded as the editor rounds
+  it (every heading on the page now rounds halves up), and with its survey's year, which says how old its trees are, in a tag short
+  enough over the picture: "3D · LOOKING 090°T · LIDAR 2018" (a survey with no year by its name, cut at a word's length). The picture
+  carries no credit for its imagery or its points' colour (Cesium draws those over the canvas): whether the caption should is the
+  owner's to say.
+- **Checked by an independent review** (2026-10-27), which ran `captureFrame` against real Cesium 1.144 in headless Chrome through
+  Playwright (already a dev dependency), on SwiftShader and on the Mac's GPU: the camera faces the approach, the frame is the one drawn
+  after the resize, and the window's resolution and canvas are put back. So the frame's mechanics can be tried from an agent session
+  after all; how real imagery looks still wants a person's eye: open a survey, *Open 3D*, Capture, and look at the page's preview. The
+  fixes above are held by tests with the viewer and the frame stood in for (each checked to fail without its fix).
