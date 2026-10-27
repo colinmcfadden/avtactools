@@ -180,12 +180,12 @@ def lidar(snapshot, **over):
                      'lengthM': 1000.0, 'halfWidthM': 30.0, 'binM': 10.0, 'bins': bins, 'covered': 100,
                      'clearance': {'angleDeg': 8.6, 'obstacle': {**spot, 'heightFt': 98.4, 'topFt': 2298.4, 'bearingDeg': 180.0,
                                                                  'distanceM': 258.0, 'kind': 'vegetation', 'fromEdgeM': 198.0,
-                                                                 'offsetM': 4.0}},
-                     'fromTarget': None, 'tallest': None},
+                                                                 'offsetM': 4.0, 'riseFt': 98.4, 'baseFt': 2200.0}},
+                     'missing': None, 'fromTarget': None, 'tallest': None},
         'exit': None,
         'inside': {**spot, 'heightFt': 39.4, 'topFt': 2240.0, 'bearingDeg': 33.7, 'distanceM': 36.1, 'kind': 'vegetation'},
         'around': {**spot, 'heightFt': 26.2, 'topFt': 2226.0, 'bearingDeg': 0.0, 'distanceM': 110.0, 'kind': 'building', 'fromEdgeM': 50.0},
-        'standing': {'overM': 2.0, 'count': 40, 'cells': [[TARGET[0], TARGET[1]]]},
+        'standing': {'overM': 2.0, 'count': 40},
         'trees': [{**spot, 'heightFt': 39.4}],
         'heightMap': None,
         'profileTops': {'heading': 0, 'aboveFt': above},
@@ -206,7 +206,7 @@ def test_the_lidar_s_clearance_is_printed_in_place_of_the_survey_profile(snapsho
             'from': 'computed'} in model['hazards']
     with patch('brief.figures._fetch_tile', _tile):
         html, _files = pages.build(model, lambda _id: None)
-    assert 'CLEARANCE · GA_STATEWIDE_B3_2018' in html and 'SURVEY PROFILE' not in html
+    assert 'CLEARANCE · 2018 · GA_STATEWIDE_B3_2018' in html and 'SURVEY PROFILE' not in html       # the year before a name cut short
     assert 'class="clearance"' in html and 'NO LIDAR RETURNS' not in html
     assert 'Within 100 m: 26′ BUILDING AT 360° 110 M (50 M OUT)' in html
 
@@ -237,34 +237,104 @@ def test_without_lidar_numbers_the_field_s_profile_is_printed_and_why(snapshot):
 
 def test_an_editor_s_choice_of_the_survey_s_profile_is_printed(snapshot):
     choice = {'obstacle': {'choice': 'field', 'reason': 'The tree line was cut in 2024.', 'field': '100 ft at 200 m',
-                           'computed': '98 ft at 198 m (LiDAR)'}}
+                           'computed': '98 ft at 198 m (LiDAR: 98 ft tree)'}}
     model = page.compile_page(source(lidar(snapshot), overrides=choice), book=BOOK)
     assert model['clearance']['printed'] == 'field'
     with patch('brief.figures._fetch_tile', _tile):
         html, _files = pages.build(model, lambda _id: None)
-    assert 'SURVEY PROFILE' in html and "Printed over the LiDAR's by the survey's editor." in html
+    assert 'SURVEY PROFILE' in html and 'Printed over the LiDAR&#39;s by the survey&#39;s editor.' in html
 
 
 def test_the_survey_profile_s_obstacle_is_held_against_the_lidar_s(snapshot):
     from survey import compare
 
     row = next(r for r in compare.compare(DONOVAN['field'], lidar(snapshot), {}) if r['key'] == 'obstacle')
-    assert (row['field'], row['computed'], row['apart'], row['disagrees']) == ('100 ft at 200 m', '98 ft at 198 m (LiDAR)', '2 ft, 2 m apart', False)
+    assert (row['field'], row['computed'], row['apart'], row['disagrees']) == (
+        '100 ft at 200 m', '98 ft at 198 m (LiDAR: 98 ft tree)', '2 ft, 2 m apart', False)
     taller = lidar(snapshot)
-    taller['obstacles']['approach']['clearance']['obstacle']['heightFt'] = 150.0
+    taller['obstacles']['approach']['clearance']['obstacle']['riseFt'] = 150.0
     row = next(r for r in compare.compare(DONOVAN['field'], taller, {}) if r['key'] == 'obstacle')
     assert row['disagrees'] and row['printed'] == 'computed'
+    # Ground rising away from the LZ: a 49 ft tree whose top is 114 ft over the LZ's edge is the field's "114 ft at 198 m", the same
+    # angle, not a disagreement of its 65 ft against the tree's own height.
+    rising = lidar(snapshot)
+    rising['obstacles']['approach']['clearance']['obstacle'].update({'heightFt': 49.2, 'riseFt': 114.0})
+    row = next(r for r in compare.compare({**DONOVAN['field'], 'profileObstacleFt': '114'}, rising, {}) if r['key'] == 'obstacle')
+    assert (row['computed'], row['disagrees']) == ('114 ft at 198 m (LiDAR: 49 ft tree)', False)
     row = next(r for r in compare.compare(DONOVAN['field'], snapshot, {}) if r['key'] == 'obstacle')
     assert (row['computed'], row['printed']) == ('', 'field')                      # no LiDAR here: the survey's own is printed
 
 
-def test_with_no_approach_measured_the_lidar_s_box_still_says_what_stands(snapshot):
+def test_with_no_approach_measured_the_field_s_profile_is_printed_and_why(snapshot):
     model = page.compile_page(source(lidar(snapshot, approach=None)), book=BOOK)
-    assert model['clearance']['printed'] == 'computed'                            # the survey's profile has nothing to stand against
+    clearance = model['clearance']
+    assert (clearance['printed'], clearance['note']) == ('field', 'LiDAR: no best approach to measure along.')
     with patch('brief.figures._fetch_tile', _tile):
         html, _files = pages.build(model, lambda _id: None)
-    assert 'CLEARANCE · GA_STATEWIDE_B3_2018' in html and 'In the LZ: 39′ TREE AT 034° 36 M' in html
+    assert 'SURVEY PROFILE' in html and 'LiDAR: no best approach to measure along.' in html
+    assert {'text': 'LiDAR: 39 ft tree in the LZ, 36 m at 034° from the touchdown point; 1 tree of 5 m or more.',
+            'from': 'computed'} in model['hazards']                                   # what stands in the LZ is still said
+    # Without a profile of the field's either, the LiDAR's box says what stands in and round the LZ.
+    bare = source(lidar(snapshot, approach=None))
+    bare['field'] = {**bare['field'], 'profileObstacleFt': '', 'profileDistanceM': ''}
+    model = page.compile_page(bare, book=BOOK)
+    assert model['clearance']['printed'] == 'computed'
+    with patch('brief.figures._fetch_tile', _tile):
+        html, _files = pages.build(model, lambda _id: None)
+    assert 'CLEARANCE · 2018 · GA_STATEWIDE_B3_2018' in html and 'In the LZ: 39′ TREE AT 034° 36 M' in html
 
+
+def test_an_approach_with_no_clearance_prints_the_field_s_profile_and_says_why(snapshot):
+    # The review's case: the approach was measured, but the LiDAR has no ground at the LZ's edge to measure from. The page said "no
+    # LiDAR returns in its corridor" and dropped the field's own profile.
+    found = lidar(snapshot)
+    found['obstacles']['approach'].update({'clearance': None, 'missing': 'no_edge_ground'})
+    model = page.compile_page(source(found), book=BOOK)
+    clearance = model['clearance']
+    assert clearance['printed'] == 'field'
+    assert clearance['note'] == 'LiDAR: APCH 360° · NO GROUND AT THE EDGE'
+    with patch('brief.figures._fetch_tile', _tile):
+        html, _files = pages.build(model, lambda _id: None)
+    assert 'SURVEY PROFILE' in html and '100′' in html and 'LiDAR: APCH 360° · NO GROUND AT THE EDGE' in html
+
+
+def test_nothing_above_the_edge_is_said_and_held_against_the_field_s(snapshot):
+    from survey import compare
+
+    found = lidar(snapshot)
+    found['obstacles']['approach']['clearance'] = {'angleDeg': 0.0, 'obstacle': None}
+    model = page.compile_page(source(found), book=BOOK)
+    assert model['clearance']['approach']['words'] == 'APCH 360° · 0.0° · NOTHING ABOVE THE EDGE'
+    row = next(r for r in compare.compare(DONOVAN['field'], found, {}) if r['key'] == 'obstacle')
+    assert (row['computed'], row['apart'], row['disagrees']) == ("nothing above the LZ's edge (LiDAR)", '100 ft apart', True)
+
+
+def test_a_corridor_the_survey_covers_in_part_says_so(snapshot):
+    found = lidar(snapshot)
+    found['obstacles']['approach']['covered'] = 31
+    model = page.compile_page(source(found), book=BOOK)
+    assert model['clearance']['approach']['partial'] == 'LIDAR OVER 310 OF 1,000 M'
+    assert 'LIDAR OVER 310 OF 1,000 M' in figures.clearance(model['clearance'])           # under the angle it is over
+
+
+def test_low_vegetation_is_brush_and_the_figure_draws_the_obstacle_s_rise(snapshot):
+    found = lidar(snapshot)
+    found['obstacles']['inside'].update({'heightFt': 9.8})
+    clear = found['obstacles']['approach']['clearance']
+    clear['obstacle'].update({'heightFt': 49.2, 'riseFt': 114.0})                   # its ground 65 ft over the edge's
+    model = page.compile_page(source(found), book=BOOK)
+    assert model['clearance']['inside'] == '10′ BRUSH AT 034° 36 M'
+    assert model['clearance']['approach']['words'] == 'APCH 360° · 8.6° · 49′ TREE AT 198 M'
+    drawn = figures.clearance(model['clearance'])
+    spec = model['clearance']['approach']
+    # The dashed line ends at the edge's ground and the obstacle's rise (2314 ft), where the angle sees it, not at its own top.
+    assert spec['obstacle'] == {'fromEdgeM': 198.0, 'riseFt': 114.0, 'kind': 'vegetation'}
+    line = drawn.split('stroke-dasharray="4 3"')[0].rsplit('<line', 1)[1]
+    import re
+    y1, y2 = (float(v) for v in re.findall(r'y[12]="([-0-9.]+)"', line))
+    span = max(max(v for v in spec['groundFt'] + spec['topsFt'] + [spec['edgeFt']] if v is not None)
+               - min(v for v in spec['groundFt'] + spec['topsFt'] + [spec['edgeFt']] if v is not None), 60.0)
+    assert y2 < y1 and abs((y1 - y2) - 114.0 / (span * 1.06) * ((104 - 14) - 46)) < 0.2     # the plot's 44 units of height
 
 
 def test_the_page_s_3d_view_is_the_newest_capture_named_for_its_survey(snapshot):

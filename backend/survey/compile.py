@@ -13,7 +13,7 @@ import math
 import re
 from datetime import date, datetime
 
-from survey import compare, measure, profile
+from survey import compare, measure, obstacles, profile
 
 PAGE_FORMAT = "ezpz-survey-page"
 MONTHS = ("JAN", "FEB", "MAR", "APR", "MAY", "JUN", "JUL", "AUG", "SEP", "OCT", "NOV", "DEC")
@@ -193,11 +193,21 @@ def _slope_fact(rows, field, snapshot):
     return _fact(None, None)
 
 
-# What the LiDAR calls a point, as the page says it (survey/obstacles.py's kinds).
+# What the LiDAR calls a point, as the page says it (survey/obstacles.py's kinds); vegetation under a tree's 5 m is brush.
 KIND_WORDS = {"vegetation": "TREE", "building": "BUILDING", "tower": "TOWER", "wire": "WIRE", "bridge": "BRIDGE",
               "unclassified": "OBSTACLE", "other": "OBSTACLE", "terrain": "GROUND"}
-LIDAR_CAVEAT = ("Angles from the LZ's edge, no margin. The tallest found in the LiDAR, not every obstacle: trees grow and fall, wires and "
-                "poles seldom show, treetops read up to a metre low.")
+TREE_MIN_FT = round(obstacles.TREE_MIN_M * FEET_PER_METRE, 1)
+LIDAR_CAVEAT = ("Angles from the LZ's edge, no margin, to what stands 2 m or more and the ground. The tallest found in the LiDAR, not every "
+                "obstacle: trees grow and fall, wires and poles seldom show, treetops read up to a metre low.")
+# Why a way has no clearance (survey/obstacles.py's ``missing``).
+MISSING_WORDS = {"no_returns": "NO LIDAR RETURNS", "no_edge_ground": "NO GROUND AT THE EDGE"}
+
+
+def _kind_words(kind, height_ft):
+    """What the page calls a thing the LiDAR found: TREE, BRUSH (vegetation under 5 m), BUILDING, TOWER, WIRE, BRIDGE, OBSTACLE."""
+    if kind == "vegetation" and not (_finite(height_ft) and height_ft >= TREE_MIN_FT):
+        return "BRUSH"
+    return KIND_WORDS.get(kind, "OBSTACLE")
 
 
 def _measured_obstacles(snapshot):
@@ -209,7 +219,7 @@ def _spot_words(spot, out_of_lz=False):
     """A point the LiDAR found, in the page's words: "39′ TREE AT 034° 36 M" (from the touchdown point)."""
     if not isinstance(spot, dict) or not _finite(spot.get("heightFt")):
         return None
-    words = (f"{profile.js_round(spot['heightFt'])}′ {KIND_WORDS.get(spot.get('kind'), 'OBSTACLE')}"
+    words = (f"{profile.js_round(spot['heightFt'])}′ {_kind_words(spot.get('kind'), spot['heightFt'])}"
              + (f" AT {heading_words(spot.get('bearingDeg'))} {profile.js_round(spot['distanceM'])} M" if _finite(spot.get("distanceM")) else ""))
     if out_of_lz and _finite(spot.get("fromEdgeM")):
         words += f" ({profile.js_round(spot['fromEdgeM'])} M OUT)"
@@ -230,7 +240,7 @@ def _hazards(field, snapshot):
     inside = found.get("inside") if found else None
     if isinstance(inside, dict) and _finite(inside.get("heightFt")) and inside["heightFt"] > 2 * FEET_PER_METRE:
         trees = len(found.get("trees") or [])
-        kind = KIND_WORDS.get(inside.get("kind"), "OBSTACLE").lower()
+        kind = _kind_words(inside.get("kind"), inside["heightFt"]).lower()
         where = (f", {profile.js_round(inside['distanceM'])} m at {heading_words(inside.get('bearingDeg'))} from the touchdown point"
                  if _finite(inside.get("distanceM")) else "")
         text = f"LiDAR: {profile.js_round(inside['heightFt'])} ft {kind} in the LZ{where}"
@@ -407,37 +417,53 @@ def _survey_profile(field):
 
 def _corridor(corridor, label):
     """One way in or out as the clearance box draws it: its ground and treetops every 10 m from the LZ's edge, the angle that clears
-    them from the edge with no margin, and the obstacle that sets it."""
+    them from the edge with no margin, and the obstacle that sets it; or why there is none. ``partial`` says how much of the corridor
+    the survey has returns in, where it is not all of it (the figure says it under the angle): an angle over a part is not the
+    corridor's."""
     if not isinstance(corridor, dict):
         return None
     bins = [b if isinstance(b, dict) else {} for b in corridor.get("bins") or []]
     clear = corridor.get("clearance") if isinstance(corridor.get("clearance"), dict) else None
     heading = heading_words(corridor.get("headingDeg"))
+    step = corridor.get("binM") if _finite(corridor.get("binM")) else 10
+    covered = corridor.get("covered")
+    partial = None
+    if isinstance(covered, int) and not isinstance(covered, bool) and bins and covered < len(bins):
+        partial = f"LIDAR OVER {profile.js_round(covered * step):,} OF {profile.js_round(len(bins) * step):,} M"
     out = {
         "label": label,
         "heading": heading,
         "edgeFt": _get(corridor, "edge", "groundFt") if _finite(_get(corridor, "edge", "groundFt")) else None,
-        "binM": corridor.get("binM") if _finite(corridor.get("binM")) else 10,
+        "binM": step,
         "groundFt": [b.get("groundFt") if _finite(b.get("groundFt")) else None for b in bins],
         "topsFt": [b.get("topFt") if _finite(b.get("topFt")) else None for b in bins],
         "angleDeg": None,
         "obstacle": None,
-        "words": f"{label} {heading} · NO LIDAR RETURNS IN ITS CORRIDOR",
+        "partial": partial,
+        "words": f"{label} {heading} · {MISSING_WORDS.get(corridor.get('missing'), MISSING_WORDS['no_returns'])}",
     }
-    obstacle = clear.get("obstacle") if clear and isinstance(clear.get("obstacle"), dict) else None
-    if obstacle and _finite(clear.get("angleDeg")) and _finite(obstacle.get("fromEdgeM")) and _finite(obstacle.get("topFt")):
-        out["angleDeg"] = clear["angleDeg"]
-        out["obstacle"] = {"fromEdgeM": obstacle["fromEdgeM"], "topFt": obstacle["topFt"], "kind": obstacle.get("kind")}
+    if not clear or not _finite(clear.get("angleDeg")):
+        out["what"] = MISSING_WORDS.get(corridor.get("missing"), MISSING_WORDS["no_returns"])
+        return out
+    obstacle = clear.get("obstacle") if isinstance(clear.get("obstacle"), dict) else None
+    out["angleDeg"] = clear["angleDeg"]
+    out["angle"] = f"{label} {heading} · {profile.to_fixed(max(clear['angleDeg'], 0.0), 1)}°"
+    what = "NOTHING ABOVE THE EDGE"
+    if obstacle and clear["angleDeg"] > 0 and _finite(obstacle.get("fromEdgeM")):
+        # The obstacle as the angle sees it: its rise over the edge's ground on its own line (a snapshot from before rises were kept:
+        # its top over the edge's ground on the track).
+        rise = obstacle.get("riseFt")
+        if not _finite(rise) and _finite(obstacle.get("topFt")) and out["edgeFt"] is not None:
+            rise = obstacle["topFt"] - out["edgeFt"]
+        if _finite(rise):
+            out["obstacle"] = {"fromEdgeM": obstacle["fromEdgeM"], "riseFt": rise, "kind": obstacle.get("kind")}
         at = f"AT {profile.js_round(obstacle['fromEdgeM'])} M"
-        if clear["angleDeg"] <= 0:
-            what = "NOTHING ABOVE THE EDGE"
-        elif obstacle.get("kind") == "terrain":
+        if obstacle.get("kind") == "terrain":
             what = f"THE GROUND {at}"
         else:
-            what = f"{profile.js_round(obstacle.get('heightFt') or 0)}′ {KIND_WORDS.get(obstacle.get('kind'), 'OBSTACLE')} {at}"
-        out["angle"] = f"{label} {heading} · {profile.to_fixed(clear['angleDeg'], 1)}°"
-        out["words"] = f"{out['angle']} · {what}"
-        out["what"] = what
+            what = f"{profile.js_round(obstacle.get('heightFt') or 0)}′ {_kind_words(obstacle.get('kind'), obstacle.get('heightFt'))} {at}"
+    out["what"] = what
+    out["words"] = f"{out['angle']} · {what}"
     return out
 
 
@@ -464,25 +490,28 @@ def _along_tops(tops, profiles):
 def _clearance(rows, snapshot, profiles):
     """What the LiDAR found (§4, step L4), as the page prints it in place of the field's survey profile: the clearance along the
     approach and the exit, what stands in the LZ and round it, and the profile's treetop line; or why there is none. ``printed`` is
-    "field" where an editor chose the survey's own profile over the LiDAR's. None for a snapshot from before L4."""
+    "field" where the field's survey profile is printed instead: an editor chose it over the LiDAR's, or the LiDAR has no clearance along
+    the approach and the field has one (``note`` says which). None for a snapshot from before L4."""
     found = snapshot.get("obstacles") if isinstance(snapshot.get("obstacles"), dict) else None
     if found is None:
         return None
     row = next((r for r in rows if r["key"] == "obstacle"), None)
     survey = found.get("survey") if isinstance(found.get("survey"), dict) else {}
-    named = _one_line(survey.get("name")).upper()
-    if named and isinstance(survey.get("year"), int) and str(survey["year"]) not in named:
-        named += f" ({survey['year']})"
-    # The box is the LiDAR's unless an editor chose the survey's own profile over a LiDAR value: with no approach measured, what stands
-    # in the LZ and round it is still the LiDAR's to print.
-    chose_field = bool(row and row["printed"] == "field" and row["computed"])
-    out = {"status": found.get("status"), "words": _one_line(found.get("words")) or None, "survey": named or None,
-           "printed": "field" if chose_field else "computed"}
+    year = survey.get("year") if isinstance(survey.get("year"), int) and not isinstance(survey.get("year"), bool) else None
+    out = {"status": found.get("status"), "words": _one_line(found.get("words")) or None,
+           "survey": _one_line(survey.get("name")).upper() or None, "year": year, "printed": "computed", "note": None}
     if found.get("status") != "measured":
         return out
+    approach = _corridor(found.get("approach"), "APCH")
+    if row and row["printed"] == "field":
+        out["printed"] = "field"
+        if row["computed"]:
+            out["note"] = "Printed over the LiDAR's by the survey's editor."
+        else:
+            out["note"] = "LiDAR: " + (approach["words"] if approach else "no best approach to measure along.")
     standing = found.get("standing") if isinstance(found.get("standing"), dict) else {}
     out.update({
-        "approach": _corridor(found.get("approach"), "APCH"),
+        "approach": approach,
         "exit": _corridor(found.get("exit"), "EXIT"),
         "inside": _spot_words(found.get("inside")),
         "around": _spot_words(found.get("around"), out_of_lz=True),

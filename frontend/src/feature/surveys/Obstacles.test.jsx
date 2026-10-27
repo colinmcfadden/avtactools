@@ -23,13 +23,14 @@ const MEASURED = {
   words: null,
   survey: { name: "GA_Statewide_B3_2018", year: 2018 },
   approach: {
-    headingDeg: 90, clearance: { angleDeg: 8.6, obstacle: { ...SPOT, heightFt: 98.4, kind: "vegetation", fromEdgeM: 198, offsetM: -4.2 } },
+    headingDeg: 90,
+    clearance: { angleDeg: 8.6, obstacle: { ...SPOT, heightFt: 98.4, riseFt: 98.6, kind: "vegetation", fromEdgeM: 198, offsetM: -4.2 } },
     fromTarget: { angleDeg: 5.9, obstacle: { ...SPOT, heightFt: 98.4, kind: "vegetation" } },
   },
-  exit: { headingDeg: 270, clearance: { angleDeg: -1.2, obstacle: { ...SPOT, heightFt: 0, kind: "terrain", fromEdgeM: 3 } }, fromTarget: null },
+  exit: { headingDeg: 270, clearance: { angleDeg: 0.0, obstacle: null }, fromTarget: null },
   inside: { ...SPOT, heightFt: 39.4, kind: "vegetation", bearingDeg: 33.7, distanceM: 36.1 },
   around: { ...SPOT, heightFt: 26.2, kind: "building", bearingDeg: 0, distanceM: 110, fromEdgeM: 50 },
-  standing: { overM: 2, count: 1234, cells: [] },
+  standing: { overM: 2, count: 1234 },
   trees: [{ ...SPOT, heightFt: 39.4 }],
   heightMap: { overlay: "data:image/png;base64,AAAA", bounds: [[34.59, -84.13], [34.6, -84.12]] },
 };
@@ -59,16 +60,32 @@ describe("what the LiDAR found", () => {
     expect(screen.queryByRole("group")).toBeNull();
   });
 
-  it("names a way that was not measured", () => {
-    render(<Obstacles obstacles={{ ...MEASURED, exit: null }} />);
+  it("names a way that was not measured, and why a measured one has no angle", () => {
+    const { rerender } = render(<Obstacles obstacles={{ ...MEASURED, exit: null }} />);
     expect(screen.getByText("Not measured: set the best exit and measure again.")).toBeInTheDocument();
+    rerender(<Obstacles obstacles={{ ...MEASURED, exit: { headingDeg: 270, clearance: null, missing: "no_edge_ground", fromTarget: null } }} />);
+    expect(screen.getByRole("row", { name: /Exit 270°/ })).toHaveTextContent("No ground at the LZ's edge in the LiDAR");
+    rerender(<Obstacles obstacles={{ ...MEASURED, exit: { headingDeg: 270, clearance: null, missing: "no_returns", fromTarget: null } }} />);
+    expect(screen.getByRole("row", { name: /Exit 270°/ })).toHaveTextContent("No LiDAR returns in its corridor");
+  });
+
+  it("says how much of a corridor the survey covers, where it is not all of it", () => {
+    const steps = Array.from({ length: 100 }, () => ({}));
+    const { rerender } = render(<Obstacles obstacles={{ ...MEASURED, approach: { ...MEASURED.approach, bins: steps, binM: 10, covered: 31 } }} />);
+    expect(screen.getByText("LiDAR over 310 m of the approach's 1,000 m: its angle is over that part.")).toHaveClass("survey-state--warn");
+    rerender(<Obstacles obstacles={{ ...MEASURED, approach: { ...MEASURED.approach, bins: steps, binM: 10, covered: 100 } }} />);
+    expect(screen.queryByText(/LiDAR over/)).toBeNull();
   });
 
   it("words a point and an obstacle as the crew reads them", () => {
     expect(spotWords({ heightFt: 26.2, kind: "building", distanceM: 110.4, bearingDeg: 359.6 })).toBe("26 ft building, 110 m at 360°");
     expect(spotWords(null)).toBeNull();
     expect(obstacleWords({ kind: "terrain", fromEdgeM: 12, offsetM: 0.4 })).toBe("The ground 12 m out");
+    expect(obstacleWords({ kind: "terrain", fromEdgeM: 295, offsetM: 5, riseFt: 65 })).toBe("The ground 295 m out, 65 ft above the edge, 5 m right of the track");
     expect(obstacleWords({ kind: "tower", heightFt: 164, fromEdgeM: 399, offsetM: 10 })).toBe("164 ft tower 399 m out, 10 m right of the track");
+    // Its top over the edge's ground, where that is not its height over its own: ground rising away from the LZ.
+    expect(obstacleWords({ kind: "vegetation", heightFt: 49.2, riseFt: 114, fromEdgeM: 198, offsetM: 0 })).toBe("49 ft tree 198 m out (114 ft above the edge)");
+    expect(spotWords({ heightFt: 9.8, kind: "vegetation", distanceM: 36, bearingDeg: 34 })).toBe("10 ft brush, 36 m at 034°");
   });
 });
 

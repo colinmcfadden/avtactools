@@ -40,8 +40,9 @@ import terrain_provider as tp
 from survey import geometry, obstacles
 
 # 2: the snapshot keeps the boundary and the best approach it was measured for (``stale``). 3: and the best exit, with what stands
-# on and round the LZ (``obstacles``), which is measured along both.
-SNAPSHOT_VERSION = 3
+# on and round the LZ (``obstacles``), which is measured along both. 4: its obstacles are what stands 2 m or more and the ground where
+# it rises (a 3's angle from the edge could be set by a ground return's scatter a centimetre past it).
+SNAPSHOT_VERSION = 4
 FEET_PER_METRE = tp.FEET_PER_METRE
 # The UH-60 limits by the names a survey uses (terrain_provider's are the slope tile's "noseHigh"/"noseLow").
 LIMITS_DEG = {
@@ -367,9 +368,9 @@ COMPARED = (
     ("LiDAR", ("obstacles", "status")),
     ("LiDAR survey", ("obstacles", "survey", "name")),
     ("Approach clears at (°)", ("obstacles", "approach", "clearance", "angleDeg")),
-    ("Approach's obstacle (ft)", ("obstacles", "approach", "clearance", "obstacle", "heightFt")),
+    ("Approach's obstacle over the edge (ft)", ("obstacles", "approach", "clearance", "obstacle", "riseFt")),
     ("Exit clears at (°)", ("obstacles", "exit", "clearance", "angleDeg")),
-    ("Exit's obstacle (ft)", ("obstacles", "exit", "clearance", "obstacle", "heightFt")),
+    ("Exit's obstacle over the edge (ft)", ("obstacles", "exit", "clearance", "obstacle", "riseFt")),
     ("Tallest in the LZ (ft)", ("obstacles", "inside", "heightFt")),
     ("Tallest within 100 m (ft)", ("obstacles", "around", "heightFt")),
     ("Standing over 2 m in the LZ (points)", ("obstacles", "standing", "count")),

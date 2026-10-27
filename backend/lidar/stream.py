@@ -426,21 +426,40 @@ class Streamer:
         class and its height above the ground (survey/obstacles.py): a streamed .pnts keeps neither. Never served (the file route
         serves only tileset and piece names), and let go of with the pieces when the cache is pruned."""
         survey = self._survey(key)
-        path = self.root / key / "laz" / f"{node}.laz"
+        path = self._laz_path(key, node)
         try:
             data = path.read_bytes()
         except OSError:
             data = None
-        if data is not None:
+        if data is not None and pieces.readable_header(data):
             self._touch(path)
             return data
         with self._claim(path):
-            if path.is_file():
-                return path.read_bytes()
+            try:
+                data = path.read_bytes()
+            except OSError:
+                data = None
+            if data is not None and pieces.readable_header(data):
+                return data
+            # Only a piece that reads as one is kept: one that does not would fail every measure of the LZ, and be touched each time.
             data = self._fetch(self._piece_url(survey, node), MAX_PIECE_BYTES)
+            if not pieces.readable_header(data):
+                raise StreamError("USGS sent a piece that cannot be read.", code="upstream_unavailable", status=502)
             _write_atomic(path, data)
             self._wrote()
         return data
+
+    def drop_laz(self, key: str, node: ept.Node) -> None:
+        """Let go of a kept piece whose points could not be read, so the next reading fetches it again."""
+        path = self._laz_path(key, node)
+        with self._claim(path):
+            try:
+                path.unlink()
+            except OSError:
+                pass
+
+    def _laz_path(self, key: str, node: ept.Node) -> Path:
+        return self.root / key / "laz" / f"{node}.laz"
 
     def _survey_range(self, key, survey, root_data=None):
         """The survey's intensity range, taken once from its root piece (a
