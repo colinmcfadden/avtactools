@@ -45,6 +45,27 @@ export const changedBetween = (base, theirs) => {
   return out;
 };
 
+/**
+ * The draft laid over a newer save (`theirs`), part by part against the copy it was made on (`base`): a part typed or drawn here keeps
+ * what is here, any other takes theirs. Null when both changed one part differently: then the next save meets theirs, and says so.
+ */
+export const rebaseDraft = (base, mine, theirs) => {
+  const before = editableOf(base);
+  const after = editableOf(theirs);
+  const out = { ...after, field: { ...after.field } };
+  for (const key of ["name", "hlz_id", "diagram", "overrides"]) {
+    if (sameEdit(mine[key], before[key])) continue;
+    if (!sameEdit(after[key], before[key]) && !sameEdit(after[key], mine[key])) return null;
+    out[key] = mine[key];
+  }
+  for (const key of new Set([...Object.keys(before.field), ...Object.keys(mine.field), ...Object.keys(after.field)])) {
+    if (mine.field[key] === before.field[key]) continue;
+    if (after.field[key] !== before.field[key] && after.field[key] !== mine.field[key]) return null;
+    out.field[key] = mine.field[key];
+  }
+  return out;
+};
+
 const NO_LIST = { status: "idle", book: null, surveys: [], error: null };
 
 /** How often the book's list is read again while the server measures imported surveys in the background. */
@@ -67,6 +88,8 @@ export const useSurveys = ({ client = surveyApi } = {}) => {
   const surveyRef = useRef(null);
   const draftRef = useRef(null);
   const bookRef = useRef(null);
+  const busyRef = useRef(null);
+  const conflictRef = useRef(null);
   // Each survey asked for is numbered: an answer that comes once another was asked for, or the book or survey was closed, is let go.
   const opening = useRef(0);
   const stopOpening = useCallback(() => {
@@ -76,6 +99,8 @@ export const useSurveys = ({ client = surveyApi } = {}) => {
   surveyRef.current = survey;
   draftRef.current = draft;
   bookRef.current = bookUuid;
+  busyRef.current = busy;
+  conflictRef.current = conflict;
 
   const setDraft = useCallback((update) => {
     setDraftState((current) => {
@@ -173,14 +198,67 @@ export const useSurveys = ({ client = surveyApi } = {}) => {
   }, [client, refresh, showArchived]);
 
   // While the server measures imported surveys, the book's list is read again now and then, so each shows how it stands. Only while
-  // the list is what is shown: a survey open in the editor or on its page has no list in view.
+  // the list is what is shown: a survey open in the editor or on its page has no list in view. Each read waits for the one before,
+  // so a slow answer never has another sent behind it.
   const measuring = useMemo(() => list.surveys.some((row) => IMPORT_ACTIVE.includes(row.imported?.state)), [list.surveys]);
   const listShown = Boolean(bookUuid) && !survey && !reading;
   useEffect(() => {
     if (!measuring || !listShown) return undefined;
-    const timer = setInterval(() => refresh(), IMPORT_POLL_MS);
-    return () => clearInterval(timer);
+    let stopped = false;
+    let timer = null;
+    const look = async () => {
+      await refresh();
+      if (!stopped) timer = setTimeout(look, IMPORT_POLL_MS);
+    };
+    timer = setTimeout(look, IMPORT_POLL_MS);
+    return () => {
+      stopped = true;
+      clearTimeout(timer);
+    };
   }, [measuring, listShown, refresh]);
+
+  /**
+   * A newer copy of the open survey, from the import's measuring: what it wrote (the boundary, then the snapshot) comes into the
+   * editor, and what was typed or drawn here meanwhile stays, laid over it. Left alone while a save or a measuring of this person's
+   * is on its way (its answer is the newer), while they settle a conflict, and when both changed one part (the next save says so).
+   */
+  const follow = useCallback((theirs) => {
+    const base = surveyRef.current;
+    if (!base || !theirs?.field || theirs.uuid !== base.uuid || busyRef.current || conflictRef.current) return;
+    if (theirs.revision < base.revision) return;
+    if (theirs.revision === base.revision) {
+      take(theirs, { keepDraft: true });
+      return;
+    }
+    const merged = rebaseDraft(base, draftRef.current, theirs);
+    if (!merged) return;
+    take(theirs, { keepDraft: true });
+    setDraft(merged);
+  }, [setDraft, take]);
+
+  // While the open survey's import is measured in the background, it is read again now and then (`follow`), so the editor is never
+  // a revision behind the measuring, and a save does not meet it as someone else's.
+  const importing = IMPORT_ACTIVE.includes(survey?.imported?.state);
+  const openUuid = survey?.uuid ?? null;
+  useEffect(() => {
+    if (!importing || !openUuid) return undefined;
+    let stopped = false;
+    let timer = null;
+    const look = async () => {
+      try {
+        const theirs = await client.getSurvey(openUuid);
+        if (!stopped) follow(theirs);
+      } catch {
+        // The next look tries again.
+      }
+      if (!stopped) timer = setTimeout(look, IMPORT_POLL_MS);
+    };
+    timer = setTimeout(look, IMPORT_POLL_MS);
+    return () => {
+      stopped = true;
+      clearTimeout(timer);
+    };
+  }, [client, follow, importing, openUuid]);
 
   /** Changes the open book's details (`patch`: name, unit_line, cover_text, page_order, team_id); throws why not in words. */
   const updateBook = useCallback(async (patch) => {

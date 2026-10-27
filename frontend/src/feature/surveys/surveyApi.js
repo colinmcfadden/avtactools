@@ -128,7 +128,9 @@ const WORDS = {
   not_an_image: "That file is not a picture that can be read.",
   unsupported_image: "Send a JPEG or a PNG.",
   image_too_large: "That picture is too large to read.",
-  bundle_too_large: "The bundle is larger than an import takes (100 MB). Run the importer on part of the book (--pages) and import each part.",
+  bundle_too_large:
+    "The bundle holds more than an import takes (100 MB sent, 400 MB unpacked). Run the importer on part of the book (--pages) and import each part.",
+  book_archived: "This book is archived: restore it to import into it.",
   not_imported: "This survey was not imported.",
 };
 

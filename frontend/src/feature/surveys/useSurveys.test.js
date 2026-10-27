@@ -1,5 +1,5 @@
 import { act, renderHook } from "@testing-library/react";
-import useSurveys, { IMPORT_POLL_MS, changedBetween, editableOf } from "./useSurveys";
+import useSurveys, { IMPORT_POLL_MS, changedBetween, editableOf, rebaseDraft } from "./useSurveys";
 
 const { readFixture } = require("../../contracts/readFixture");
 
@@ -388,6 +388,64 @@ describe("useSurveys", () => {
     } finally {
       jest.useRealTimers();
     }
+  });
+
+  it("follows the open survey while its import is measured, keeping what was typed meanwhile", async () => {
+    jest.useFakeTimers();
+    try {
+      const queued = surveyAt(1, { imported: { state: "queued" } });
+      const boundary = { ...queued.diagram, status: "analyzed", analysis: { detectedLZ: [[34.6, -84.13], [34.6, -84.12], [34.59, -84.12]] } };
+      const measured = surveyAt(3, { diagram: boundary, snapshot: { grid: "16S GD 63415 31995" }, updated_by: "EZ/PZ (import)",
+        imported: { state: "done" } });
+      const client = fakeClient({ getSurvey: jest.fn(async () => queued) });
+      const { result } = await opened(client);
+      act(() => result.current.setField("ppr", "Typed while it was measured"));
+      client.getSurvey.mockImplementation(async () => measured);
+      await act(async () => {
+        jest.advanceTimersByTime(IMPORT_POLL_MS);
+      });
+      expect(result.current.survey.revision).toBe(3);                          // the next save is on the measuring's revision
+      expect(result.current.draft.diagram).toEqual(boundary);
+      expect(result.current.draft.field.ppr).toBe("Typed while it was measured");
+      expect(result.current.dirty).toBe(true);
+      const reads = client.getSurvey.mock.calls.length;
+      await act(async () => {
+        jest.advanceTimersByTime(IMPORT_POLL_MS * 3);
+      });
+      expect(client.getSurvey).toHaveBeenCalledTimes(reads);                    // measured: no more reading
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
+  it("leaves the draft alone when the measuring and this person changed the same part", async () => {
+    jest.useFakeTimers();
+    try {
+      const queued = surveyAt(1, { imported: { state: "queued" } });
+      const client = fakeClient({ getSurvey: jest.fn(async () => queued) });
+      const { result } = await opened(client);
+      const drawn = { ...queued.diagram, analysis: { customLZ: [[1, 2], [3, 4], [5, 6]] } };
+      act(() => result.current.setDiagram(drawn));
+      client.getSurvey.mockImplementation(async () => surveyAt(2, { diagram: { ...queued.diagram, analysis: { detectedLZ: [[7, 8]] } },
+        imported: { state: "measuring" } }));
+      await act(async () => {
+        jest.advanceTimersByTime(IMPORT_POLL_MS);
+      });
+      expect(result.current.survey.revision).toBe(1);                          // the next save meets theirs, and says so
+      expect(result.current.draft.diagram).toEqual(drawn);
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
+  it("lays a draft over a newer save part by part", () => {
+    const base = surveyAt(1);
+    const mine = { ...editableOf(base), name: "LZ MINE", field: { ...editableOf(base).field, ppr: "mine" } };
+    const theirs = surveyAt(2, { field: { ...DONOVAN.field, surface: "gravel" }, snapshot: { grid: "x" } });
+    const merged = rebaseDraft(base, mine, theirs);
+    expect([merged.name, merged.field.ppr, merged.field.surface]).toEqual(["LZ MINE", "mine", "gravel"]);
+    expect(rebaseDraft(base, mine, surveyAt(2, { name: "LZ THEIRS" }))).toBeNull();
+    expect(rebaseDraft(base, mine, surveyAt(2, { name: "LZ MINE" })).name).toBe("LZ MINE");   // the same change on both sides
   });
 
   it("marks the import's notes checked without taking the rest of the answer as its copy", async () => {

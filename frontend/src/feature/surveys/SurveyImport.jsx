@@ -1,4 +1,4 @@
-import React, { useId, useRef, useState } from "react";
+import React, { useEffect, useId, useRef, useState } from "react";
 import Dialog from "../ui/Dialog";
 import Icon from "../ui/Icon";
 
@@ -46,6 +46,7 @@ const COMMAND = 'python3 tools/import_survey_book.py "LZ-SURVEYS.pdf" book-bundl
 export const ImportDialog = ({ bookName, onImport, onCancel }) => {
   const fileField = useId();
   const first = useRef(null);
+  const done = useRef(null);
   const [file, setFile] = useState(null);
   const [error, setError] = useState(null);
   const [busy, setBusy] = useState(false);
@@ -71,17 +72,20 @@ export const ImportDialog = ({ bookName, onImport, onCancel }) => {
   if (result) {
     const made = result.created?.length ?? 0;
     return (
+      // A dialog of its own (its key), so the focus goes to Done as it opens: the Import button it replaces had it.
       <Dialog
+        key="imported"
         title="The old book is imported"
         icon="download"
         onClose={onCancel}
-        footer={<button type="button" className="ui-btn ui-btn--primary ui-btn--38" onClick={onCancel}>Done</button>}
+        initialFocus={done}
+        footer={<button ref={done} type="button" className="ui-btn ui-btn--primary ui-btn--38" onClick={onCancel}>Done</button>}
       >
         <div className="survey-import" role="status">
           <p>
             <strong>{made} {made === 1 ? "page" : "pages"}</strong> of {result.source || "the bundle"} {made === 1 ? "is a draft" : "are drafts"} in{" "}
             {bookName}, each with its photos.
-            {made > 0 && " They are measured one at a time in the background, about 15 seconds each: the book's list says how each stands."}
+            {made > 0 && " They are measured one at a time in the background: the book's list says how each stands."}
           </p>
           {result.skipped?.length > 0 && (
             <>
@@ -147,6 +151,15 @@ const listWords = (words) => words.join(", ");
 /** An imported survey's notes from the old book: where it came from, how its measuring stands, and what to check. */
 export const ImportNotes = ({ imported, busy, onChecked }) => {
   const headingId = useId();
+  const checkedLine = useRef(null);
+  const asked = useRef(false);
+  // The button goes once the notes are checked: the focus goes to the line that says so, not to the page's foot.
+  useEffect(() => {
+    if (imported?.checked && asked.current) {
+      asked.current = false;
+      checkedLine.current?.focus();
+    }
+  }, [imported?.checked]);
   if (!imported) return null;
   const notes = imported.notes ?? {};
   const state = importStateWords(imported);
@@ -166,17 +179,17 @@ export const ImportNotes = ({ imported, busy, onChecked }) => {
         <ul className="survey-problems">
           {notes.unread?.length > 0 && <li>Not on the page: {listWords(notes.unread)}.</li>}
           {notes.blank?.length > 0 && <li>Blank on the page: {listWords(notes.blank)}.</li>}
-          {(notes.warnings ?? []).map((warning) => <li key={warning}>{warning}</li>)}
+          {(notes.warnings ?? []).map((warning, index) => <li key={`${index}-${warning}`}>{warning}</li>)}
         </ul>
       ) : (
         <p className="survey-muted">The import read every value on the page.</p>
       )}
       {imported.checked ? (
-        <p className="survey-muted">Checked by {imported.checked_by} on {imported.checked_at?.slice(0, 10)}.</p>
+        <p ref={checkedLine} tabIndex={-1} className="survey-muted">Checked by {imported.checked_by} on {imported.checked_at?.slice(0, 10)}.</p>
       ) : (
         any && (
           <div className="survey-page-bar">
-            <button type="button" className="ui-btn ui-btn--34" onClick={onChecked} disabled={Boolean(busy)}>
+            <button type="button" className="ui-btn ui-btn--34" onClick={() => { asked.current = true; onChecked(); }} disabled={Boolean(busy)}>
               <Icon name="check" size={14} />
               Mark as checked
             </button>

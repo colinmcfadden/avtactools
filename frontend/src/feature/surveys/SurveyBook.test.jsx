@@ -511,8 +511,23 @@ describe("importing the old book", () => {
     expect(within(done).getByText(/LZ-SURVEYS-OCT-2023\.pdf are drafts in AASF 1 HLZ SURVEY BOOK/)).toBeInTheDocument();
     expect(within(done).getByText(/Page 5, GA 034 LZ DONOVAN: GA 034 is in the book already/)).toBeInTheDocument();
     expect(client.getBook.mock.calls.length).toBeGreaterThan(reads);           // the list is read again
+    expect(within(done).getByRole("button", { name: "Done" })).toHaveFocus();   // not lost with the Import button it replaced
     fireEvent.click(within(done).getByRole("button", { name: "Done" }));
     expect(screen.queryByRole("dialog", { name: "The old book is imported" })).toBeNull();
+  });
+
+  it("lists two warnings that read alike, each once", async () => {
+    const twice = { ...IMPORTED, notes: { unread: [], blank: [], warnings: ["A photo could not be read (bad) and was left out.",
+      "A photo could not be read (bad) and was left out."] } };
+    const errors = jest.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      await openDonovan(fakeClient({ getSurvey: jest.fn(async () => survey({ imported: twice })) }));
+      const panel = screen.getByRole("region", { name: "From the old book" });
+      expect(within(panel).getAllByText("A photo could not be read (bad) and was left out.")).toHaveLength(2);
+      expect(errors.mock.calls.some((call) => String(call[0]).includes("same key"))).toBe(false);
+    } finally {
+      errors.mockRestore();
+    }
   });
 
   it("says why a bundle was refused, in the server's words for it", async () => {
@@ -563,7 +578,7 @@ describe("importing the old book", () => {
       fireEvent.click(within(panel).getByRole("button", { name: "Mark as checked" }));
     });
     expect(client.markImportChecked).toHaveBeenCalledWith("s-1");
-    expect(within(panel).getByText("Checked by CW3 Admin on 2026-10-27.")).toBeInTheDocument();
+    expect(within(panel).getByText("Checked by CW3 Admin on 2026-10-27.")).toHaveFocus();   // the button it replaces had it
     expect(within(panel).queryByRole("button", { name: "Mark as checked" })).toBeNull();
     expect(screen.getByText(/Saved · revision 4/)).toBeInTheDocument();          // not a change to the survey: its revision stays
   });
