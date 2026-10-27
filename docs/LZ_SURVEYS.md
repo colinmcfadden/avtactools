@@ -1,10 +1,10 @@
 # LZ surveys — architecture and plan
 
-Status: **L1, L5, L2 and L6 built** (2026-10-26: a survey is made, edited, measured and photographed on the web, then sent for review,
-signed off and published as a one-page PDF that readers open; the old book's 44 pages are imported as drafts and measured in the
-background; and the whole book prints as one PDF; §12 to §15 say what each settled that the plan did not). **Books are many** (the
-owner, 2026-10-26, §11 R8): a book may be a team's, its owner and admins edit it and its members read it. L4 and L3 are next, in that
-order. The owner's answers of 2026-10-26 are in §10, and the decisions taken on the same day are in §11; nothing is open. This file is
+Status: **L1, L5, L2, L6 and L4 built** (2026-10-26: a survey is made, edited, measured and photographed on the web, then sent for
+review, signed off and published as a one-page PDF that readers open; the old book's 44 pages are imported as drafts and measured in
+the background; the whole book prints as one PDF; and what stands on and round each LZ is measured from the LiDAR; §12 to §16 say what
+each settled that the plan did not). **Books are many** (the owner, 2026-10-26, §11 R8): a book may be a team's, its owner and admins
+edit it and its members read it. L3 is next. The owner's answers of 2026-10-26 are in §10, and the decisions taken on the same day are in §11; nothing is open. This file is
 the plan for building the feature; where it and the code disagree once it is built, the code wins (AGENTS.md §16).
 
 ---
@@ -443,3 +443,42 @@ What the book's PDF settled that the plan did not. The code is `backend/survey/b
 - **A signed page never says to measure it again**: a revision's snapshot may predate snapshots that say what they were measured for,
   and the stale note is for a page still being made, never one signed (found printing the scratch book).
 
+
+## 16. L4 as built (2026-10-26)
+
+What the LiDAR's obstacles settled that the plan did not. The code is `backend/survey/obstacles.py`, `lidar/stream.py`'s `laz`, the
+snapshot's `obstacles` (`measure.py`), the page's `clearance` (`compile.py`, `figures.clearance`, the sheet's LIDAR box), the comparison's
+`obstacle` (`compare.py`), and on the web `Obstacles.jsx` and the survey map's height layer.
+
+- **Part of Measure, not a step of its own**: the obstacles are measured with the rest of the snapshot (and by the import's background
+  measuring), so one snapshot says what one target, boundary, best approach and best exit were measured for. The snapshot is version 3
+  and keeps the best exit: a survey measured before L4, or before its exit changed, is measured again before review or publishing.
+- **Read from USGS's own pieces**: the streamed `.pnts` keep neither a point's class nor its height above the ground, so the survey the
+  3D view streams for the place is read as USGS publishes it (LAZ), every piece of the octree that meets what is measured, at every
+  level, eight at a time, each kept beside the streamed pieces (`<key>/laz/`, never served, let go of with them when the cache is
+  pruned): Measure's preview and its keeping read the second time from the disk. Where the server streams nothing
+  (`LIDAR_STREAM_CACHE_DIR` unset) the snapshot says so and the field's profile is printed.
+- **Height above the ground** is the survey's own ground returns, the lowest in each metre, between them a triangle at a time (the
+  nearest return past the hull, none past 15 m: never made up). What is not ground, noise, water or ignored ground counts as standing,
+  unclassified returns included (a survey to 3DEP's base specification may classify no vegetation); one with no other within 3 m is a
+  bird or a glint, not something standing (the test's bird at 80 m would otherwise set the approach at 13.2° for its 8.6°).
+- **The clearance** (§11 R5): the corridor is 30 m each side of the line through the touchdown point, from where it last leaves the
+  boundary out to 1,000 m, the approach's behind the LZ (it is flown towards it) and the exit's ahead; the angle is from the edge, with no
+  margin, to the steepest of every return in the corridor, the ground included. **Each return is measured from the edge's ground at its
+  own place across the corridor**, as if flown down its own line: measured from the track's edge, ground that only rose to one side (a
+  hillside the corridor runs along) asked for 30° a metre past the edge. The angle from the touchdown point is kept beside it for the
+  editor, which the page does not print: doctrine's 10:1 is measured from the landing point, and whether the page should say that one is
+  the owner's to decide.
+- **On the page**: the field's survey profile box becomes CLEARANCE · the survey: the approach on the left and the exit on the right,
+  each its ground, its treetops (drawn only where something stands above the ground) and the dashed line that clears them, with the angle
+  and what sets it; then the tallest in the LZ and within 100 m, and what the LiDAR cannot see. Something standing over 2 m in the LZ is
+  a hazard line of its own. The profile along the best approach has its treetop line: the LiDAR's height above its own ground laid on the
+  ground the profile draws, so a DEM a little off the LiDAR's moves no tree. An editor may print the survey's own profile instead, with a
+  reason (`compare`'s `obstacle`: field "100 ft at 200 m" against the LiDAR's, 25 ft or 50 m apart is a disagreement).
+- **In the editor**: the measurements' *Standing on and round the LZ* (each way's angle from the edge and from the touchdown point, what
+  sets it, the tallest in the LZ and round it, the points over 2 m, the trees), and on the survey's map *What stands (LiDAR)*: the tallest
+  in each 2 m cell round the LZ in four bands, and the tallest in the LZ and within 100 m marked.
+- **Tested** against a survey made by the tests (`test_survey_obstacles.py`): an EPT octree of a scene round the Ellijay LZ, its index in
+  two pages, served from memory through the stream's own `Streamer`: a tree line 200 m out on the approach, a tower 400 m out on the
+  exit, a tree in the LZ, a building outside it, a bird and noise. Not measured against a real survey: how long a cold measure takes at
+  Ellijay (the reading is a hundred or two pieces of about 350 KB from AWS), and how the numbers compare with a ground survey.
