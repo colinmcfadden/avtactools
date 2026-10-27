@@ -40,6 +40,8 @@ def first(field, snapshot, overrides):
     measured = [rows[k]["label"].lower() for k in ("elevation", "size", "slope") if rows[k]["printed"] == "computed"]
     if measured:
         parts.append(f"{_join(measured)} from LZ/PZ")
+    if rows["obstacle"]["printed"] == "computed":
+        parts.append("approach obstacle from the USGS LiDAR")
     kept = [rows[k]["label"].lower() for k in compare.KEYS if rows[k]["printed"] == "field" and rows[k]["computed"]]
     if kept:
         parts.append(f"the survey's {_join(kept)} kept")

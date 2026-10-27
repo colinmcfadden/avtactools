@@ -441,7 +441,9 @@ TREETOPS = "#2e6b30"
 def clearance(spec, width=380, height=104):
     """The LiDAR's clearance (step L4) as the page's clearance box draws it: the approach on the left, flown towards the LZ, and the
     exit on the right, each its ground and the highest thing in each 10 m of its corridor from the LZ's edge out to 1,000 m, the line
-    from the edge that clears the steepest of them, and its words over it. None where neither way was measured."""
+    from the edge that clears the steepest of them, and its words over it (and how much of the corridor the survey covers, where it is
+    not all of it). None where neither way was measured. The box prints it 0.6 in high, about 0.42 pt to a unit: its words are 11 to 15
+    units, 4.6 to 6.3 pt."""
     sides = [s for s in ((spec or {}).get("approach"), (spec or {}).get("exit")) if isinstance(s, dict)]
     values = [v for s in sides for v in s["groundFt"] + s["topsFt"] + [s.get("edgeFt")] if _num(v)]
     if not values:
@@ -449,14 +451,14 @@ def clearance(spec, width=380, height=104):
     low, high = min(values), max(values)
     span = max(high - low, 60.0)
     floor = low - span * 0.06
-    top, bottom, pad, gap = 30.0, height - 13.0, 4.0, 30.0
+    top, bottom, pad, gap = 46.0, height - 14.0, 4.0, 30.0
     half = (width - 2 * pad - gap) / 2.0
 
     def sy(h):
         return bottom - (h - floor) / (span * 1.06) * (bottom - top)
 
     parts = [f'<rect x="{pad + half:.1f}" y="{bottom - 6:.1f}" width="{gap:.1f}" height="6" fill="{INK}"/>',
-             f'<text x="{width / 2:.1f}" y="{height - 2:.1f}" font-size="10" font-weight="800" text-anchor="middle">LZ</text>']
+             f'<text x="{width / 2:.1f}" y="{height - 2:.1f}" font-size="12" font-weight="800" text-anchor="middle">LZ</text>']
     for spec_side, left in ((spec.get("approach"), True), (spec.get("exit"), False)):
         if not isinstance(spec_side, dict):
             continue
@@ -484,19 +486,24 @@ def clearance(spec, width=380, height=104):
         parts.append(line(spec_side["topsFt"], TREETOPS, 1.1))
         parts.append(line(spec_side["groundFt"], INK, 1.6))
         obstacle = spec_side.get("obstacle")
-        if obstacle and _num(spec_side.get("edgeFt")) and _num(spec_side.get("angleDeg")) and spec_side["angleDeg"] > 0:
+        if obstacle and _num(spec_side.get("edgeFt")) and _num(obstacle.get("riseFt")) and _num(spec_side.get("angleDeg")) \
+                and spec_side["angleDeg"] > 0:
+            # To the obstacle as the angle sees it: its rise over the edge's ground on its own line across the corridor.
             x0, y0 = sx(0.0), sy(spec_side["edgeFt"])
-            x1, y1 = sx(obstacle["fromEdgeM"]), sy(obstacle["topFt"])
+            x1, y1 = sx(obstacle["fromEdgeM"]), sy(spec_side["edgeFt"] + obstacle["riseFt"])
             parts.append(f'<line x1="{x0:.1f}" y1="{y0:.1f}" x2="{x1:.1f}" y2="{y1:.1f}" stroke="{INK}" stroke-width="1.3" '
                          f'stroke-dasharray="4 3"/>'
                          f'<polygon points="{x1:.1f},{y1 - 6:.1f} {x1 - 4:.1f},{y1 + 1:.1f} {x1 + 4:.1f},{y1 + 1:.1f}" fill="{INK}"/>')
         x_words = pad + 2 if left else width - pad - 2
         anchor = "start" if left else "end"
-        parts.append(f'<text x="{x_words:.1f}" y="11" font-size="10.5" font-weight="800" text-anchor="{anchor}">'
+        parts.append(f'<text x="{x_words:.1f}" y="13" font-size="15" font-weight="800" text-anchor="{anchor}">'
                      f'{escape(spec_side.get("angle") or spec_side["label"] + " " + (spec_side.get("heading") or ""))}</text>')
-        parts.append(f'<text x="{x_words:.1f}" y="23" font-size="9.5" text-anchor="{anchor}">'
-                     f'{escape(spec_side.get("what") or "NO RETURNS IN ITS CORRIDOR")}</text>')
-        parts.append(f'<text x="{(pad if left else width - pad):.1f}" y="{height - 2:.1f}" font-size="8.5" '
+        parts.append(f'<text x="{x_words:.1f}" y="27" font-size="13" text-anchor="{anchor}">'
+                     f'{escape(spec_side.get("what") or "NO LIDAR RETURNS")}</text>')
+        if spec_side.get("partial"):
+            parts.append(f'<text x="{x_words:.1f}" y="40" font-size="11.5" font-weight="800" text-anchor="{anchor}">'
+                         f'{escape(spec_side["partial"])}</text>')
+        parts.append(f'<text x="{(pad if left else width - pad):.1f}" y="{height - 2:.1f}" font-size="11" '
                      f'text-anchor="{anchor}">{length / 1000:g} KM</text>')
     return f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {width} {height}" class="clearance">{"".join(parts)}</svg>'
 

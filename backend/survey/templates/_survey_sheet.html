@@ -91,7 +91,7 @@
       {%- set c = m.clearance -%}
       {% if c and c.status == 'measured' and c.printed != 'field' %}
       <div class="field lidar">
-        <h3><span class="tag">LIDAR</span>CLEARANCE{% if c.survey %} · {{ c.survey }}{% endif %}</h3>
+        <h3><span class="tag">LIDAR</span>CLEARANCE{% if c.year %} · {{ c.year }}{% endif %}{% if c.survey %} · {{ c.survey }}{% endif %}</h3>
         {{ clearance or '' }}
         <div class="lidar-line">In the LZ: {{ c.inside or 'nothing standing found' }}{% if c.trees %} · {{ c.trees }} TREE{{ '' if c.trees == 1 else 'S' }}{% endif %}</div>
         <div class="lidar-line">Within 100 m: {{ c.around or 'nothing standing found' }}</div>
@@ -101,7 +101,7 @@
       <div class="field">
         <h3><span class="tag">FIELD</span>SURVEY PROFILE</h3>
         {% if survey_profile %}{{ survey_profile }}<div class="who">{{ m.surveyProfile.who }}</div>{% else %}<div class="none">None recorded.</div>{% endif %}
-        {% if c and c.words %}<div class="lidar-caveat">LiDAR: {{ c.words }}</div>{% elif c and c.printed == 'field' %}<div class="lidar-caveat">Printed over the LiDAR's by the survey's editor.</div>{% endif %}
+        {% if c and c.words %}<div class="lidar-caveat">LiDAR: {{ c.words }}</div>{% elif c and c.note %}<div class="lidar-caveat">{{ c.note }}</div>{% endif %}
       </div>
       {% endif %}
     </section>

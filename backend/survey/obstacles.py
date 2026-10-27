@@ -4,27 +4,35 @@ The survey the 3D view streams for the LZ's place (``lidar.stream``: the newest 
 and 100 m round it, a corridor 30 m each side of the best approach and of the best exit out to 1,000 m past the LZ's edge (§11 R5), and
 the slope profile's line through the LZ. Every piece of USGS's octree that meets them is read, at every level (a piece holds points
 between its parent's), each fetched from AWS once and kept beside the streamed pieces as USGS publishes it (``Streamer.laz``): the
-streamed ``.pnts`` keep neither a point's class nor its height above the ground, which is what is wanted here.
+streamed ``.pnts`` keep neither a point's class nor its height above the ground, which is what is wanted here. A reading is bounded: at
+most ``MAX_POINTS`` returns (a 1 km LZ at 3DEP's density), ``FETCH_DEADLINE_S`` to fetch them, and the first piece that cannot be
+fetched or read ends it.
 
-Every point that is not ground, noise or water and has another within 3 m (a lone return is a bird or a glint, not something standing)
-is measured above the ground the survey's own ground returns make, between them a triangle at a time, and from those:
+Every point that is not ground, noise or water is measured above the ground the survey's own ground returns make (the lowest in each
+2 m, between them a triangle at a time), and counts as standing unless it is a lone return, a bird or a glint with no other within 3 m
+(what the survey marks as a wire, a tower or a bridge excepted: a conductor's returns are often further apart). An **obstacle** is what
+stands 2 m or more above its own ground (grass, a crop or a low bush is none), and the ground itself where it rises: the median of its
+returns in each 10 m square of a corridor, where that is more than 0.3 m over the LZ's edge (a ground return scatters by a few
+centimetres, and the steepest of thousands of them a centimetre past the edge once read 86–89° on flat ground). From them:
 
-- the clearance along the approach and the exit: the highest thing in each 10 m of the corridor (the ground included, where it rises),
-  and the angle from where the line leaves the LZ that clears the steepest of them with no margin (a margin is doctrine's, not EZ/PZ's:
-  AGENTS.md §13), with that obstacle's height above the ground, its distance and what it is; and the tallest in the corridor. Each point
-  is measured from the edge's ground at its own place across the corridor, as if flown down its own line: ground that only rises to one
-  side of the track (a hillside the corridor runs along) needs no angle, where measured from the track's own edge a metre past it
-  rose half a metre and asked for 30°;
-- the tallest point inside the boundary, and within 100 m round it, with its bearing and distance from the touchdown point;
-- the points standing more than 2 m inside the boundary, counted, and the 2 m cells they stand in, to draw;
-- the trees inside the boundary, one by one: the canopy's highest point within 3 m round, standing 5 m or more;
+- the clearance along the approach and the exit: the angle from where the line leaves the LZ that clears the steepest obstacle in its
+  corridor with no margin (a margin is doctrine's, not EZ/PZ's: AGENTS.md §13), with that obstacle's height, its rise over the edge's
+  ground, its distance and what it is; how many of the corridor's 10 m steps the survey has returns in; and its tallest obstacle. Each
+  obstacle is measured from the edge's ground at its own place across the corridor, as if flown down its own line: ground that only
+  rises to one side of the track (a hillside the corridor runs along) needs no angle;
+- the tallest obstacle inside the boundary, and within 100 m round it, with its bearing and distance from the touchdown point;
+- the points standing more than 2 m inside the boundary, counted;
+- the trees inside the boundary, one by one: the canopy's highest point within 3 m round, standing 5 m or more (a building, a wire, a
+  tower or a bridge is no tree);
 - the tallest point in each 2 m cell round the LZ, as a picture for the editor's map;
-- the tallest thing standing in each step of the slope profile's line along the best approach, above its own ground, for the
-  profile's treetop line: laid on the ground the profile draws, so a DEM a little off the LiDAR's ground moves no tree.
+- the tallest thing standing in each step of the slope profile's line along the best approach, above its own ground, for the profile's
+  treetop line (within the LZ's span, only what stands in the LZ): laid on the ground the profile draws, so a DEM a little off the
+  LiDAR's ground moves no tree.
 
-Nothing is made up where the survey has nothing (AGENTS.md §14): a stretch with no points has no top, and a survey from before about
-2015, which classifies only the ground, gives no obstacle numbers at all, only why. Every number names its survey and year: trees grow
-and fall, wires and poles are seldom in the survey, and the laser seldom hits a treetop's very top.
+Nothing is made up where the survey has nothing (AGENTS.md §14): a stretch with no points has no top, and a survey that classifies only
+the ground (one from before about 2015, or one whose name gives no year and whose returns hold no vegetation or building) gives no
+obstacle numbers at all, only why. Every number names its survey and year: trees grow and fall, wires and poles are seldom in the
+survey, and the laser seldom hits a treetop's very top.
 """
 
 from __future__ import annotations
@@ -51,8 +59,16 @@ CORRIDOR_LENGTH_M = 1000.0
 BIN_M = 10.0
 # §4: round the LZ.
 AROUND_M = 100.0
+# What stands this far above its own ground is an obstacle: grass, a crop or a low bush is not.
 STANDING_M = 2.0
+# The ground is an obstacle where a 10 m square of it rises more than this over the LZ's edge: a ground return scatters by a few
+# centimetres (3DEP's ground is within 10 cm, RMSE), and the steepest of thousands of them a centimetre past the edge read 86-89° on
+# flat ground. A square's ground is the median of its returns, where it has this many.
+GROUND_RISE_M = 0.3
+GROUND_SQUARE_RETURNS = 5
 CELL_M = 2.0
+# The ground's own grid: the lowest ground return in each square this wide.
+GROUND_CELL_M = 2.0
 TREE_MIN_M = 5.0
 TREE_RADIUS_M = 3.0
 # A point no other is within this far of (in 3D) is a stray return (a bird, a glint), not something standing.
@@ -64,12 +80,22 @@ GROUND_REACH_M = 15.0
 # What is not something standing: ground, noise (low and high), water, ground a survey marks as ignored.
 NOT_STANDING = (2, 7, 9, 18, 20)
 GROUND = 2
+# What a survey marks as a wire, a tower or a bridge stands even alone: a conductor's returns are often more than 3 m apart.
+NEVER_ALONE = (13, 14, 15, 16, 17)
+# What is no tree, whatever its height.
+NOT_TREES = (6, 13, 14, 15, 16, 17)
+# A survey whose name gives no year classifies more than the ground where its returns hold one of these.
+STANDING_CLASSES = (3, 4, 5, 6)
 KINDS = {1: "unclassified", 3: "vegetation", 4: "vegetation", 5: "vegetation", 6: "building", 13: "wire", 14: "wire",
          15: "tower", 16: "wire", 17: "bridge"}
 # Past this many pieces an LZ's reading is not what was asked for (a survey indexed far finer than 3DEP's).
 MAX_PIECES = 600
+# A reading holds at most this many returns: a 1 km LZ and its corridors at 3DEP's density (about 3.5 a square metre), measured in
+# about 7 s and 0.7 GB. Unbounded, a 1 km LZ took 1.6 GB of the API's one worker, and a 2 km one (SAM's boundary on a field) twice that.
+MAX_POINTS = 6_000_000
 FETCH_THREADS = 8
-MAX_CELLS = 4000
+# The reading's pieces are fetched within this: what came is kept, so measuring again goes on from there.
+FETCH_DEADLINE_S = 60.0
 MAX_TREES = 200
 # The tree-height picture's colours, by the height above the ground in metres: nothing under the first, then four bands.
 HEIGHT_BANDS = (
@@ -84,13 +110,28 @@ NO_SERVER = "This server does not read the USGS LiDAR, so nothing standing is me
 NO_SURVEY = "No USGS LiDAR covers this LZ, so nothing standing is measured."
 NO_GROUND = "The LiDAR here has no ground returns round the LZ, so nothing standing is measured."
 FAILED = "The USGS LiDAR could not be read: measure the LZ again later."
+SLOW = "The USGS LiDAR was too slow to read: measure the LZ again (what was read is kept, so it is quicker)."
 TOO_MUCH = "The LiDAR here is indexed too finely to read for one LZ."
+TOO_LARGE = ("The LZ and 100 m round it hold more of the LiDAR than one measure reads: draw its boundary closer round the landing "
+             "area.")
+UNREADABLE = "USGS's index of the LiDAR here cannot be read, so nothing standing is measured."
+# Why a way has no clearance.
+MISSING = ("no_returns", "no_edge_ground")
 
 
 def _ground_only(survey):
-    year = f" ({survey.year})" if survey.year else ""
-    return (f"The LiDAR here, {survey.name}{year}, classifies only the ground (a survey from before about 2015), so no obstacle numbers "
-            "are given from it.")
+    if survey.year is None:
+        return f"The LiDAR here, {survey.name}, classifies only the ground, so no obstacle numbers are given from it."
+    return (f"The LiDAR here, {survey.name} ({survey.year}), classifies only the ground (a survey from before about 2015), so no "
+            "obstacle numbers are given from it.")
+
+
+class TooMany(Exception):
+    """More of the octree, or of its returns, than one LZ's reading holds: ``words`` says which."""
+
+    def __init__(self, words):
+        super().__init__(words)
+        self.words = words
 
 
 def default_source():
@@ -161,17 +202,25 @@ def _box_strip(ring, pad):
 # -- Polygons ---------------------------------------------------------------------------------------------------------
 
 def inside(ring, east, north):
-    """Which points are inside the polygon ``ring`` (n, 2), by crossings (a point on an edge may fall either way)."""
+    """Which points are inside the polygon ``ring`` (n, 2), by crossings (a point on an edge may fall either way). Only the points in
+    the ring's box are looked at: a reading holds millions, and a boundary SAM drew hundreds of corners."""
     east, north = np.asarray(east, dtype=np.float64), np.asarray(north, dtype=np.float64)
     result = np.zeros(east.shape, dtype=bool)
+    (east_lo, north_lo), (east_hi, north_hi) = ring.min(axis=0), ring.max(axis=0)
+    near = np.flatnonzero((east >= east_lo) & (east <= east_hi) & (north >= north_lo) & (north <= north_hi))
+    if not near.size:
+        return result
+    e, n = east.ravel()[near], north.ravel()[near]
+    found = np.zeros(near.shape, dtype=bool)
     count = len(ring)
     for i in range(count):
         (x1, y1), (x2, y2) = ring[i], ring[(i + 1) % count]
         if y1 == y2:
             continue
-        crosses = (north >= min(y1, y2)) & (north < max(y1, y2))
-        at = x1 + (north - y1) * (x2 - x1) / (y2 - y1)
-        result ^= crosses & (east < at)
+        crosses = (n >= min(y1, y2)) & (n < max(y1, y2))
+        at = x1 + (n - y1) * (x2 - x1) / (y2 - y1)
+        found ^= crosses & (e < at)
+    result.ravel()[near] = found
     return result
 
 
@@ -223,11 +272,28 @@ def _meets(corners, box):
     return True
 
 
+def _spread(values):
+    """The low 16 bits of each value spread to the even bits of a 32-bit one: half a Z-curve's code."""
+    v = values.astype(np.uint64) & np.uint64(0xFFFF)
+    for shift, mask in ((8, 0x00FF00FF), (4, 0x0F0F0F0F), (2, 0x33333333), (1, 0x55555555)):
+        v = (v | (v << np.uint64(shift))) & np.uint64(mask)
+    return v
+
+
+def near_first(east, north, cell=8.0):
+    """An order of the points that keeps neighbours together (a Z-curve over 8 m squares). The ground's triangles are found by walking
+    from the one found last, and in the order the pieces come in the walk crossed the whole reading for each point: a million found in a
+    minute, against a third of a second in this order."""
+    i = np.floor((east - east.min()) / cell)
+    j = np.floor((north - north.min()) / cell)
+    return np.argsort(_spread(i) | (_spread(j) << np.uint64(1)), kind="stable")
+
+
 # -- The octree -------------------------------------------------------------------------------------------------------
 
 def nodes_over(info, hierarchy, shapes):
     """Every piece of the octree with points whose column meets one of ``shapes`` (convex polygons in the survey's Mercator metres),
-    from the root down, following the index into its pages. Raises ValueError past ``MAX_PIECES``."""
+    from the root down, following the index into its pages. Raises TooMany past ``MAX_PIECES``."""
     found = []
     frontier = [(ept.ROOT, ept.ROOT)]
     while frontier:
@@ -244,7 +310,7 @@ def nodes_over(info, hierarchy, shapes):
             continue
         found.append(node)
         if len(found) > MAX_PIECES:
-            raise ValueError("too many pieces")
+            raise TooMany(TOO_MUCH)
         if node.depth < ept.MAX_DEPTH:
             frontier.extend((child, page) for child in node.children())
     return found
@@ -257,6 +323,35 @@ def _read(data):
     return x, y, z, classification
 
 
+def read_points(source, key, nodes, frame, shapes):
+    """The points of ``nodes`` that fall in one of ``shapes``, eight pieces fetched at a time and each read as it comes and let go of.
+    The first piece that cannot be fetched or read ends the reading (one that cannot be read is let go of from the cache, to be fetched
+    again), as do more than ``MAX_POINTS`` returns (TooMany) and ``FETCH_DEADLINE_S`` (TimeoutError): the pieces still waiting are not
+    fetched, and those being fetched finish into the cache, so measuring again goes on from there."""
+    pool = concurrent.futures.ThreadPoolExecutor(max_workers=FETCH_THREADS)
+    try:
+        futures = {pool.submit(source.laz, key, node): k for k, node in enumerate(nodes)}
+        parts, total = {}, 0
+        for future in concurrent.futures.as_completed(futures, timeout=FETCH_DEADLINE_S):
+            k = futures[future]
+            data = future.result()
+            try:
+                part = Points.part(frame, data, shapes)
+            except Exception:
+                forget = getattr(source, "drop_laz", None)
+                if forget is not None:
+                    forget(key, nodes[k])
+                raise
+            total += part[0].size
+            if total > MAX_POINTS:
+                raise TooMany(TOO_LARGE)
+            parts[k] = part
+        # In the octree's order, not the order the pieces came in: the same reading measures the same.
+        return Points.join([parts[k] for k in sorted(parts)])
+    finally:
+        pool.shutdown(wait=False, cancel_futures=True)
+
+
 class Points:
     """The survey's points over what is measured, in the frame: east, north, height (metres, the survey's own vertical datum, NAVD88 for
     3DEP) and class; and, for those standing, the height above the ground."""
@@ -265,20 +360,21 @@ class Points:
         self.east, self.north, self.z, self.cls = east, north, z, classification
         self.is_ground = classification == GROUND
         self.standing = ~np.isin(classification, NOT_STANDING)
-        self.ground_z = None
+        self.ground_at = None
         self.above = np.full(z.shape, np.nan)
 
+    @staticmethod
+    def part(frame, data, shapes):
+        """A piece's points (LAZ bytes) that fall in one of ``shapes`` (strips), as (east, north, z, class)."""
+        x, y, z, classification = _read(data)
+        east, north = frame.from_mercator(x, y)
+        keep = np.zeros(east.shape, dtype=bool)
+        for shape in shapes:
+            keep |= shape.holds(east, north, GROUND_MARGIN_M)
+        return east[keep], north[keep], z[keep], classification[keep]
+
     @classmethod
-    def read(cls, frame, pieces, shapes):
-        """The points of ``pieces`` (LAZ bytes) that fall in one of ``shapes`` (strips), every piece read and let go of in turn."""
-        parts = []
-        for data in pieces:
-            x, y, z, classification = _read(data)
-            east, north = frame.from_mercator(x, y)
-            keep = np.zeros(east.shape, dtype=bool)
-            for shape in shapes:
-                keep |= shape.holds(east, north, GROUND_MARGIN_M)
-            parts.append((east[keep], north[keep], z[keep], classification[keep]))
+    def join(cls, parts):
         if not parts:
             return cls(np.zeros(0), np.zeros(0), np.zeros(0), np.zeros(0, dtype=np.uint8))
         return cls(*(np.concatenate([part[i] for part in parts]) for i in range(4)))
@@ -291,8 +387,10 @@ class Points:
         if self.is_ground.sum() < 3:
             return False
         ge, gn, gz = self.east[self.is_ground], self.north[self.is_ground], self.z[self.is_ground]
-        # The lowest return in each metre: a ground class that took a low branch or a bush does not lift the ground.
-        cell = np.floor(ge).astype(np.int64) * 1_000_003 + np.floor(gn).astype(np.int64)
+        # The lowest return in each 2 m square: a ground class that took a low branch or a bush does not lift the ground, and the
+        # triangles are a quarter of a metre's grid's (a 1 km LZ's ground took 14 s and a gigabyte at a metre).
+        cell = (np.floor(ge / GROUND_CELL_M).astype(np.int64) * 1_000_003
+                + np.floor(gn / GROUND_CELL_M).astype(np.int64))
         order = np.lexsort((gz, cell))
         first = np.ones(order.size, dtype=bool)
         first[1:] = cell[order][1:] != cell[order][:-1]
@@ -306,10 +404,18 @@ class Points:
 
         def ground_at(east, north):
             east, north = np.atleast_1d(np.asarray(east, dtype=np.float64)), np.atleast_1d(np.asarray(north, dtype=np.float64))
+            order = near_first(east, north) if east.size > 64 else None
+            if order is not None:
+                east, north = east[order], north[order]
             heights = between(east, north) if between is not None else np.full(east.shape, np.nan)
-            distance, nearest = tree.query(np.column_stack((east, north)), k=1)
+            distance, nearest = tree.query(np.column_stack((east, north)), k=1, workers=-1)
             heights = np.where(np.isnan(heights), gz[nearest], heights)
-            return np.where(distance <= GROUND_REACH_M, heights, np.nan)
+            heights = np.where(distance <= GROUND_REACH_M, heights, np.nan)
+            if order is None:
+                return heights
+            out = np.empty_like(heights)
+            out[order] = heights
+            return out
 
         self.ground_at = ground_at
         standing = self.standing
@@ -318,16 +424,23 @@ class Points:
         return True
 
     def drop_lone(self):
-        """A standing point with no other standing point within ``ALONE_M`` is not counted as standing: a bird, a glint."""
+        """A standing point with no other standing point within ``ALONE_M`` is not counted as standing (a bird, a glint), unless the
+        survey marks it as a wire, a tower or a bridge."""
         from scipy.spatial import cKDTree
 
         index = np.flatnonzero(self.standing)
         if index.size < 2:
-            self.standing[index] = False
+            self.standing[index[~np.isin(self.cls[index], NEVER_ALONE)]] = False
             return
         cloud = np.column_stack((self.east[index], self.north[index], self.z[index]))
-        distance, _nearest = cKDTree(cloud).query(cloud, k=2)
-        self.standing[index[distance[:, 1] > ALONE_M]] = False
+        distance, _nearest = cKDTree(cloud).query(cloud, k=2, distance_upper_bound=ALONE_M * 1.001, workers=-1)
+        lone = (distance[:, 1] > ALONE_M) & ~np.isin(self.cls[index], NEVER_ALONE)
+        self.standing[index[lone]] = False
+
+    def obstacles(self):
+        """Which points are obstacles: standing, their ground known, ``STANDING_M`` or more above it."""
+        above = np.where(self.standing, self.above, np.nan)
+        return np.isfinite(above) & (np.nan_to_num(above, nan=-1.0) >= STANDING_M)
 
 
 # -- What is measured -------------------------------------------------------------------------------------------------
@@ -360,6 +473,21 @@ def _spot(frame, points, i, extra=None):
     return {**out, **(extra or {})}
 
 
+def _ground_spot(frame, east, north, z, extra):
+    """A square of rising ground as the snapshot keeps an obstacle: its middle, its ground (ft MSL), and that it is the ground."""
+    lat, lon = frame.latlon(east, north)
+    return {"lat": round(lat, 7), "lon": round(lon, 7), "heightFt": 0.0, "topFt": _ft(z), "bearingDeg": _bearing(east, north),
+            "distanceM": round(math.hypot(east, north), 1), "kind": "terrain", **extra}
+
+
+def _medians(keys, values):
+    """Each key's median value (the lower of two middles) and how many it has: (keys, medians, counts)."""
+    order = np.lexsort((values, keys))
+    keys, values = keys[order], values[order]
+    unique, start, count = np.unique(keys, return_index=True, return_counts=True)
+    return unique, values[start + (count - 1) // 2], count
+
+
 def corridor(frame, points, ring, heading_deg, *, approach):
     """The clearance along one way in or out: ``heading_deg`` is the way the aircraft flies (towards the LZ on the approach, away from it
     on the exit), so the corridor lies behind the LZ for the approach and ahead of it for the exit."""
@@ -367,98 +495,136 @@ def corridor(frame, points, ring, heading_deg, *, approach):
     direction = _unit(bearing)
     right = _unit((heading_deg + 90.0) % 360.0)              # the pilot's right, flying the heading
     edge = leaves(ring, direction)
-    strip = Strip((0.0, 0.0), bearing, edge, CORRIDOR_LENGTH_M, CORRIDOR_HALF_WIDTH_M)
-    along = points.east * direction[0] + points.north * direction[1]
-    offset = points.east * right[0] + points.north * right[1]
-    held = strip.holds(points.east, points.north) & (along > edge) & ~inside(ring, points.east, points.north)
-    held &= points.is_ground | (points.standing & np.isfinite(points.above))
-    edge_point = direction * edge
-    edge_ground = points.ground_at(edge_point[0], edge_point[1])[0]
     bins = int(round(CORRIDOR_LENGTH_M / BIN_M))
-    index = np.flatnonzero(held)
-    which = np.minimum(((along[index] - edge) // BIN_M).astype(int), bins - 1)
+    squares = int(round(2 * CORRIDOR_HALF_WIDTH_M / BIN_M))  # 10 m squares across the corridor
+
+    # The corridor's returns, every class: what is beyond the edge, within the corridor, and not in the LZ.
+    box = Strip((0.0, 0.0), bearing, edge, CORRIDOR_LENGTH_M, CORRIDOR_HALF_WIDTH_M).corners()
+    (east_lo, north_lo), (east_hi, north_hi) = box.min(axis=0), box.max(axis=0)
+    index = np.flatnonzero((points.east >= east_lo) & (points.east <= east_hi) & (points.north >= north_lo) & (points.north <= north_hi))
+    along = points.east[index] * direction[0] + points.north[index] * direction[1]
+    offset = points.east[index] * right[0] + points.north[index] * right[1]
+    held = (along > edge) & (along <= edge + CORRIDOR_LENGTH_M) & (np.abs(offset) <= CORRIDOR_HALF_WIDTH_M)
+    index, along, offset = index[held], along[held], offset[held]
+    out_of_lz = ~inside(ring, points.east[index], points.north[index])
+    index, along, offset = index[out_of_lz], along[out_of_lz], offset[out_of_lz]
+    which = np.minimum(((along - edge) // BIN_M).astype(int), bins - 1)
+    covered = np.bincount(which, minlength=bins) > 0
+
     centre = edge + (np.arange(bins) + 0.5) * BIN_M
     ground = points.ground_at(direction[0] * centre, direction[1] * centre)
+    edge_point = direction * edge
+    edge_ground = float(points.ground_at(edge_point[0], edge_point[1])[0])
+
+    # The obstacles: what stands 2 m or more above its own ground, and the ground in each 10 m square of the corridor where it rises.
+    tall = points.obstacles()[index]
+    s, s_along, s_offset, s_bin = index[tall], along[tall], offset[tall], which[tall]
+    g = points.is_ground[index]
+    g_index, g_along, g_offset = index[g], along[g], offset[g]
+    g_square = which[g] * squares + np.clip(((g_offset + CORRIDOR_HALF_WIDTH_M) // BIN_M).astype(int), 0, squares - 1)
+    g_ground = points.ground_at(points.east[g_index], points.north[g_index])
+
+    def bases(start, offsets):
+        return points.ground_at(direction[0] * start + right[0] * offsets, direction[1] * start + right[1] * offsets)
+
+    def ground_rises(start):
+        """Each 10 m square's rise over the ground at ``start`` metres along the line: the median of its ground returns' rises, each the
+        ground under it less the ground at ``start`` on its own line across, both from the triangles. A slope across the corridor, and
+        the triangles' own lean (the lowest return in each 2 m, under the median where the returns scatter), take nothing from it.
+        (keys, rises, the ground's top, its along and its offset), the squares with ``GROUND_SQUARE_RETURNS`` returns or more."""
+        rise = g_ground - bases(start, g_offset)
+        known = np.isfinite(rise)
+        if not known.any():
+            return (np.zeros(0, dtype=int),) + (np.zeros(0),) * 4
+        keys, rises, counts = _medians(g_square[known], rise[known])
+        _keys, tops, _counts = _medians(g_square[known], g_ground[known])
+        enough = counts >= GROUND_SQUARE_RETURNS
+        keys, rises, tops = keys[enough], rises[enough], tops[enough]
+        return (keys, rises, tops, edge + (keys // squares + 0.5) * BIN_M,
+                -CORRIDOR_HALF_WIDTH_M + (keys % squares + 0.5) * BIN_M)
+
+    def steepest(start):
+        """The angle from ``start`` metres along the line that clears every obstacle, each from the ground there at its own place
+        across the corridor, and the obstacle that sets it: {angleDeg, obstacle} (no obstacle where nothing rises above the start's
+        ground, at 0°). None where the ground there is not known."""
+        s_base = bases(start, s_offset)
+        _keys, t_rise, t_top, t_along, t_offset = ground_rises(start)
+        if not (np.isfinite(s_base).any() or t_rise.size or math.isfinite(float(bases(start, np.zeros(1))[0]))):
+            return None
+        s_rise = points.z[s] - s_base
+        s_angle = np.where(np.isfinite(s_rise), np.arctan2(np.nan_to_num(s_rise, nan=0.0), s_along - start), -np.inf)
+        t_angle = np.where(t_rise > GROUND_RISE_M, np.arctan2(t_rise, t_along - start), -np.inf)
+        best_s = int(np.argmax(s_angle)) if s_angle.size else None
+        best_t = int(np.argmax(t_angle)) if t_angle.size else None
+        top_s = s_angle[best_s] if best_s is not None else -np.inf
+        top_t = t_angle[best_t] if best_t is not None else -np.inf
+        if max(top_s, top_t) <= 0:
+            return {"angleDeg": 0.0, "obstacle": None}
+        if top_s >= top_t:
+            i = int(s[best_s])
+            extra = {"fromEdgeM": round(float(s_along[best_s] - edge), 1), "offsetM": round(float(s_offset[best_s]), 1),
+                     "riseFt": _ft(float(s_rise[best_s])), "baseFt": _ft(float(s_base[best_s]))}
+            return {"angleDeg": round(math.degrees(float(top_s)), 1), "obstacle": _spot(frame, points, i, extra)}
+        east = direction[0] * t_along[best_t] + right[0] * t_offset[best_t]
+        north = direction[1] * t_along[best_t] + right[1] * t_offset[best_t]
+        extra = {"fromEdgeM": round(float(t_along[best_t] - edge), 1), "offsetM": round(float(t_offset[best_t]), 1),
+                 "riseFt": _ft(float(t_rise[best_t])), "baseFt": _ft(float(t_top[best_t] - t_rise[best_t]))}
+        return {"angleDeg": round(math.degrees(float(top_t)), 1),
+                "obstacle": _ground_spot(frame, east, north, float(t_top[best_t]), extra)}
+
+    # Each 10 m step for the page's figure: the ground along the line, and over it the highest obstacle's top as the angle sees it (the
+    # edge's ground and the obstacle's rise over its own line's), so ground rising to one side draws no treetop.
+    edge_rise = np.full(bins, -np.inf)
+    tallest = np.full(bins, -np.inf)
+    if s.size:
+        rise = points.z[s] - bases(edge, s_offset)
+        np.maximum.at(edge_rise, s_bin, np.where(np.isfinite(rise), rise, -np.inf))
+        np.maximum.at(tallest, s_bin, points.above[s])
     rows = []
     for k in range(bins):
-        here = index[which == k]
         row = {"groundFt": _ft(float(ground[k])), "topFt": None, "tallestFt": None}
-        if here.size:
-            row["topFt"] = _ft(float(points.z[here].max()))
-            standing = here[points.standing[here]]
-            if standing.size:
-                row["tallestFt"] = _ft(float(np.nanmax(points.above[standing])))
+        if covered[k]:
+            top = float(ground[k])
+            if math.isfinite(edge_rise[k]) and math.isfinite(edge_ground):
+                top = edge_ground + edge_rise[k] if not math.isfinite(top) else max(top, edge_ground + edge_rise[k])
+            row["topFt"] = _ft(top)
+        if math.isfinite(tallest[k]):
+            row["tallestFt"] = _ft(float(tallest[k]))
         rows.append(row)
     result = {
         "headingDeg": round(heading_deg % 360.0, 1),
         "bearingDeg": round(bearing, 1),
         "edge": {**dict(zip(("lat", "lon"), (round(v, 7) for v in frame.latlon(*edge_point)))), "fromTargetM": round(edge, 1),
-                 "groundFt": _ft(float(edge_ground))},
+                 "groundFt": _ft(edge_ground)},
         "lengthM": CORRIDOR_LENGTH_M, "halfWidthM": CORRIDOR_HALF_WIDTH_M, "binM": BIN_M,
         "bins": rows,
-        "covered": sum(1 for row in rows if row["topFt"] is not None),
+        "covered": int(covered.sum()),
         "clearance": None,
+        "missing": None,
         "fromTarget": None,
         "tallest": None,
     }
-    if not index.size or not math.isfinite(edge_ground):
+    if not index.size:
+        result["missing"] = "no_returns"
         return result
-
-    def steepest(start):
-        """The steepest climb, from ``start`` metres along the line at each point's own place across it, to the points: (angle, which).
-        None where the ground there is not known."""
-        across = offset[index]
-        base = points.ground_at(direction[0] * start + right[0] * across, direction[1] * start + right[1] * across)
-        known = np.isfinite(base)
-        if not known.any():
-            return None
-        angles = np.where(known, np.arctan2(points.z[index] - base, along[index] - start), -np.inf)
-        k = int(np.argmax(angles))
-        return round(math.degrees(float(angles[k])), 1), k
-
-    found = steepest(edge)
-    if found is not None:
-        angle, k = found
-        i = int(index[k])
-        result["clearance"] = {"angleDeg": angle, "obstacle": _spot(frame, points, i, {"fromEdgeM": round(float(along[i] - edge), 1),
-                                                                                       "offsetM": round(float(offset[i]), 1)})}
+    result["clearance"] = steepest(edge)
+    if result["clearance"] is None:
+        result["missing"] = "no_edge_ground"
     # The same from the touchdown point, which an approach is flown to, for the editor (§11 R5 prints the edge's).
-    found = steepest(0.0)
-    if found is not None:
-        angle, k = found
-        i = int(index[k])
-        result["fromTarget"] = {"angleDeg": angle, "obstacle": _spot(frame, points, i, {"offsetM": round(float(offset[i]), 1)})}
-    standing = index[points.standing[index]]
-    if standing.size:
-        j = int(standing[np.nanargmax(points.above[standing])])
-        result["tallest"] = _spot(frame, points, j, {"fromEdgeM": round(float(along[j] - edge), 1), "offsetM": round(float(offset[j]), 1)})
+    result["fromTarget"] = steepest(0.0)
+    if s.size:
+        j = int(np.argmax(points.above[s]))
+        result["tallest"] = _spot(frame, points, int(s[j]), {"fromEdgeM": round(float(s_along[j] - edge), 1),
+                                                             "offsetM": round(float(s_offset[j]), 1)})
     return result
-
-
-def _cells(frame, points, chosen):
-    """The 2 m cells ``chosen`` points stand in, their centres as [lat, lon], at most ``MAX_CELLS`` (the tallest first)."""
-    if not chosen.size:
-        return []
-    keys = np.stack((np.floor(points.east[chosen] / CELL_M), np.floor(points.north[chosen] / CELL_M)), axis=1).astype(np.int64)
-    order = np.argsort(-points.above[chosen])
-    seen, out = set(), []
-    for k in order:
-        key = (int(keys[k, 0]), int(keys[k, 1]))
-        if key in seen:
-            continue
-        seen.add(key)
-        lat, lon = frame.latlon((key[0] + 0.5) * CELL_M, (key[1] + 0.5) * CELL_M)
-        out.append([round(lat, 7), round(lon, 7)])
-        if len(out) >= MAX_CELLS:
-            break
-    return out
 
 
 def _trees(frame, points, ring, inner):
     """The trees inside the boundary, one by one: a cell of the canopy's 1 m grid that is the highest within ``TREE_RADIUS_M`` round
-    and stands ``TREE_MIN_M`` or more, one to a crown however flat its top."""
+    and stands ``TREE_MIN_M`` or more, one to a crown however flat its top. A building, a wire, a tower or a bridge is no tree."""
     from scipy import ndimage
 
+    inner = inner[~np.isin(points.cls[inner], NOT_TREES)]
     if not inner.size:
         return []
     east, north, above = points.east[inner], points.north[inner], points.above[inner]
@@ -512,10 +678,11 @@ def height_map(frame, points, box):
             "cellM": CELL_M, "bands": [floor for floor, _colour in HEIGHT_BANDS]}
 
 
-def profile_tops(frame, points, profiles, approach_deg):
+def profile_tops(frame, points, ring, profiles, approach_deg):
     """The tallest thing standing within 30 m each side of the slope profile's line along the best approach, at each of its steps, as
     its height above the ground (ft; None where nothing stands), in the order of the line the terrain measured (``lines[i].heading``,
-    0..178): the page reads it backwards as it reads the ground, and lays it on the ground it draws."""
+    0..178): the page reads it backwards as it reads the ground, and lays it on the ground it draws. Within the LZ's span along the line,
+    only what stands in the LZ: a tree beside a narrow LZ is no tree in it."""
     from survey import profile as profile_lib
 
     p = profile_lib._readable(profiles)
@@ -528,20 +695,28 @@ def profile_tops(frame, points, profiles, approach_deg):
     if line is None or not isinstance(line.get("elevationsFt"), list):
         return None
     centre_e, centre_n = frame.local([p["center"][0]], [p["center"][1]])
+    centre = np.array([centre_e[0], centre_n[0]])
     count = len(line["elevationsFt"])
     half = p["stepM"] * (count - 1) / 2.0
     direction = _unit(base)
     right = np.array([direction[1], -direction[0]])
-    de, dn = points.east - centre_e[0], points.north - centre_n[0]
+    index = np.flatnonzero(points.standing & np.isfinite(points.above))
+    de, dn = points.east[index] - centre[0], points.north[index] - centre[1]
     along = de * direction[0] + dn * direction[1]
     across = de * right[0] + dn * right[1]
-    held = (np.abs(across) <= CORRIDOR_HALF_WIDTH_M) & points.standing & np.isfinite(points.above)
     which = np.round((along + half) / p["stepM"]).astype(int)
+    held = (np.abs(across) <= CORRIDOR_HALF_WIDTH_M) & (which >= 0) & (which < count)
+    index, along, which = index[held], along[held], which[held]
+    shifted = ring - centre
+    within = (along < leaves(shifted, direction)) & (along > -leaves(shifted, -direction))
+    keep = ~within
+    if within.any():
+        keep[within] = inside(ring, points.east[index[within]], points.north[index[within]])
+    index, which = index[keep], which[keep]
     above = [None] * count
-    index = np.flatnonzero(held & (which >= 0) & (which < count))
     if index.size:
-        order = np.argsort(which[index])
-        steps, starts = np.unique(which[index][order], return_index=True)
+        order = np.argsort(which, kind="stable")
+        steps, starts = np.unique(which[order], return_index=True)
         for k, start in enumerate(starts):
             stop = starts[k + 1] if k + 1 < len(starts) else order.size
             above[int(steps[k])] = _ft(float(points.above[index[order[start:stop]]].max()))
@@ -550,8 +725,9 @@ def profile_tops(frame, points, profiles, approach_deg):
 
 def measure_obstacles(target, boundary, approach_deg, exit_deg, profiles=None, *, source=None):
     """What stands on and round the LZ, as the snapshot keeps it (``obstacles``). Never raises for want of data: ``status`` is
-    ``measured``; ``none`` where there is nothing to measure here (no survey, one that classifies only the ground, no ground); ``unavailable``
-    where this server reads no LiDAR; ``failed`` where USGS could not be read (measure again), each with its ``words``."""
+    ``measured``; ``none`` where there is nothing to measure here (no survey, one that classifies only the ground, no ground, more than a
+    reading holds, an index that cannot be read); ``unavailable`` where this server reads no LiDAR; ``failed`` where USGS could not be
+    read (measure again), each with its ``words``."""
     source = default_source() if source is None else source
     if source is False or source is None:
         return {"status": "unavailable", "words": NO_SERVER}
@@ -565,7 +741,8 @@ def measure_obstacles(target, boundary, approach_deg, exit_deg, profiles=None, *
         return {"status": "none", "words": NO_SURVEY}
     survey, key = found
     named = {"name": survey.name, "year": survey.year}
-    if not survey.likely_classified:
+    # A survey known to be older classifies only the ground; one whose name gives no year is judged by its returns once read.
+    if survey.year is not None and not survey.likely_classified:
         return {"status": "none", "words": _ground_only(survey), "survey": named}
 
     frame = Frame(lat, lon)
@@ -591,36 +768,24 @@ def measure_obstacles(target, boundary, approach_deg, exit_deg, profiles=None, *
     try:
         info = source.info(key)
         nodes = nodes_over(info, source.hierarchy(key), wanted)
-    except ValueError:
-        return {"status": "none", "words": TOO_MUCH, "survey": named}
-    except Exception:  # noqa: BLE001 - USGS's index could not be read: a measure to try again
-        log.exception("surveys: the LiDAR's index could not be read for %s", survey.name)
-        return {"status": "failed", "words": FAILED, "survey": named}
-    try:
-        with concurrent.futures.ThreadPoolExecutor(max_workers=FETCH_THREADS) as pool:
-            pieces = list(pool.map(lambda node: source.laz(key, node), nodes))
-        points = Points.read(frame, pieces, shapes)
-        del pieces
-    except Exception:  # noqa: BLE001 - a piece that could not be fetched or read: a measure to try again
+        points = read_points(source, key, nodes, frame, shapes)
+    except TooMany as why:
+        return {"status": "none", "words": why.words, "survey": named}
+    except concurrent.futures.TimeoutError:
+        log.warning("surveys: the LiDAR for %s took more than %g s to read", survey.name, FETCH_DEADLINE_S)
+        return {"status": "failed", "words": SLOW, "survey": named}
+    except Exception as error:  # noqa: BLE001 - USGS could not be read: a measure to try again, unless its index is unreadable
+        if isinstance(error, ept.EptError) or getattr(error, "code", None) == "not_streamable":
+            log.warning("surveys: the LiDAR's index for %s cannot be read: %s", survey.name, error)
+            return {"status": "none", "words": UNREADABLE, "survey": named}
         log.exception("surveys: the LiDAR could not be read for %s", survey.name)
         return {"status": "failed", "words": FAILED, "survey": named}
+    if survey.year is None and not np.isin(points.cls, STANDING_CLASSES).any():
+        return {"status": "none", "words": _ground_only(survey), "survey": named}
 
     if not points.measure_ground():
         return {"status": "none", "words": NO_GROUND, "survey": named}
     points.drop_lone()
-    measured = points.standing & np.isfinite(points.above)
-    in_lz = inside(ring, points.east, points.north)
-    inner = np.flatnonzero(measured & in_lz)
-    near = np.flatnonzero(measured & ~in_lz)
-    near = near[distance_to_edge(ring, points.east[near], points.north[near]) <= AROUND_M]
-
-    def tallest(chosen, extra=None):
-        if not chosen.size:
-            return None
-        i = int(chosen[np.argmax(points.above[chosen])])
-        return _spot(frame, points, i, extra(i) if extra else None)
-
-    up = inner[points.above[inner] > STANDING_M]
     return {
         "status": "measured",
         "words": None,
@@ -629,10 +794,34 @@ def measure_obstacles(target, boundary, approach_deg, exit_deg, profiles=None, *
         "pieces": len(nodes),
         "approach": corridor(frame, points, ring, approach_deg, approach=True) if approach_deg is not None else None,
         "exit": corridor(frame, points, ring, exit_deg, approach=False) if exit_deg is not None else None,
-        "inside": tallest(inner),
-        "around": tallest(near, lambda i: {"fromEdgeM": round(float(distance_to_edge(ring, points.east[i:i + 1], points.north[i:i + 1])[0]), 1)}),
-        "standing": {"overM": STANDING_M, "count": int(up.size), "cells": _cells(frame, points, up)},
-        "trees": _trees(frame, points, ring, inner),
+        **round_the_lz(frame, points, ring),
         "heightMap": height_map(frame, points, shapes[0]),
-        "profileTops": profile_tops(frame, points, profiles, approach_deg) if p is not None else None,
+        "profileTops": profile_tops(frame, points, ring, profiles, approach_deg) if p is not None else None,
+    }
+
+
+def round_the_lz(frame, points, ring):
+    """What stands in the LZ and round it: the tallest obstacle inside the boundary (``inside``) and within 100 m of it (``around``),
+    the points standing more than 2 m in it (``standing``), and its trees. Grass, a crop or a low bush is none of them."""
+    obstacles = points.obstacles()
+    in_lz = inside(ring, points.east, points.north)
+    tall_in = np.flatnonzero(obstacles & in_lz)
+    # Round the LZ: the obstacles within its box and 100 m, then those within 100 m of its edge.
+    (east_lo, north_lo), (east_hi, north_hi) = ring.min(axis=0) - AROUND_M, ring.max(axis=0) + AROUND_M
+    near = np.flatnonzero(obstacles & ~in_lz & (points.east >= east_lo) & (points.east <= east_hi)
+                          & (points.north >= north_lo) & (points.north <= north_hi))
+    near = near[distance_to_edge(ring, points.east[near], points.north[near]) <= AROUND_M]
+
+    def tallest(chosen, extra=None):
+        if not chosen.size:
+            return None
+        i = int(chosen[np.argmax(points.above[chosen])])
+        return _spot(frame, points, i, extra(i) if extra else None)
+
+    up = tall_in[points.above[tall_in] > STANDING_M]
+    return {
+        "inside": tallest(tall_in),
+        "around": tallest(near, lambda i: {"fromEdgeM": round(float(distance_to_edge(ring, points.east[i:i + 1], points.north[i:i + 1])[0]), 1)}),
+        "standing": {"overM": STANDING_M, "count": int(up.size)},
+        "trees": _trees(frame, points, ring, np.flatnonzero(points.standing & np.isfinite(points.above) & in_lz)),
     }

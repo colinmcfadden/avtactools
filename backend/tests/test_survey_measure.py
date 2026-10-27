@@ -190,7 +190,7 @@ class MeasureTests(unittest.TestCase):
         self.assertEqual(snap['grid'], measure.grid_text(*TARGET))
         self.assertTrue(snap['grid'].startswith('16S GD 6341'))
         self.assertEqual(snap['latLong'], measure.lat_long_text(*TARGET))
-        self.assertEqual((snap['measuredAt'], snap['measuredBy'], snap['version']), ('2026-10-26T12:00:00Z', 'Admin', 3))
+        self.assertEqual((snap['measuredAt'], snap['measuredBy'], snap['version']), ('2026-10-26T12:00:00Z', 'Admin', 4))
 
     def test_the_exit_is_kept_and_a_change_to_it_is_said(self):
         field = {'approachDeg': '360', 'exitDeg': '180'}
@@ -202,6 +202,8 @@ class MeasureTests(unittest.TestCase):
                          ['The best exit changed after it was measured: measured at 180°, now 090°.'])
         self.assertEqual(measure.stale({**snap, 'version': 2}, diagram(boundary=square()), field),
                          ['It was measured by an earlier version of EZ/PZ.'])           # measured before the obstacles were
+        self.assertEqual(measure.stale({**snap, 'version': 3}, diagram(boundary=square()), field),
+                         ['It was measured by an earlier version of EZ/PZ.'])           # its edge angles could be a return's scatter
 
     def test_without_the_lidar_it_says_so_and_it_is_no_problem(self):
         with Terrain(), patch.object(obstacles, 'default_source', return_value=None):

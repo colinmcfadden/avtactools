@@ -26,6 +26,7 @@ SLOPE_DEG = 2.0
 SIZE_FRACTION = 0.10
 OBSTACLE_FT = 25.0         # a tree's growth over a few seasons, and the laser's reading of its top
 OBSTACLE_M = 50.0
+OBSTACLE_TREE_FT = 16.4    # a tree's 5 m (survey/obstacles.py's TREE_MIN_M): vegetation under it is brush
 
 KEYS = ("grid", "latLong", "elevation", "size", "slope", "obstacle")
 LABELS = {"grid": "Grid", "latLong": "Lat/long", "elevation": "Elevation", "size": "Size", "slope": "Slope",
@@ -180,20 +181,35 @@ def _rows(field, snapshot):
     else:
         rows.append(_row("slope", typed, computed, None, bool(typed and computed)))
 
-    # The survey profile's obstacle ("100 ft at 200 m") against the LiDAR's that sets the approach's clearance from the LZ's edge.
+    # The survey profile's obstacle ("100 ft at 200 m": its height over the LZ, its distance from the edge) against the LiDAR's that sets
+    # the approach's clearance from the LZ's edge, as high over the edge's ground as the angle measures it (its own height is over its own
+    # ground, which on ground falling or rising away from the LZ is another thing).
     feet, metres = (_numbers(field.get(key) or "") for key in ("profileObstacleFt", "profileDistanceM"))
     typed = f"{feet[0]:g} ft at {metres[0]:g} m" if feet and metres else ""
-    obstacle = (((snapshot.get("obstacles") or {}).get("approach") or {}).get("clearance") or {}).get("obstacle") or {}
+    clearance = ((snapshot.get("obstacles") or {}).get("approach") or {}).get("clearance")
+    obstacle = (clearance or {}).get("obstacle") or {}
     computed = ""
-    if obstacle.get("heightFt") is not None and obstacle.get("fromEdgeM") is not None:
-        computed = (f"{obstacle['heightFt']:.0f} ft at {obstacle['fromEdgeM']:.0f} m"
-                    + (" (the ground)" if obstacle.get("kind") == "terrain" else " (LiDAR)"))
-    if typed and computed:
-        dh, dd = abs(obstacle["heightFt"] - feet[0]), abs(obstacle["fromEdgeM"] - metres[0])
+    if obstacle.get("riseFt") is not None and obstacle.get("fromEdgeM") is not None:
+        what = "the ground" if obstacle.get("kind") == "terrain" else f"{obstacle.get('heightFt') or 0:.0f} ft {_thing(obstacle)}"
+        computed = f"{obstacle['riseFt']:.0f} ft at {obstacle['fromEdgeM']:.0f} m (LiDAR: {what})"
+    elif isinstance(clearance, dict) and clearance.get("angleDeg") is not None:
+        computed = "nothing above the LZ's edge (LiDAR)"
+    if typed and computed and obstacle.get("riseFt") is not None:
+        dh, dd = abs(obstacle["riseFt"] - feet[0]), abs(obstacle["fromEdgeM"] - metres[0])
         rows.append(_row("obstacle", typed, computed, f"{dh:.0f} ft, {dd:.0f} m apart", dh > OBSTACLE_FT or dd > OBSTACLE_M))
+    elif typed and computed:
+        rows.append(_row("obstacle", typed, computed, f"{feet[0]:.0f} ft apart", feet[0] > OBSTACLE_FT))
     else:
         rows.append(_row("obstacle", typed, computed, None, False))
     return rows
+
+
+def _thing(obstacle):
+    """What the LiDAR calls an obstacle, in words: a tree (vegetation of 5 m or more), brush, a building, a tower, a wire."""
+    kind = obstacle.get("kind")
+    if kind == "vegetation":
+        return "tree" if (obstacle.get("heightFt") or 0) >= OBSTACLE_TREE_FT else "brush"
+    return {"building": "building", "tower": "tower", "wire": "wire", "bridge": "bridge"}.get(kind, "obstacle")
 
 
 def compare(field, snapshot, overrides):
