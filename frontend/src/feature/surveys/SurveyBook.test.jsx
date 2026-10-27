@@ -87,6 +87,8 @@ const fakeClient = (overrides = {}) => ({
   uploadAsset: jest.fn(),
   updateAsset: jest.fn(),
   removeAsset: jest.fn(),
+  importBook: jest.fn(),
+  markImportChecked: jest.fn(),
   ...overrides,
 });
 
@@ -472,3 +474,98 @@ describe("publishing", () => {
     expect(await screen.findByText(/PDFs are not printed on this server yet/)).toBeInTheDocument();
   });
 });
+
+describe("importing the old book", () => {
+  const IMPORTED = {
+    source: "LZ-SURVEYS-OCT-2023.pdf", page: 5, state: "done", reason: null, to_check: 3, checked: false,
+    notes: { unread: ["Best Exit"], blank: ["Surface Condition"], warnings: ["The book's grid and lat/long are 527 m apart: the target is at the grid. Check which is right."] },
+    imported_by: "CW3 Admin", imported_at: "2026-10-27T01:00:00Z", checked_by: null, checked_at: null,
+  };
+
+  it("sends the importer's bundle to the book and says what it made", async () => {
+    const client = fakeClient({
+      importBook: jest.fn(async () => ({
+        source: "LZ-SURVEYS-OCT-2023.pdf",
+        created: [{ uuid: "s-2" }, { uuid: "s-3" }],
+        skipped: [{ page: 5, hlz_id: "GA 034", name: "LZ DONOVAN", reason: "GA 034 is in the book already: left as it is." }],
+      })),
+    });
+    await renderBook(client);
+    fireEvent.click(screen.getByRole("button", { name: "Import the old book" }));
+    const dialog = screen.getByRole("dialog", { name: "Import the old book" });
+    expect(within(dialog).getByText(/tools\/import_survey_book\.py/)).toBeInTheDocument();
+    await act(async () => {
+      fireEvent.click(within(dialog).getByRole("button", { name: "Import" }));
+    });
+    expect(within(dialog).getByText("Choose the bundle the importer wrote.")).toBeInTheDocument();
+    expect(client.importBook).not.toHaveBeenCalled();
+    const bundle = new File(["PK"], "book-bundle.zip", { type: "application/zip" });
+    fireEvent.change(within(dialog).getByLabelText("Bundle"), { target: { files: [bundle] } });
+    const reads = client.getBook.mock.calls.length;
+    await act(async () => {
+      fireEvent.click(within(dialog).getByRole("button", { name: "Import" }));
+    });
+    expect(client.importBook).toHaveBeenCalledWith("b-1", bundle);
+    const done = screen.getByRole("dialog", { name: "The old book is imported" });
+    expect(within(done).getByText(/2 pages/)).toBeInTheDocument();
+    expect(within(done).getByText(/LZ-SURVEYS-OCT-2023\.pdf are drafts in AASF 1 HLZ SURVEY BOOK/)).toBeInTheDocument();
+    expect(within(done).getByText(/Page 5, GA 034 LZ DONOVAN: GA 034 is in the book already/)).toBeInTheDocument();
+    expect(client.getBook.mock.calls.length).toBeGreaterThan(reads);           // the list is read again
+    fireEvent.click(within(done).getByRole("button", { name: "Done" }));
+    expect(screen.queryByRole("dialog", { name: "The old book is imported" })).toBeNull();
+  });
+
+  it("says why a bundle was refused, in the server's words for it", async () => {
+    const refused = Object.assign(new Error("400"), {
+      response: { status: 400, data: { code: "invalid_bundle", error: "That is not a bundle from tools/import_survey_book.py: it is not a zip." } },
+    });
+    const client = fakeClient({ importBook: jest.fn(async () => { throw refused; }) });
+    await renderBook(client);
+    fireEvent.click(screen.getByRole("button", { name: "Import the old book" }));
+    const dialog = screen.getByRole("dialog", { name: "Import the old book" });
+    fireEvent.change(within(dialog).getByLabelText("Bundle"), { target: { files: [new File(["%PDF"], "book.pdf")] } });
+    await act(async () => {
+      fireEvent.click(within(dialog).getByRole("button", { name: "Import" }));
+    });
+    expect(within(dialog).getByRole("alert")).toHaveTextContent("it is not a zip");
+  });
+
+  it("shows how each imported survey stands while the server measures it", async () => {
+    const rows = [
+      { ...ROW, measured_at: null, disagreements: 0, imported: { ...IMPORTED, state: "queued", to_check: 1 } },
+      { ...ROW, uuid: "s-2", name: "LZ BIG STAMP", measured_at: null, disagreements: 0, imported: { ...IMPORTED, state: "no_boundary", to_check: 0 } },
+      { ...ROW, uuid: "s-3", name: "LZ CAVENDER", disagreements: 0, imported: { ...IMPORTED, to_check: 2 } },
+    ];
+    await renderBook(fakeClient({ getBook: jest.fn(async () => ({ book: BOOK, surveys: rows })) }));
+    const cell = (name) => screen.getByRole("button", { name }).closest("tr");
+    expect(within(cell("LZ DONOVAN")).getByText("Waiting to be measured")).toBeInTheDocument();
+    expect(within(cell("LZ DONOVAN")).getByText("1 import note to check")).toBeInTheDocument();
+    expect(within(cell("LZ DONOVAN")).queryByText("Not measured")).toBeNull();
+    expect(within(cell("LZ BIG STAMP")).getByText("No boundary found: draw it")).toBeInTheDocument();
+    expect(within(cell("LZ CAVENDER")).getByText("2 import notes to check")).toBeInTheDocument();
+    expect(within(cell("LZ CAVENDER")).queryByText("None")).toBeNull();
+  });
+
+  it("shows a survey's notes from the old book in its editor, until they are checked", async () => {
+    const client = fakeClient({
+      getSurvey: jest.fn(async () => survey({ imported: IMPORTED })),
+      markImportChecked: jest.fn(async () => survey({
+        revision: 9, imported: { ...IMPORTED, to_check: 0, checked: true, checked_by: "CW3 Admin", checked_at: "2026-10-27T02:00:00Z" },
+      })),
+    });
+    await openDonovan(client);
+    const panel = screen.getByRole("region", { name: "From the old book" });
+    expect(within(panel).getByText(/Page 5 of LZ-SURVEYS-OCT-2023\.pdf, imported 2026-10-27 by CW3 Admin/)).toBeInTheDocument();
+    expect(within(panel).getByText("Not on the page: Best Exit.")).toBeInTheDocument();
+    expect(within(panel).getByText("Blank on the page: Surface Condition.")).toBeInTheDocument();
+    expect(within(panel).getByText(/527 m apart/)).toBeInTheDocument();
+    await act(async () => {
+      fireEvent.click(within(panel).getByRole("button", { name: "Mark as checked" }));
+    });
+    expect(client.markImportChecked).toHaveBeenCalledWith("s-1");
+    expect(within(panel).getByText("Checked by CW3 Admin on 2026-10-27.")).toBeInTheDocument();
+    expect(within(panel).queryByRole("button", { name: "Mark as checked" })).toBeNull();
+    expect(screen.getByText(/Saved · revision 4/)).toBeInTheDocument();          // not a change to the survey: its revision stays
+  });
+});
+

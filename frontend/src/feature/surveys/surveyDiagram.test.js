@@ -10,6 +10,7 @@ import {
   withTarget,
 } from "./surveyDiagram";
 import { flightDoghouses } from "../doghouses/doghouseFields";
+import { serializeLzDiagram } from "../lzWorkspace/useLzWorkspace";
 
 const { readFixture } = require("../../contracts/readFixture");
 
@@ -36,6 +37,15 @@ describe("the survey's fields", () => {
 });
 
 describe("the survey's diagram", () => {
+  it("is, as the import makes it on the server, the web's own document", () => {
+    // backend/survey/importing.py writes it; tests/test_survey_book_import.py holds the server to the same fixture.
+    const { targeted, analyzed } = readFixture("surveys/imported_diagram.json");
+    expect(serializeLzDiagram(targeted)).toEqual(targeted);
+    expect(serializeLzDiagram(analyzed)).toEqual(analyzed);
+    expect(boundaryOf(analyzed)).toEqual(analyzed.analysis.detectedLZ);
+    expect(withApproachAndExit(targeted, { approachDeg: "360", exitDeg: "180" }).graphics.doghouses).toHaveLength(2);
+  });
+
   it("reads headings as the book writes them", () => {
     expect(headingOf("360")).toBe(0);
     expect(headingOf("045°")).toBe(45);

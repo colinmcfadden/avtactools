@@ -9,6 +9,7 @@ import Disagreements from "./Disagreements";
 import SurveyPhotos from "./SurveyPhotos";
 import PagePreview, { saveBlob } from "./PagePreview";
 import { PublishDialog, ReviewPanel, Revisions } from "./Publishing";
+import { ImportNotes } from "./SurveyImport";
 
 /*
  * One LZ's survey, for the book's editors (docs/LZ_SURVEYS.md): the field survey's values in the old book's sections, the map in survey
@@ -125,6 +126,7 @@ const SurveyEditor = ({ surveys }) => {
 
       <div className="survey-editor__columns">
         <div className="survey-editor__left">
+          <ImportNotes imported={survey.imported} busy={busy} onChecked={surveys.markImportChecked} />
           <FieldForm field={draft.field} onChange={surveys.setField} readOnly={archived} />
         </div>
         <div className="survey-editor__right">

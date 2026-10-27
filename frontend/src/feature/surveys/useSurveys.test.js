@@ -1,5 +1,5 @@
 import { act, renderHook } from "@testing-library/react";
-import useSurveys, { changedBetween, editableOf } from "./useSurveys";
+import useSurveys, { IMPORT_POLL_MS, changedBetween, editableOf } from "./useSurveys";
 
 const { readFixture } = require("../../contracts/readFixture");
 
@@ -346,6 +346,62 @@ describe("useSurveys", () => {
       await result.current.setBookArchived(true);
     });
     expect(result.current.bookUuid).toBeNull();
+  });
+
+  it("imports the old book into the open book, then reads the book again", async () => {
+    const answer = { created: [{ uuid: "s-2" }], skipped: [], source: "book.pdf" };
+    const client = fakeClient({ importBook: jest.fn(async () => answer) });
+    const { result } = renderHook(() => useSurveys({ client }));
+    await act(async () => {
+      await result.current.openBook("b-1");
+    });
+    const file = new Blob(["PK"]);
+    let got;
+    await act(async () => {
+      got = await result.current.importPages(file);
+    });
+    expect(got).toBe(answer);
+    expect(client.importBook).toHaveBeenCalledWith("b-1", file);
+    expect(client.getBook).toHaveBeenCalledTimes(2);
+  });
+
+  it("reads the book again while the server measures imported surveys, and stops when they are measured", async () => {
+    jest.useFakeTimers();
+    try {
+      const measuring = { surveys: [{ uuid: "s-1", name: DONOVAN.name, imported: { state: "queued" } }] };
+      const measured = { surveys: [{ uuid: "s-1", name: DONOVAN.name, imported: { state: "done" } }] };
+      const client = fakeClient({ getBook: jest.fn(async () => ({ book: BOOK, ...measuring })) });
+      const { result } = renderHook(() => useSurveys({ client }));
+      await act(async () => {
+        await result.current.openBook("b-1");
+      });
+      expect(client.getBook).toHaveBeenCalledTimes(1);
+      client.getBook.mockImplementation(async () => ({ book: BOOK, ...measured }));
+      await act(async () => {
+        jest.advanceTimersByTime(IMPORT_POLL_MS);
+      });
+      expect(client.getBook).toHaveBeenCalledTimes(2);
+      await act(async () => {
+        jest.advanceTimersByTime(IMPORT_POLL_MS * 3);
+      });
+      expect(client.getBook).toHaveBeenCalledTimes(2);                          // measured: no more reading
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
+  it("marks the import's notes checked without taking the rest of the answer as its copy", async () => {
+    const client = fakeClient({
+      getSurvey: jest.fn(async () => surveyAt(1, { imported: { state: "done", checked: false, to_check: 2 } })),
+      markImportChecked: jest.fn(async () => surveyAt(5, { name: "SOMEONE ELSE'S", imported: { state: "done", checked: true, to_check: 0 } })),
+    });
+    const { result } = await opened(client);
+    await act(async () => {
+      await result.current.markImportChecked();
+    });
+    expect(result.current.survey.imported.checked).toBe(true);
+    expect(result.current.survey.revision).toBe(1);
+    expect(result.current.survey.name).toBe(DONOVAN.name);
   });
 
   it("names what someone else changed", () => {

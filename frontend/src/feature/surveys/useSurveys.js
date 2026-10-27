@@ -1,9 +1,10 @@
-import { useCallback, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import * as surveyApi from "./surveyApi";
 import { surveyFailure } from "./surveyApi";
 import { fullField } from "./surveyFields";
 import { diagramToSave } from "./surveyDiagram";
 import { readSlopeOpacity } from "../terrain/slopeOpacity";
+import { IMPORT_ACTIVE } from "./SurveyImport";
 
 /*
  * The LZ survey books' state (docs/LZ_SURVEYS.md): the books this person reads or edits, the one open with its surveys, and the
@@ -45,6 +46,9 @@ export const changedBetween = (base, theirs) => {
 };
 
 const NO_LIST = { status: "idle", book: null, surveys: [], error: null };
+
+/** How often the book's list is read again while the server measures imported surveys in the background. */
+export const IMPORT_POLL_MS = 5000;
 
 export const useSurveys = ({ client = surveyApi } = {}) => {
   const [books, setBooks] = useState({ status: "idle", books: [], teams: [], canMakeForNoTeam: false, error: null });
@@ -153,6 +157,30 @@ export const useSurveys = ({ client = surveyApi } = {}) => {
       throw new Error(surveyFailure(err, "The book could not be made."));
     }
   }, [client, refreshBooks]);
+
+  /** The old book's pages, from the importer's bundle, as drafts in the open book: { created, skipped, source }; throws why not in words. */
+  const importPages = useCallback(async (file) => {
+    const uuid = bookRef.current;
+    if (!uuid) return null;
+    let answer;
+    try {
+      answer = await client.importBook(uuid, file);
+    } catch (err) {
+      throw new Error(surveyFailure(err, "The bundle could not be imported."));
+    }
+    if (bookRef.current === uuid) refresh(showArchived, uuid);
+    return answer;
+  }, [client, refresh, showArchived]);
+
+  // While the server measures imported surveys, the book's list is read again now and then, so each shows how it stands. Only while
+  // the list is what is shown: a survey open in the editor or on its page has no list in view.
+  const measuring = useMemo(() => list.surveys.some((row) => IMPORT_ACTIVE.includes(row.imported?.state)), [list.surveys]);
+  const listShown = Boolean(bookUuid) && !survey && !reading;
+  useEffect(() => {
+    if (!measuring || !listShown) return undefined;
+    const timer = setInterval(() => refresh(), IMPORT_POLL_MS);
+    return () => clearInterval(timer);
+  }, [measuring, listShown, refresh]);
 
   /** Changes the open book's details (`patch`: name, unit_line, cover_text, page_order, team_id); throws why not in words. */
   const updateBook = useCallback(async (patch) => {
@@ -337,6 +365,32 @@ export const useSurveys = ({ client = surveyApi } = {}) => {
 
   const dismissPreview = useCallback(() => setPreview(null), []);
 
+  /**
+   * The import's notes on the open survey have been looked at. Not a change to the survey (its revision stays), so only its import
+   * record is taken from the answer: the rest of this copy stays the one its next save is based on.
+   */
+  const markImportChecked = useCallback(async () => {
+    const base = surveyRef.current;
+    if (!base) return null;
+    setBusy("checking");
+    setError(null);
+    try {
+      const answer = await client.markImportChecked(base.uuid);
+      const current = surveyRef.current;
+      if (current?.uuid === base.uuid) {
+        const next = { ...current, imported: answer.imported };
+        surveyRef.current = next;
+        setSurvey(next);
+      }
+      return answer;
+    } catch (err) {
+      setError(surveyFailure(err, "The notes could not be marked as checked."));
+      return null;
+    } finally {
+      setBusy(null);
+    }
+  }, [client]);
+
   /** Settles a disagreement: `choice` "computed" (accept what EZ/PZ measured) or "field" (print the survey's, with a reason). */
   const decide = useCallback((key, choice, reason = "") => {
     const overrides = { ...(draftRef.current?.overrides ?? {}), [key]: { choice, reason } };
@@ -470,6 +524,7 @@ export const useSurveys = ({ client = surveyApi } = {}) => {
     updateBook,
     renameBook,
     setBookArchived,
+    importPages,
     list,
     showArchived,
     toggleArchived,
@@ -497,6 +552,7 @@ export const useSurveys = ({ client = surveyApi } = {}) => {
     measure,
     applyMeasure,
     dismissPreview,
+    markImportChecked,
     decide,
     undecide,
     setArchived,
