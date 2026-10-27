@@ -1,0 +1,105 @@
+{#- One survey's sheet, as survey.html prints it alone and book.html prints it in the book: m (the page model, survey/compile.py),
+    plan, view3d, photos, graphs, compass and survey_profile (survey/pages.py). -#}
+{%- macro src(fact) -%}{% if fact.from == 'computed' %}<span class="src">LZ/PZ</span>{% elif fact.from == 'field' %}<span class="src field">FIELD</span>{% endif %}{%- endmacro -%}
+<div class="sheet">
+  {% if m.mark %}<div class="watermark">{{ m.mark }}</div>{% endif %}
+  <div class="classif top">UNCLASSIFIED</div>
+  <div class="band top"><span>HLZ SURVEY{% if m.book.unitLine %} · {{ m.book.unitLine }}{% endif %}</span></div>
+  <div class="band bottom"><span>EZ/PZ{% if m.version %} v{{ m.version }}{% endif %} · {{ m.printedLong }}</span></div>
+  <header class="head">
+    <div class="id"><div class="hlz">{{ m.hlzId or '—' }}</div><div class="book">{{ m.book.name }}</div></div>
+    <div class="mid">
+      <div class="logo">EZ/PZ</div>
+      <div class="when"><span>{{ m.printedOn }}</span>{% if m.page %}<span class="pg">{{ m.page.n }}</span>{% endif %}{% if m.mark %}<span class="mark">{{ m.mark }}</span>{% endif %}{% if m.revision %}<span>{{ m.revision }}</span>{% endif %}</div>
+    </div>
+    <div class="title"><div class="kicker">HLZ SURVEY</div><div class="name">{{ m.name }}</div></div>
+  </header>
+  <main class="frame">
+    <section class="facts">
+      <div class="cells">
+        <div class="cell" style="flex: 1.05"><label>MGRS · WGS 84{{ src(m.facts.grid) }}</label><b>{{ m.facts.grid.value }}</b></div>
+        <div class="cell" style="flex: 1.3"><label>Lat / Long{{ src(m.facts.latLong) }}</label><b>{{ m.facts.latLong.value }}</b></div>
+        <div class="cell" style="flex: 1"><label>PPR{% if m.facts.pprWho %} · {{ m.facts.pprWho }}{% endif %}</label><b>{{ m.facts.ppr }}</b></div>
+      </div>
+      <div class="lower">
+        <div class="left">
+          <div class="cells">
+            <div class="cell"><label>Best Apch</label><b>{{ m.facts.approach }}</b></div>
+            <div class="cell"><label>Best Exit</label><b>{{ m.facts.exit }}</b></div>
+            <div class="cell"><label>LZ Axis{% if m.facts.axis != '—' %}<span class="src">LZ/PZ</span>{% endif %}</label><b>{{ m.facts.axis }}</b></div>
+            <div class="cell" style="flex: 1.6"><label>Max A/C</label><b>{{ m.facts.maxAc }}</b></div>
+            <div class="cell"><label>Elev{{ src(m.facts.elevation) }}</label><b>{{ m.facts.elevation.value }}</b></div>
+          </div>
+          <div class="hazards"><b>HAZARDS:</b>
+            {% for h in m.hazards %}{{ h.text }}{% if h.from == 'computed' %} (LZ/PZ){% endif %} {% else %}None listed in the field survey.{% endfor %}
+          </div>
+          <div class="line">
+            <span>Surface: {{ m.facts.surface }}</span>
+            <span>Slope{% if m.facts.slope.from == 'computed' and m.facts.slopeHeading %} at {{ m.facts.slopeHeading }}{% endif %}{% if m.facts.slope.from == 'field' %} (field){% endif %}: {{ m.facts.slope.value }}</span>
+          </div>
+          <div class="notes">
+            {% for note in m.notes %}{{ loop.index }}. {{ note }} {% endfor %}
+            {% for p in m.problems %}<span class="problem">Not measured: {{ p }}</span> {% endfor %}
+            {% for p in m.stale %}<span class="problem">{{ p }}</span> {% endfor %}
+            {% if not m.measured %}<span class="problem">Not measured yet: every value is the field survey's.</span>{% endif %}
+          </div>
+        </div>
+        <div class="rose">
+          {{ compass }}
+          {% if m.shape and m.shape.size %}<div class="size">{{ m.shape.size }}</div>{% elif m.size.value %}<div class="size">LZ {{ m.size.value }}</div>{% endif %}
+          <div class="size">{{ m.shape.area if m.shape else 'TRUE N' }}</div>
+        </div>
+      </div>
+    </section>
+    <section class="pics">
+      <div class="fig plan">
+        <div class="tag">PLAN · LZ/PZ</div>
+        {% if plan %}<img src="{{ plan.file }}" alt="">{{ plan.svg }}{% else %}<div class="none">Set the LZ's target and measure it to draw the plan.</div>{% endif %}
+      </div>
+      <div class="right">
+        <div class="fig view3d">
+          {% if view3d %}<div class="tag">{{ view3d.caption }}</div><img src="{{ view3d.file }}" alt="">{% else %}<div class="tag">3D</div><div class="none">No 3D view captured yet.</div>{% endif %}
+        </div>
+        <div class="photos">
+          {% for p in photos %}<div class="fig"><div class="tag">{{ p.caption }}</div><img src="{{ p.file }}" alt=""></div>{% endfor %}
+          {% if photos|length < 2 %}{% for i in range(2 - photos|length) %}<div class="fig"><div class="tag">PHOTO</div><div class="none">No photo.</div></div>{% endfor %}{% endif %}
+        </div>
+      </div>
+    </section>
+    <section class="profiles">
+      {% if m.profiles and graphs %}
+      <div class="graph along"><h3>{{ m.profiles.along.title }}</h3>{{ graphs.along or '' }}</div>
+      <div class="graph across"><h3>{{ m.profiles.across.title }}</h3>{{ graphs.across or '' }}</div>
+      {% else %}
+      <div class="graph along"><h3>PROFILE</h3><div class="none">{% if m.facts.approach == '—' %}Set the best approach to draw the profile along it.{% else %}Measure the LZ to draw its profiles.{% endif %}</div></div>
+      <div class="graph across"><h3>ACROSS</h3></div>
+      {% endif %}
+    </section>
+    <section class="tables">
+      <div class="terrain">
+        {% if m.terrain %}
+        <h3><span class="tag">LZ/PZ</span>{{ m.terrain.title }}</h3>
+        <table>
+          <tr><th>{{ m.terrain.heading }}</th>{% for c in m.terrain.columns %}<th>{{ c }}</th>{% endfor %}</tr>
+          {% for row in m.terrain.rows %}<tr{% if row.strong %} class="strong"{% endif %}><td>{{ row.label }}</td>{% for c in row.cells %}<td>{{ c }}</td>{% endfor %}</tr>{% endfor %}
+        </table>
+        {% if m.terrain.rise %}<div class="rise">{{ m.terrain.rise }}</div>{% endif %}
+        {% else %}
+        <h3><span class="tag">LZ/PZ</span>TERRAIN</h3><div class="none">Not measured.</div>
+        {% endif %}
+      </div>
+      <div class="field">
+        <h3><span class="tag">FIELD</span>SURVEY PROFILE</h3>
+        {% if survey_profile %}{{ survey_profile }}<div class="who">{{ m.surveyProfile.who }}</div>{% else %}<div class="none">None recorded.</div>{% endif %}
+      </div>
+    </section>
+  </main>
+  <footer class="foot">
+    <div class="changes">
+      <div>CHANGES: {{ m.footer.changes or ('Not published.' if m.status != 'published' else '—') }}</div>
+      <div class="signoff">{{ m.footer.signoff or ('NOT SIGNED OFF' if m.status != 'published' else '') }}</div>
+    </div>
+    <div class="page">EZ/PZ{% if m.page and m.page.of %} · {{ m.page.n }} OF {{ m.page.of }}{% endif %}</div>
+  </footer>
+  <div class="classif bottom">UNCLASSIFIED</div>
+</div>

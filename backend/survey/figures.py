@@ -411,3 +411,47 @@ def survey_profile(spec, width=300, height=120):
         f'<text x="{(hx + ox) / 2 - 10}" y="{(ground + oy) / 2 - 8}" font-size="15" font-weight="800" text-anchor="middle">{spec["angleDeg"]:.1f}°</text>',
     ]
     return f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {width} {height}" class="field-profile">{"".join(parts)}</svg>'
+
+
+# The cover's overview map: about 7.6 by 7.0 inches at the plan's 200 pixels to the inch.
+OVERVIEW_W, OVERVIEW_H = 1520, 1400
+
+
+def overview(spec, width_px=OVERVIEW_W, height_px=OVERVIEW_H):
+    """The book's cover map: {'jpeg', 'svg'}, every page's LZ as a dot with its page number beside it, on the topographic map; None with
+    no point to show. ``spec``: {'points': [{'n', 'lat', 'lon'}]}. A number goes beside its dot where it keeps clear of those already
+    placed (right, left, above, below), else to the right regardless: LZs half a kilometre apart share a few pixels at this scale."""
+    points = [(p["lat"], p["lon"], p["n"]) for p in (spec or {}).get("points") or []
+              if isinstance(p, dict) and _num(p.get("lat")) and _num(p.get("lon")) and isinstance(p.get("n"), int)]
+    if not points:
+        return None
+    bounds = brief_figures.bounds_around([(lat, lon) for lat, lon, _n in points], pad_m=1500)
+    frame = brief_figures.Frame(bounds, "topo", width_px, height_px)
+    image, missing = brief_figures.base_image(frame, "topo")
+    parts, labels, taken = [], [], []
+    placed = [(frame.project(lat, lon), n) for lat, lon, n in points]
+    for (x, y), _n in placed:
+        taken.append((x - 9, y - 9, x + 9, y + 9))
+        parts.append(f'<circle cx="{x:.1f}" cy="{y:.1f}" r="8" fill="#d62828" stroke="{WHITE}" stroke-width="3"/>')
+
+    def clear(box):
+        return all(box[2] < t[0] or box[0] > t[2] or box[3] < t[1] or box[1] > t[3] for t in taken)
+
+    for (x, y), n in placed:
+        words = str(n)
+        w, h = 22 * 0.62 * len(words) + 12, 30
+        tries = [(x + 12, y - h / 2), (x - 12 - w, y - h / 2), (x - w / 2, y - 14 - h), (x - w / 2, y + 14)]
+        left, top = next(((l, t) for l, t in tries if clear((l, t, l + w, t + h))), tries[0])
+        taken.append((left, top, left + w, top + h))
+        labels.append(f'<rect x="{left:.1f}" y="{top:.1f}" width="{w:.1f}" height="{h}" fill="{WHITE}" stroke="{INK}" stroke-width="1.6"/>'
+                      f'<text x="{left + w / 2:.1f}" y="{top + 22:.1f}" font-size="22" text-anchor="middle" fill="{INK}" '
+                      f'font-weight="800">{escape(words)}</text>')
+    parts.extend(labels)
+    parts.append(_north(frame))
+    parts.append(_scale_bar(frame))
+    note = frame.source["attribution"]
+    if missing:
+        note = f"{missing} map tile{'s' if missing != 1 else ''} could not be fetched · {note}"
+    parts.append(_text(frame.width - 12, frame.height - 12, note, 16, anchor="end", weight=400, halo_w=4))
+    svg = f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {frame.width} {frame.height}" class="fig-overlay">{"".join(parts)}</svg>'
+    return {"jpeg": brief_figures.jpeg(image), "svg": svg, "zoom": frame.zoom, "missing": missing}

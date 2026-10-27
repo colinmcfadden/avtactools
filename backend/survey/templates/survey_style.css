@@ -1,0 +1,84 @@
+/* An LZ survey's page (docs/LZ_SURVEYS.md §5): one US Letter sheet with its own classification lines, header and footer. Shared by a
+   page printed alone (survey.html) and the whole book (book.html). */
+  @page { size: 8.5in 11in; margin: 0.3in; }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; }
+  /* On a screen (the editor's preview) the page has the margins the printer gives it. */
+  @media screen { body { padding: 0.3in; background: #fff; } }
+  body { font-family: "Helvetica Neue", Helvetica, Arial, "Liberation Sans", sans-serif; color: #111417; font-size: 8pt; line-height: 1.25; }
+  .sheet { position: relative; width: 7.9in; height: 10.4in; padding-left: 0.3in; overflow: hidden; }
+  .classif { height: 0.18in; text-align: center; font-weight: 800; letter-spacing: 0.22em; font-size: 8.5pt; }
+  .classif.top { margin-bottom: 0.02in; }
+  .band { position: absolute; left: 0; width: 0.26in; font-size: 7pt; font-weight: 800; letter-spacing: 0.12em; white-space: nowrap; }
+  .band span { position: absolute; transform: rotate(-90deg); transform-origin: left top; }
+  .band.top { top: 2.6in; } .band.top span { left: 0.02in; top: 0; }
+  .band.bottom { bottom: 0.45in; } .band.bottom span { left: 0.02in; top: 0; }
+  .head { height: 0.62in; display: grid; grid-template-columns: 2.45in 1fr 2.6in; align-items: end; padding-bottom: 0.05in; }
+  .head .hlz { font-size: 21pt; font-weight: 800; line-height: 1; }
+  .head .book { font-size: 8.5pt; letter-spacing: 0.03em; margin-top: 3pt; }
+  .head .mid { text-align: center; }
+  .head .logo { font-size: 11pt; font-weight: 800; letter-spacing: 0.06em; }
+  .head .when { margin-top: 4pt; font-size: 9pt; display: inline-flex; align-items: center; gap: 6pt; }
+  .head .pg { display: inline-flex; width: 16pt; height: 16pt; border: 1.4pt solid #111417; border-radius: 50%; align-items: center; justify-content: center; font-weight: 800; }
+  .head .mark { background: #111417; color: #fff; font-weight: 800; padding: 1pt 5pt; letter-spacing: 0.06em; }
+  .head .title { text-align: right; }
+  .head .kicker { font-size: 11pt; letter-spacing: 0.04em; }
+  .head .name { font-size: 19pt; font-weight: 800; line-height: 1.05; }
+  .frame { border: 1.3pt solid #111417; height: 9.02in; display: flex; flex-direction: column; }
+  .facts { height: 2.42in; display: flex; flex-direction: column; border-bottom: 1.3pt solid #111417; }
+  .cells { display: flex; border-bottom: 0.8pt solid #111417; }
+  .cell { flex: 1; text-align: center; padding: 2pt 3pt 3pt; border-left: 0.8pt solid #111417; min-width: 0; }
+  .cell:first-child { border-left: 0; }
+  .cell label { display: block; font-size: 7.5pt; }
+  .cell b { display: block; font-size: 12.5pt; font-weight: 800; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .src { font-size: 5.5pt; font-weight: 800; letter-spacing: 0.06em; padding: 0 2pt; border: 0.5pt solid #111417; margin-left: 2pt; vertical-align: 1pt; }
+  .src.field { background: #111417; color: #fff; }
+  .lower { flex: 1; display: flex; min-height: 0; }
+  .left { flex: 1; display: flex; flex-direction: column; min-width: 0; }
+  .rose { width: 1.75in; border-left: 0.8pt solid #111417; text-align: center; padding: 3pt 4pt; display: flex; flex-direction: column; align-items: center; justify-content: center; }
+  .rose svg { width: 1.4in; height: 1.4in; }
+  .rose .size { font-size: 8pt; margin-top: 2pt; }
+  .hazards { padding: 3pt 5pt; font-size: 10pt; border-bottom: 0.8pt solid #111417; max-height: 0.62in; overflow: hidden; }
+  .hazards b { font-size: 8pt; letter-spacing: 0.04em; }
+  .line { display: flex; justify-content: flex-start; gap: 24pt; padding: 2pt 5pt; font-size: 8.5pt; border-bottom: 0.8pt solid #111417; white-space: nowrap; }
+  .line span { overflow: hidden; text-overflow: ellipsis; }
+  .notes { flex: 1; padding: 3pt 5pt; font-size: 7.4pt; line-height: 1.22; overflow: hidden; }
+  .notes .problem { color: #8a1c1c; font-weight: 700; }
+  .pics { height: 4.05in; display: flex; border-bottom: 1.3pt solid #111417; }
+  .fig { position: relative; overflow: hidden; background: #d7d3c8; }
+  .fig img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+  .fig svg.fig-overlay { position: absolute; inset: 0; width: 100%; height: 100%; }
+  .fig .tag { position: absolute; left: 0; top: 0; background: #fff; border-right: 0.8pt solid #111417; border-bottom: 0.8pt solid #111417; font-weight: 800; font-size: 7.5pt; padding: 1.5pt 4pt; letter-spacing: 0.03em; z-index: 2; }
+  .fig .none { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; color: #555b62; font-size: 8pt; padding: 8pt; text-align: center; }
+  .plan { width: 50%; border-right: 1.3pt solid #111417; }
+  .plan img { object-fit: fill; }
+  .right { width: 50%; display: flex; flex-direction: column; }
+  .view3d { height: 52%; border-bottom: 1.3pt solid #111417; }
+  .photos { flex: 1; display: flex; }
+  .photos .fig { flex: 1; }
+  .photos .fig + .fig { border-left: 1.3pt solid #111417; }
+  .profiles { height: 1.24in; display: flex; border-bottom: 1.3pt solid #111417; }
+  .graph { padding: 2pt 4pt 0; min-width: 0; }
+  .graph h3 { margin: 0; font-size: 7.5pt; font-weight: 800; letter-spacing: 0.03em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .graph svg { width: 100%; height: 0.98in; display: block; }
+  .graph.along { width: 62%; border-right: 1.3pt solid #111417; }
+  .graph.across { width: 38%; }
+  .graph .none { color: #555b62; padding-top: 0.35in; text-align: center; }
+  .tables { flex: 1; display: flex; min-height: 0; }
+  .terrain { width: 62%; border-right: 1.3pt solid #111417; padding: 3pt 5pt; }
+  .terrain h3, .field h3 { margin: 0 0 2pt; font-size: 7.5pt; font-weight: 800; letter-spacing: 0.03em; }
+  .terrain h3 .tag, .field h3 .tag { background: #111417; color: #fff; padding: 0.5pt 4pt; margin-right: 4pt; }
+  table { width: 100%; border-collapse: collapse; font-size: 7.6pt; }
+  th, td { border: 0.6pt solid #111417; padding: 1.2pt 3pt; text-align: center; }
+  th:first-child, td:first-child { text-align: left; }
+  tr.strong td { font-weight: 800; }
+  .terrain .call, .terrain .rise { font-size: 7.2pt; margin-top: 2pt; }
+  .field { width: 38%; padding: 3pt 5pt; }
+  .field svg { width: 100%; height: 0.62in; display: block; }
+  .field .who { font-family: "Courier New", Courier, monospace; font-size: 6.8pt; margin-top: 1pt; }
+  .field .none { color: #555b62; padding-top: 0.2in; }
+  .foot { height: 0.38in; display: flex; justify-content: space-between; gap: 10pt; padding-top: 3pt; font-size: 7.6pt; }
+  .foot .changes { flex: 1; min-width: 0; }
+  .foot .signoff { font-weight: 800; margin-top: 1pt; }
+  .foot .page { white-space: nowrap; }
+  .watermark { position: absolute; left: 0; right: 0; top: 46%; text-align: center; font-size: 72pt; font-weight: 800; letter-spacing: 0.08em; color: rgba(190, 30, 30, 0.2); transform: rotate(-32deg); pointer-events: none; z-index: 5; }
