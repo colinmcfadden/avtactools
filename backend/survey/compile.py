@@ -305,11 +305,16 @@ def _photos(assets, field):
 
 
 def _view3d(assets):
-    capture = next((a for a in assets if a.get("kind") == "view_3d"), None)
-    if capture is None:
+    """The page's 3D view: the survey's newest capture (step L3), captioned with the way it looks and the LiDAR survey it shows."""
+    captures = [a for a in assets if a.get("kind") == "view_3d"]
+    if not captures:
         return None
+    capture = max(captures, key=lambda a: a["id"])
     heading = capture.get("heading_deg")
     caption = f"3D · LOOKING {int(round(heading)) % 360:03d}°T" if _finite(heading) else "3D"
+    survey = _get(capture, "pose", "survey", "name")
+    if isinstance(survey, str) and survey.strip():
+        caption += f" · LIDAR {_one_line(survey).upper()[:28]}"
     return {"assetId": capture["id"], "caption": caption}
 
 

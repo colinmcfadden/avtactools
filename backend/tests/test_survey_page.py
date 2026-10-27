@@ -264,3 +264,13 @@ def test_with_no_approach_measured_the_lidar_s_box_still_says_what_stands(snapsh
     with patch('brief.figures._fetch_tile', _tile):
         html, _files = pages.build(model, lambda _id: None)
     assert 'CLEARANCE · GA_STATEWIDE_B3_2018' in html and 'In the LZ: 39′ TREE AT 034° 36 M' in html
+
+
+
+def test_the_page_s_3d_view_is_the_newest_capture_named_for_its_survey(snapshot):
+    assets = [{'id': 3, 'kind': 'view_3d', 'heading_deg': 270.0, 'pose': None},
+              {'id': 9, 'kind': 'view_3d', 'heading_deg': 89.6, 'pose': {'survey': {'name': 'GA_Statewide_B3_2018', 'year': 2018}}}]
+    model = page.compile_page(source(snapshot, assets=assets), book=BOOK)
+    assert model['view3d'] == {'assetId': 9, 'caption': '3D · LOOKING 090°T · LIDAR GA_STATEWIDE_B3_2018'}
+    model = page.compile_page(source(snapshot, assets=assets[:1]), book=BOOK)
+    assert model['view3d'] == {'assetId': 3, 'caption': '3D · LOOKING 270°T'}
