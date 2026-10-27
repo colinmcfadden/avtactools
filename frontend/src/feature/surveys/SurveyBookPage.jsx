@@ -116,7 +116,7 @@ export const BookPdf = ({ book, state, onPrint, onDownload }) => {
   const [busy, setBusy] = useState(null);
   const [error, setError] = useState(null);
   const print = state?.print;
-  if (!book || !print) return null;
+  if (!book || (!print && !state?.error)) return null;
   const run = async (what, action) => {
     setBusy(what);
     setError(null);
@@ -131,7 +131,9 @@ export const BookPdf = ({ book, state, onPrint, onDownload }) => {
   const download = () => run("download", async () => saveBlob(await onDownload(), `${book.name}.pdf`));
   const askToPrint = () => run("print", onPrint);
   let body;
-  if (print.state === "empty") {
+  if (!print) {
+    body = null;
+  } else if (print.state === "empty") {
     body = <p className="survey-muted">It holds the book's published pages, and nothing is published yet.</p>;
   } else if (print.state === "ready") {
     body = (
@@ -171,6 +173,7 @@ export const BookPdf = ({ book, state, onPrint, onDownload }) => {
     <section className="survey-panel survey-book__pdf" aria-labelledby={headingId}>
       <h3 id={headingId} className="survey-panel__title">The book's PDF</h3>
       {body}
+      {state.error && <p className="survey-state survey-state--warn" role="status">{state.error}</p>}
       {error && <p className="survey-state survey-state--warn" role="status">{error}</p>}
     </section>
   );

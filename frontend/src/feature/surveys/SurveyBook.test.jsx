@@ -641,11 +641,34 @@ describe("the book's PDF", () => {
     expect(within(panel).getByText(/PDFs are not printed on this server yet/)).toBeInTheDocument();
   });
 
-  it("says when the server prints no PDFs, and a reader downloads one printed", async () => {
+  it("says when the server prints no PDFs", async () => {
     await renderBook(fakeClient({ bookPrint: jest.fn(async () => ({ state: "none", pages: 1, done_pages: 0, available: false })) }));
     const panel = await screen.findByRole("region", { name: "The book's PDF" });
     expect(within(panel).getByText(/not printed on this server yet/)).toBeInTheDocument();
     expect(within(panel).queryByRole("button")).toBeNull();
+  });
+
+  it("lets a reader download the book once printed", async () => {
+    const client = fakeClient({
+      getBook: jest.fn(async () => ({ book: { ...BOOK, can_edit: false }, surveys: [{ ...ROW, status: "published", published_revision: 1 }] })),
+      bookPrint: jest.fn(async () => READY),
+      fetchBookPdf: jest.fn(async () => new Blob(["%PDF"], { type: "application/pdf" })),
+    });
+    await renderBook(client);
+    const panel = await screen.findByRole("region", { name: "The book's PDF" });
+    Object.assign(URL, { createObjectURL: jest.fn(() => "blob:book"), revokeObjectURL: jest.fn() });
+    const clicked = jest.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(() => {});
+    await act(async () => {
+      fireEvent.click(within(panel).getByRole("button", { name: "Download the book" }));
+    });
+    expect(client.fetchBookPdf).toHaveBeenCalledWith("b-1");
+    expect(clicked).toHaveBeenCalled();
+  });
+
+  it("says why how the PDF stands could not be read", async () => {
+    await renderBook(fakeClient({ bookPrint: jest.fn(async () => { throw new Error("offline"); }) }));
+    const panel = await screen.findByRole("region", { name: "The book's PDF" });
+    expect(within(panel).getByText("No connection to the server. Try again when you have one.")).toBeInTheDocument();
   });
 });
 

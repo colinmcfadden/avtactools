@@ -501,6 +501,67 @@ describe("useSurveys", () => {
     }
   });
 
+  it("does not let a look at the PDF asked before Print undo it", async () => {
+    let answerEarlier;
+    const client = fakeClient({ printBook: jest.fn(async () => ({ state: "printing", pages: 1, done_pages: 0, available: true })) });
+    const { result } = renderHook(() => useSurveys({ client }));
+    await act(async () => {
+      await result.current.openBook("b-1");
+    });
+    client.bookPrint.mockImplementation(() => new Promise((resolve) => { answerEarlier = resolve; }));
+    let earlier;
+    act(() => {
+      earlier = result.current.refreshBookPrint();                           // a list refresh's look, on its way
+    });
+    await act(async () => {
+      await result.current.printBook();
+    });
+    await act(async () => {
+      answerEarlier({ state: "none", pages: 1, available: true });
+      await earlier;
+    });
+    expect(result.current.bookPrint.print.state).toBe("printing");
+  });
+
+  it("stops asking about the PDF of a book that has gone, and says so", async () => {
+    jest.useFakeTimers();
+    try {
+      const client = fakeClient({
+        bookPrint: jest.fn(async () => ({ state: "printing", pages: 1, done_pages: 0, available: true })),
+      });
+      const { result } = renderHook(() => useSurveys({ client }));
+      await act(async () => {
+        await result.current.openBook("b-1");
+      });
+      client.bookPrint.mockImplementation(async () => { throw Object.assign(new Error("404"), { response: { status: 404, data: { code: "not_found" } } }); });
+      await act(async () => {
+        jest.advanceTimersByTime(PRINT_POLL_MS);
+      });
+      expect(result.current.bookPrint.status).toBe("gone");
+      expect(result.current.bookPrint.error).toBe("That is no longer there, or you cannot open it.");
+      const asked = client.bookPrint.mock.calls.length;
+      await act(async () => {
+        jest.advanceTimersByTime(PRINT_POLL_MS * 5);
+      });
+      expect(client.bookPrint.mock.calls.length).toBe(asked);
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
+  it("asks about the PDF again once the book's own words change", async () => {
+    const client = fakeClient();
+    const { result } = renderHook(() => useSurveys({ client }));
+    await act(async () => {
+      await result.current.openBook("b-1");
+    });
+    const asked = client.bookPrint.mock.calls.length;
+    await act(async () => {
+      await result.current.renameBook("NEW NAME");
+    });
+    expect(client.bookPrint.mock.calls.length).toBe(asked + 1);
+  });
+
   it("names what someone else changed", () => {
     const base = surveyAt(1);
     expect(changedBetween(base, surveyAt(2))).toEqual([]);
