@@ -330,7 +330,7 @@ session is signed out: `token_revocation.is_revoked` is the one check, used by
 | Backend (self-hosted) | Coolify VM, `prod-ezpz-api.mcfadd.in` via Cloudflare Tunnel | Automatically on push, via Coolify's GitHub App |
 | Backend (staging) | Coolify VM, project EZPZ, environment `staging`, `dev-ezpz-api.mcfadd.in` via the same tunnel; its own Supabase project (free tier: pauses after 7 days unused, restore it from the dashboard) | Automatically on push to **`develop`**. Its own `JWT_SECRET_KEY`; shares the build service and `/data/{topo,tiles,cache}` with production. `CORS_ORIGINS` takes the Vercel previews by a regex (flask-cors treats an origin with `^`, `$`, `*` … as one); the variable is marked **literal** in Coolify and writes `[.]`, not `\.`, because otherwise Coolify mangles the `$` and the regex silently matches nothing. Vercel's *Preview* `REACT_APP_API_URL` points at it, so PR previews never touch production data |
 | LiDAR build service | Coolify VM, beside the backend — **no public domain** | Automatically on push (separate Coolify app, base dir `/backend/lidar`) |
-| Gotenberg (the brief's PDF) | Coolify VM, beside the backend — **no public domain** | Not yet deployed. A Coolify app from the published image `gotenberg/gotenberg:8.21.1` (tried with it), started as `gotenberg --chromium-disable-javascript=true --chromium-allow-list=^file:///tmp/.* --chromium-deny-list=^(?!file:///tmp/).*` so a brief's text can make Chromium run nothing and fetch nothing; set `GOTENBERG_URL` (e.g. `http://<internal host>:3000`) on the API. About 1 GB of image; a 26-page brief prints in about half a second once its tiles are fetched. Without it the brief's Download PDF says it is not available |
+| Gotenberg (the brief's PDF) | Coolify VM, beside the backend — **no public domain** | Not yet deployed. A Coolify app from the published image `gotenberg/gotenberg:8.21.1` (tried with it), started as `gotenberg --chromium-disable-javascript=true --chromium-allow-list=^file:///tmp/.* --chromium-deny-list=^(?!file:///tmp/).* --api-timeout=140s` so a brief's text can make Chromium run nothing and fetch nothing, and a whole LZ survey book (§4) has the time it takes (the default ends a request at 30 s; the API waits 150 s); set `GOTENBERG_URL` (e.g. `http://<internal host>:3000`) on the API. About 1 GB of image; a 26-page brief prints in about half a second once its tiles are fetched. Without it the brief's Download PDF says it is not available |
 | Live service (mission packs) | Coolify VM, beside the backend; **needs a public hostname** through the Cloudflare Tunnel (WebSockets) | Not yet deployed. A separate Coolify app, base dir `/backend/realtime`, port 8091; set `DATABASE_URL` and `REALTIME_API_URL` on it and `REALTIME_PUBLIC_URL` on the API. Without it clients poll |
 | Admin | `admin.ezpztac.app` → the backend's `/admin` | with the backend |
 | Database | Supabase Postgres, **Session-mode pooler** | — |
@@ -338,9 +338,10 @@ session is signed out: `token_revocation.is_revoked` is the one check, used by
 - **Which backend is live is decided by `REACT_APP_API_URL` in Vercel.**
 - The container runs **one gunicorn worker with 8 threads** and a 180 s
   timeout. One worker because SAM holds about 1 GB resident and the rate
-  limiter, QR store and route-share store are in-process, and so is the LZ survey
-  import's measurer (`survey/importing.py`: a second worker would measure the same
-  surveys again after its `resume`) — do not add workers
+  limiter, QR store and route-share store are in-process, and so are the LZ survey
+  import's measurer (`survey/importing.py`) and book printer (`survey/book.py`): a
+  second worker would measure the same surveys, or print the same book, again after its
+  `resume` — do not add workers
   or machines without moving them to Redis. Threads so terrain tiles and
   point-cloud files load side by side; SAM runs one analysis at a time behind
   `_sam_lock` (its predictor keeps state between calls). Anything else
@@ -442,7 +443,7 @@ which costs one warm-up (~1 min) and the first view of each area again.
 | `MIN_APP_VERSION_ANDROID`, `MIN_APP_VERSION_IOS` | Oldest supported native app version, `X.Y.Z`, served by `/api/config`; the app shows "Update required" below it. Unset = no minimum. A malformed value is ignored and logged, never served. |
 | `MAINTENANCE_MESSAGE` | Non-empty turns maintenance on in `/api/config` and is the notice the apps show (500 chars max). |
 | `REALTIME_PUBLIC_URL` | Where clients open the mission packs' live stream (`ws://` or `wss://`), handed out as every pack's `live_url`. Unset: clients poll. The service's own settings are at the top of `backend/realtime/service.py`. |
-| `SURVEY_ASSETS_DIR` | Where the LZ surveys' photos (and later their pages) are kept, by SHA-256 (`survey/assets.py`). **A persistent mount, backed up off the VM** (a photo cannot be taken again; `docs/LZ_SURVEYS.md` §11 R6), and **one directory per deployment**: `/data/surveys/prod` and `/data/surveys/staging`, since their databases are separate. Unset: the system's temp directory, lost on redeploy, and production logs a warning at startup. |
+| `SURVEY_ASSETS_DIR` | Where the LZ surveys' photos, their pages' PDFs and their books' PDFs are kept, by SHA-256 (`survey/assets.py`). **A persistent mount, backed up off the VM** (a photo cannot be taken again; `docs/LZ_SURVEYS.md` §11 R6), and **one directory per deployment**: `/data/surveys/prod` and `/data/surveys/staging`, since their databases are separate. Unset: the system's temp directory, lost on redeploy, and production logs a warning at startup. |
 | `GOTENBERG_URL` | The internal Gotenberg that prints a brief's PDF (§9). Unset: `POST /api/brief/pdf` answers 503 `pdf_unavailable`. Never public: the API is its only caller. |
 | `MAPBOX_PUBLIC_TOKEN` | The Mapbox token `/api/config` hands the native apps, so it can rotate without an app release. Must start `pk.`; anything else is dropped. Default: the token in `export_service.py`. |
 
