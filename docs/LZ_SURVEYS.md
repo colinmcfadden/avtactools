@@ -1,8 +1,10 @@
 # LZ surveys — architecture and plan
 
-Status: **L1 built** (2026-10-26: admins make, edit, measure and photograph a survey on the web; §12 says what L1 settled that the
-plan did not). L2 to L6 are next. The owner's answers of 2026-10-26 are in §10, and the decisions taken on the same day are
-in §11; nothing is open. This file is
+Status: **L1 and L5 built** (2026-10-26: a survey is made, edited, measured and photographed on the web, then sent for review,
+signed off and published as a one-page PDF that readers open; §12 and §13 say what each settled that the plan did not). **Books are
+many** (the owner, 2026-10-26, §11 R8): a book may be a team's, its owner and admins edit it and its members read it. L6, L2, L4 and
+L3 are next, in that order. The owner's answers of 2026-10-26 are in §10, and the decisions taken on the same day are in §11; nothing
+is open. This file is
 the plan for building the feature; where it and the code disagree once it is built, the code wins (AGENTS.md §16).
 
 ---
@@ -56,7 +58,7 @@ counterpart and is the admin's to edit (§11, R3). The LZ DONOVAN draft shows wh
 
 | Table | Holds |
 |---|---|
-| `survey_book` | The one book (the owner: one for all the unit's LZs): its name ("AASF 1 HLZ SURVEY BOOK"), the unit line, the page order, the cover's text |
+| `survey_book` | A book (one per unit or team, §11 R8): its name ("AASF 1 HLZ SURVEY BOOK"), the unit line, the team it is for (or none), the page order, the cover's text; archived, never deleted |
 | `lz_survey` | One LZ: `uuid`, HLZ ID (`GA 034`), name, `status` (§3.4), `revision` (bumped by every save, for `If-Match`), the **field** values as JSON, the **overrides** as JSON (value, reason, who, when), an embedded **LZ/PZ diagram** (the web's schema-2 document: target, boundary, doghouses for approach and exit), the current **snapshot** (§3.3), its asset ids, who made and last changed it, `archived_at` |
 | `lz_survey_revision` | Every published revision, never changed: the field values, overrides, diagram, snapshot and asset ids as they were, the sign-off (§3.4), the CHANGES line, and the page's PDF (§5) |
 | `lz_survey_asset` | A photo or a 3D capture: its kind (`photo_north`, `photo_approach`, `photo_other`, `view_3d`), caption, the heading it looks down, the date taken, the camera pose for a capture (§5), size, SHA-256, and where its bytes are (§3.2) |
@@ -184,15 +186,19 @@ the admin's to draw. 44 analyses take about 10 minutes.
 
 ## 7. Who may do what
 
-| | Read published surveys and the book | Read drafts | Create, edit, measure, import, publish |
-|---|---|---|---|
-| Admins and super-admins | always | always | yes |
-| GA ARNG aviators: accounts with `lz_surveys` ticked (§11, R1) | yes | no | no |
-| Everyone else | no | no | no |
+Books are many, and a book may be for a team (the owner, 2026-10-26, §11 R8). Everyone but a site admin needs `lz_surveys` (§11 R1).
 
-Every route checks on the server (`entitlements.is_admin` for an admin; for a reader, the feature key `lz_surveys`, in
-`entitlements.DEFAULT_OFF` and ticked by an admin, with a bulk tick in the admin dashboard); the web hides what a person may not do, and
-nothing else. Once organizations exist, membership of a GA ARNG organization replaces the tick.
+| | Read a book's published pages | Read its drafts | Create, edit, measure, import, publish in it | Make a book |
+|---|---|---|---|---|
+| Site admins and the super-admin | every book | every book | every book | for any team, or for none |
+| A team's owner and admins, with `lz_surveys` | their team's, and books for no team | their team's | their team's | for their team |
+| A team's members, with `lz_surveys` | their team's, and books for no team | no | no | no |
+| Anyone else with `lz_surveys` | books for no team | no | no | no |
+| Without `lz_surveys` | no | no | no | no |
+
+Only a site admin gives a book to another team, or to none (that changes who reads it), and restores an archived book. Deleting a team
+archives its books: a book is never handed to everyone because its team went. Every route checks on the server (`survey/access.py`);
+the web hides what a person may not do, and nothing else. Once organizations exist, an organization takes a team's place.
 
 ---
 
@@ -201,7 +207,7 @@ nothing else. Once organizations exist, membership of a GA ARNG organization rep
 | | |
 |---|---|
 | Server | `backend/models.py` (four tables), `backend/routes/survey_routes.py` (the API below), `backend/survey/` (`assets.py` the store, `measure.py` the snapshot, `obstacles.py` §4, `compile.py` the model, `figures.py`, `pages.py`, `templates/survey.html`, `book.py`) |
-| API | `GET /api/surveys` (readers: published; admins: all), `GET/PATCH/POST /api/surveys[/<uuid>]`, `POST …/measure`, `POST …/assets`, `GET …/assets/<id>` (`Cache-Control: private`), `POST …/submit`, `POST …/publish`, `GET …/pdf[?rev=]`, `GET/PATCH /api/survey-book`, `GET /api/survey-book/pdf`, `POST /api/survey-book/import`. Web only: **not in `contracts/openapi.yaml`**, so the API version does not move |
+| API | `GET/POST /api/survey-books`, `GET/PATCH /api/survey-books/<uuid>` (a reader sees the published pages), `POST …/archive`, `…/restore`, `GET /api/survey-books/<uuid>/pdf` (L6), `POST …/import` (L2); `POST /api/surveys`, `GET/PATCH /api/surveys/<uuid>`, `POST …/archive`, `…/restore`, `…/measure`, `…/submit`, `…/draft`, `…/publish`, `GET …/pdf[?rev=]`, `GET …/page[?rev=]` (the page as HTML, without Gotenberg), `POST …/assets`, `GET/PATCH/DELETE …/assets/<id>` (`Cache-Control: private`). Web only: **not in `contracts/openapi.yaml`**, so the API version does not move |
 | Web | `feature/surveys/`: `SurveyBookPage` (the list), `SurveyEditor` (the form, the map in survey mode reusing the LZ/PZ editors and terrain layers, the 3D window with *Capture*, the PDF preview, the disagreements panel, revisions and publish), `SurveyImport`, `useSurveys` |
 | Tools | `tools/import_survey_book.py` |
 | Tests | the model held to a fixture made from DONOVAN (`contracts/fixtures/surveys/`), the 95th-percentile call, the obstacle products over a recorded piece, the routes' permissions, the asset store's EXIF stripping and keys, the importer over a generated two-page book |
@@ -253,6 +259,8 @@ The owner took the recommended answer to each (2026-10-26).
 | R5 | The approach corridor and the clearance | 30 m each side of the approach line, out to 1,000 m; print the angle that clears the tallest obstacle with no margin and the obstacle's height and distance, until doctrine gives a margin (AGENTS.md §13: do not invent separation values) |
 | R6 | Backups | Back up `SURVEY_ASSETS_DIR` off the VM (photos cannot be measured again), and watch the disk |
 | R7 | The LZ/PZ panel's slope tile judges the steepest slope; the survey the 95th percentile | Keep them apart for now; bring the panel to the 95th percentile on the web first if wanted |
+| R8 | One book, or many (asked while L5 was built) | **Many**: a book may be for a team (an organization's, once they exist). A team's owner and admins make, edit and publish its books; its members with `lz_surveys` read them; a book for no team is read by everyone with the key. Site admins do everything (§7) |
+| R9 | The altimeter source on the page | Left off: it does not apply (the owner, 2026-10-26) |
 
 ---
 
@@ -293,3 +301,36 @@ What L1 had to decide that the plan did not, each with its reason. The code is `
   published makes it a draft again, ready for L5.
 - **The book** is made on first use, named `HLZ SURVEY BOOK` (renamed from the list), its page order the order surveys were made in.
 - **The window** opens from the account menu for admins only; the server refuses everyone else (403 `admin_required`) on every route.
+
+---
+
+## 13. L5 as built (2026-10-26)
+
+What L5 had to decide that the plan did not, each with its reason. The code is `backend/survey/` (`access.py`, `compile.py`, `figures.py`,
+`pages.py`, `profile.py`, `changes.py`, `templates/survey.html`), `backend/routes/survey_routes.py`, and `frontend/src/feature/surveys/`
+(`BooksPage`, `SurveyBookPage`, `SurveyReader`, `Publishing`, `PagePreview`).
+
+- **The page is your LZ DONOVAN draft's layout** (§1), printed by Gotenberg as the brief is, one Letter page with its own UNCLASSIFIED
+  lines, header and footer (Chromium's are not used). Each measured value says where it came from, a small **LZ/PZ** or **FIELD** tag
+  beside its label (§2: the page never hides which it printed). A draft and a survey under review carry a DRAFT or IN REVIEW mark, in
+  the header and faintly across the page.
+- **The preview is the same page as HTML** (`GET …/page`), its pictures in it, shown in a frame that runs nothing (sandboxed, and a
+  `Content-Security-Policy` of `default-src 'none'`). So the page can be read where the server has no Gotenberg yet; the PDF answers
+  503 `pdf_unavailable` there, in words.
+- **Publishing is from review**: a measured draft is sent for review (`submit`), and a survey under review is signed off and published
+  (`publish`, If-Match): REV n keeps the field values, choices, diagram, snapshot, photo ids, the sign-off and the CHANGES line, and
+  what the page said of itself (`page`: HLZ ID, name, book, page n of N, the date, the EZ/PZ version, the publisher's slope opacity), so a
+  reprint matches what was signed. Its PDF is printed once, at publishing where Gotenberg is there, else when first asked for, and kept
+  in the asset store under its SHA-256. An editor's PDF of the survey as it is now is printed each time and kept nowhere.
+- **The CHANGES line is suggested** (`changes.py`): REV 1 against the old book (*New format. Grid refined; lat/long recomputed;
+  elevation, size and slope from LZ/PZ.*), a later one against the revision before (*Max A/C and surface changed; new photos.*); the
+  publisher can edit it.
+- **The slope opacity** is the publisher's (the browser's `ezpz.slopeOpacity`), kept with the revision; a draft's preview takes the
+  viewer's. **The profiles** are drawn in Python from `profile.py`, the web's `groundProfile.js` ported and held to
+  `contracts/fixtures/planning/profile.json`; the slope table gives the 95th percentile, average and steepest cell of each way (nose up,
+  nose down, cross, any way) at the best approach, with the UH-60 limits.
+- **Maximum weight** is a field of its own (`maxWeight`): the old book has one, and the draft printed it as a note.
+- **Readers** see, in each book open to them, the published surveys only, each on its latest revision's page (any revision can be
+  chosen), and its PDF. A survey being edited after it was published is a draft its readers never see; the last REV stays theirs.
+- **The admin dashboard's users list ticks people** and gives a feature to all of them, or takes it away (an "off" is never stored for a
+  feature not launched yet).
