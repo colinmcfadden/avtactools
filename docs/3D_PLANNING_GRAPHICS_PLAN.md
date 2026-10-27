@@ -2,7 +2,7 @@
 
 Status: Phase 1 (routes) built on `feat/3d-lz-route` as a preview, 2026-10-01;
 the depth-test question below is settled. Phases 2–4 not started; Phase 4's
-threats planned in full, 2026-10-27.
+threats planned in full and the owner's questions on them answered, 2026-10-27.
 Builds on the 3D LZ view (`feat/3d-lz-route`); nothing here has to change for
 that to ship first.
 
@@ -316,8 +316,9 @@ rather than an optional field on the mask route:
   window's own terrain tiles wait while it runs.
 
 ```json
-// request: what /api/threat-mask takes, and nothing else (no name, notes or routes)
-{ "lat": 34.61, "lon": -84.22, "radars": [ { "type": 0, "rangeNmi": 25, "antennaHeightFt": 20,
+// request: what /api/threat-mask takes, plus where the 3D view is open (for
+// buildings, below); nothing else (no name, notes or routes)
+{ "lat": 34.61, "lon": -84.22, "near": { "lat": 34.59, "lon": -84.13 }, "radars": [ { "type": 0, "rangeNmi": 25, "antennaHeightFt": 20,
   "aglNotMsl": true, "bands": [ { "altFt": 50 }, { "altFt": 250 }, { "altFt": 500 } ] } ] }
 
 // response
@@ -328,6 +329,7 @@ rather than an optional field on the mask route:
     "type": 0,
     "rangeM": 46300,
     "antennaM": 451.7,                  // the antenna, metres above the ellipsoid: the dome's centre
+    "highestM": 1342.0,                 // the highest ground (or building) within range: the dome's ceiling
     "floor": "data:image/png;base64,…"  // below
   } ] }
 ```
@@ -397,18 +399,46 @@ measures against a ground nobody sees. So:
 - A side benefit: over the local DEMs, the threat's area is not fetched from
   AWS tile by tile.
 
-The 2D mask and the KMZ stay on Terrarium unless the owner says otherwise
-(question 7), so near a band's edge the 2D overlay and the 3D shading can
-differ by a cell or two.
+**The 2D mask and the KMZ follow, once T1 is measured** (the owner asked which
+is more accurate, 2026-10-27). In the United States both sources are USGS 3DEP:
+the local DEMs are the original 1/3″ (about 10 m) bare earth, Terrarium a copy
+resampled into web tiles, and at the zoom the mask asks for (about 58 m at 25
+nmi) each of its pixels is an average of the original's. Outside the US,
+Terrarium is largely SRTM, whose radar reads somewhere between the ground and
+the canopy top in forest. So where the local DEMs cover the range they are the
+more accurate ground, and using them for 2D too means the 2D overlay, the KMZ
+and the 3D view agree to the cell. The cost is that a KMZ's shapes change, and
+reading the local DEMs may be slower; step T5 makes the switch only if T1's
+timing allows it. Until then the 2D overlay and the 3D shading can differ by a
+cell or two near a band's edge.
 
-##### Trees and buildings: bare earth, unless the owner decides otherwise
+##### Buildings count as cover; trees never do
 
-Radar does not stop at foliage: how much a canopy hides depends on the band,
-the season and the trees. Counting the canopy as cover errs in the dangerous
-direction, showing an aircraft as hidden when it may be seen. So the floor is
-bare earth. If the owner wants trees counted (question 6), it is an optional,
-labelled "canopy as cover" view, only inside the point cloud's area, from
-Phase 3's canopy-top raster, and the route comparison stays on bare earth.
+The owner's decision, 2026-10-27. Radar does not stop at foliage (how much a
+canopy hides depends on the band, the season and the trees), so counting it
+would show an aircraft as hidden when it may be seen. A building does block.
+
+- **Trees never.** LiDAR classes 3, 4 and 5 are left out everywhere.
+- **Buildings where the LiDAR says so**: class 6 returns, near the LZ the 3D
+  view is open on (`near` in the request), in the square the point cloud
+  streams. Surveys from about 2015 on classify buildings; an older one does
+  not, and the 3D window then says the mask has no buildings here. There are
+  no building heights anywhere else, so elsewhere the mask is bare earth, and
+  the window says so.
+- **At the buildings' own scale.** A building is far smaller than a 58 m cell;
+  raising a whole cell to a roof would cast a shadow several times too wide,
+  the dangerous direction again. So the server reads the square's class 6
+  returns from the survey's octree (`lidar/ept.py`, as streaming does) into a
+  building-top raster (highest return per 2 m cell, ellipsoidal, nothing where
+  no building is), and marches the rays that cross the square again at 2 m
+  steps over the higher of ground and roof, carrying in the blocking angle the
+  coarse march had reached at the square's edge. Cells outside the square keep
+  the bare-earth floor; a building's shadow that would reach past the square
+  is cut at its edge, which errs toward "seen".
+- The read is of the LZ's area, which the 3D view already streams; nothing
+  about the threat goes to AWS. Nothing read is kept beyond the stream's own
+  cache of pieces.
+- `B` and `highestM` include the buildings in the square.
 
 ##### Drawing it in Cesium
 
@@ -425,8 +455,9 @@ primitive collection, refilled by its own effect, never rebuilding the viewer
    Inside the point cloud the ground returns cover it, and it shows between
    the points; a screenshot will say whether that reads.
 2. **The floor sheet** — a translucent `Primitive` built from the floor grid,
-   decimated to at most 256 × 256 vertices, in the radar's colour at about
-   25%. **Only triangles whose cells are all hidden at the lowest band**
+   decimated to at most 256 × 256 vertices, in the 2D rings' colours (the
+   owner, 2026-10-27): engagement red `#ef4444`, detection orange `#fbbf24`
+   (`ringColor` in `ThreatLayer.jsx`), at about 25%. **Only triangles whose cells are all hidden at the lowest band**
    (`B ≥ 1`), so the sheet is always at least 50 ft above the ground it was
    computed over. This matters because `depthTestAgainstTerrain` is off (see
    the depth-test spike): a sheet allowed near or under the ground would draw
@@ -436,12 +467,15 @@ primitive collection, refilled by its own effect, never rebuilding the viewer
    above it shows clear: the picture of hidden and seen without a legend.
 3. **Range domes** — a sphere of `rangeM` round `antennaM`, meshed by hand
    (2° of azimuth by 2° of elevation), a vertex kept only where it is above
-   the floor at the ground point under it and below a **ceiling** (question
-   9). A 25 nmi dome is 46 km high; drawn whole it dwarfs the LZ and puts the
-   camera inside it. Cut at a ceiling, what remains is a translucent wall at
-   the edge of range, open where terrain hides an aircraft. The ring on the
-   ground (a clamped polyline, detection amber, engagement red, as 2D) is
-   always drawn.
+   the floor at the ground point under it and below a **ceiling 1,000 ft
+   above the highest ground or building within range** (`highestM` +
+   304.8 m; the owner, 2026-10-27). How high a radar looks depends on the
+   system and a `.ths` does not say, and a 25 nmi dome is 46 km high: drawn
+   whole it dwarfs the LZ and puts the camera inside it. Cut at the ceiling,
+   what remains is a translucent wall at the edge of range, open where
+   terrain hides an aircraft, covering every height a helicopter flying
+   terrain-relative could be at. Same colours as the sheet. The ring on the
+   ground (a clamped polyline, as 2D) is always drawn.
 4. **Route exposure** — beside Phase 3's clearance. `placeRoutes` already
    gives every visible route as runs of `[lon, lat, heightM]` every 50 m, in
    ellipsoidal metres from the planned MSL. A sample is **seen** when it is
@@ -452,16 +486,18 @@ primitive collection, refilled by its own effect, never rebuilding the viewer
    a wider translucent sleeve in the radar's colour under the route line,
    leaving the line's own colour to Phase 3's clearance; and listed in the
    window: `ROUTE 1 · seen by THREAT 2 (engagement) for 1.8 km, .CP2 to .CP3`.
-   A landing zone the radar sees on the ground is listed too. The rule is
-   geometry only: whether a few seconds of exposure matter is doctrine, not
-   ours to set (question 10).
+   A landing zone the radar sees on the ground is listed too. **It is
+   information, not a warning** (the owner, 2026-10-27): no tolerance, no
+   alert, nothing refused or flagged as an error. A route through a threat is
+   a legitimate plan; the crew decide whether to accept being seen.
 
 ##### When the 3D view asks, and threat privacy
 
 AGENTS.md §2: a threat's position goes to the server only in an explicit
 viewshed, KMZ or QR request, and the server keeps nothing.
 
-- **The 3D window has a *Threats* switch, off when it opens.** Turned on, it
+- **The 3D window has a *Threats* switch, shown only while there are threats
+  on the map** (the owner, 2026-10-27), off when the window opens. Turned on, it
   asks `/api/threat-floor` once for each visible threat whose floor it does
   not have, or whose position or radars changed since (keyed on the request
   body). It does not ride on the 2D mask fetch, which runs on every save and
@@ -509,6 +545,13 @@ when the web's version has had a screenshot from the owner.
   leg flown under it tinted.
 - **T3 — range domes,** at the owner's ceiling.
 - **T4 — route exposure,** with Phase 3 or after it.
+- **T5 — the 2D mask and the KMZ on the same ground,** if T1's timing allows:
+  `/api/threat-mask` and the KMZ thresholded from the same floor over the
+  local DEMs (one pass per radar), Terrarium where they do not cover. Their
+  answers change shape; the openapi description says which ground.
+- **T6 — buildings,** the 2 m building-top raster and the fine march in the
+  LZ's square. Done when a mask beside a building the survey classifies shows
+  its shadow, and one over an older survey says it has no buildings.
 
 ---
 
@@ -534,7 +577,8 @@ when the web's version has had a screenshot from the owner.
   the AGL fallback, shaping-point interpolation, `lng` sectors, labels equal
   to `computeRoutePlan`'s values, hidden routes left out.
 - **Threats (Phase 4):** pytest holds the floor to `viewshed()` band by band
-  on one DEM, the geoid, the Terrarium fallback, and that nothing is written;
+  on one DEM, the geoid, the Terrarium fallback, `highestM`, a building's
+  shadow inside the square (and none from trees), and that nothing is written;
   Jest holds the decode, the sheet's triangles (never one with a cell seen at
   the lowest band) and route exposure against synthetic floors.
 - **Visual:** headless Chromium with SwiftShader renders WebGL well enough to
@@ -556,27 +600,21 @@ when the web's version has had a screenshot from the owner.
    it follow the 2D layer toggles?
 5. **The depth-test spike's outcome** — needs a screenshot.
 
-Threats in 3D (Phase 4):
+Threats in 3D (Phase 4), answered 2026-10-27:
 
-6. **Do trees and buildings count as cover?** The plan is bare earth: radar
-   does not simply stop at foliage, and counting the canopy shows an aircraft
-   as hidden when it may be seen. If yes, only inside the point cloud's area,
-   as a labelled option.
-7. **Should the 2D mask and the KMZ move to the local DEMs too**, so 2D and 3D
-   agree to the cell? It changes the shapes in exported KMZs, and would make
-   the 2D mask one pass per radar instead of one per band.
-8. **When the 3D view asks for the floor**: the plan is a *Threats* switch in
-   the 3D window, off when it opens, so nothing more is sent for people who
-   never use it. The alternative is to fetch it with every 2D mask.
-9. **The domes' ceiling.** A 25 nmi dome is 46 km high. Cut at a ceiling, it
-   becomes a wall at the edge of range. What ceiling: the threat's highest
-   band, a fixed altitude AGL (3,000 ft?), or no domes, only the rings?
-10. **Route exposure**: is "any sample at or above the floor is seen" the right
-    rule, or does doctrine allow a tolerance (seen for under N seconds, or
-    within N ft of the floor)? Doctrinal values, not guesses.
-11. **Colours**: the 3D shading uses each threat's own band colours, as 2D
-    does. Should the sheet and domes use the radar's colour (detection amber,
-    engagement red) or the band colours?
+6. **Cover**: buildings count, trees never. Buildings from the LiDAR's class 6
+   near the LZ only (T6).
+7. **2D on the local DEMs**: the owner asked which is more accurate. The local
+   DEMs are (see *Which ground the mask is computed over*), so the 2D mask and
+   the KMZ move to them in T5, if T1's timing allows.
+8. **When the 3D view asks**: its own *Threats* switch, shown while there are
+   threats on the map.
+9. **Dome ceiling**: 1,000 ft above the highest ground or building within the
+   radar's range.
+10. **Route exposure** is information only, with no tolerance or warning: the
+    crew decide what risk to take.
+11. **Colours**: as 2D. Engagement red, detection orange; the shading keeps
+    each band's own colour.
 
 ---
 
@@ -596,6 +634,7 @@ Threats in 3D (Phase 4):
 | Phase 4: `backend/routes/threat_routes.py` | `viewshed_floor`, `POST /api/threat-floor` |
 | Phase 4: `backend/terrain_provider.py`, `terrain_tiles.py` | The range's square from the local DEMs at a given grid; the geoid over a square |
 | Phase 4: `backend/tests/test_threat_floor.py` | New |
+| Phase 4 (T6): `backend/lidar/ept.py` or a new `lidar/buildings.py` | Class 6 returns near the LZ as a 2 m building-top raster |
 | Phase 4: `contracts/openapi.yaml`, `backend/api_version.py` | The route; minor bump |
 | Phase 4: `frontend/src/feature/viewer3d/threatScene.js` (+ test) | New — decode, shading, sheet, domes, route exposure |
 | Phase 4: `frontend/src/feature/viewer3d/Viewer3D.jsx`, `Lz3DWindow.jsx` | The *Threats* switch, a `threats` data source and primitives |
