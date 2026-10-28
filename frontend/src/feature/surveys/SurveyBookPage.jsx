@@ -2,6 +2,7 @@ import React, { useId, useRef, useState } from "react";
 import Dialog from "../ui/Dialog";
 import Icon from "../ui/Icon";
 import { STATUS_WORDS } from "./surveyFields";
+import { ImportCell, importStateWords } from "./SurveyImport";
 
 /*
  * One survey book (docs/LZ_SURVEYS.md): for its editors every LZ in page order with its status, how many of its field values disagree
@@ -101,7 +102,7 @@ const ReaderTable = ({ surveys, onOpen }) => (
   </table>
 );
 
-const SurveyBookPage = ({ surveys, onOpen, onNew }) => {
+const SurveyBookPage = ({ surveys, onOpen, onNew, onImport }) => {
   const { list, showArchived } = surveys;
   const editing = Boolean(list.book?.can_edit);
   return (
@@ -117,6 +118,12 @@ const SurveyBookPage = ({ surveys, onOpen, onNew }) => {
           <button type="button" className="ui-btn ui-btn--primary ui-btn--34" onClick={onNew}>
             <Icon name="plus" size={14} />
             New survey
+          </button>
+        )}
+        {editing && !list.book?.archived && onImport && (
+          <button type="button" className="ui-btn ui-btn--34" onClick={onImport}>
+            <Icon name="download" size={14} />
+            Import the old book
           </button>
         )}
         {editing && (
@@ -169,14 +176,15 @@ const SurveyBookPage = ({ surveys, onOpen, onNew }) => {
                   {row.published_revision && row.status !== "published" && <div className="survey-muted">REV {row.published_revision} published</div>}
                 </td>
                 <td>
-                  {/* Never measured is nothing compared yet, not nothing to look at. */}
+                  {/* Never measured is nothing compared yet, not nothing to look at. An import being measured says how it stands. */}
                   {!row.measured_at ? (
-                    <span className="survey-muted">Not measured</span>
+                    importStateWords(row.imported) ? null : <span className="survey-muted">Not measured</span>
                   ) : row.disagreements ? (
                     <span className="survey-state survey-state--warn">{row.disagreements} {row.disagreements === 1 ? "disagreement" : "disagreements"}</span>
                   ) : (
-                    <span className="survey-muted">None</span>
+                    !row.imported?.to_check && <span className="survey-muted">None</span>
                   )}
+                  <ImportCell imported={row.imported} />
                 </td>
                 <td>{row.surveyed_on || "—"}</td>
                 <td>{dateOf(row.measured_at)}</td>

@@ -101,6 +101,14 @@
 
 .survey-new { display: flex; flex-direction: column; gap: 12px; }
 
+/* The old book's import (SurveyImport) */
+.survey-import { display: flex; flex-direction: column; gap: 10px; font-size: 13px; color: var(--ff-text-main); }
+.survey-import p { margin: 0; }
+.survey-import__command {
+  margin: 0; padding: 8px 10px; overflow-x: auto; border-radius: 6px; font-size: 12px; white-space: pre;
+  background: rgba(0, 0, 0, 0.28); color: var(--ff-text-main);
+}
+
 @media (max-width: 960px) {
   .survey-editor__columns { grid-template-columns: minmax(0, 1fr); }
   .survey-window .ui-dialog__foot { flex-wrap: wrap; }

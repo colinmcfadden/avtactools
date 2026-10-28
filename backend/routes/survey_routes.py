@@ -24,19 +24,20 @@ import uuid as uuid_lib
 from datetime import datetime
 from functools import wraps
 
-from flask import Blueprint, g, jsonify, make_response, request, send_file
+from flask import Blueprint, current_app, g, jsonify, make_response, request, send_file
 from flask_jwt_extended import get_jwt_identity, jwt_required
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm.exc import StaleDataError
+from werkzeug.exceptions import RequestEntityTooLarge
 
 import terrain_tiles
 from brief import gotenberg
 from entitlements import is_admin
-from models import LzSurvey, LzSurveyAsset, LzSurveyRevision, SurveyBook, Team, User, db
+from models import LzSurvey, LzSurveyAsset, LzSurveyImport, LzSurveyRevision, SurveyBook, Team, User, db
 from survey import access
 from survey import assets as asset_store
 from survey import changes as change_lines
-from survey import compare, fields, measure, pages
+from survey import compare, fields, importing, measure, pages
 from survey.compile import as_date, compile_page
 from version import __version__
 
@@ -287,7 +288,9 @@ def get_book(book_uuid):
         return _not_found('book')
     if access.can_edit(_me(), book):
         surveys = _book_surveys(book, archived=request.args.get('archived') in ('1', 'true'))
-        return _reply({'book': _book_json(book), 'surveys': [_summary(s) for s in surveys]})
+        records = _import_records(surveys)
+        importing.MEASURER.resume(current_app._get_current_object(), records.values())
+        return _reply({'book': _book_json(book), 'surveys': [_summary(s, records.get(s.id)) for s in surveys]})
     listed = []
     for survey in _book_surveys(book):
         latest = _latest(survey)
@@ -378,6 +381,162 @@ def restore_book(book_uuid):
 
 # -- Surveys -----------------------------------------------------------------------
 
+def _import_refusal(book):
+    if book is None:
+        return _not_found('book')
+    if not access.can_edit(_me(), book):
+        return _not_editor()
+    if book.archived_at is not None:
+        return _error('This book is archived: restore it to import into it.', 409, 'book_archived')
+    return None
+
+
+def _import_plan(book, bundle):
+    """Which of the bundle's pages to make, and why each other one is left as it is: a page of the same book imported before (so
+    importing twice, or again after an answer that was lost, adds nothing), a page the bundle has twice, and an HLZ ID the book has
+    already, archived or not, or the bundle has on an earlier page. In page order."""
+    surveys = LzSurvey.query.filter_by(book_id=book.id).all()
+    taken = {s.hlz_id.upper(): s.archived_at is not None for s in surveys if s.hlz_id}
+    done = {(record.source, record.page) for record in
+            LzSurveyImport.query.join(LzSurvey, LzSurvey.id == LzSurveyImport.survey_id).filter(LzSurvey.book_id == book.id)}
+    make, skipped, pages_seen, ids_seen = [], [], set(), {}
+
+    def skip(page, reason):
+        skipped.append({'page': page['page'], 'hlz_id': page['hlzId'], 'name': page['name'], 'reason': reason})
+
+    for page in bundle.pages:
+        number, hlz_id = page['page'], page['hlzId']
+        if bundle.source and (bundle.source, number) in done:
+            skip(page, f'Page {number} of {bundle.source} was imported into this book already: left as it is.')
+        elif number in pages_seen:
+            skip(page, f'Page {number} is in the bundle twice: imported once.')
+        elif hlz_id and hlz_id in taken:
+            skip(page, f'{hlz_id} is in the book already, archived: restore it there.' if taken[hlz_id]
+                 else f'{hlz_id} is in the book already: left as it is.')
+        elif hlz_id and hlz_id in ids_seen:
+            skip(page, f'{hlz_id} is on page {ids_seen[hlz_id]} of the bundle too: imported from that page.')
+        else:
+            make.append(page)
+        pages_seen.add(number)
+        if hlz_id:
+            ids_seen.setdefault(hlz_id, number)
+    return make, skipped
+
+
+def _import_photos(bundle, page, store):
+    """The page's photos read one at a time, made ready as any upload is (no metadata) and kept in the store; what is made of each,
+    or a warning on the page for one that cannot be used."""
+    warnings, kept = page['notes']['warnings'], []
+    for photo in page['photos']:
+        words = importing.photo_words(photo['kind'])
+        try:
+            data = bundle.photo(photo)
+        except importing.Damaged:
+            warnings.append(f'The {words} is damaged in the bundle and was left out.')
+            continue
+        if data is None:
+            warnings.append(f'The {words} is larger than 20 MB and was left out.')
+            continue
+        try:
+            prepared = asset_store.prepare_photo(data)
+        except asset_store.AssetError as problem:
+            # A picture that cannot be read refuses nothing but itself.
+            warnings.append(f'A photo could not be read ({problem}) and was left out.')
+            continue
+        store.put(prepared.key, prepared.data)
+        kept.append({**photo, 'content_type': prepared.content_type, 'width': prepared.width, 'height': prepared.height,
+                     'size_bytes': len(prepared.data), 'sha256': prepared.key})
+    return kept
+
+
+@survey_bp.route('/api/survey-books/<book_uuid>/import', methods=['POST'])
+@signed_in
+def import_pages(book_uuid):
+    """The old book's pages as drafts in this book (docs/LZ_SURVEYS.md §6), from the bundle tools/import_survey_book.py writes. A page
+    imported into the book before, or whose HLZ ID the book has already, is left out, never written over. Each draft is then
+    measured in the background, one at a time.
+
+    Everything slow is done before the book is locked: the upload is read, the bundle checked and every photo made ready and kept,
+    one at a time. Only then is the book taken (two imports, or an import and a new page, go one after the other), what to make
+    worked out again, and the drafts written."""
+    book = _readable_book(book_uuid)
+    refused = _import_refusal(book)
+    if refused:
+        return refused
+    limit = importing.MAX_BUNDLE_BYTES + 64 * 1024
+    # Refused before the form is read: the file would otherwise be spooled whole first. A request that gives no length (chunked) is
+    # held to the same size as it is read.
+    if request.content_length is not None and request.content_length > limit:
+        return _error(importing.TOO_LARGE, 413, 'bundle_too_large')
+    request.max_content_length = limit
+    try:
+        upload = request.files.get('bundle')
+    except RequestEntityTooLarge:
+        return _error(importing.TOO_LARGE, 413, 'bundle_too_large')
+    if upload is None:
+        return _error('Send the bundle as the form\'s "bundle".', 400, 'missing_file')
+    store = asset_store.store()
+    try:
+        with importing.read_bundle(upload.stream.read(importing.MAX_BUNDLE_BYTES + 1)) as bundle:
+            make, _skipped = _import_plan(book, bundle)
+            # Nothing is held while the photos are made ready: they take seconds, and the database's connection goes back meanwhile.
+            db.session.rollback()
+            photos = {page['page']: _import_photos(bundle, page, store) for page in make}
+    except importing.BundleError as problem:
+        return _error(str(problem), 413 if problem.code == 'bundle_too_large' else 400, problem.code)
+
+    book = _readable_book(book_uuid, lock=True)
+    refused = _import_refusal(book)
+    if refused:
+        return refused
+    # Another import may have taken some of these pages meanwhile: their photos stay in the store unused. One that was not to be
+    # made a moment ago (an HLZ ID let go of meanwhile) has had no photos made ready, and waits for the next import.
+    make, skipped = _import_plan(book, bundle)
+    for page in [page for page in make if page['page'] not in photos]:
+        make.remove(page)
+        skipped.append({'page': page['page'], 'hlz_id': page['hlzId'], 'name': page['name'],
+                        'reason': 'The book changed while the bundle was read: import it again to take this page.'})
+    user, who = _me(), _who()
+    made = []
+    for page in make:
+        place, note = importing.place_of(page['field'])
+        warnings = ([note] if note else []) + page['notes']['warnings']
+        survey = LzSurvey(
+            uuid=str(uuid_lib.uuid4()), book_id=book.id, hlz_id=page['hlzId'], name=page['name'], status='draft', revision=1,
+            field=page['field'], overrides={}, diagram=importing.diagram_at(place[0], place[1], page['name']) if place else None,
+            snapshot=None, created_by=user.id, created_by_name=who, updated_by=user.id, updated_by_name=who,
+        )
+        db.session.add(survey)
+        db.session.flush()
+        for photo in photos.get(page['page'], []):
+            db.session.add(LzSurveyAsset(
+                survey_id=survey.id, kind=photo['kind'], caption=f"From page {page['page']} of the old book",
+                heading_deg=photo['heading_deg'], taken_on=photo['taken_on'], content_type=photo['content_type'],
+                width=photo['width'], height=photo['height'], size_bytes=photo['size_bytes'], sha256=photo['sha256'],
+                created_by=user.id, created_by_name=who,
+            ))
+        db.session.add(LzSurveyImport(
+            survey_id=survey.id, source=bundle.source, page=page['page'], notes={**page['notes'], 'warnings': warnings},
+            state='queued' if place else 'no_target',
+            reason=None if place else "Set the LZ's target on the map, then measure it.",
+            imported_by=user.id, imported_by_name=who,
+        ))
+        made.append(survey)
+    if made:
+        book.page_order = list(book.page_order or []) + [s.uuid for s in made]
+        book.revision += 1
+        book.updated_by_name = who
+    db.session.commit()
+    importing.MEASURER.enqueue(current_app._get_current_object(), [s.id for s in made if s.diagram is not None])
+    records = _import_records(made)
+    return _reply({
+        'source': bundle.source,
+        'created': [_summary(s, records.get(s.id)) for s in made],
+        'skipped': skipped,
+        'book': _book_json(book),
+    }, 201)
+
+
 def _survey(survey_uuid):
     return LzSurvey.query.filter_by(uuid=survey_uuid).first()
 
@@ -442,8 +601,52 @@ def _revision_json(revision):
     }
 
 
-def _summary(survey):
+_LOOK = object()
+
+
+def _import_records(surveys):
+    """Each survey's import record, by survey id, read in one query."""
+    ids = [s.id for s in surveys]
+    if not ids:
+        return {}
+    return {r.survey_id: r for r in LzSurveyImport.query.filter(LzSurveyImport.survey_id.in_(ids)).all()}
+
+
+def _import_brief(record, survey):
+    """How an imported survey stands: where it came from, its measuring (done once it is measured, whoever measured it), and how many
+    notes are left to check."""
+    if record is None:
+        return None
+    notes = record.notes or {}
+    measured = survey.snapshot is not None
+    return {
+        'source': record.source,
+        'page': record.page,
+        'state': 'done' if measured else record.state,
+        'reason': None if measured else record.reason,
+        'to_check': 0 if record.checked_at else sum(len(notes.get(key) or []) for key in ('unread', 'blank', 'warnings')),
+        'checked': record.checked_at is not None,
+    }
+
+
+def _import_full(record, survey):
+    if record is None:
+        return None
+    notes = record.notes or {}
+    return {
+        **_import_brief(record, survey),
+        'notes': {key: list(notes.get(key) or []) for key in ('unread', 'blank', 'warnings')},
+        'imported_by': record.imported_by_name,
+        'imported_at': _iso(record.imported_at),
+        'checked_by': record.checked_by_name,
+        'checked_at': _iso(record.checked_at),
+    }
+
+
+def _summary(survey, record=_LOOK):
     snapshot = survey.snapshot or {}
+    if record is _LOOK:
+        record = LzSurveyImport.query.filter_by(survey_id=survey.id).first()
     return {
         'uuid': survey.uuid,
         'hlz_id': survey.hlz_id,
@@ -455,6 +658,7 @@ def _summary(survey):
         'grid': snapshot.get('grid') or (survey.field or {}).get('grid') or '',
         'measured_at': snapshot.get('measuredAt'),
         'published_revision': _latest_number(survey),
+        'imported': _import_brief(record, survey),
         'updated_by': survey.updated_by_name,
         'updated_at': _iso(survey.updated_at),
         'archived': survey.archived_at is not None,
@@ -480,8 +684,10 @@ def _full(survey):
     asset_rows = _assets(survey)
     revisions = _revisions(survey)
     book = _book_of(survey)
+    record = LzSurveyImport.query.filter_by(survey_id=survey.id).first()
     return {
-        **_summary(survey),
+        **_summary(survey, record),
+        'imported': _import_full(record, survey),
         'book': {'uuid': book.uuid, 'name': book.name} if book else None,
         'revisions': [_revision_json(r) for r in revisions],
         'next_revision': (revisions[-1].number if revisions else 0) + 1,
@@ -702,6 +908,24 @@ def measure_survey(survey_uuid):
         'comparisons': compare.compare(survey.field, snapshot, survey.overrides),
         'survey': _full(survey) if apply else None,
     })
+
+
+@survey_bp.route('/api/surveys/<survey_uuid>/import/checked', methods=['POST'])
+@signed_in
+def import_checked(survey_uuid):
+    """The import's notes on a survey have been looked at. They are kept, and the book's page no longer counts them. Not a change to
+    the survey: its revision and status stay."""
+    survey, _book, refused = _editable(survey_uuid)
+    if refused:
+        return refused
+    record = LzSurveyImport.query.filter_by(survey_id=survey.id).first()
+    if record is None:
+        return _error('This survey was not imported.', 404, 'not_imported')
+    if record.checked_at is None:
+        record.checked_at = datetime.utcnow()
+        record.checked_by_name = _who()
+        db.session.commit()
+    return _reply(_full(survey))
 
 
 # -- Review and publishing ------------------------------------------------------------

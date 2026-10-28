@@ -1,9 +1,9 @@
 # LZ surveys — architecture and plan
 
-Status: **L1 and L5 built** (2026-10-26: a survey is made, edited, measured and photographed on the web, then sent for review,
-signed off and published as a one-page PDF that readers open; §12 and §13 say what each settled that the plan did not). **Books are
-many** (the owner, 2026-10-26, §11 R8): a book may be a team's, its owner and admins edit it and its members read it. L6, L2, L4 and
-L3 are next, in that order. The owner's answers of 2026-10-26 are in §10, and the decisions taken on the same day are in §11; nothing
+Status: **L1, L5 and L2 built** (2026-10-26: a survey is made, edited, measured and photographed on the web, then sent for review,
+signed off and published as a one-page PDF that readers open, and the old book's 44 pages are imported as drafts and measured in the
+background; §12, §13 and §14 say what each settled that the plan did not). **Books are many** (the owner, 2026-10-26, §11 R8): a book
+may be a team's, its owner and admins edit it and its members read it. L6, L4 and L3 are next, in that order. The owner's answers of 2026-10-26 are in §10, and the decisions taken on the same day are in §11; nothing
 is open. This file is
 the plan for building the feature; where it and the code disagree once it is built, the code wins (AGENTS.md §16).
 
@@ -47,7 +47,7 @@ counterpart and is the admin's to edit (§11, R3). The LZ DONOVAN draft shows wh
   target) in the same DEM the slope and profiles use**, with that DEM named on the page.
 - **Slope:** the hazard line says a 16.6° cross slope exceeds the 15° limit while the table says 0.4° across on average. 16.6° is the
   steepest single cell; a survey's slope call uses the **95th percentile** (§3.3).
-- **Grid:** the book's lat/long for DONOVAN is about 460 m from its own grid. The import (§6) flags every page whose two disagree by
+- **Grid:** the book's lat/long for DONOVAN is 527 m from its own grid. The import (§6) flags every page whose two disagree by
   more than 50 m; the computed grid is the LZ's own (its touchdown point), and its lat/long is worked out from it.
 
 ---
@@ -175,12 +175,12 @@ every published survey's latest revision in page order, numbered "n OF N". Print
 
 ## 6. Importing the existing book
 
-A script run once on the owner's Mac, `tools/import_survey_book.py`, reads the 44-page PDF with poppler (`pdftotext -layout` per page for
-the labelled fields, `pdfimages` for the two photos), and writes a bundle: one JSON per page and its photos. **No PDF library is added to
-the backend.** The editor's *Import* takes the bundle and makes a draft per page, with every field it could not read listed for review
-and the grid and lat/long checked against each other (§2). For each draft the server then measures in the background, one at a time:
-the boundary from the model at the grid (SAM, as *Analyze* does), the snapshot, and the obstacles. A boundary the model finds poorly is
-the admin's to draw. 44 analyses take about 10 minutes.
+A script run once on the owner's Mac, `tools/import_survey_book.py`, reads the 44-page PDF with poppler's `pdftohtml -xml` (every piece
+of text and every picture, with its place on the page) and writes a bundle: `manifest.json` and the photos. **No PDF library is added to
+the backend.** The book's *Import the old book* takes the bundle and makes a draft per page, with every field it could not read listed for
+review and the grid and lat/long checked against each other (§2). For each draft the server then measures in the background, one at a
+time: the boundary from the model at the grid (SAM, as *Analyze* does), then the snapshot; the obstacles join it with L4. A boundary the
+model finds poorly is the admin's to draw. §14 says how it was built.
 
 ---
 
@@ -206,11 +206,11 @@ the web hides what a person may not do, and nothing else. Once organizations exi
 
 | | |
 |---|---|
-| Server | `backend/models.py` (four tables), `backend/routes/survey_routes.py` (the API below), `backend/survey/` (`assets.py` the store, `measure.py` the snapshot, `obstacles.py` §4, `compile.py` the model, `figures.py`, `pages.py`, `templates/survey.html`, `book.py`) |
-| API | `GET/POST /api/survey-books`, `GET/PATCH /api/survey-books/<uuid>` (a reader sees the published pages), `POST …/archive`, `…/restore`, `GET /api/survey-books/<uuid>/pdf` (L6), `POST …/import` (L2); `POST /api/surveys`, `GET/PATCH /api/surveys/<uuid>`, `POST …/archive`, `…/restore`, `…/measure`, `…/submit`, `…/draft`, `…/publish`, `GET …/pdf[?rev=]`, `GET …/page[?rev=]` (the page as HTML, without Gotenberg), `POST …/assets`, `GET/PATCH/DELETE …/assets/<id>` (`Cache-Control: private`). Web only: **not in `contracts/openapi.yaml`**, so the API version does not move |
+| Server | `backend/models.py` (five tables: the four of §3.1 and `lz_survey_import`, §14), `backend/routes/survey_routes.py` (the API below), `backend/survey/` (`assets.py` the store, `measure.py` the snapshot, `obstacles.py` §4, `compile.py` the model, `figures.py`, `pages.py`, `templates/survey.html`, `importing.py` the import, `book.py`) |
+| API | `GET/POST /api/survey-books`, `GET/PATCH /api/survey-books/<uuid>` (a reader sees the published pages), `POST …/archive`, `…/restore`, `GET /api/survey-books/<uuid>/pdf` (L6), `POST …/import` (the old book's bundle); `POST /api/surveys`, `GET/PATCH /api/surveys/<uuid>`, `POST …/archive`, `…/restore`, `…/measure`, `…/submit`, `…/draft`, `…/publish`, `GET …/pdf[?rev=]`, `GET …/page[?rev=]` (the page as HTML, without Gotenberg), `POST …/assets`, `GET/PATCH/DELETE …/assets/<id>`, `POST …/import/checked` (`Cache-Control: private`). Web only: **not in `contracts/openapi.yaml`**, so the API version does not move |
 | Web | `feature/surveys/`: `SurveyBookPage` (the list), `SurveyEditor` (the form, the map in survey mode reusing the LZ/PZ editors and terrain layers, the 3D window with *Capture*, the PDF preview, the disagreements panel, revisions and publish), `SurveyImport`, `useSurveys` |
 | Tools | `tools/import_survey_book.py` |
-| Tests | the model held to a fixture made from DONOVAN (`contracts/fixtures/surveys/`), the 95th-percentile call, the obstacle products over a recorded piece, the routes' permissions, the asset store's EXIF stripping and keys, the importer over a generated two-page book |
+| Tests | the model held to a fixture made from DONOVAN (`contracts/fixtures/surveys/`), the 95th-percentile call, the obstacle products over a recorded piece, the routes' permissions, the asset store's EXIF stripping and keys, the importer over two of the real book's pages as poppler lays them out |
 
 ---
 
@@ -352,3 +352,51 @@ What L5's independent review found, and what now holds (each with a test, `backe
   take its row first.
 - **A reader is not told that a draft or an archived survey exists** (404, where an editor's route once answered 403), and a reader's
   book carries no revision or last change, which move with the drafts; it says when the book last published.
+
+---
+
+## 14. L2 as built (2026-10-26)
+
+What the import settled that the plan did not. The code is `tools/import_survey_book.py`, `backend/survey/importing.py`, the two
+routes in `backend/routes/survey_routes.py`, and `frontend/src/feature/surveys/SurveyImport.jsx`.
+
+- **One poppler tool, `pdftohtml -xml`**, rather than `pdftotext -layout` and `pdfimages`: it gives every piece of text and every
+  picture with its place on the page, which the form needs. Each line is rebuilt from its pieces (the book writes "OCT 202" and "3" in
+  two fonts, and a raised "th" one point above its "5"), each value is the text after its label up to the next label (the footer's too,
+  so a label the importer does not know is said, never read into the date before it), a number keeps its thousands ("1,850 ft msl" is
+  1850), the photos are the first two of the page's pictures, top to bottom, of at least 40,000 square points (north first; the form's own
+  small images are far smaller), and the approach photo looks down its "View 290°" caption, else the best approach. What a page does not
+  have is named (`unread`, a survey profile with no title of its own included), a label with nothing after it is `blank`, and anything
+  to check is a warning (a Max A/C that is not a number by day and night, kept as written: "**HOIST ONLY**", "N/A"). Nothing is made up.
+  The tests run over two real pages saved as poppler writes them (`tools/fixtures/survey_book_pages.xml`), so they need no poppler.
+- **The bundle** is one zip, `manifest.json` (format `ezpz-survey-import`, version 1) and `photos/`: 14 MB for the 44 pages. The server
+  takes it as input from anyone: 100 MB at most (Cloudflare's limit, a request with no length held to it as it is read), 400 MB
+  inflated, 2,000 files, 20 MB a photo, read without extracting anything, only the photos the manifest names, one at a time. Each page
+  is held to the editor's rules (its values, its name and HLZ ID once in capitals, its photos' dates): what they would refuse, and a
+  photo that is damaged in the bundle, is left out and said in the page's warnings, so one odd page never stops the book; only a bundle
+  that is no bundle, and an entry that is no page, are refused. Everything slow (the upload, the bundle, every photo made ready) is done
+  before the book is locked, so a large import holds nothing others wait on.
+- **A draft per page, in page order**, with its photos re-encoded as any upload is (no metadata), its target at the book's grid (the
+  centre of the square the grid names), and an LZ/PZ diagram that is the web's own document (`contracts/fixtures/surveys/imported_diagram.json`,
+  held both sides: the web's `serializeLzDiagram` gives it back unchanged). A page of the same file imported into the book before, a
+  page the bundle has twice, and a page whose HLZ ID the book has (archived or not) or the bundle has on an earlier page, are left as
+  they are, so importing twice, or again after an answer that was lost, adds nothing.
+- **Grid against lat/long** (§2): a page whose two are more than 50 m apart says so, and the target stays at the grid. The lat/long is
+  read as the editor reads one (degrees and decimal minutes, degrees, minutes and seconds, or decimal degrees), and one that cannot be read
+  is said, never passed over. Of the 44: LZ
+  DONOVAN 527 m (not the 460 m first estimated), LZ RICO 97 m, LZ ROCK 77 m. A page with no grid to read is placed at its lat/long, with a
+  note; with neither, it has no target, and says to set one.
+- **Measuring in the background** (`Measurer`): one thread, one survey at a time, in the order imported: SAM's boundary at the target (the
+  analysis's own code, `terrain_routes.find_lz_boundary`), then the snapshot, each written only if no editor saved the survey meanwhile
+  (else the survey says it changed while measured, and the editor's work stands), in the name "EZ/PZ (import)", not the importer's, who
+  did not save it then. A survey open in the editor while it is measured is read again every 5 s, and what the measuring wrote comes in
+  under what was typed (`rebaseDraft`), so its next save is not refused as someone else's. The imagery the model reads and the elevation
+  service give up after 30 s of silence, and the thread outlives a database that goes away (that survey waits for the book's next look).
+  How each stands is on its import record
+  (`lz_survey_import`: queued, finding, measuring, done, no target, no boundary, failed, changed), kept apart from the survey so writing it
+  never moves the survey's revision; the book's list reads itself again every 5 s while any is waiting. A restart loses the thread, and the
+  book's next look queues again what was waiting. Tried against a scratch server with the real model: three of the book's pages imported
+  and measured within seconds (SAM about 0.4 s a page once loaded).
+- **The notes stay with the survey** ("From the old book" in the editor, and a count on the book's list) until an editor marks them
+  checked, which keeps them and stops counting them; it is not a change to the survey.
+

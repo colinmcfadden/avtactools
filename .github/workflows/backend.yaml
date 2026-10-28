@@ -10,11 +10,15 @@ on:
     paths:
       - "backend/**"
       - "contracts/**"
+      - "tools/import_survey_book.py"
+      - "tools/fixtures/**"
       - ".github/workflows/backend.yaml"
   pull_request:
     paths:
       - "backend/**"
       - "contracts/**"
+      - "tools/import_survey_book.py"
+      - "tools/fixtures/**"
       - ".github/workflows/backend.yaml"
 
 permissions:
@@ -80,3 +84,4 @@ jobs:
           tests/test_packs.py tests/test_pack_ops.py tests/test_realtime.py tests/test_realtime_live.py
           tests/test_api_version.py tests/test_lidar_stream.py tests/test_lidar_photo.py tests/test_lidar_api.py tests/test_lidar_catalog.py
           tests/test_survey_measure.py tests/test_surveys.py tests/test_survey_books.py tests/test_survey_page.py tests/test_survey_revisions.py
+          tests/test_survey_book_import.py tests/test_survey_import.py

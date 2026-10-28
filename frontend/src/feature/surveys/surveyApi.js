@@ -39,6 +39,16 @@ export const updateBook = async (uuid, revision, patch) => (await api.patch(`/su
 
 export const archiveBook = async (uuid) => (await api.post(`/survey-books/${uuid}/archive`)).data;
 
+/**
+ * The old book's pages as drafts in this book, from the bundle tools/import_survey_book.py writes: { created, skipped, source, book }.
+ * The server measures each draft afterwards, in the background; each survey's `imported.state` says how it stands.
+ */
+export const importBook = async (uuid, file) => {
+  const form = new FormData();
+  form.append("bundle", file);
+  return (await api.post(`/survey-books/${uuid}/import`, form)).data;
+};
+
 export const restoreBook = async (uuid) => (await api.post(`/survey-books/${uuid}/restore`)).data;
 
 export const getSurvey = async (uuid) => (await api.get(`/surveys/${uuid}`)).data;
@@ -50,6 +60,9 @@ export const createSurvey = async ({ book, name, hlzId, field, diagram }) =>
 export const saveSurvey = async (uuid, revision, patch) => (await api.patch(`/surveys/${uuid}`, patch, at(revision))).data;
 
 export const archiveSurvey = async (uuid) => (await api.post(`/surveys/${uuid}/archive`)).data;
+
+/** The import's notes on a survey have been looked at: the survey, its revision unchanged. */
+export const markImportChecked = async (uuid) => (await api.post(`/surveys/${uuid}/import/checked`)).data;
 
 export const restoreSurvey = async (uuid) => (await api.post(`/surveys/${uuid}/restore`)).data;
 
@@ -115,6 +128,10 @@ const WORDS = {
   not_an_image: "That file is not a picture that can be read.",
   unsupported_image: "Send a JPEG or a PNG.",
   image_too_large: "That picture is too large to read.",
+  bundle_too_large:
+    "The bundle holds more than an import takes (100 MB sent, 400 MB unpacked). Run the importer on part of the book (--pages) and import each part.",
+  book_archived: "This book is archived: restore it to import into it.",
+  not_imported: "This survey was not imported.",
 };
 
 /** The app's words for why a survey call failed (never the server's own text, which is for a developer, but for a 400's). */

@@ -7,6 +7,7 @@ import BooksPage, { NewBookDialog } from "./BooksPage";
 import SurveyBookPage, { BookSettingsDialog, NewSurveyDialog } from "./SurveyBookPage";
 import SurveyEditor from "./SurveyEditor";
 import SurveyReader from "./SurveyReader";
+import { ImportDialog } from "./SurveyImport";
 import "./surveys.css";
 
 /*
@@ -21,7 +22,7 @@ const lzCount = (n) => `${n} ${n === 1 ? "LZ" : "LZs"}`;
 const SurveyBook = ({ onClose, client, isAdmin = false }) => {
   const surveys = useSurveys(client ? { client } : undefined);
   const { show } = useToast();
-  const [making, setMaking] = useState(null); // "book" | "survey"
+  const [making, setMaking] = useState(null); // "book" | "survey" | "import"
   const [settings, setSettings] = useState(false);
   const [leaving, setLeaving] = useState(null); // what to do once the question is answered: "book" | "books" | "close"
   const [archiving, setArchiving] = useState(null); // "survey" | "book"
@@ -141,7 +142,9 @@ const SurveyBook = ({ onClose, client, isAdmin = false }) => {
   let body;
   if (survey) body = <SurveyEditor surveys={surveys} />;
   else if (reading) body = <SurveyReader key={reading.uuid} surveys={surveys} />;
-  else if (bookUuid) body = <SurveyBookPage surveys={surveys} onNew={() => setMaking("survey")} onOpen={open} />;
+  else if (bookUuid) {
+    body = <SurveyBookPage surveys={surveys} onNew={() => setMaking("survey")} onImport={() => setMaking("import")} onOpen={open} />;
+  }
   else body = <BooksPage surveys={surveys} isAdmin={isAdmin} onNew={() => setMaking("book")} onOpen={(uuid) => surveys.openBook(uuid)} />;
 
   return (
@@ -169,6 +172,9 @@ const SurveyBook = ({ onClose, client, isAdmin = false }) => {
             surveys.openBook(made.uuid);
           }}
         />
+      )}
+      {making === "import" && book && (
+        <ImportDialog bookName={book.name} onImport={surveys.importPages} onCancel={() => setMaking(null)} />
       )}
       {making === "survey" && (
         <NewSurveyDialog
