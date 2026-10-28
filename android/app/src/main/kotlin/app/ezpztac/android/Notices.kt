@@ -6,6 +6,6 @@ import app.ezpztac.network.SignedOutReason
 fun signedOutNotice(reason: SignedOutReason, code: String?): String? = when {
     reason == SignedOutReason.NOT_SIGNED_IN -> null
     code == "offline_too_long" ->
-        "This device has not been online for more than 14 days, so you need to sign in again. Your plans on this device are kept."
+        "This device has not been online for more than 30 days, so you need to sign in again. Your plans on this device are kept."
     else -> "Your session expired. Sign in again to continue."
 }

@@ -31,12 +31,15 @@ internal data class AccessToken(val userId: Int, val token: String) {
 }
 
 /**
- * How long a device may go without the server confirming the account before it must sign in again: 14 days, as the owner decided
- * (docs/NATIVE_APPS_PLAN.md, "Risks and decisions"). It is the one place access that was withdrawn is noticed by a device that never
- * goes online; everything it saved stays on the device, only the session ends.
+ * How long a device may go without the server confirming the account before it must sign in again: 30 days, the server's own window
+ * (a refresh token lapses 30 days after its last use, so past this the session is over on the server too, and the next contact would
+ * end it). It was 14 (docs/NATIVE_APPS_PLAN.md, "Risks and decisions") until sign-ins were made to last while the account is active
+ * (2026-10-28): 14 locked a crew out of planning after two weeks without signal, with no way to sign in where they were. It is the one
+ * place access that was withdrawn is noticed by a device that never goes online; everything it saved stays on the device, only the
+ * session ends.
  */
 public object OfflineGrace {
-    public const val DAYS: Long = 14
+    public const val DAYS: Long = 30
 
     /**
      * Whether [session] is past the grace period at [nowEpochSeconds]. A session with no stamp is not: it is stamped at the next answer,
@@ -91,7 +94,7 @@ public enum class SignedOutReason {
     /** Nobody has signed in on this device yet, or they signed out. */
     NOT_SIGNED_IN,
 
-    /** The server ended the session (a password reset, a sign-out from another device, a suspension, 180 days). */
+    /** The server ended the session (a password reset, a sign-out from another device, a suspension, 30 days unused). */
     SESSION_ENDED,
 }
 

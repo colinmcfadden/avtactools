@@ -196,7 +196,7 @@ the fields serves API 1.
 | Area | Routes |
 |---|---|
 | auth | `POST /api/auth/{login,register,google,verify-email,resend-verification,forgot-password,reset-password,mil/request,mil/verify}`, `GET /api/auth/me` |
-| auth, native apps | `POST /api/auth/refresh`, `POST /api/auth/logout`, `GET /api/auth/sessions`, `DELETE /api/auth/sessions/<id>`, `DELETE /api/auth/me` (account deletion) — design in `AUTHENTICATION.md` |
+| auth, sessions | `POST /api/auth/refresh` (a native app's token in the body; the web's in its `ezpz_refresh` cookie, with `X-EZPZ-Session: cookie`), `POST /api/auth/logout`, `GET /api/auth/sessions`, `DELETE /api/auth/sessions/<id>`, `DELETE /api/auth/me` (account deletion) — design in `AUTHENTICATION.md` |
 | terrain | `POST /api/analyze-field` (SAM), `POST /api/terrain-analysis` (slope), `POST /api/elevations` (planner/AMPS ground, Terrarium), `GET /api/terrain/heightmap/<level>/<x>/<y>`, `POST /api/terrain/heights` (3D ground + geoid, local DEMs) |
 | location | `POST /api/convert-grid` (MGRS → lat/lon), `POST /api/convert-to-mgrs` (no longer called by the SPA, which converts lat/lon → MGRS itself with `utils/mgrs.js`) |
 | weather | `GET /api/weather` (optional `at`, a planned time: the TAF period covering it, `kind: "forecast"`, or the METAR, `kind: "observation"`; without `at` unchanged), `POST /api/route-winds` |
@@ -289,10 +289,22 @@ because `create_all` never adds an index to an existing table. When you add a co
 ways — and quote `"user"`, which is reserved in Postgres.
 
 JWTs carry an `sv` (session version) claim; a password reset bumps it, which
-revokes older tokens. Tokens live 24 h in `localStorage` (`auth_token`). A native
-app's token also carries `sid` (its device session) and is refused the moment that
-session is signed out: `token_revocation.is_revoked` is the one check, used by
-`app.py` and the tests alike.
+revokes older tokens. **A sign-in lasts while the account is active and the device
+is used at least once in 30 days** (the owner, 2026-10-28, as ForeFlight's does): a
+device session (a refresh-token *family*, `refresh_tokens.py`) slides 30 days on
+each refresh and has no other limit (it was capped at 180 days). It ends at a
+password reset, a suspension or deletion, a sign-out (here or from another
+device's Sessions) and a spent refresh token coming back after 30 s. The native
+apps keep their refresh token in the device's store; **the web's is an HttpOnly
+cookie** (`refresh_cookie.py`: `ezpz_refresh`, Secure, SameSite=None, Partitioned,
+under `/api/auth`, asked for with `X-EZPZ-Session: cookie`, which is also the CSRF
+guard) and its access token lives in the page's memory, 15 minutes at a time
+(`frontend/src/feature/auth/session.js`; refreshes serialised across tabs with Web
+Locks, since every refresh spends the one cookie). A browser that will not keep the
+cookie (Safari while the API is on another site) keeps the sign-in's 24-hour token
+in `localStorage` (`auth_token`), as the web always did. Every session's access
+token carries `sid` and is refused the moment that session ends:
+`token_revocation.is_revoked` is the one check, used by `app.py` and the tests alike.
 
 ---
 
@@ -415,7 +427,7 @@ which costs one warm-up (~1 min) and the first view of each area again.
 |---|---|
 | `JWT_SECRET_KEY` | **Required — set it on every deployment.** Signs JWTs. Startup refuses a missing or <32-char value in production — whenever `FLY_APP_NAME`, `TRUSTED_PROXY` or `APP_ENV=production` is set (`security_config.is_production`). Only a bare local run falls back to the public string `dev-secret-change-me`; there is deliberately no override to allow that fallback in production. |
 | `DATABASE_URL` | Postgres URL (Supabase pooler). Unset → SQLite `backend/ezpz.db`. `postgres://` is rewritten. |
-| `CORS_ORIGINS` | Comma-separated allowed origins. **Plural** — `CORS_ORIGIN` is silently ignored. Default `http://localhost:3000`. |
+| `CORS_ORIGINS` | Comma-separated allowed origins. **Plural** — `CORS_ORIGIN` is silently ignored. Default `http://localhost:3000`. Under `/api/auth/*` they are answered with credentials (the web's refresh cookie; `*` never is, `cors_config.py`), so list only the site and its own previews: a pattern must be anchored to this project's preview names, never all of `*.vercel.app`. |
 | `GOOGLE_CLIENT_ID` | Google OAuth client; same value as the frontend's. |
 | `GOOGLE_CLIENT_IDS` | Comma-separated extra Google client IDs the server accepts as an ID token's audience: the Android and iOS apps each have their own. Combined with `GOOGLE_CLIENT_ID`. A native sign-in fails with `invalid_google_token` until its client ID is here. |
 | `RESEND_API_KEY`, `EMAIL_FROM` | Email. Production (same test as `JWT_SECRET_KEY`) refuses to start without them, or with Resend's test sender. A bare local run needs neither. |
@@ -1127,8 +1139,11 @@ KMZ masks are vector polygons because ForeFlight won't render raster overlays.
   clients compile once at the opening's offset to learn where and when to ask (the web's `bare`), so the places' times carry that offset. The
   brief itself is then compiled at the departure's (the light data's). Web first.
 - The Mapbox token is hardcoded in three places.
-- Sessions are bearer tokens in `localStorage` with no server-side revocation;
-  see `AUTHENTICATION.md` for the path to HttpOnly cookies.
+- **The web's cookie session needs the API on the web's own site to work in Safari**: Safari keeps no third-party cookie,
+  Partitioned or not, so while the web is `ezpztac.app` and the API `prod-ezpz-api.mcfadd.in` a Safari browser falls back to
+  the 24-hour token in `localStorage` and signs in daily (Chrome, Edge and Firefox keep the cookie). The owner's step: serve the
+  API at `api.ezpztac.app` through the Cloudflare Tunnel (as `admin.ezpztac.app` is), point Vercel's `REACT_APP_API_URL` at it and
+  add nothing else; `AUTHENTICATION.md`, *Hosting the cookie*. Vercel's previews (`*.vercel.app`) stay cross-site.
 - In-process stores block horizontal scaling (§9).
 - `App.js` is large; new features should keep their state in a feature hook.
 
@@ -1332,13 +1347,13 @@ client is built around not losing one:
   `RateLimitedException`, `ApiException`.
 - **The stored session is read once per process** (`restore`; after that it returns the state as it is). The shell and a background
   sync both ask, in either order or at once, and a second read would put back what the first found over what has happened since: a
-  session the server or the 14-day rule ended, a refresh's newer user. What it read is set only if nothing else set the state while it
+  session the server or the 30-day offline rule ended, a refresh's newer user. What it read is set only if nothing else set the state while it
   read (a compare-and-set; everything else writes the store first). It takes no lock: a launch must not wait behind a refresh a sync
   has in flight, which can take 20 s on a poor signal.
 - **A session the server ended leaves a note in its place** (`SessionStore.end`, `EndedSession`, with the server's `code`): the
   file holds the session or the note, never both, so ending one is one atomic rename. A sync WorkManager runs with the app closed
   may be what finds the session ended, and that process is gone by the time anyone opens the app: the note is how the launch still
-  says why ("Your session expired", or the 14 days) instead of showing a plain sign-in. A call that finds no session reads it too,
+  says why ("Your session expired", or the 30 days) instead of showing a plain sign-in. A call that finds no session reads it too,
   so calls refused together do not turn "ended" into "not signed in". Signing in or out removes it.
 
 **The sync engine** (`core-sync`; rules in the plan's "Sync and conflicts", server side in `backend/sync_support.py`):
@@ -1398,11 +1413,11 @@ client is built around not losing one:
   name, so the kind needed no migration; a device that synced before it has its cursor past the briefs it holds on the server (none before B8 makes them here). The
   screens are B8; the weather at a planned time (`weather: at …`) is typed with them.
 - Built since: WorkManager scheduling (`SyncScheduler`: a sync on demand and every 6 hours; not yet seen on a device),
-  conflict choices in the Diagrams, Routes and Points sections (`ConflictPanel`), and the 14-day "sign in again" rule
-  (`OfflineGrace`).
+  conflict choices in the Diagrams, Routes and Points sections (`ConflictPanel`), and the "sign in again" rule
+  (`OfflineGrace`: 30 days without the server, its refresh window; 14 until 2026-10-28).
 - **A scheduled sync can run in a process WorkManager started, with no activity and so no shell** (`EngineSyncRunner`). Only `AppViewModel` used to
   read the stored session, so such a sync found nobody signed in and did nothing. In a process nobody has read it in (`AuthState.Unknown`) the
-  runner now does what the shell does at launch: `restore`, then the 14-day rule (`OfflineGrace`) before any call, because a refresh would stamp
+  runner now does what the shell does at launch: `restore`, then the 30-day offline rule (`OfflineGrace`) before any call, because a refresh would stamp
   the session as confirmed and the person would never be asked to sign in again. A process already launched is left alone (the rule is applied
   at launch, never to someone in the middle of their work). It syncs only when the device's plans are the signed-in account's
   (`Ownership.Yours`): another account's stay unsent, and an unclaimed device is the shell's to claim.
@@ -1464,7 +1479,8 @@ client is built around not losing one:
   config is public and confirms no session). Nothing waits for a launch's look (the owner's call: the first launch after a raise sends until
   its config answers). With no config to show the update screen (no signal), planning opens and a banner says why nothing is sent, with
   *Update* (`Gate.Ready.tooOld`, from the minimum last heard); **maintenance is a banner, never a block**, because planning is
-  local; no config at launch (no signal) blocks nothing; a device that has not heard from the server for **14 days** (`OfflineGrace`) must
+  local; no config at launch (no signal) blocks nothing; a device that has not heard from the server for **30 days** (`OfflineGrace`, the server's own window: past it the
+  refresh token has lapsed anyway; it was 14, which locked a crew at a FARP out of planning after two weeks without signal) must
   sign in again, and its plans stay; **the plans on a device belong to one account** (`AccountScope`): a different person signing in is
   shown nothing of them, nothing is uploaded under their account, and they choose between clearing them (told how many changes never
   reached the server) and signing out. The plan did not say this, and it matters: without it a second user on a shared device would see

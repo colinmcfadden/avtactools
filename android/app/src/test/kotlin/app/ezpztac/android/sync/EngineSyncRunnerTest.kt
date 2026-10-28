@@ -70,7 +70,7 @@ class EngineSyncRunnerTest {
     private class FakeAuth(
         private val stored: AuthState,
         initial: AuthState = AuthState.Unknown,
-        /** Whether the stored session is past the 14 days without the server ([app.ezpztac.network.OfflineGrace]). */
+        /** Whether the stored session is past the 30 days without the server ([app.ezpztac.network.OfflineGrace]). */
         private val offlineTooLong: Boolean = false,
     ) : AuthBackend {
         override val state = MutableStateFlow(initial)
@@ -379,14 +379,14 @@ class EngineSyncRunnerTest {
         assertEquals(SyncOutcome.Done, r.runner.runOnce())
 
         assertEquals(1, r.auth.restores)
-        assertEquals(1, r.auth.graceChecks)                                       // and asked about the 14 days, as the shell does at launch
+        assertEquals(1, r.auth.graceChecks)                                       // and asked about the 30 days, as the shell does at launch
         assertEquals(listOf("LZ CROW", "LZ HAWK"), r.server.live(RecordKind.LZ).map { it.name }.sorted())      // what was made here went up
         assertEquals(listOf("LZ CROW", "LZ HAWK"), r.device.records(RecordKind.LZ).map { it.name }.sorted())   // and what was made elsewhere came down
         assertEquals(0, r.device.pending())
     }
 
     @Test
-    fun `a process the app did not start, with the session past the 14 days, ends it and asks nothing of the server`() = runTest {
+    fun `a process the app did not start, with the session past the 30 days, ends it and asks nothing of the server`() = runTest {
         val r = rig(FakeAuth(stored = AuthState.SignedIn(user(1)), offlineTooLong = true), owner = 1)
 
         assertEquals(SyncOutcome.Done, r.runner.runOnce())                       // the person has to sign in: trying again cannot help
@@ -448,7 +448,7 @@ class EngineSyncRunnerTest {
 
     @Test
     fun `in the app's own process, signed in already, it syncs without reading the store or signing anyone out`() = runTest {
-        // The 14 days are the shell's to apply, at launch: a sync must not sign out someone who is in the middle of using the app.
+        // The 30 days are the shell's to apply, at launch: a sync must not sign out someone who is in the middle of using the app.
         val r = rig(FakeAuth(stored = AuthState.SignedOut(SignedOutReason.NOT_SIGNED_IN), initial = AuthState.SignedIn(user(1)), offlineTooLong = true), owner = 1)
 
         assertEquals(SyncOutcome.Done, r.runner.runOnce())

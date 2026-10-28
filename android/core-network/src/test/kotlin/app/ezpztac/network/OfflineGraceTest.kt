@@ -8,7 +8,7 @@ import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 
-/** A device that has not heard from the server for 14 days has to sign in again; what it saved stays. */
+/** A device that has not heard from the server for 30 days (the server's own window) has to sign in again; what it saved stays. */
 class OfflineGraceTest {
     private val day = 24 * 60 * 60L
     private val now = 1_800_000_000L
@@ -16,10 +16,11 @@ class OfflineGraceTest {
     private fun stamped(daysAgo: Double) = session().copy(verifiedAtEpochSeconds = now - (daysAgo * day).toLong())
 
     @Test
-    fun `fourteen days is allowed, and a second more is not`() {
-        assertFalse(OfflineGrace.expired(stamped(13.9), now))
-        assertFalse(OfflineGrace.expired(session().copy(verifiedAtEpochSeconds = now - 14 * day), now))
-        assertTrue(OfflineGrace.expired(session().copy(verifiedAtEpochSeconds = now - 14 * day - 1), now))
+    fun `thirty days is allowed, and a second more is not`() {
+        assertFalse(OfflineGrace.expired(stamped(14.5), now))                         // the old limit is no longer one
+        assertFalse(OfflineGrace.expired(stamped(29.9), now))
+        assertFalse(OfflineGrace.expired(session().copy(verifiedAtEpochSeconds = now - 30 * day), now))
+        assertTrue(OfflineGrace.expired(session().copy(verifiedAtEpochSeconds = now - 30 * day - 1), now))
         assertTrue(OfflineGrace.expired(stamped(60.0), now))
     }
 
@@ -65,7 +66,7 @@ class OfflineGraceTest {
     @Test
     fun `a device offline too long ends its session on the device, and says why`() = runBlocking<Unit> {
         val clock = Clock(now)
-        Rig(initial = stamped(15.0), time = clock).use { rig ->
+        Rig(initial = stamped(31.0), time = clock).use { rig ->
             rig.client.restore()
             assertTrue(rig.client.endSessionIfOfflineTooLong())
             assertNull(rig.store.current)

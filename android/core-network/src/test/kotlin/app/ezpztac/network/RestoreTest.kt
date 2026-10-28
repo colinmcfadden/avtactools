@@ -69,7 +69,7 @@ class RestoreTest {
 
     @Test
     fun `a session the offline rule ended says so in the next process too`() = runBlocking<Unit> {
-        Rig(initial = session().copy(verifiedAtEpochSeconds = now - 15 * day), time = Clock(now)).use { rig ->
+        Rig(initial = session().copy(verifiedAtEpochSeconds = now - 31 * day), time = Clock(now)).use { rig ->
             rig.client.restore()
             assertTrue(rig.client.endSessionIfOfflineTooLong())
             assertEquals(offlineTooLong, rig.nextProcess().restore())
@@ -78,7 +78,7 @@ class RestoreTest {
 
     @Test
     fun `a restore still reading when the offline rule ends the session does not bring the session back`() = runBlocking<Unit> {
-        Rig(initial = session().copy(verifiedAtEpochSeconds = now - 15 * day), time = Clock(now)).use { rig ->
+        Rig(initial = session().copy(verifiedAtEpochSeconds = now - 31 * day), time = Clock(now)).use { rig ->
             val reading = CompletableDeferred<Unit>()
             val release = CompletableDeferred<Unit>()
             rig.store.beforeNextRead = { reading.complete(Unit); release.await() }
