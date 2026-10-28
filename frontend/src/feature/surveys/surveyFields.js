@@ -22,6 +22,7 @@ export const FIELD_SECTIONS = [
       { key: "exitDeg", label: "Best exit (° true)", placeholder: "e.g. 360", short: true },
       { key: "maxAcDay", label: "Max A/C, day", placeholder: "e.g. 2", short: true },
       { key: "maxAcNight", label: "Max A/C, night", placeholder: "e.g. 2", short: true },
+      { key: "maxWeight", label: "Max weight", placeholder: "Only if the LZ limits it", short: true },
     ],
   },
   {

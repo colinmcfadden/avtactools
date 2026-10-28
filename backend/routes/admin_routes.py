@@ -289,6 +289,39 @@ def set_features(uid):
     return redirect(url_for('admin.user_detail', uid=uid))
 
 
+@admin_bp.route('/users/features/bulk', methods=['POST'])
+@admin_required
+def bulk_feature():
+    """One feature given to, or taken from, everyone ticked on the users list: the LZ survey books' readers are many, and a tick each
+    on their own pages would be a morning's work (docs/LZ_SURVEYS.md §7, R1)."""
+    _check_csrf()
+    labels = {key: label for key, label, _desc in FEATURES}
+    key = request.form.get('feature')
+    grant = request.form.get('action') == 'grant'
+    ids = {int(v) for v in request.form.getlist('uid') if v.isdigit()}
+    back = redirect(url_for('admin.users', q=request.form.get('q') or None, page=request.form.get('page') or None))
+    if key not in labels or request.form.get('action') not in ('grant', 'revoke') or not ids:
+        flash('Tick the people first, then give or take a feature.', 'error')
+        return back
+    changed = 0
+    for user in User.query.filter(User.id.in_(ids)).all():
+        before = dict(user.features) if isinstance(user.features, dict) else {}
+        after = dict(before)
+        if grant:
+            after[key] = True
+        elif key in DEFAULT_OFF:
+            after.pop(key, None)        # its default is off: an "off" stored would keep them off once it launches
+        else:
+            after[key] = False
+        if after != before:
+            user.features = after       # a new dict, or the JSON column would not see the change
+            changed += 1
+    db.session.commit()
+    flash(f"{labels[key]} {'given to' if grant else 'taken from'} {changed} {'person' if changed == 1 else 'people'}"
+          + (f" ({len(ids) - changed} had it as asked already)." if changed < len(ids) else "."), 'ok')
+    return back
+
+
 @admin_bp.route('/users/<int:uid>/edit', methods=['POST'])
 @admin_required
 def edit_user(uid):

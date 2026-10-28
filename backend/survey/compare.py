@@ -11,6 +11,7 @@ The thresholds below only flag a value for review; none of them is a safety limi
 
 from __future__ import annotations
 
+import math
 import re
 from datetime import datetime
 
@@ -32,7 +33,9 @@ _NUMBER = re.compile(r"[-−‐–]?\s*[0-9]+(?:\.[0-9]+)?")
 
 
 def _numbers(text):
-    return [float(m.replace("−", "-").replace("‐", "-").replace("–", "-").replace(" ", "")) for m in _NUMBER.findall(text or "")]
+    """The numbers in a field's text; one too long to be a number anyone typed (it reads as infinity) is left out."""
+    numbers = (float(m.replace("−", "-").replace("‐", "-").replace("–", "-").replace(" ", "")) for m in _NUMBER.findall(text or ""))
+    return [n for n in numbers if math.isfinite(n)]
 
 
 def parse_grid(text):

@@ -565,18 +565,27 @@ class MissionPackEvent(db.Model):
 
 
 class SurveyBook(db.Model):
-    """The one book (the owner: one for all the unit's LZs): its name, the unit line, the cover's text and the page order."""
+    """A book of LZ surveys, a unit's or a team's: its name, the unit line, the cover's text and the page order (docs/LZ_SURVEYS.md
+    §3.1). Who reads and edits it follows from its team (survey/access.py). Archived, never deleted: its pages may be in print."""
 
     __tablename__ = 'survey_book'
 
     id = db.Column(db.Integer, primary_key=True)
+    # Null only on a book step L1 made before books had one; the first listing gives it one.
+    uuid = db.Column(db.String(36), unique=True, nullable=True, index=True)
     name = db.Column(db.String(200), nullable=False)
     unit_line = db.Column(db.String(200), nullable=False, default='')
     cover_text = db.Column(db.Text, nullable=False, default='')
+    # The team it is for: its owner and admins edit it, its members with lz_surveys read it. No foreign key on purpose: deleting a team
+    # archives its books (pack_support.delete_team), and a book whose team is gone is no one's but the site admins', never everyone's.
+    team_id = db.Column(db.Integer, nullable=True, index=True)
     # The surveys' uuids in the book's order; a survey not in it goes after, by HLZ ID.
     page_order = db.Column(db.JSON, nullable=False, default=list)
     revision = db.Column(db.Integer, nullable=False, default=1)
+    created_by = db.Column(db.Integer, db.ForeignKey('user.id', ondelete='SET NULL'), nullable=True)
+    created_by_name = db.Column(db.String(120), nullable=False, default='')
     updated_by_name = db.Column(db.String(120), nullable=False, default='')
+    archived_at = db.Column(db.DateTime, nullable=True)
     created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
 
@@ -610,6 +619,11 @@ class LzSurvey(db.Model):
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
     archived_at = db.Column(db.DateTime, nullable=True)
 
+    # Every write says which revision it was made from (``WHERE revision = …``), and refuses (StaleDataError) when another write got
+    # there first: If-Match, checked when a request begins, does not cover a request that takes seconds to measure or publish. The
+    # routes set the next revision themselves (``version_id_generator`` False), so a change to its status alone can leave it as it is.
+    __mapper_args__ = {'version_id_col': revision, 'version_id_generator': False}
+
 
 class LzSurveyRevision(db.Model):
     """A published revision, never changed: the survey as it was signed off, and its page (written by publishing, step L5)."""
@@ -627,6 +641,9 @@ class LzSurveyRevision(db.Model):
     # The approver's name, rank, title and date, as the publishing admin entered them (docs/LZ_SURVEYS.md §3.4).
     signoff = db.Column(db.JSON, nullable=True)
     changes = db.Column(db.String(500), nullable=False, default='')
+    # What the page said of itself when it was published, so a reprint matches what was signed: its HLZ ID and name, the book's name
+    # and unit line, its page in the book, the date it printed, the EZ/PZ version and the slope map's opacity.
+    page = db.Column(db.JSON, nullable=True)
     pdf_sha256 = db.Column(db.String(64), nullable=True)
     published_by = db.Column(db.Integer, db.ForeignKey('user.id', ondelete='SET NULL'), nullable=True)
     published_by_name = db.Column(db.String(120), nullable=False, default='')

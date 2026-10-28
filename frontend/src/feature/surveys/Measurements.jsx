@@ -3,7 +3,6 @@ import Dialog from "../ui/Dialog";
 import Icon from "../ui/Icon";
 import SlopeProfile from "../terrain/SlopeProfile";
 import { slopeProfileFor } from "../terrain/groundProfile";
-import { headingOf } from "./surveyDiagram";
 
 /*
  * What EZ/PZ measured of the LZ (the survey's snapshot, docs/LZ_SURVEYS.md §3.3), and the dialog that shows what a new measurement
@@ -52,8 +51,15 @@ export const SlopeTable = ({ slope }) => {
 
 const callTone = (slope) => (slope?.call === "exceeded" ? "warn" : slope?.call === "within" ? "ok" : "muted");
 
-const Measurements = ({ snapshot, field, onMeasure, busy, canMeasure, whyNot }) => {
-  const heading = headingOf(field?.approachDeg);
+/** The best approach a snapshot was measured at: what its slope and profile are for, whatever the field says now. */
+export const measuredHeading = (snapshot) => {
+  if (snapshot && "approachDeg" in snapshot) return Number.isFinite(snapshot.approachDeg) ? snapshot.approachDeg : null;
+  const heading = snapshot?.slope?.headingDeg;
+  return Number.isFinite(heading) ? heading : null;
+};
+
+const Measurements = ({ snapshot, stale = [], onMeasure, busy, canMeasure, whyNot }) => {
+  const heading = measuredHeading(snapshot);
   const profile = useMemo(
     () => (snapshot?.terrain?.profiles && heading !== null ? slopeProfileFor(snapshot.terrain.profiles, heading) : null),
     [snapshot, heading],
@@ -74,6 +80,15 @@ const Measurements = ({ snapshot, field, onMeasure, busy, canMeasure, whyNot }) 
         <p className="survey-muted">Not measured yet. Set the target and the boundary on the map, then Measure.</p>
       ) : (
         <>
+          {stale.length > 0 && (
+            <div className="survey-banner survey-banner--warn" role="status">
+              <Icon name="alertTriangle" size={16} />
+              <div>
+                <strong>Measured before the survey changed: measure it again.</strong> {stale.join(" ")} It is not sent for review or
+                published until it is.
+              </div>
+            </div>
+          )}
           <dl className="survey-facts">
             <div><dt>Grid</dt><dd>{shown(snapshot.grid)}</dd></div>
             <div><dt>Lat/long</dt><dd>{shown(snapshot.latLong)}</dd></div>

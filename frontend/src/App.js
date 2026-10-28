@@ -472,6 +472,8 @@ function App() {
     // Default off (entitlements.DEFAULT_OFF): only an explicit "on" shows Mission Packs.
     mission_packs: Boolean(uf && uf.mission_packs === true),
     mission_brief: Boolean(uf && uf.mission_brief === true),
+    // The LZ survey books' key: readers and the team editors (site admins always have it).
+    lz_surveys: Boolean(uf && uf.lz_surveys === true),
   };
   const { history, isLoadingHistory, historyError, fetchHistory, saveMap, loadMap, updateMap, deleteMap } =
     useSavedMaps();
@@ -1416,7 +1418,7 @@ function App() {
         <TopBar
           user={user}
           isAdmin={Boolean(user?.is_admin)}
-          onOpenSurveys={() => setSurveysOpen(true)}
+          onOpenSurveys={user?.is_admin || feat.lz_surveys ? () => setSurveysOpen(true) : undefined}
           onSignOut={logout}
           onOpenLibrary={() => openLibrary("lz")}
           briefSlot={feat.mission_brief ? (
@@ -2018,7 +2020,9 @@ function App() {
           onOpenPacks={feat.mission_packs && !inPack ? openWorkspaceSwitcher : undefined}
         />
       )}
-      {surveysOpen && user?.is_admin && <SurveyBook onClose={() => setSurveysOpen(false)} />}
+      {surveysOpen && (user?.is_admin || feat.lz_surveys) && (
+        <SurveyBook isAdmin={Boolean(user?.is_admin)} onClose={() => setSurveysOpen(false)} />
+      )}
       {briefOpen && feat.mission_brief && (
         <BriefSetup
           brief={brief}

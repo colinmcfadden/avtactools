@@ -23,8 +23,17 @@ const surveyAt = (revision, changes = {}) => ({
 
 const conflict = (server) => Object.assign(new Error("409"), { response: { status: 409, data: { code: "revision_conflict", server } } });
 
+const BOOK = { uuid: "b-1", name: "HLZ SURVEY BOOK", revision: 1, page_order: ["s-1"], can_edit: true };
+
 const fakeClient = (overrides = {}) => ({
-  listSurveys: jest.fn(async () => ({ book: { name: "HLZ SURVEY BOOK", revision: 1, page_order: ["s-1"] }, surveys: [{ uuid: "s-1", name: DONOVAN.name }] })),
+  listBooks: jest.fn(async () => ({ books: [BOOK], teams: [{ id: 3, name: "B CO" }], can_make_for_no_team: true })),
+  getBook: jest.fn(async () => ({ book: BOOK, surveys: [{ uuid: "s-1", name: DONOVAN.name }] })),
+  createBook: jest.fn(async ({ name }) => ({ ...BOOK, uuid: "b-2", name })),
+  submitSurvey: jest.fn(async (uuid, revision) => surveyAt(revision + 1, { status: "in_review" })),
+  backToDraft: jest.fn(async (uuid, revision) => surveyAt(revision + 1, { status: "draft" })),
+  publishSurvey: jest.fn(async (uuid, revision) => ({ survey: surveyAt(revision + 1, { status: "published" }), revision: { number: 1 } })),
+  fetchPage: jest.fn(async () => "<html></html>"),
+  fetchPdf: jest.fn(async () => new Blob(["%PDF"])),
   getSurvey: jest.fn(async () => surveyAt(1)),
   createSurvey: jest.fn(async ({ name, hlzId }) => surveyAt(1, { name, hlz_id: hlzId, field: {} })),
   saveSurvey: jest.fn(async (uuid, revision, body) => surveyAt(revision + 1, { ...body, field: body.field })),
@@ -44,36 +53,44 @@ const fakeClient = (overrides = {}) => ({
 });
 
 const opened = async (client) => {
-  const hook = renderHook(() => useSurveys({ client }));
+  const view = renderHook(() => useSurveys({ client }));
   await act(async () => {
-    await hook.result.current.openSurvey("s-1");
+    await view.result.current.openSurvey("s-1");
   });
-  return hook;
+  return view;
 };
 
 describe("useSurveys", () => {
-  it("lists the book", async () => {
+  it("lists the books, then one book's surveys", async () => {
     const client = fakeClient();
     const { result } = renderHook(() => useSurveys({ client }));
     await act(async () => {
-      await result.current.refresh();
+      await result.current.refreshBooks();
+    });
+    expect(result.current.books).toMatchObject({ status: "ready", canMakeForNoTeam: true, teams: [{ id: 3, name: "B CO" }] });
+    await act(async () => {
+      await result.current.openBook("b-1");
     });
     expect(result.current.list.status).toBe("ready");
     expect(result.current.list.book.name).toBe("HLZ SURVEY BOOK");
-    expect(client.listSurveys).toHaveBeenCalledWith({ archived: false });
+    expect(client.getBook).toHaveBeenCalledWith("b-1", { archived: false });
     await act(async () => {
       result.current.toggleArchived();
     });
-    expect(client.listSurveys).toHaveBeenLastCalledWith({ archived: true });
+    expect(client.getBook).toHaveBeenLastCalledWith("b-1", { archived: true });
+    await act(async () => {
+      await result.current.create({ name: "LZ EAGLE", hlzId: "GA 035" });
+    });
+    expect(client.createSurvey).toHaveBeenCalledWith(expect.objectContaining({ book: "b-1", name: "LZ EAGLE" }));
   });
 
-  it("says why the list could not be loaded, in its own words", async () => {
-    const client = fakeClient({ listSurveys: jest.fn(async () => { throw Object.assign(new Error("x"), { response: { status: 403, data: { code: "admin_required" } } }); }) });
+  it("says why the books could not be loaded, in its own words", async () => {
+    const client = fakeClient({ listBooks: jest.fn(async () => { throw Object.assign(new Error("x"), { response: { status: 403, data: { code: "feature_disabled" } } }); }) });
     const { result } = renderHook(() => useSurveys({ client }));
     await act(async () => {
-      await result.current.refresh();
+      await result.current.refreshBooks();
     });
-    expect(result.current.list).toMatchObject({ status: "error", error: "Only admins can work on LZ surveys." });
+    expect(result.current.books).toMatchObject({ status: "error", error: "Your account cannot open the LZ survey books. An admin can give you access." });
   });
 
   it("says why a survey would not open, and opens nothing", async () => {
@@ -83,8 +100,43 @@ describe("useSurveys", () => {
     await act(async () => {
       failure = await result.current.openSurvey("s-9");
     });
-    expect(failure).toBe("That survey is no longer there.");
+    expect(failure).toBe("That is no longer there, or you cannot open it.");
     expect(result.current.survey).toBeNull();
+  });
+
+  it("opens a published survey for a reader on its page, not in the editor", async () => {
+    const client = fakeClient({ getSurvey: jest.fn(async () => ({ uuid: "s-1", name: "LZ DONOVAN", status: "published", published_revision: 2, revisions: [] })) });
+    const { result } = renderHook(() => useSurveys({ client }));
+    await act(async () => {
+      await result.current.openSurvey("s-1");
+    });
+    expect(result.current.survey).toBeNull();
+    expect(result.current.reading).toMatchObject({ published_revision: 2 });
+  });
+
+  it("sends for review, publishes with the sign-off and this browser's slope opacity", async () => {
+    const client = fakeClient();
+    const { result } = await opened(client);
+    await act(async () => {
+      await result.current.setReview("review");
+    });
+    expect(client.submitSurvey).toHaveBeenCalledWith("s-1", 1);
+    expect(result.current.survey.status).toBe("in_review");
+    let revision;
+    await act(async () => {
+      revision = await result.current.publish({ signoff: { name: "J. Doe", date: "27 OCT 2026" }, changes: "" });
+    });
+    expect(revision).toEqual({ number: 1 });
+    expect(client.publishSurvey).toHaveBeenCalledWith("s-1", 2, { signoff: { name: "J. Doe", date: "27 OCT 2026" }, changes: "", opacity: 55 });
+    expect(result.current.survey.status).toBe("published");
+  });
+
+  it("says a refused publish in words", async () => {
+    const client = fakeClient({ publishSurvey: jest.fn(async () => { throw Object.assign(new Error("x"), { response: { status: 409, data: { code: "invalid_status" } } }); }) });
+    const { result } = await opened(client);
+    await expect(act(async () => {
+      await result.current.publish({ signoff: { name: "J", date: "x" } });
+    })).rejects.toThrow("The survey has moved on since you opened it. Reload it.");
   });
 
   it("saves what was typed on the revision it was opened at", async () => {
@@ -205,6 +257,95 @@ describe("useSurveys", () => {
       await result.current.removePhoto(7);
     });
     expect(result.current.survey.assets).toEqual([]);
+  });
+
+  it("takes the draft a photo makes of a published survey, but only on the revision it held", async () => {
+    const published = surveyAt(4, { status: "published" });
+    const client = fakeClient({
+      getSurvey: jest.fn(async () => published),
+      uploadAsset: jest.fn(async () => ({ id: 8, kind: "photo_other", survey: { status: "draft", revision: 5, was: 4 } })),
+      updateAsset: jest.fn(async (uuid, id, meta) => ({ id, kind: "photo_other", ...meta, survey: { status: "draft", revision: 7, was: 6 } })),
+    });
+    const { result } = await opened(client);
+    await act(async () => {
+      await result.current.uploadPhoto(new Blob(["x"]), { kind: "photo_other" });
+    });
+    expect(result.current.survey).toMatchObject({ status: "draft", revision: 5 });
+    expect(result.current.survey.assets).toEqual([{ id: 8, kind: "photo_other" }]);      // the survey's state is not kept as a photo
+    // Someone else's save came between (6): this copy keeps 5, and its next save meets theirs as a conflict.
+    await act(async () => {
+      await result.current.updatePhoto(8, { caption: "South" });
+    });
+    expect(result.current.survey.revision).toBe(5);
+    expect(result.current.survey.assets[0].caption).toBe("South");
+  });
+
+  it("lets go of a survey that answers once another was asked for", async () => {
+    let first;
+    const client = fakeClient({
+      getSurvey: jest.fn((uuid) => (uuid === "s-1" ? new Promise((resolve) => { first = resolve; }) : Promise.resolve(surveyAt(1, { uuid: "s-2", name: "LZ OTHER" })))),
+    });
+    const { result } = renderHook(() => useSurveys({ client }));
+    let slow;
+    await act(async () => {
+      slow = result.current.openSurvey("s-1");
+      await result.current.openSurvey("s-2");
+    });
+    await act(async () => {
+      first(surveyAt(1));
+      await slow;
+    });
+    expect(result.current.survey.uuid).toBe("s-2");
+    expect(result.current.busy).toBeNull();
+  });
+
+  it("is not left opening when the survey being opened is closed", async () => {
+    const client = fakeClient({ getSurvey: jest.fn(() => new Promise(() => {})) });
+    const { result } = renderHook(() => useSurveys({ client }));
+    act(() => {
+      result.current.openSurvey("s-1");
+    });
+    expect(result.current.busy).toBe("opening");
+    await act(async () => {
+      result.current.closeSurvey();
+    });
+    expect(result.current.busy).toBeNull();
+  });
+
+  it("does not put a book's archiving into another book opened meanwhile", async () => {
+    let answer;
+    const other = { ...BOOK, uuid: "b-2", name: "OTHER BOOK" };
+    const client = fakeClient({
+      archiveBook: jest.fn(() => new Promise((resolve) => { answer = resolve; })),
+      getBook: jest.fn(async (uuid) => ({ book: uuid === "b-2" ? other : BOOK, surveys: [] })),
+    });
+    const { result } = renderHook(() => useSurveys({ client }));
+    await act(async () => {
+      await result.current.openBook("b-1");
+    });
+    let archiving;
+    await act(async () => {
+      archiving = result.current.setBookArchived(true);
+      await result.current.openBook("b-2");
+    });
+    await act(async () => {
+      answer({ ...BOOK, archived: true });
+      await archiving;
+    });
+    expect(result.current.bookUuid).toBe("b-2");
+    expect(result.current.list.book.name).toBe("OTHER BOOK");
+  });
+
+  it("closes the book it archived while it is still the one open", async () => {
+    const client = fakeClient({ archiveBook: jest.fn(async () => ({ ...BOOK, archived: true })) });
+    const { result } = renderHook(() => useSurveys({ client }));
+    await act(async () => {
+      await result.current.openBook("b-1");
+    });
+    await act(async () => {
+      await result.current.setBookArchived(true);
+    });
+    expect(result.current.bookUuid).toBeNull();
   });
 
   it("names what someone else changed", () => {

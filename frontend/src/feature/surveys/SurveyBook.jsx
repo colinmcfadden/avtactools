@@ -1,33 +1,35 @@
 import React, { useEffect, useRef, useState } from "react";
 import Dialog, { ConfirmDialog } from "../ui/Dialog";
 import Icon from "../ui/Icon";
-import NameDialog from "../ui/NameDialog";
 import { useToast } from "../ui/Toast";
 import useSurveys from "./useSurveys";
-import SurveyBookPage, { NewSurveyDialog } from "./SurveyBookPage";
+import BooksPage, { NewBookDialog } from "./BooksPage";
+import SurveyBookPage, { BookSettingsDialog, NewSurveyDialog } from "./SurveyBookPage";
 import SurveyEditor from "./SurveyEditor";
+import SurveyReader from "./SurveyReader";
 import "./surveys.css";
 
 /*
- * The LZ survey book, for admins (docs/LZ_SURVEYS.md, step L1), opened from the account menu: the book's list, and a survey open in
- * its editor, in one window nearly the size of the screen. Leaving a survey with changes not saved asks first, as closing an LZ/PZ
- * does: Cancel, Don't save, or Save.
+ * The LZ survey books (docs/LZ_SURVEYS.md), opened from the account menu by a site admin or anyone with LZ surveys: the books this
+ * person reads or edits, one book's pages, and a survey open in its editor (the book's editors) or on its published page (a
+ * reader), in one window nearly the size of the screen. What each person may do comes from the server with each book. Leaving a
+ * survey with changes not saved asks first, as closing an LZ/PZ does: Cancel, Don't save, or Save.
  */
 
 const lzCount = (n) => `${n} ${n === 1 ? "LZ" : "LZs"}`;
 
-const SurveyBook = ({ onClose, client }) => {
+const SurveyBook = ({ onClose, client, isAdmin = false }) => {
   const surveys = useSurveys(client ? { client } : undefined);
   const { show } = useToast();
-  const [creating, setCreating] = useState(false);
-  const [renaming, setRenaming] = useState(false);
-  const [leaving, setLeaving] = useState(null); // what to do once the question is answered: "book" | "close"
-  const [archiving, setArchiving] = useState(false);
-  const { survey, dirty, busy } = surveys;
+  const [making, setMaking] = useState(null); // "book" | "survey"
+  const [settings, setSettings] = useState(false);
+  const [leaving, setLeaving] = useState(null); // what to do once the question is answered: "book" | "books" | "close"
+  const [archiving, setArchiving] = useState(null); // "survey" | "book"
+  const { survey, reading, dirty, busy, list, bookUuid } = surveys;
 
   useEffect(() => {
-    surveys.refresh();
-    // Once, when the book opens.
+    surveys.refreshBooks();
+    // Once, when the window opens.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -47,6 +49,7 @@ const SurveyBook = ({ onClose, client }) => {
 
   const leave = (where) => {
     if (where === "close") onClose();
+    else if (where === "books") surveys.closeBook();
     else surveys.closeSurvey();
   };
   const askToLeave = (where) => (survey && dirty ? setLeaving(where) : leave(where));
@@ -58,90 +61,163 @@ const SurveyBook = ({ onClose, client }) => {
   };
   saveRef.current = survey && dirty && !busy && !survey.archived ? save : null;
 
-  const title = survey ? `${survey.hlz_id ? `${survey.hlz_id} · ` : ""}${survey.name}` : surveys.list.book?.name || "HLZ survey book";
-  const note = survey
-    ? dirty
-      ? "Changes not saved."
-      : `Saved · revision ${survey.revision}`
-    : `${lzCount(surveys.list.surveys.filter((s) => !s.archived).length)} · admins only until each is published`;
+  const open = async (uuid) => {
+    const failure = await surveys.openSurvey(uuid);
+    if (failure) show({ message: failure, tone: "error" });
+  };
+
+  const book = list.book;
+  let title = "LZ survey books";
+  let note = "Books you read or edit";
+  if (survey) {
+    title = `${survey.hlz_id ? `${survey.hlz_id} · ` : ""}${survey.name}`;
+    note = dirty ? "Changes not saved." : `Saved · revision ${survey.revision}`;
+  } else if (reading) {
+    title = `${reading.hlz_id ? `${reading.hlz_id} · ` : ""}${reading.name}`;
+    note = `Published · REV ${reading.published_revision}`;
+  } else if (bookUuid) {
+    title = book?.name || "Survey book";
+    note = book?.can_edit
+      ? `${lzCount(list.surveys.filter((s) => !s.archived).length)} · drafts are its editors' alone until published`
+      : `${lzCount(list.surveys.length)} published`;
+  }
+
+  let footer = null;
+  if (survey) {
+    footer = (
+      <>
+        <button type="button" className="ui-btn ui-btn--38" onClick={() => askToLeave("book")}>
+          <Icon name="chevronLeft" size={14} />
+          Book
+        </button>
+        {survey.archived ? (
+          <button type="button" className="ui-btn ui-btn--38" disabled={Boolean(busy)} onClick={() => surveys.setArchived(false)}>Restore</button>
+        ) : (
+          <button type="button" className="ui-btn ui-btn--ghost ui-btn--38" disabled={Boolean(busy)} onClick={() => setArchiving("survey")}>Archive</button>
+        )}
+        <button type="button" className="ui-btn ui-btn--primary ui-btn--38" disabled={!dirty || Boolean(busy) || survey.archived} onClick={save}>
+          <Icon name="save" size={14} />
+          {busy === "saving" ? "Saving…" : "Save"}
+        </button>
+      </>
+    );
+  } else if (reading) {
+    footer = (
+      <button type="button" className="ui-btn ui-btn--38" onClick={() => surveys.closeSurvey()}>
+        <Icon name="chevronLeft" size={14} />
+        Book
+      </button>
+    );
+  } else if (bookUuid) {
+    footer = (
+      <>
+        <button type="button" className="ui-btn ui-btn--38" onClick={() => surveys.closeBook()}>
+          <Icon name="chevronLeft" size={14} />
+          Books
+        </button>
+        {book?.can_edit && !book.archived && (
+          <>
+            <button type="button" className="ui-btn ui-btn--ghost ui-btn--38" onClick={() => setSettings(true)}>
+              <Icon name="pencil" size={14} />
+              The book
+            </button>
+            <button type="button" className="ui-btn ui-btn--ghost ui-btn--38" onClick={() => setArchiving("book")}>Archive the book</button>
+          </>
+        )}
+        {book?.archived && isAdmin && (
+          <button type="button" className="ui-btn ui-btn--38" onClick={async () => {
+            try {
+              await surveys.setBookArchived(false);
+              show({ message: `${book.name} restored.` });
+            } catch (err) {
+              show({ message: err.message, tone: "error" });
+            }
+          }}>Restore the book</button>
+        )}
+      </>
+    );
+  }
+
+  let body;
+  if (survey) body = <SurveyEditor surveys={surveys} />;
+  else if (reading) body = <SurveyReader key={reading.uuid} surveys={surveys} />;
+  else if (bookUuid) body = <SurveyBookPage surveys={surveys} onNew={() => setMaking("survey")} onOpen={open} />;
+  else body = <BooksPage surveys={surveys} isAdmin={isAdmin} onNew={() => setMaking("book")} onOpen={(uuid) => surveys.openBook(uuid)} />;
 
   return (
     <>
       <Dialog
         title={title}
-        subtitle={survey ? "LZ survey" : "LZ surveys"}
+        subtitle={survey || reading ? "LZ survey" : bookUuid ? "Survey book" : "LZ surveys"}
         icon="hexagon"
         className="survey-window"
         onClose={() => askToLeave("close")}
         note={note}
-        footer={survey ? (
-          <>
-            <button type="button" className="ui-btn ui-btn--38" onClick={() => askToLeave("book")}>
-              <Icon name="chevronLeft" size={14} />
-              Book
-            </button>
-            {survey.archived ? (
-              <button type="button" className="ui-btn ui-btn--38" disabled={Boolean(busy)} onClick={() => surveys.setArchived(false)}>Restore</button>
-            ) : (
-              <button type="button" className="ui-btn ui-btn--ghost ui-btn--38" disabled={Boolean(busy)} onClick={() => setArchiving(true)}>Archive</button>
-            )}
-            <button type="button" className="ui-btn ui-btn--primary ui-btn--38" disabled={!dirty || Boolean(busy) || survey.archived} onClick={save}>
-              <Icon name="save" size={14} />
-              {busy === "saving" ? "Saving…" : "Save"}
-            </button>
-          </>
-        ) : (
-          <button type="button" className="ui-btn ui-btn--ghost ui-btn--38" onClick={() => setRenaming(true)} disabled={!surveys.list.book}>
-            <Icon name="pencil" size={14} />
-            Rename the book
-          </button>
-        )}
+        footer={footer}
       >
-        {survey ? (
-          <SurveyEditor surveys={surveys} />
-        ) : (
-          <SurveyBookPage
-            surveys={surveys}
-            onNew={() => setCreating(true)}
-            onOpen={async (uuid) => {
-              const failure = await surveys.openSurvey(uuid);
-              if (failure) show({ message: failure, tone: "error" });
-            }}
-          />
-        )}
+        {body}
       </Dialog>
-      {creating && (
+      {making === "book" && (
+        <NewBookDialog
+          teams={surveys.books.teams}
+          canMakeForNoTeam={surveys.books.canMakeForNoTeam}
+          onCancel={() => setMaking(null)}
+          onCreate={async (values) => {
+            const made = await surveys.createBook(values);
+            setMaking(null);
+            show({ message: `${made.name} made.` });
+            surveys.openBook(made.uuid);
+          }}
+        />
+      )}
+      {making === "survey" && (
         <NewSurveyDialog
-          onCancel={() => setCreating(false)}
+          onCancel={() => setMaking(null)}
           onCreate={async (values) => {
             await surveys.create(values);
-            setCreating(false);
+            setMaking(null);
           }}
         />
       )}
-      {renaming && (
-        <NameDialog
-          title="Rename the book"
-          label="Name"
-          initialName={surveys.list.book?.name ?? ""}
-          upperCase
-          confirmLabel="Rename"
-          onCancel={() => setRenaming(false)}
-          onConfirm={async (name) => {
-            await surveys.renameBook(name);
-            setRenaming(false);
+      {settings && book && (
+        <BookSettingsDialog
+          book={book}
+          teams={surveys.books.teams}
+          canChooseTeam={isAdmin}
+          onCancel={() => setSettings(false)}
+          onSave={async (patch) => {
+            await surveys.updateBook(patch);
+            setSettings(false);
+            show({ message: "The book is saved." });
           }}
         />
       )}
-      {archiving && (
+      {archiving === "survey" && (
         <ConfirmDialog
           title={`Archive ${survey?.name ?? "this survey"}?`}
           text="It leaves the book but is kept, with everything in it, and can be restored. A survey is never deleted: a printed book may hold it."
           confirmLabel="Archive"
-          onCancel={() => setArchiving(false)}
+          onCancel={() => setArchiving(null)}
           onConfirm={async () => {
-            setArchiving(false);
+            setArchiving(null);
             if (await surveys.setArchived(true)) show({ message: `${survey.name} archived.` });
+          }}
+        />
+      )}
+      {archiving === "book" && book && (
+        <ConfirmDialog
+          title={`Archive ${book.name}?`}
+          text="Its readers no longer see it, and only a site admin can restore it. Nothing in it is deleted: a printed book may hold its pages."
+          confirmLabel="Archive"
+          onCancel={() => setArchiving(null)}
+          onConfirm={async () => {
+            setArchiving(null);
+            try {
+              await surveys.setBookArchived(true);
+              show({ message: `${book.name} archived.` });
+            } catch (err) {
+              show({ message: err.message, tone: "error" });
+            }
           }}
         />
       )}

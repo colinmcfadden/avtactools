@@ -1,5 +1,6 @@
-"""LZ surveys over HTTP (``/api/surveys``, ``/api/survey-book``; docs/LZ_SURVEYS.md §7, §8): admins only, If-Match on every
-save, archived never deleted, measured over a synthetic DEM, photos stripped of their metadata."""
+"""LZ surveys over HTTP (``/api/surveys``, ``/api/survey-books``; docs/LZ_SURVEYS.md §7, §8): the survey books' key on every route,
+If-Match on every save, archived never deleted, measured over a synthetic DEM, photos stripped of their metadata. Who may read and edit
+which book is test_survey_books.py's."""
 
 import io
 import os
@@ -62,6 +63,9 @@ class SurveyCase(NativeAuthCase):
         env = patch.dict(os.environ, {'SURVEY_ASSETS_DIR': store.name}, clear=False)
         env.start()
         self.addCleanup(env.stop)
+        made = self.client.post('/api/survey-books', headers=self.admin, json={'name': 'AASF 1 HLZ SURVEY BOOK'})
+        self.assertEqual(made.status_code, 201, made.get_data(as_text=True))
+        self.book = made.get_json()
 
     def auth(self, session, revision=None):
         head = {'Authorization': f'Bearer {session["access_token"]}'}
@@ -72,32 +76,41 @@ class SurveyCase(NativeAuthCase):
 
     def new_survey(self, **body):
         response = self.client.post('/api/surveys', headers=self.admin,
-                                    json={'name': DONOVAN['name'], 'hlz_id': DONOVAN['hlzId'], 'field': DONOVAN['field'],
-                                          'diagram': DIAGRAM, **body})
+                                    json={'book': self.book['uuid'], 'name': DONOVAN['name'], 'hlz_id': DONOVAN['hlzId'],
+                                          'field': DONOVAN['field'], 'diagram': DIAGRAM, **body})
         self.assertEqual(response.status_code, 201, response.get_data(as_text=True))
         return response.get_json()
 
     def patch_survey(self, survey, body, revision=None, head=None):
         return self.client.patch(f'/api/surveys/{survey["uuid"]}', headers=self.at(revision or survey['revision'], head), json=body)
 
+    def listing(self, archived=False):
+        response = self.client.get(f'/api/survey-books/{self.book["uuid"]}' + ('?archived=1' if archived else ''), headers=self.admin)
+        self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
+        return response
+
 
 class PermissionTests(SurveyCase):
     def routes(self, survey):
         base = f'/api/surveys/{survey["uuid"]}'
-        return (('get', '/api/survey-book', None), ('patch', '/api/survey-book', {'name': 'X'}),
-                ('get', '/api/surveys', None), ('post', '/api/surveys', {'name': 'LZ X'}),
+        book = f'/api/survey-books/{self.book["uuid"]}'
+        return (('get', '/api/survey-books', None), ('post', '/api/survey-books', {'name': 'X'}),
+                ('get', book, None), ('patch', book, {'name': 'X'}), ('post', f'{book}/archive', None),
+                ('post', f'{book}/restore', None), ('post', '/api/surveys', {'book': self.book['uuid'], 'name': 'LZ X'}),
                 ('get', base, None), ('patch', base, {'name': 'X'}), ('post', f'{base}/archive', None),
                 ('post', f'{base}/restore', None), ('post', f'{base}/measure', {}),
+                ('post', f'{base}/submit', None), ('post', f'{base}/draft', None), ('post', f'{base}/publish', {}),
+                ('get', f'{base}/pdf', None), ('get', f'{base}/page', None),
                 ('post', f'{base}/assets', None), ('get', f'{base}/assets/1', None),
                 ('patch', f'{base}/assets/1', {'caption': 'x'}), ('delete', f'{base}/assets/1', None))
 
-    def test_every_route_refuses_everyone_but_an_admin(self):
+    def test_every_route_refuses_an_account_without_the_key(self):
         survey = self.new_survey()
         for method, path, body in self.routes(survey):
             with self.subTest(route=f'{method} {path}'):
                 response = getattr(self.client, method)(path, headers={**self.pilot, 'If-Match': '"1"'}, json=body)
                 self.assertEqual(response.status_code, 403)
-                self.assertEqual(response.get_json()['code'], 'admin_required')
+                self.assertEqual(response.get_json()['code'], 'feature_disabled')
                 self.assertIn('private', response.headers['Cache-Control'])
                 self.assertEqual(self.client.open(path, method=method.upper(), json=body).status_code, 401)
         with self.app.app_context():
@@ -106,7 +119,7 @@ class PermissionTests(SurveyCase):
 
     def test_the_super_admin_is_an_admin(self):
         with patch.dict(os.environ, {'SUPER_ADMIN_EMAIL': 'pilot@example.com'}):
-            self.assertEqual(self.client.get('/api/surveys', headers=self.pilot).status_code, 200)
+            self.assertEqual(self.client.get(f'/api/survey-books/{self.book["uuid"]}', headers=self.pilot).status_code, 200)
 
 
 class SurveyTests(SurveyCase):
@@ -117,11 +130,12 @@ class SurveyTests(SurveyCase):
         self.assertIsNone(survey['snapshot'])
         self.assertIsNone(survey['diagram']['analysis']['terrainData'])      # a runtime raster is never kept
         self.assertEqual((survey['created_by'], survey['updated_by']), ('CW3 Admin', 'CW3 Admin'))
-        listing = self.client.get('/api/surveys', headers=self.admin)
+        listing = self.listing()
         self.assertEqual(listing.headers['Cache-Control'], 'private, no-store')
         body = listing.get_json()
         self.assertEqual(body['book']['page_order'], [survey['uuid']])
-        self.assertEqual(body['book']['name'], 'HLZ SURVEY BOOK')
+        self.assertEqual(body['book']['name'], 'AASF 1 HLZ SURVEY BOOK')
+        self.assertEqual(survey['book'], {'uuid': self.book['uuid'], 'name': 'AASF 1 HLZ SURVEY BOOK'})
         (row,) = body['surveys']
         self.assertEqual((row['uuid'], row['surveyed_on'], row['grid'], row['disagreements']), (survey['uuid'], 'OCT 2023', '16S GD 6341 3199', 0))
 
@@ -129,8 +143,12 @@ class SurveyTests(SurveyCase):
         for body in ({'name': ''}, {'name': 'x' * 101}, {'name': 'LZ', 'field': {'colour': 'red'}}, {'name': 'LZ', 'diagram': []},
                      {'name': 'LZ', 'hlz_id': 'GA\n034'}):
             with self.subTest(body=body):
-                response = self.client.post('/api/surveys', headers=self.admin, json=body)
+                response = self.client.post('/api/surveys', headers=self.admin, json={'book': self.book['uuid'], **body})
                 self.assertEqual((response.status_code, response.get_json()['code']), (400, 'invalid_survey'))
+        no_book = self.client.post('/api/surveys', headers=self.admin, json={'name': 'LZ X'})
+        self.assertEqual((no_book.status_code, no_book.get_json()['code']), (400, 'book_required'))
+        nowhere = self.client.post('/api/surveys', headers=self.admin, json={'book': 'not-a-book', 'name': 'LZ X'})
+        self.assertEqual(nowhere.status_code, 404)
 
     def test_a_diagram_that_is_not_json_is_refused(self):
         # Python reads NaN as JSON; Postgres does not, and would answer a 500.
@@ -171,8 +189,8 @@ class SurveyTests(SurveyCase):
         survey = self.new_survey()
         archived = self.client.post(f'/api/surveys/{survey["uuid"]}/archive', headers=self.admin).get_json()
         self.assertTrue(archived['archived'])
-        self.assertEqual(self.client.get('/api/surveys', headers=self.admin).get_json()['surveys'], [])
-        self.assertEqual(len(self.client.get('/api/surveys?archived=1', headers=self.admin).get_json()['surveys']), 1)
+        self.assertEqual(self.listing().get_json()['surveys'], [])
+        self.assertEqual(len(self.listing(archived=True).get_json()['surveys']), 1)
         refused = self.patch_survey(survey, {'name': 'X'}, revision=archived['revision'])
         self.assertEqual((refused.status_code, refused.get_json()['code']), (409, 'archived'))
         restored = self.client.post(f'/api/surveys/{survey["uuid"]}/restore', headers=self.admin).get_json()
@@ -181,17 +199,18 @@ class SurveyTests(SurveyCase):
 
     def test_the_book_s_name_and_order(self):
         first, second = self.new_survey(), self.new_survey(name='LZ EAGLE', hlz_id='GA 035')
-        book = self.client.get('/api/survey-book', headers=self.admin).get_json()
+        path = f'/api/survey-books/{self.book["uuid"]}'
+        book = self.listing().get_json()['book']
         self.assertEqual(book['page_order'], [first['uuid'], second['uuid']])
-        renamed = self.client.patch('/api/survey-book', headers=self.at(book['revision']),
-                                    json={'name': 'AASF 1 HLZ SURVEY BOOK', 'unit_line': 'GA ARNG', 'page_order': [second['uuid'], first['uuid']]})
+        renamed = self.client.patch(path, headers=self.at(book['revision']),
+                                    json={'name': 'AASF 1 HLZ BOOK', 'unit_line': 'GA ARNG', 'page_order': [second['uuid'], first['uuid']]})
         self.assertEqual(renamed.status_code, 200, renamed.get_data(as_text=True))
-        listing = self.client.get('/api/surveys', headers=self.admin).get_json()
+        listing = self.listing().get_json()
         self.assertEqual([s['uuid'] for s in listing['surveys']], [second['uuid'], first['uuid']])
-        self.assertEqual(listing['book']['name'], 'AASF 1 HLZ SURVEY BOOK')
-        stale = self.client.patch('/api/survey-book', headers=self.at(book['revision']), json={'name': 'Z'})
+        self.assertEqual(listing['book']['name'], 'AASF 1 HLZ BOOK')
+        stale = self.client.patch(path, headers=self.at(book['revision']), json={'name': 'Z'})
         self.assertEqual(stale.status_code, 409)
-        unknown = self.client.patch('/api/survey-book', headers=self.at(renamed.get_json()['revision']), json={'page_order': ['nope']})
+        unknown = self.client.patch(path, headers=self.at(renamed.get_json()['revision']), json={'page_order': ['nope']})
         self.assertEqual(unknown.status_code, 400)
         with self.app.app_context():
             self.assertEqual(SurveyBook.query.count(), 1)
@@ -222,7 +241,7 @@ class MeasureRouteTests(SurveyCase):
         rows = {row['key']: row for row in kept['comparisons']}
         self.assertTrue(rows['latLong']['disagrees'])
         self.assertTrue(rows['elevation']['disagrees'])         # the plane's 600 m is nothing like 1850 ft
-        listed = self.client.get('/api/surveys', headers=self.admin).get_json()['surveys'][0]
+        listed = self.listing().get_json()['surveys'][0]
         self.assertEqual(listed['disagreements'], sum(1 for row in kept['comparisons'] if row['open']))
         self.assertEqual(listed['grid'], kept['snapshot']['grid'])
 

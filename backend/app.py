@@ -13,7 +13,10 @@ except ImportError:
     __version__ = "0.0.0-dev"
 
 from database_url import database_uri, is_postgres
-from models import AccountToken, AircraftProfile, LoginEvent, SavedBrief, SavedLZ, SavedPointSet, SavedRoute, User, db
+from models import (
+    AccountToken, AircraftProfile, LoginEvent, LzSurveyRevision, SavedBrief, SavedLZ, SavedPointSet, SavedRoute, SurveyBook, User,
+    db,
+)
 from affiliation_gate import enforce_affiliation_gate
 from token_revocation import is_revoked
 from aircraft_seed import seed_aircraft_profiles
@@ -228,6 +231,12 @@ with app.app_context():
     sync_table_columns(db, LoginEvent)
     # account_token gained the refresh-token columns (family, client, session_version).
     sync_table_columns(db, AccountToken)
+    # lz_survey_revision gained `page` (what a published page said of itself) after step L1 made the table.
+    sync_table_columns(db, LzSurveyRevision)
+    # survey_book gained a uuid, a team and archiving when one book became many (step L5).
+    sync_table_columns(db, SurveyBook)
+    if not ensure_unique_index(db, SurveyBook, ('uuid',), 'ux_survey_book_uuid'):
+        app.logger.warning("surveys: could not add the uuid index on survey_book")
     # Saved records (and a user's own aircraft profiles) gained the sync columns (client_uuid, revision, deleted_at,
     # change_seq, last_idem_key). The unique index that stops a retried create
     # duplicating has to be added by hand: create_all never alters an existing table.
