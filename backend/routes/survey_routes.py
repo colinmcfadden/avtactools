@@ -33,8 +33,9 @@ from werkzeug.exceptions import RequestEntityTooLarge
 import terrain_tiles
 from brief import gotenberg
 from entitlements import is_admin
-from models import LzSurvey, LzSurveyAsset, LzSurveyImport, LzSurveyRevision, SurveyBook, Team, User, db
+from models import LzSurvey, LzSurveyAsset, LzSurveyImport, LzSurveyRevision, SurveyBook, SurveyBookPrint, Team, User, db
 from survey import access
+from survey import book as book_pdf
 from survey import assets as asset_store
 from survey import changes as change_lines
 from survey import compare, fields, importing, measure, pages
@@ -1123,17 +1124,21 @@ def _suggested_changes(survey, previous):
         return ''
 
 
-def _page_model(survey, revision=None, opacity=None):
+def _page_model(survey, revision=None, opacity=None, page=None, in_book=None):
+    """The page's model: a published revision's as it was signed, else the survey's as it is now. In the whole book's PDF, ``page``
+    numbers it and ``in_book`` (``book.cover_of``) names the book, in place of the place and the book it was published in."""
     book = _book_of(survey)
     if revision is not None:
-        page = revision.page or {}
+        stored = revision.page or {}
+        named = ({'name': in_book['name'], 'unitLine': in_book['unitLine']} if in_book is not None
+                 else {'name': stored.get('bookName') or book.name, 'unitLine': stored.get('unitLine') or ''})
         return compile_page(
             _revision_source(survey, revision),
-            book={'name': page.get('bookName') or book.name, 'unitLine': page.get('unitLine') or ''},
-            page={'n': page['pageN'], 'of': page.get('pageOf')} if isinstance(page.get('pageN'), int) else None,
-            version=page.get('version') or __version__,
-            printed_on=as_date(page.get('printedOn')) or revision.published_at,
-            opacity=_opacity(page.get('opacity')),
+            book=named,
+            page=page or ({'n': stored['pageN'], 'of': stored.get('pageOf')} if isinstance(stored.get('pageN'), int) else None),
+            version=stored.get('version') or __version__,
+            printed_on=as_date(stored.get('printedOn')) or revision.published_at,
+            opacity=_opacity(stored.get('opacity')),
         )
     return compile_page(_current_source(survey), book={'name': book.name, 'unitLine': book.unit_line},
                         page=_position(survey, book), version=__version__, opacity=_opacity(opacity))
@@ -1236,6 +1241,178 @@ def survey_page(survey_uuid):
     response.headers['X-Content-Type-Options'] = 'nosniff'
     response.headers['Cache-Control'] = 'private, no-store'
     return response
+
+
+# -- The whole book's PDF (L6) --------------------------------------------------
+
+def _published(book):
+    """The book's published surveys in its order, each with its latest revision: what its PDF holds."""
+    entries = []
+    for survey in _book_surveys(book):
+        latest = _latest(survey)
+        if latest is not None:
+            entries.append((survey, latest))
+    return entries
+
+
+def _print_for(book, key):
+    """The print that answers for the book as it stands (``key``, its fingerprint): one printed whose file is there, else one on its
+    way, else the last that failed. A print whose file has gone (a redeploy with no SURVEY_ASSETS_DIR, a restore) answers for
+    nothing, so the book can be printed again; nor does a newer print that failed hide one that was printed."""
+    store = asset_store.store()
+    rows = SurveyBookPrint.query.filter_by(book_id=book.id, fingerprint=key).order_by(SurveyBookPrint.id.desc()).all()
+    return (next((r for r in rows if r.state == 'ready' and r.pdf_sha256 and store.has(r.pdf_sha256)), None)
+            or next((r for r in rows if r.state == 'printing'), None)
+            or next((r for r in rows if r.state == 'failed'), None))
+
+
+def _print_json(row, entries):
+    ready = row is not None and row.state == 'ready'
+    return {
+        'state': 'empty' if not entries else row.state if row is not None else 'none',
+        'pages': len(entries),
+        'done_pages': row.done_pages if row is not None and row.state == 'printing' else 0,
+        'printed_at': _iso(row.finished_at) if ready else None,
+        'size_bytes': row.size_bytes if ready else None,
+        'error': row.error if row is not None and row.state == 'failed' else None,
+        'available': bool(gotenberg.url()),
+    }
+
+
+@survey_bp.route('/api/survey-books/<book_uuid>/print', methods=['GET', 'POST'])
+@signed_in
+def book_print(book_uuid):
+    """The book's PDF: how it stands (GET), or printed if it is not (POST). Everyone who reads the book may print it: it holds only its
+    published pages, each its latest revision. Printing is done in the background (survey/book.py) and the PDF kept until a page in it
+    changes; asking again meanwhile changes nothing."""
+    book = _readable_book(book_uuid, lock=request.method == 'POST')
+    if book is None:
+        return _not_found('book')
+    entries = _published(book)
+    key = book_pdf.fingerprint(book_pdf.cover_of(book), entries, __version__)
+    row = _print_for(book, key)
+    app = current_app._get_current_object()
+    if request.method == 'POST':
+        if book.archived_at is not None:
+            return _error('This book is archived: restore it to print it.', 409, 'book_archived')
+        if not entries:
+            return _error('Nothing in the book is published yet: its PDF holds the published pages.', 409, 'nothing_published')
+        if not gotenberg.url():
+            return _error('The PDF is not available on this server.', 503, 'pdf_unavailable')
+        if row is None or row.state == 'failed':
+            row = SurveyBookPrint(book_id=book.id, fingerprint=key, state='printing', pages=len(entries), done_pages=0,
+                                  requested_by=_me().id, requested_by_name=_who(), started_at=datetime.utcnow())
+            db.session.add(row)
+            db.session.commit()
+    if row is not None and row.state == 'printing':
+        # Queued again when nothing holds it: after a restart its thread is gone.
+        book_pdf.PRINTER.resume(app, row.id, _print_book)
+    status = 202 if request.method == 'POST' and row is not None and row.state == 'printing' else 200
+    return _reply(_print_json(row, entries), status)
+
+
+@survey_bp.route('/api/survey-books/<book_uuid>/pdf', methods=['GET'])
+@signed_in
+def book_pdf_file(book_uuid):
+    """The book's PDF as it was printed for the book as it stands; 409 ``not_printed`` until it is. Sent from the disk where the store
+    keeps it there, never read whole into memory (a book is tens of megabytes)."""
+    book = _readable_book(book_uuid)
+    if book is None:
+        return _not_found('book')
+    entries = _published(book)
+    row = _print_for(book, book_pdf.fingerprint(book_pdf.cover_of(book), entries, __version__))
+    store = asset_store.store()
+    if row is None or row.state != 'ready':
+        return _error('The book has not been printed as it stands: print it first.', 409, 'not_printed')
+    words = re.sub(r'[^A-Za-z0-9 _.-]+', '', f'{book.name} {row.finished_at:%Y-%m-%d}').strip() or 'survey book'
+    on_disk = store.path(row.pdf_sha256)
+    data = None if on_disk else store.get(row.pdf_sha256)
+    if on_disk is None and data is None:
+        return _error('The book has not been printed as it stands: print it first.', 409, 'not_printed')
+    response = send_file(on_disk or io.BytesIO(data), mimetype='application/pdf', as_attachment=request.args.get('download') == '1',
+                         download_name=f'{words}.pdf', conditional=False, etag=False)
+    response.headers['Cache-Control'] = 'private, no-store'
+    return response
+
+
+def _print_book(print_id):
+    """Prints one book in the printer's thread: every published page with the book's numbering, the cover and the index, through
+    Gotenberg; then keeps the PDF and lets go of the book's older prints. Says how far it has got as it goes (``done_pages``).
+
+    A print that fails in a way nobody foresaw is marked failed, never left printing: the next look at the book would queue it again,
+    and a page polling every 3 s would print the whole book again and again."""
+    try:
+        _print_book_now(print_id)
+    except Exception:  # noqa: BLE001 - said on the print, which can be asked for again
+        log.exception('surveys: book print %s failed', print_id)
+        db.session.rollback()
+        row = db.session.get(SurveyBookPrint, print_id)
+        if row is not None and row.state == 'printing':
+            row.state, row.error, row.finished_at = 'failed', 'The book could not be printed. Try again in a moment.', datetime.utcnow()
+            db.session.commit()
+
+
+def _print_book_now(print_id):
+    row = db.session.get(SurveyBookPrint, print_id)
+    if row is None or row.state != 'printing':
+        return
+    book = db.session.get(SurveyBook, row.book_id)
+
+    def failed(words):
+        row.state, row.error, row.finished_at = 'failed', words[:300], datetime.utcnow()
+        db.session.commit()
+
+    if book is None or book.archived_at is not None:
+        return failed('The book was archived before it was printed.')
+    entries = _published(book)
+    if not entries:
+        return failed('Nothing in the book is published any more.')
+    # The book may have moved on since it was asked for: what is printed is named for what it holds, its words read once.
+    cover = book_pdf.cover_of(book)
+    key = book_pdf.fingerprint(cover, entries, __version__)
+    store = asset_store.store()
+    done = SurveyBookPrint.query.filter(SurveyBookPrint.book_id == book.id, SurveyBookPrint.fingerprint == key,
+                                        SurveyBookPrint.id != row.id, SurveyBookPrint.state == 'ready').all()
+    if any(other.pdf_sha256 and store.has(other.pdf_sha256) for other in done):
+        # Printed meanwhile, by a print asked for the book as it stood then: nothing is printed twice.
+        db.session.delete(row)
+        db.session.commit()
+        return
+    row.fingerprint, row.pages = key, len(entries)
+    db.session.commit()
+    total = len(entries)
+    pages_in = [(_page_model(survey, revision, page={'n': n, 'of': total}, in_book=cover), _asset_reader(survey))
+                for n, (survey, revision) in enumerate(entries, start=1)]
+    model = book_pdf.compile_book(cover, [(m, rev) for (m, _read), (_s, rev) in zip(pages_in, entries)], datetime.utcnow(), __version__)
+
+    def progress(n):
+        row.done_pages = n
+        db.session.commit()
+
+    try:
+        with terrain_tiles.analysis_running():
+            pdf = pages.print_book(model, pages_in, progress)
+    except gotenberg.Unavailable:
+        return failed('PDFs are not printed on this server.')
+    except gotenberg.Failed as problem:
+        log.warning('surveys: the book %s could not be printed: %s', book.uuid, problem)
+        return failed('The printer could not print the book. Try again in a moment.')
+    pdf_key = hashlib.sha256(pdf).hexdigest()
+    store.put(pdf_key, pdf)
+    row.state, row.pdf_sha256, row.size_bytes, row.done_pages, row.finished_at = 'ready', pdf_key, len(pdf), total, datetime.utcnow()
+    row.error = None
+    db.session.commit()
+    # The book's older prints are let go: only the newest is ever served, and a book is tens of megabytes. A print's file is the
+    # book's alone (its bytes name the book on their cover), so nothing else refers to it. One still marked as printing from before
+    # this process started, that the printer does not hold, was left by a restart for a book that has moved on since: nothing will
+    # look for it. (One started since may be on its way to the printer.)
+    for old in SurveyBookPrint.query.filter(SurveyBookPrint.book_id == book.id, SurveyBookPrint.id != row.id).all():
+        if old.state == 'printing' and (book_pdf.PRINTER.knows(old.id) or old.started_at >= book_pdf.PRINTER.started):
+            continue
+        if old.pdf_sha256 and old.pdf_sha256 != pdf_key:
+            store.delete(old.pdf_sha256)
+        db.session.delete(old)
+    db.session.commit()
 
 
 # -- Photos and captures -------------------------------------------------------

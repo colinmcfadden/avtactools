@@ -1,10 +1,10 @@
 # LZ surveys — architecture and plan
 
-Status: **L1, L5 and L2 built** (2026-10-26: a survey is made, edited, measured and photographed on the web, then sent for review,
-signed off and published as a one-page PDF that readers open, and the old book's 44 pages are imported as drafts and measured in the
-background; §12, §13 and §14 say what each settled that the plan did not). **Books are many** (the owner, 2026-10-26, §11 R8): a book
-may be a team's, its owner and admins edit it and its members read it. L6, L4 and L3 are next, in that order. The owner's answers of 2026-10-26 are in §10, and the decisions taken on the same day are in §11; nothing
-is open. This file is
+Status: **L1, L5, L2 and L6 built** (2026-10-26: a survey is made, edited, measured and photographed on the web, then sent for review,
+signed off and published as a one-page PDF that readers open; the old book's 44 pages are imported as drafts and measured in the
+background; and the whole book prints as one PDF; §12 to §15 say what each settled that the plan did not). **Books are many** (the
+owner, 2026-10-26, §11 R8): a book may be a team's, its owner and admins edit it and its members read it. L4 and L3 are next, in that
+order. The owner's answers of 2026-10-26 are in §10, and the decisions taken on the same day are in §11; nothing is open. This file is
 the plan for building the feature; where it and the code disagree once it is built, the code wins (AGENTS.md §16).
 
 ---
@@ -74,7 +74,8 @@ by key), so the move is a new class and a copy, not a change to the routes.
 - `LocalAssetStore` under `SURVEY_ASSETS_DIR`, a persistent mount on the backend's Coolify app. **Staging and production each have their
   own directory** (`/data/surveys/staging`, `/data/surveys/prod`): they share the VM and its `/data` (AGENTS.md §9), and their databases
   are separate, so a shared directory would mix two sets of ids.
-- Keys are the asset's SHA-256, so a file is written once and never changed in place; a file nothing refers to is removed by a sweep.
+- Keys are the asset's SHA-256, so a file is written once and never changed in place; a file nothing refers to is removed by a sweep
+  (not built). A book's PDF is its book's alone, and is let go when the book is printed again (§15).
 - Photos are taken as JPEG or PNG up to 20 MB, re-encoded by Pillow (already a dependency) to at most 2400 px on the long side, with the
   orientation applied and **every EXIF field dropped**. A capture is stored as sent (PNG).
 - An S3 store needs `boto3`: a new dependency, to be asked for when the move comes (AGENTS.md §2).
@@ -169,7 +170,8 @@ tileset's survey and year. Cesium must draw with `preserveDrawingBuffer` for the
 allows it), or the canvas cannot be read. A server-side render of the point cloud, so the book can be regenerated unattended, is later.
 
 **The book:** a cover (the book's name, the unit, the date, UNCLASSIFIED), an index of the LZs with their pages and an overview map, then
-every published survey's latest revision in page order, numbered "n OF N". Printed on request and kept until a survey in it changes.
+every published survey's latest revision in page order, numbered "n OF N". Printed on request and kept until a survey in it changes
+(§15).
 
 ---
 
@@ -206,8 +208,8 @@ the web hides what a person may not do, and nothing else. Once organizations exi
 
 | | |
 |---|---|
-| Server | `backend/models.py` (five tables: the four of §3.1 and `lz_survey_import`, §14), `backend/routes/survey_routes.py` (the API below), `backend/survey/` (`assets.py` the store, `measure.py` the snapshot, `obstacles.py` §4, `compile.py` the model, `figures.py`, `pages.py`, `templates/survey.html`, `importing.py` the import, `book.py`) |
-| API | `GET/POST /api/survey-books`, `GET/PATCH /api/survey-books/<uuid>` (a reader sees the published pages), `POST …/archive`, `…/restore`, `GET /api/survey-books/<uuid>/pdf` (L6), `POST …/import` (the old book's bundle); `POST /api/surveys`, `GET/PATCH /api/surveys/<uuid>`, `POST …/archive`, `…/restore`, `…/measure`, `…/submit`, `…/draft`, `…/publish`, `GET …/pdf[?rev=]`, `GET …/page[?rev=]` (the page as HTML, without Gotenberg), `POST …/assets`, `GET/PATCH/DELETE …/assets/<id>`, `POST …/import/checked` (`Cache-Control: private`). Web only: **not in `contracts/openapi.yaml`**, so the API version does not move |
+| Server | `backend/models.py` (six tables: the four of §3.1, `lz_survey_import`, §14, and `survey_book_print`, §15), `backend/routes/survey_routes.py` (the API below), `backend/survey/` (`assets.py` the store, `measure.py` the snapshot, `obstacles.py` §4, `compile.py` the model, `figures.py`, `pages.py`, `templates/survey.html`, `importing.py` the import, `book.py` the book's PDF; the page's template in three parts, `survey_style.css`, `_survey_sheet.html` and `survey.html`, so `book.html` prints every sheet as it prints alone) |
+| API | `GET/POST /api/survey-books`, `GET/PATCH /api/survey-books/<uuid>` (a reader sees the published pages), `POST …/archive`, `…/restore`, `GET/POST /api/survey-books/<uuid>/print` (how the book's PDF stands; print it), `GET …/pdf` (the book's PDF), `POST …/import` (the old book's bundle); `POST /api/surveys`, `GET/PATCH /api/surveys/<uuid>`, `POST …/archive`, `…/restore`, `…/measure`, `…/submit`, `…/draft`, `…/publish`, `GET …/pdf[?rev=]`, `GET …/page[?rev=]` (the page as HTML, without Gotenberg), `POST …/assets`, `GET/PATCH/DELETE …/assets/<id>`, `POST …/import/checked` (`Cache-Control: private`). Web only: **not in `contracts/openapi.yaml`**, so the API version does not move |
 | Web | `feature/surveys/`: `SurveyBookPage` (the list), `SurveyEditor` (the form, the map in survey mode reusing the LZ/PZ editors and terrain layers, the 3D window with *Capture*, the PDF preview, the disagreements panel, revisions and publish), `SurveyImport`, `useSurveys` |
 | Tools | `tools/import_survey_book.py` |
 | Tests | the model held to a fixture made from DONOVAN (`contracts/fixtures/surveys/`), the 95th-percentile call, the obstacle products over a recorded piece, the routes' permissions, the asset store's EXIF stripping and keys, the importer over two of the real book's pages as poppler lays them out |
@@ -399,4 +401,45 @@ routes in `backend/routes/survey_routes.py`, and `frontend/src/feature/surveys/S
   and measured within seconds (SAM about 0.4 s a page once loaded).
 - **The notes stay with the survey** ("From the old book" in the editor, and a count on the book's list) until an editor marks them
   checked, which keeps them and stops counting them; it is not a change to the survey.
+
+---
+
+## 15. L6 as built (2026-10-26)
+
+What the book's PDF settled that the plan did not. The code is `backend/survey/book.py`, `pages.build_book`, `figures.overview`,
+`templates/book.html` (with the page's own sheet, `_survey_sheet.html`), the book's routes in `backend/routes/survey_routes.py`, and
+`frontend/src/feature/surveys/SurveyBookPage.jsx`'s *The book's PDF*.
+
+- **What it holds**: a cover (the book's name and unit line, how many LZ surveys, the date printed, the cover text, and a topographic map
+  of every LZ with its page number beside it), the index (page, HLZ ID, name, grid, revision, when published and who signed it off, 34
+  to a sheet, each sheet with its own UNCLASSIFIED lines), then every published survey's latest revision in the book's order, each page
+  as it prints alone (its revision, sign-off and date as signed) but numbered *n OF N* in the book and named for the book as it is now
+  (a survey moved from another book prints as this book's page). Drafts and archived surveys are never in it. A page's own PDF still
+  says where it was in the book when it was published. An archived book is not printed.
+- **Laid out to its limits**: the cover is a column between its top line and its foot, the map taking what the header and the text
+  leave (3 in at least), the name and unit line kept to their lines, the cover text to seven lines (past them it is cut, and the cover
+  says the rest is in the book's details); nothing is drawn under the foot or the bottom UNCLASSIFIED line. An index row is one line
+  whatever it holds, so 34 to a sheet are always all of them. The sheet's own header (L5's) keeps a long name or HLZ ID to its lines, and
+  the plan's name label to the picture.
+- **Who prints it**: everyone who reads the book, as it holds only what is published. One request asks for it (`POST …/print`), and
+  the server prints it in the background (`Printer`: one thread, one book at a time), because its pages fetch their maps' tiles and
+  Chromium prints dozens of them, longer than a request may wait behind Cloudflare's 100 seconds. The page asks how it stands every 3 s
+  while it prints, and says how far it has got.
+- **Kept until a page changes**: a print is named by a fingerprint of what it holds (the cover's words, every page's survey and revision
+  in order, the EZ/PZ version and the layout), so a page published again, moved, archived or added makes the PDF out of date (the page
+  offers to print it again), and asking again for the book as it stands changes nothing. The PDF is kept in the asset store and sent
+  from the disk; a newer print lets go of the book's older ones and their files. A print whose file has gone (a redeploy with no
+  `SURVEY_ASSETS_DIR`) is printed again when asked, one printed meanwhile by a print asked for earlier is never printed twice, and a
+  later failure never hides a print that is there.
+- **Pictures are printed at the page's size**: a photo or 3D capture goes to the printer at most 1,200 px on its long side (300 dpi and
+  more in its slot), where its kept 2,400 px passed through Chromium whole. Measured with 44 pages of the worst kind of picture for a
+  JPEG: 22.6 MB and 4.3 s in Chrome, where it had been 64.6 MB and 17.6 s. Gotenberg ends a request after 30 s unless told otherwise,
+  so it is started with `--api-timeout=140s` (AGENTS.md §9), under the API's 150 s wait.
+- **Without Gotenberg** it says the book's PDF is not printed on this server; a restart that lost a print's thread queues it again at
+  the book's next look. A print that fails in a way nobody foresaw is marked failed, never left printing, or every look (every 3 s while
+  the page polls) would print the whole book again; one a restart left for a book that has moved on since is let go when the book next
+  prints. Printed through a stand-in for Gotenberg built on this Mac's Chrome: a three-page book in about 8 seconds, five Letter pages and
+  no blank one.
+- **A signed page never says to measure it again**: a revision's snapshot may predate snapshots that say what they were measured for,
+  and the stale note is for a page still being made, never one signed (found printing the scratch book).
 

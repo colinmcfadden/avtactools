@@ -65,6 +65,15 @@ class AssetStore:
     def exists(self, key: str) -> bool:
         return self.get(key) is not None
 
+    def has(self, key: str) -> bool:
+        """Whether the bytes are there, without reading them (a book's PDF is asked about every few seconds while it prints)."""
+        return self.exists(key)
+
+    def path(self, key: str) -> str | None:
+        """Where the bytes are on this machine's disk, to be sent from there rather than read whole into memory; None for a store
+        that keeps them elsewhere, or when they are not there."""
+        return None
+
 
 def check_key(key) -> str:
     if not isinstance(key, str) or not _KEY.match(key):
@@ -113,6 +122,13 @@ class LocalAssetStore(AssetStore):
             os.unlink(self._path(key))
         except FileNotFoundError:
             pass
+
+    def has(self, key: str) -> bool:
+        return os.path.isfile(self._path(key))
+
+    def path(self, key: str) -> str | None:
+        path = self._path(key)
+        return path if os.path.isfile(path) else None
 
 
 def default_root() -> str:

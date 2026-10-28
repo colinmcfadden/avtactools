@@ -71,11 +71,17 @@ const NO_LIST = { status: "idle", book: null, surveys: [], error: null };
 /** How often the book's list is read again while the server measures imported surveys in the background. */
 export const IMPORT_POLL_MS = 5000;
 
+/** How often the book's PDF is asked about while the server prints it. */
+export const PRINT_POLL_MS = 3000;
+
+const NO_PRINT = { status: "idle", print: null, error: null };
+
 export const useSurveys = ({ client = surveyApi } = {}) => {
   const [books, setBooks] = useState({ status: "idle", books: [], teams: [], canMakeForNoTeam: false, error: null });
   const [showArchivedBooks, setShowArchivedBooks] = useState(false);
   const [bookUuid, setBookUuid] = useState(null);
   const [list, setList] = useState(NO_LIST);
+  const [bookPrint, setBookPrint] = useState(NO_PRINT);
   const [showArchived, setShowArchived] = useState(false);
   const [survey, setSurvey] = useState(null);
   const [reading, setReading] = useState(null);
@@ -90,6 +96,8 @@ export const useSurveys = ({ client = surveyApi } = {}) => {
   const bookRef = useRef(null);
   const busyRef = useRef(null);
   const conflictRef = useRef(null);
+  // Each look at the book's PDF is numbered, a Print too: an answer that comes once a later one was asked for is not how it stands.
+  const printLook = useRef(0);
   // Each survey asked for is numbered: an answer that comes once another was asked for, or the book or survey was closed, is let go.
   const opening = useRef(0);
   const stopOpening = useCallback(() => {
@@ -159,6 +167,7 @@ export const useSurveys = ({ client = surveyApi } = {}) => {
     bookRef.current = uuid;
     setBookUuid(uuid);
     setList({ ...NO_LIST, status: "loading" });
+    setBookPrint(NO_PRINT);
     return refresh(showArchived, uuid);
   }, [refresh, showArchived, stopOpening]);
 
@@ -167,6 +176,7 @@ export const useSurveys = ({ client = surveyApi } = {}) => {
     bookRef.current = null;
     setBookUuid(null);
     setList(NO_LIST);
+    setBookPrint(NO_PRINT);
     take(null);
     setReading(null);
     refreshBooks();
@@ -182,6 +192,79 @@ export const useSurveys = ({ client = surveyApi } = {}) => {
       throw new Error(surveyFailure(err, "The book could not be made."));
     }
   }, [client, refreshBooks]);
+
+  // -- The book's PDF -------------------------------------------------------------------
+
+  /**
+   * How the open book's PDF stands, asked again. An answer that comes once another book is open, or once a later look or a Print was
+   * asked for, is not how it stands. A book that has gone, or is no longer this person's to read, is not asked about again.
+   */
+  const refreshBookPrint = useCallback(async (uuid = bookRef.current) => {
+    if (!uuid) return null;
+    printLook.current += 1;
+    const look = printLook.current;
+    const current = () => bookRef.current === uuid && printLook.current === look;
+    try {
+      const answer = await client.bookPrint(uuid);
+      if (current()) setBookPrint({ status: "ready", print: answer, error: null });
+      return answer;
+    } catch (err) {
+      if (current()) {
+        const gone = [403, 404].includes(err?.response?.status);
+        const error = surveyFailure(err, "How the book's PDF stands could not be read.");
+        setBookPrint((was) => (gone ? { status: "gone", print: null, error } : { ...was, status: "error", error }));
+      }
+      return null;
+    }
+  }, [client]);
+
+  /** Asks for the book to be printed; how it stands, or throws why not in words. */
+  const printBook = useCallback(async () => {
+    const uuid = bookRef.current;
+    if (!uuid) return null;
+    printLook.current += 1;
+    const look = printLook.current;
+    try {
+      const answer = await client.printBook(uuid);
+      if (bookRef.current === uuid && printLook.current === look) setBookPrint({ status: "ready", print: answer, error: null });
+      return answer;
+    } catch (err) {
+      throw new Error(surveyFailure(err, "The book could not be printed."));
+    }
+  }, [client]);
+
+  /** The book's PDF as a Blob; throws why not in words. */
+  const loadBookPdf = useCallback(async () => {
+    try {
+      return await client.fetchBookPdf(bookRef.current);
+    } catch (err) {
+      if (err?.response?.status === 409) refreshBookPrint();
+      throw new Error(await surveyApi.blobFailure(err, "The book's PDF could not be fetched."));
+    }
+  }, [client, refreshBookPrint]);
+
+  // How the PDF stands is asked when the book opens and whenever its list is read again (a survey published since changes the book).
+  useEffect(() => {
+    if (bookUuid && list.status === "ready") refreshBookPrint(bookUuid);
+  }, [bookUuid, list.status, list.surveys, refreshBookPrint]);
+
+  // While the server prints it, it is asked about again now and then, while the book's page is what is shown: each look once the
+  // one before has answered.
+  const printing = bookPrint.print?.state === "printing" && bookPrint.status !== "gone";
+  useEffect(() => {
+    if (!printing || !bookUuid || survey || reading) return undefined;
+    let stopped = false;
+    let timer = null;
+    const look = async () => {
+      await refreshBookPrint();
+      if (!stopped) timer = setTimeout(look, PRINT_POLL_MS);
+    };
+    timer = setTimeout(look, PRINT_POLL_MS);
+    return () => {
+      stopped = true;
+      clearTimeout(timer);
+    };
+  }, [printing, bookUuid, survey, reading, refreshBookPrint]);
 
   /** The old book's pages, from the importer's bundle, as drafts in the open book: { created, skipped, source }; throws why not in words. */
   const importPages = useCallback(async (file) => {
@@ -266,13 +349,17 @@ export const useSurveys = ({ client = surveyApi } = {}) => {
     if (!book) return null;
     try {
       const answer = await client.updateBook(book.uuid, book.revision, patch);
-      if (bookRef.current === book.uuid) setList((current) => ({ ...current, book: answer }));
+      if (bookRef.current === book.uuid) {
+        setList((current) => ({ ...current, book: answer }));
+        // Its name, unit line and cover text are on the PDF: one printed before them is not the book now.
+        refreshBookPrint(book.uuid);
+      }
       return answer;
     } catch (err) {
       if (err?.response?.status === 409) refresh();
       throw new Error(surveyFailure(err, "The book could not be changed."));
     }
-  }, [client, list.book, refresh]);
+  }, [client, list.book, refresh, refreshBookPrint]);
 
   const renameBook = useCallback((name) => updateBook({ name }), [updateBook]);
 
@@ -603,6 +690,10 @@ export const useSurveys = ({ client = surveyApi } = {}) => {
     renameBook,
     setBookArchived,
     importPages,
+    bookPrint,
+    refreshBookPrint,
+    printBook,
+    loadBookPdf,
     list,
     showArchived,
     toggleArchived,

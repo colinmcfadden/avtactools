@@ -681,6 +681,28 @@ class LzSurveyAsset(db.Model):
     removed_at = db.Column(db.DateTime, nullable=True)
 
 
+class SurveyBookPrint(db.Model):
+    """A book's PDF (docs/LZ_SURVEYS.md §5, step L6), printed in the background when someone asks and kept, in the asset store under
+    its SHA-256, until a page in the book changes: ``fingerprint`` names what it holds (survey/book.py). One row a print; the newest
+    for a fingerprint is the one that counts, and older ones (and their PDFs) are let go once a newer is printed."""
+
+    __tablename__ = 'survey_book_print'
+
+    id = db.Column(db.Integer, primary_key=True)
+    book_id = db.Column(db.Integer, db.ForeignKey('survey_book.id'), nullable=False, index=True)
+    fingerprint = db.Column(db.String(64), nullable=False, index=True)
+    state = db.Column(db.String(10), nullable=False, default='printing')  # printing | ready | failed
+    pages = db.Column(db.Integer, nullable=False, default=0)
+    done_pages = db.Column(db.Integer, nullable=False, default=0)
+    pdf_sha256 = db.Column(db.String(64), nullable=True)
+    size_bytes = db.Column(db.Integer, nullable=True)
+    error = db.Column(db.String(300), nullable=True)
+    requested_by = db.Column(db.Integer, db.ForeignKey('user.id', ondelete='SET NULL'), nullable=True)
+    requested_by_name = db.Column(db.String(120), nullable=False, default='')
+    started_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+    finished_at = db.Column(db.DateTime, nullable=True)
+
+
 class LzSurveyImport(db.Model):
     """Where a survey the import made came from, and what is left to check on it (docs/LZ_SURVEYS.md §6): the old book's page, what
     could not be read there, and how its measuring in the background stands. One for each survey the import made, none for the rest.

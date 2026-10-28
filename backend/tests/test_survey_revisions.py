@@ -16,7 +16,7 @@ BACKEND_DIR = Path(__file__).resolve().parents[1]
 if str(BACKEND_DIR) not in sys.path:
     sys.path.insert(0, str(BACKEND_DIR))
 
-from models import LzSurvey, db  # noqa: E402
+from models import LzSurvey, LzSurveyRevision, db  # noqa: E402
 from survey import measure  # noqa: E402
 from test_survey_books import BookCase, _tile  # noqa: E402
 from test_survey_measure import DONOVAN, TARGET, Terrain, local, square  # noqa: E402
@@ -95,8 +95,20 @@ class StaleTests(RevisionCase):
             row.snapshot = {**old, 'version': 1}
             db.session.commit()
         self.assertEqual(self.get(survey)['stale'], ['It was measured by an earlier version of EZ/PZ.'])
+        self.assertIn('It was measured by an earlier version of EZ/PZ. Measure it again.', self.page(survey))
         self.assertEqual(measure.stale(None, DIAGRAM, {}), [])
         self.assertEqual(measure.stale({}, DIAGRAM, {}), [])
+
+    def test_a_signed_page_never_says_it_should_be_measured_again(self):
+        survey = self.measured(self.survey_in(self.book))
+        self.publish(survey)
+        with self.app.app_context():
+            revision = LzSurveyRevision.query.one()
+            old = {k: v for k, v in revision.snapshot.items() if k not in ('boundary', 'approachDeg')}
+            revision.snapshot = {**old, 'version': 1}                              # a revision signed before snapshots said what they were for
+            db.session.commit()
+        for head in (self.admin, self.member):
+            self.assertNotIn('Measure it again', self.page(survey, rev=1, head=head))
 
 
 class FrozenTests(RevisionCase):
