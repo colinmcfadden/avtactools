@@ -10,9 +10,9 @@ import { symbolDataUri } from "../feature/symbols/milsym";
 import packageJson from "../../package.json";
 
 /**
- * The line under Analyze: what the active LZ/PZ needs next, or what it allows once analysed. Where the
- * person may not change it (a finished Mission Pack, or a viewer of one) the tools stay off, so it does
- * not say they are unlocked.
+ * What the active LZ/PZ needs next, or what it allows once analysed: the title of a control that is off, so
+ * it says why without a line of text under every button. Where the person may not change it (a finished
+ * Mission Pack, or a viewer of one) the tools stay off, so it does not say they are unlocked.
  */
 export const diagramReadiness = ({ hasTarget, analyzed, editable = true }) =>
   !hasTarget
@@ -352,21 +352,6 @@ const Controls = ({
               >
                 {analyzed ? "Re-analyze" : "Analyze the LZ"}
               </button>
-            </div>
-          )}
-
-          {readinessMessage && (
-            <div
-              className="ff-readiness-text"
-              role="status"
-              style={{
-                color: "#9fb0c8",
-                fontSize: "0.76rem",
-                lineHeight: 1.35,
-                marginTop: "0.65rem",
-              }}
-            >
-              {readinessMessage}
             </div>
           )}
 

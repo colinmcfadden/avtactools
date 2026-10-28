@@ -1520,6 +1520,21 @@ input:checked + .slider:before {
   transform: translateY(-1px);
 }
 
+/* A tool the LZ/PZ is not ready for (not analysed yet, or a read-only pack) looks off, so what comes first is plain. */
+.ff-tool-btn:disabled,
+.ff-tool-btn:disabled:hover {
+  border-color: var(--ff-border) !important;
+  background: var(--surface-1);
+  opacity: 0.38;
+  cursor: not-allowed;
+  transform: none;
+}
+
+.ff-tool-btn:disabled img,
+.ff-tool-btn:disabled svg {
+  filter: grayscale(1);
+}
+
 .ff-tool-btn .btn-label {
   color: var(--ff-text-muted);
   font-size: 9px;
