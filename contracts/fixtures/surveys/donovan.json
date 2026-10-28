@@ -1,5 +1,5 @@
 {
-  "description": "LZ DONOVAN (GA 034, page 5 of AASF 1's HLZ survey book), as the field survey of October 2023 recorded it: the survey book's values typed as the book writes them, in the survey's field keys (backend/survey/fields.py, frontend/src/feature/surveys/surveyFields.js). Not generated: it is the unit's own data, approved for EZ/PZ by the owner (docs/LZ_SURVEYS.md §10, answer 2), and the input the survey tests start from. `expected` is what is known of it without a DEM: the book's grid and lat/long are about 530 m apart (§2).",
+  "description": "LZ DONOVAN (GA 034, page 5 of AASF 1's HLZ survey book), as the field survey of October 2023 recorded it: the survey book's values typed as the book writes them, in the survey's field keys (backend/survey/fields.py, frontend/src/feature/surveys/surveyFields.js). Not generated: it is the unit's own data, approved for EZ/PZ by the owner (docs/LZ_SURVEYS.md §10, answer 2), and the input the survey tests start from. `expected` is what is known of it without a DEM: the book's grid and lat/long are about 530 m apart (§2). The book's best exit (360) is not here: the survey keeps no best exit since the owner's call of 2026-10-27 (backend/survey/fields.py's RETIRED).",
   "hlzId": "GA 034",
   "name": "LZ DONOVAN",
   "field": {
@@ -7,7 +7,6 @@
     "latLong": "N 34 35.579 W084 07.402",
     "ppr": "5th RTB Ops 706-864-3327 x5233",
     "approachDeg": "360",
-    "exitDeg": "360",
     "maxAcDay": "2",
     "maxAcNight": "2",
     "maxWeight": "",

@@ -152,7 +152,7 @@ describe("useSurveys", () => {
     const [uuid, revision, body] = client.saveSurvey.mock.calls[0];
     expect([uuid, revision]).toEqual(["s-1", 1]);
     expect(body.field.surface).toBe("Grass, short");
-    // The approach and exit go with the diagram as its doghouses.
+    // The approach goes with the diagram as its landing doghouse.
     expect(body.diagram.flightData.landing_hdg).toBe("000°");
     expect(result.current.survey.revision).toBe(2);
     expect(result.current.dirty).toBe(false);

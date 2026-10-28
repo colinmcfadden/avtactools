@@ -3,7 +3,9 @@
 Every value is text as the survey wrote it ("1850", "-10° roll left side low", "OCT 2023"): the book is the source, and a
 number is read out of the text only where it is compared with what EZ/PZ measured (survey/compare.py). The web lays these
 out in the book's sections (frontend/src/feature/surveys/surveyFields.js); a key either side does not know is refused, so the
-two lists cannot drift apart unseen (contracts/fixtures/surveys/donovan.json is written with them).
+two lists cannot drift apart unseen (contracts/fixtures/surveys/donovan.json is written with them). A key the survey kept once and
+keeps no more (``RETIRED``) is let go where it still comes in, never refused: a survey saved before, a page left open, an import
+bundle made before.
 """
 
 FIELD_KEYS = (
@@ -13,7 +15,6 @@ FIELD_KEYS = (
     "ppr",
     # How to fly it: judgements, the admin's (§11, R3)
     "approachDeg",
-    "exitDeg",
     "maxAcDay",
     "maxAcNight",
     # The book's "Maximum Weight (if applicable)"
@@ -36,16 +37,21 @@ FIELD_KEYS = (
     "surveyUnit",
 )
 
+# The best exit: neither measured, printed, shown nor kept since the owner's call of 2026-10-27.
+RETIRED = ("exitDeg",)
+
 MAX_VALUE = 2000
 
 
 def clean_field(value):
-    """``value`` as a field map to store, or raise ValueError saying what is wrong. Unknown keys and non-text values are refused;
-    a blank value is kept as an empty string (it was asked and not known), never dropped."""
+    """``value`` as a field map to store, or raise ValueError saying what is wrong. Unknown keys and non-text values are refused, a
+    ``RETIRED`` key let go; a blank value is kept as an empty string (it was asked and not known), never dropped."""
     if not isinstance(value, dict):
         raise ValueError("field must be an object of the survey's values")
     out = {}
     for key, text in value.items():
+        if key in RETIRED:
+            continue
         if key not in FIELD_KEYS:
             raise ValueError(f"field has no value called {key!r}")
         if text is None:

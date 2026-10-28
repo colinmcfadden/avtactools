@@ -1,11 +1,11 @@
 import { FIELD_KEYS, FIELD_SECTIONS, fullField } from "./surveyFields";
 import {
-  approachArrows,
+  approachArrow,
   boundaryOf,
   diagramToSave,
   headingOf,
   offsetPoint,
-  withApproachAndExit,
+  withApproach,
   withBoundary,
   withTarget,
 } from "./surveyDiagram";
@@ -33,6 +33,7 @@ describe("the survey's fields", () => {
     expect(field.grid).toBe("16S GD 6341 3199");
     expect(field.maxAcDay).toBe("");
     expect(field.colour).toBeUndefined();
+    expect(fullField({ approachDeg: "360", exitDeg: "180" }).exitDeg).toBeUndefined();   // a best exit saved before: kept no more
   });
 });
 
@@ -43,7 +44,7 @@ describe("the survey's diagram", () => {
     expect(serializeLzDiagram(targeted)).toEqual(targeted);
     expect(serializeLzDiagram(analyzed)).toEqual(analyzed);
     expect(boundaryOf(analyzed)).toEqual(analyzed.analysis.detectedLZ);
-    expect(withApproachAndExit(targeted, { approachDeg: "360", exitDeg: "180" }).graphics.doghouses).toHaveLength(2);
+    expect(withApproach(targeted, { approachDeg: "360" }).graphics.doghouses).toHaveLength(2);
   });
 
   it("reads headings as the book writes them", () => {
@@ -75,19 +76,19 @@ describe("the survey's diagram", () => {
     expect(boundaryOf(null)).toBeNull();
   });
 
-  it("turns the approach and exit doghouses to the field's headings, and the flight data with them", () => {
+  it("turns the landing doghouse to the field's best approach, the flight data with it, and leaves the takeoff one", () => {
     const diagram = withBoundary(withTarget(null, TARGET.lat, TARGET.lon, { id: "survey-1" }), SQUARE);
-    const turned = withApproachAndExit(diagram, { approachDeg: "045", exitDeg: "225" });
+    const made = withApproach(diagram, {});                                    // the standard two, as made
+    const turned = withApproach(diagram, { approachDeg: "045", exitDeg: "225" }); // a best exit saved before is not read
     const { landing, takeoff } = flightDoghouses(turned.graphics.doghouses);
     expect(landing.heading).toBe("045°");
-    expect(takeoff.heading).toBe("225°");
-    expect(turned.flightData).toMatchObject({ landing_hdg: "045°", takeoff_hdg: "225°" });
+    expect(takeoff).toEqual(flightDoghouses(made.graphics.doghouses).takeoff);
+    expect(turned.flightData.landing_hdg).toBe("045°");
     // Nothing to change: the same object.
-    expect(withApproachAndExit(turned, { approachDeg: "045", exitDeg: "225" })).toBe(turned);
-    // A heading not set leaves its doghouse as it is.
-    const half = withApproachAndExit(turned, { approachDeg: "090", exitDeg: "" });
-    expect(flightDoghouses(half.graphics.doghouses).takeoff.heading).toBe("225°");
-    expect(withApproachAndExit(null, {})).toBeNull();
+    expect(withApproach(turned, { approachDeg: "045" })).toBe(turned);
+    // A heading not set leaves the doghouse as it is.
+    expect(withApproach(turned, { approachDeg: "" })).toBe(turned);
+    expect(withApproach(null, {})).toBeNull();
   });
 
   it("is saved without a slope raster", () => {
@@ -98,18 +99,18 @@ describe("the survey's diagram", () => {
     expect(diagramToSave(null, {})).toBeNull();
   });
 
-  it("draws the approach flown into the target and the exit flown out", () => {
+  it("draws the approach flown into the target", () => {
     const north = offsetPoint(TARGET.lat, TARGET.lon, 0, 1000);
     expect(north[0] - TARGET.lat).toBeCloseTo(1000 / 111320, 9);
     expect(north[1]).toBeCloseTo(TARGET.lon, 9);
-    const { approach, exit } = approachArrows(TARGET, { approachDeg: "360", exitDeg: "090" });
-    // Flown north into the target: it starts south of it.
-    expect(approach.line[0][0]).toBeLessThan(TARGET.lat);
-    expect(approach.line[1]).toEqual([TARGET.lat, TARGET.lon]);
-    // Flown east out of it: it ends east of it, its head there.
-    expect(exit.line[1][1]).toBeGreaterThan(TARGET.lon);
-    expect(exit.head[1]).toEqual(exit.line[1]);
-    expect(approachArrows(TARGET, { approachDeg: "" }).approach).toBeNull();
-    expect(approachArrows(null, DONOVAN.field)).toEqual({ approach: null, exit: null });
+    const arrow = approachArrow(TARGET, { approachDeg: "360", exitDeg: "090" });
+    // Flown north into the target: it starts south of it, its head at the target.
+    expect(arrow.line[0][0]).toBeLessThan(TARGET.lat);
+    expect(arrow.line[0][1]).toBeCloseTo(TARGET.lon, 9);
+    expect(arrow.line[1]).toEqual([TARGET.lat, TARGET.lon]);
+    expect(arrow.head[1]).toEqual([TARGET.lat, TARGET.lon]);
+    expect(arrow.head[0][0]).toBeLessThan(TARGET.lat);
+    expect(approachArrow(TARGET, { approachDeg: "" })).toBeNull();
+    expect(approachArrow(null, DONOVAN.field)).toBeNull();
   });
 });
