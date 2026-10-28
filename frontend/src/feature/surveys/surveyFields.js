@@ -1,7 +1,8 @@
 /*
  * What the field survey records for one LZ, in the sections of the unit's HLZ survey book (docs/LZ_SURVEYS.md §1). Every value is
  * text as the survey wrote it. The keys are the server's (backend/survey/fields.py), which refuses any other; both are held to
- * contracts/fixtures/surveys/donovan.json.
+ * contracts/fixtures/surveys/donovan.json. The book's best exit is not kept (the owner, 2026-10-27): `fullField` lets go of one a
+ * survey saved before still has.
  */
 
 export const FIELD_SECTIONS = [
@@ -19,7 +20,6 @@ export const FIELD_SECTIONS = [
     title: "Approach and capacity",
     fields: [
       { key: "approachDeg", label: "Best approach (° true)", placeholder: "e.g. 360", short: true },
-      { key: "exitDeg", label: "Best exit (° true)", placeholder: "e.g. 360", short: true },
       { key: "maxAcDay", label: "Max A/C, day", placeholder: "e.g. 2", short: true },
       { key: "maxAcNight", label: "Max A/C, night", placeholder: "e.g. 2", short: true },
       { key: "maxWeight", label: "Max weight", placeholder: "Only if the LZ limits it", short: true },

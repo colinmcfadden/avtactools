@@ -12,8 +12,8 @@ MAX_CHANGES = 500
 
 # What a reader would call each printed fact, in the order the page prints them.
 FACTS = (
-    ("grid", "grid"), ("latLong", "lat/long"), ("ppr", "PPR"), ("approach", "best approach"), ("exit", "best exit"),
-    ("axis", "LZ axis"), ("maxAc", "max A/C"), ("elevation", "elevation"), ("surface", "surface"), ("slope", "slope"),
+    ("grid", "grid"), ("latLong", "lat/long"), ("ppr", "PPR"), ("approach", "best approach"), ("axis", "LZ axis"),
+    ("maxAc", "max A/C"), ("elevation", "elevation"), ("surface", "surface"), ("slope", "slope"),
 )
 
 

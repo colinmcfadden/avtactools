@@ -3,8 +3,8 @@ published revision, before anything is drawn. Pure: the route gathers the survey
 what is printed; ``figures`` and ``pages`` draw and lay it out.
 
 What is printed where the field survey and EZ/PZ both have a value is ``compare``'s ``printed`` (§2: the computed value, unless an
-admin chose the survey's). Judgements (best approach, max A/C, surface, hazards, remarks, PPR) are the field's (§11, R3); the best
-exit is kept with the survey (its form, the takeoff doghouse) and not printed (the owner, 2026-10-27).
+admin chose the survey's). Judgements (best approach, max A/C, surface, hazards, remarks, PPR) are the field's (§11, R3); a survey
+keeps no best exit (the owner, 2026-10-27).
 Nothing is made up for a value nobody has: it prints as a dash (AGENTS.md §14).
 """
 

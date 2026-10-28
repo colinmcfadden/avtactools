@@ -158,6 +158,7 @@ class ImportTests(ImportCase):
         self.assertEqual(len(picture.getexif()), 0)                           # the phone's GPS and serial are gone
         big = self.survey(big_stamp['uuid'])
         self.assertEqual(big['imported']['notes'], {'unread': [], 'blank': ['Surface Condition'], 'warnings': []})
+        self.assertNotIn('exitDeg', big['field'])                              # a bundle made before has a best exit: let go, unsaid
 
     def test_each_draft_is_measured_in_the_background_one_at_a_time(self):
         body = self.imported()
