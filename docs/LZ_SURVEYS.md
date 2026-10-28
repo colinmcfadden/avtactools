@@ -122,8 +122,7 @@ ground returns), and the pieces are cached on the server (`LIDAR_STREAM_CACHE_DI
   gives one) and what sets it; the approach planned at 30° where that clears it, else at the shallowest angle and said to be steeper,
   with where its descent begins from the survey's own height above the highest obstacle (100 ft where it gives none; the owner's,
   2026-10-27; §16). The editor may type the approach's angle in place of the plan, with a reason: the page prints it as the editor's.
-  The exit is neither measured nor printed (the owner, 2026-10-27): the field's best exit is kept with the survey (its form, the
-  takeoff doghouse) and the page prints none of it (§5).
+  The exit is neither measured nor shown (the owner, 2026-10-27): the field's best exit stays a judgement of the field's (R3).
 - **Obstacles in and round the LZ:** the tallest point inside the boundary and within 100 m of it, with bearing, distance and height;
   points standing more than 2 m inside the boundary counted and drawn, and trees found one by one where there are some
   (built as a local-maximum finder over the canopy's 1 m grid, §16; `filters.litree` was tried on Ellijay hardwood: AGENTS.md §13). This
@@ -155,11 +154,11 @@ figures, lays the page out as HTML and has Gotenberg print it (`GOTENBERG_URL`, 
 
 - **Header:** HLZ ID and book, the date, the page number in the book, DRAFT (until published) or the revision, the LZ's name; UNCLASSIFIED
   top and bottom.
-- **Facts:** grid, lat/long, PPR; best approach, LZ axis, max A/C, elevation (the best exit is not printed: the owner, 2026-10-27);
-  hazards (the computed slope call first, then the field's); surface, slope at the best approach (no altimeter source: R9); the numbered
-  notes; a compass rose with the boundary's shape, its size and area.
+- **Facts:** grid, lat/long, PPR; best approach, best exit, LZ axis, max A/C, elevation; hazards (the computed slope call first, then the
+  field's); surface, slope at the best approach, altimeter source; the numbered notes; a compass rose with the boundary's shape, its size
+  and area.
 - **Plan:** satellite tiles stitched as the brief's figures are (`brief/figures.base_image`), the slope map at the person's opacity, the
-  contours with their labels, the boundary dashed, the approach's arrow, the name, lat/long ticks and a scale in metres.
+  contours with their labels, the boundary dashed, the approach and exit arrows, the name, lat/long ticks and a scale in metres.
 - **3D:** the admin's capture (below), captioned with the heading it looks down.
 - **Photos:** the field's north and best-approach photos with their dates.
 - **Profiles:** along the best approach and across it, as the web's `SlopeProfile.jsx` draws them, with the LiDAR's treetop line (§4).
@@ -464,7 +463,7 @@ snapshot's `obstacles` (`measure.py`), the page's `clearance` (`compile.py`, `fi
   print an angle from the edge as one from the touchdown point. The approach's plan (below) is worked out from a 5's steps, so the plan
   needed no measuring again. **The exit is neither measured nor shown** (the owner, 2026-10-27): its lane is not read, a snapshot keeps
   no best exit, and a survey whose best exit changes is not measured again for it; a 5 measured before keeps its exit's lane, which
-  nothing reads. Nor does the page print the field's best exit, in its facts or on its plan (the owner, the same day).
+  nothing reads.
 - **Read from USGS's own pieces**: the streamed `.pnts` keep neither a point's class nor its height above the ground, so the survey the
   3D view streams for the place is read as USGS publishes it (LAZ), every piece of the octree that meets what is measured, at every
   level, eight at a time, each kept beside the streamed pieces (`<key>/laz/`, never served, let go of with them when the cache is
