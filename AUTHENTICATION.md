@@ -176,6 +176,14 @@ every day. Now:
 - **Signing out** revokes the family and clears the cookie (`POST /api/auth/logout`
   with credentials). A new sign-in revokes the family of the cookie it replaces.
   Web sessions are listed in Sessions as `web` and can be signed out from a phone.
+- **Asked for only of a server that offers it.** Before a sign-in the page reads
+  the public `/api/config` once, and asks for a cookie session only from API 1.2
+  on: an older server answers no request made with credentials, so a web deployed
+  ahead of its server would otherwise have every sign-in refused by the browser.
+  Either may go live first.
+- **A refresh that met no answer is asked again at once**, and the page's own
+  retries come every 10 seconds: a request that reached the server spent the
+  cookie the browser still holds, and the server forgives that one for 30 seconds.
 - **A browser that will not keep the cookie** is found out by one refresh right
   after signing in (`401 refresh_cookie_missing`). It keeps the sign-in's 24-hour
   access token in `localStorage` (`auth_token`), as the web always did, now with a

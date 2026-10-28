@@ -18,6 +18,7 @@ beforeEach(() => {
   jest.useFakeTimers();
   localStorage.clear();
   axios.post.mockReset();
+  axios.get.mockReset();
   delete navigator.locks;
   jest.isolateModules(() => {
     session = require("./session");
@@ -34,10 +35,10 @@ describe("after a sign-in", () => {
     const fresh = jwt();
     axios.post.mockResolvedValueOnce(answered(fresh));
     await expect(session.startSession({ access_token: jwt({ lifetime: 86400 }), session: "cookie" })).resolves.toBe("cookie");
-    expect(axios.post).toHaveBeenCalledWith(expect.stringMatching(/\/auth\/refresh$/), null, {
+    expect(axios.post).toHaveBeenCalledWith(expect.stringMatching(/\/auth\/refresh$/), null, expect.objectContaining({
       headers: { "X-EZPZ-Session": "cookie" },
       withCredentials: true,
-    });
+    }));
     expect(localStorage.getItem("ezpz.session")).toBe("cookie");
     expect(localStorage.getItem("auth_token")).toBeNull();
     expect(session.getAccessToken()).toBe(fresh);
@@ -142,6 +143,46 @@ describe("refreshing", () => {
     expect(key).toBe("7:fam-1");
     session.forgetToken();
     expect(heard).toEqual([first, second, null]);
+  });
+});
+
+describe("whether the server offers cookie sessions", () => {
+  test("from API 1.2 on, asked once a page", async () => {
+    axios.get.mockResolvedValue({ data: { apiVersion: "1.2.0" } });
+    await expect(session.cookieSessionsOffered()).resolves.toBe(true);
+    await expect(session.cookieSessionsOffered()).resolves.toBe(true);
+    expect(axios.get).toHaveBeenCalledTimes(1);
+  });
+
+  test("an older server, or none answering, is not asked for one; not knowing is asked again", async () => {
+    axios.get.mockResolvedValueOnce({ data: { apiVersion: "1.1.0" } });
+    await expect(session.cookieSessionsOffered()).resolves.toBe(false);
+    jest.isolateModules(() => {
+      session = require("./session");
+    });
+    axios.get.mockRejectedValueOnce(new Error("Network Error")).mockResolvedValueOnce({ data: { apiVersion: "2.0.0" } });
+    await expect(session.cookieSessionsOffered()).resolves.toBe(false);
+    await expect(session.cookieSessionsOffered()).resolves.toBe(true);
+  });
+});
+
+describe("a refresh that met no answer", () => {
+  beforeEach(() => localStorage.setItem("ezpz.session", "cookie"));
+
+  test("is asked again at once, inside the 30 seconds the server forgives the same cookie", async () => {
+    const fresh = jwt();
+    axios.post.mockRejectedValueOnce(new Error("Network Error")).mockResolvedValueOnce(answered(fresh));
+    const asked = session.refreshAccessToken();
+    await settle();
+    jest.advanceTimersByTime(1500);
+    await expect(asked).resolves.toBe(fresh);
+    expect(axios.post).toHaveBeenCalledTimes(2);
+  });
+
+  test("an answer that came, a 503, is not asked again at once", async () => {
+    axios.post.mockRejectedValueOnce(refused(503));
+    await expect(session.refreshAccessToken()).rejects.toThrow("HTTP 503");
+    expect(axios.post).toHaveBeenCalledTimes(1);
   });
 });
 

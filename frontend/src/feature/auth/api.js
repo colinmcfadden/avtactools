@@ -2,6 +2,7 @@ import axios from "axios";
 import { beginPriority, isPriorityRequest } from "./requestPriority";
 import {
   SESSION_HEADERS,
+  cookieSessionsOffered,
   endSession,
   freshAccessToken,
   getAccessToken,
@@ -33,8 +34,8 @@ const isAuthRequest = (url = "") => /(^|\/)auth\//.test(String(url).split("?")[0
 
 api.interceptors.request.use(async (config) => {
   // The sign-in routes ask for a cookie session, and the cookie lives under /auth, so only those requests are
-  // made with credentials (the server answers credentials there alone).
-  if (isAuthRequest(config.url)) {
+  // made with credentials (the server answers credentials there alone), and only to a server that offers them.
+  if (isAuthRequest(config.url) && (hasCookieSession() || await cookieSessionsOffered())) {
     config.withCredentials = true;
     Object.assign(config.headers, SESSION_HEADERS);
   }

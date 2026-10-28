@@ -28,7 +28,11 @@ const LOCK = "ezpz-refresh";
 // a token about to be refused.
 const REFRESH_AHEAD_MS = 2 * 60 * 1000;
 const STALE_MS = 30 * 1000;
-const RETRY_MS = 30 * 1000;
+// A refresh that met no answer may have reached the server and spent the cookie the browser still holds; the
+// server forgives that token for 30 seconds, so it is asked again well inside them (and, once, at once).
+const RETRY_MS = 10 * 1000;
+const AGAIN_AFTER_MS = 1500;
+const REFRESH_TIMEOUT_MS = 12 * 1000;
 
 let memoryToken = null;
 let expiresAt = 0;
@@ -143,6 +147,27 @@ const expire = () => {
   }));
 };
 
+/**
+ * Whether the server offers cookie sessions (API 1.2 and later), asked once a page from the public
+ * `/api/config`. Until it is known to, nothing asks for one: an older server answers no request made with
+ * credentials, so the browser would refuse every sign-in. Not knowing (offline) is no, and is asked again.
+ */
+let offered = null;
+export const cookieSessionsOffered = () => {
+  if (!offered) {
+    offered = axios.get(`${API_BASE_URL}/config`, { timeout: 5000 })
+      .then(({ data }) => {
+        const [major, minor] = String(data?.apiVersion ?? "").split(".").map(Number);
+        return major > 1 || (major === 1 && minor >= 2);
+      })
+      .catch(() => {
+        offered = null;
+        return false;
+      });
+  }
+  return offered;
+};
+
 const underLock = (work) =>
   (typeof navigator !== "undefined" && navigator.locks?.request ? navigator.locks.request(LOCK, work) : work());
 
@@ -150,17 +175,21 @@ const underLock = (work) =>
  * One refresh by cookie: `{ ok: true, data }`, or `{ ok: false, code }` when the server ended the session or the
  * browser sent no cookie. Throws when the server could not be asked (no connection, busy, down): nothing ended.
  */
-const askWithCookie = () => underLock(async () => {
-  try {
-    const response = await axios.post(`${API_BASE_URL}/auth/refresh`, null, {
-      headers: SESSION_HEADERS,
-      withCredentials: true,
-    });
-    return { ok: true, data: response.data };
-  } catch (error) {
-    const status = error.response?.status;
-    if (status === 401 || status === 403) return { ok: false, code: error.response.data?.code ?? null };
-    throw error;
+const askWithCookie = ({ again = true } = {}) => underLock(async () => {
+  for (let tries = again ? 2 : 1; ; tries -= 1) {
+    try {
+      const response = await axios.post(`${API_BASE_URL}/auth/refresh`, null, {
+        headers: SESSION_HEADERS,
+        withCredentials: true,
+        timeout: REFRESH_TIMEOUT_MS,
+      });
+      return { ok: true, data: response.data };
+    } catch (error) {
+      const status = error.response?.status;
+      if (status === 401 || status === 403) return { ok: false, code: error.response.data?.code ?? null };
+      if (error.response || tries <= 1) throw error;
+      await new Promise((resolve) => setTimeout(resolve, AGAIN_AFTER_MS));
+    }
   }
 });
 
@@ -210,7 +239,7 @@ export const startSession = async (payload) => {
   if (payload.session === COOKIE) {
     let outcome = null;
     try {
-      outcome = await askWithCookie();
+      outcome = await askWithCookie({ again: false });
     } catch {
       outcome = null;
     }
@@ -234,7 +263,7 @@ export const signOut = () => {
   return (async () => {
     let usable = token;
     if (!usable && cookie) {
-      const outcome = await askWithCookie().catch(() => null);
+      const outcome = await askWithCookie({ again: false }).catch(() => null);
       usable = outcome?.ok ? outcome.data.access_token : null;
     }
     if (!usable) return;

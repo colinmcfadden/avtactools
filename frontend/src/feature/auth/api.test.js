@@ -1,10 +1,14 @@
 import api, { isPublicAuthRequest } from "./api";
-import { getAccessToken, refreshAccessToken } from "./session";
+import { cookieSessionsOffered, getAccessToken, refreshAccessToken } from "./session";
 
 jest.mock("./session", () => ({
   ...jest.requireActual("./session"),
   refreshAccessToken: jest.fn(),
   getAccessToken: jest.fn(() => null),
+  // CRA resets these before each test (resetMocks): left so, they answer undefined, which sends no token
+  // and asks for no cookie session, and nothing reaches a real server.
+  cookieSessionsOffered: jest.fn(),
+  freshAccessToken: jest.fn(),
 }));
 
 const unauthorizedAdapter = (config) =>
@@ -98,6 +102,11 @@ describe("a cookie session's lapsed token", () => {
 });
 
 describe("credentials", () => {
+  beforeEach(() => {
+    localStorage.clear();
+    cookieSessionsOffered.mockResolvedValue(true);
+  });
+
   const capture = (config) => Promise.resolve({ data: config, status: 200, statusText: "OK", headers: {}, config });
 
   test("only the /auth routes, where the cookie lives, are sent with credentials and ask for a cookie session", async () => {
@@ -107,5 +116,12 @@ describe("credentials", () => {
     const other = (await api.get("/lz", { adapter: capture })).data;
     expect(other.withCredentials).toBeFalsy();
     expect(other.headers["X-EZPZ-Session"]).toBeUndefined();
+  });
+
+  test("a server that does not offer cookie sessions is asked as it always was", async () => {
+    cookieSessionsOffered.mockResolvedValueOnce(false);
+    const signIn = (await api.post("/auth/login", {}, { adapter: capture })).data;
+    expect(signIn.withCredentials).toBeFalsy();
+    expect(signIn.headers["X-EZPZ-Session"]).toBeUndefined();
   });
 });
