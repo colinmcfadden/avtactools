@@ -19,8 +19,10 @@ public data class StoredSession(
     val refreshExpiresAtEpochSeconds: Long?,
     val user: ApiUser,
     /**
-     * When the server last vouched for this account (epoch seconds): a sign-in, a refresh, or an answer to "who is this". A device that
-     * has not heard from the server for [OfflineGrace.DAYS] has to sign in again, so an approval an admin withdrew cannot be used for ever.
+     * When the server last vouched for this account (epoch seconds): a sign-in, a refresh, or an answer to "who is this". Nothing ends a
+     * session by it any more: a device kept offline stays signed in however long, as ForeFlight's does (the owner, 2026-10-28; it was 14
+     * days, then 30). The server ends a session 30 days after its last refresh, so a device that comes back after longer is told so at its
+     * first call. Kept, and still stamped, so sessions already stored read as they are.
      */
     val verifiedAtEpochSeconds: Long? = null,
 )
@@ -31,28 +33,7 @@ internal data class AccessToken(val userId: Int, val token: String) {
 }
 
 /**
- * How long a device may go without the server confirming the account before it must sign in again: 30 days, the server's own window
- * (a refresh token lapses 30 days after its last use, so past this the session is over on the server too, and the next contact would
- * end it). It was 14 (docs/NATIVE_APPS_PLAN.md, "Risks and decisions") until sign-ins were made to last while the account is active
- * (2026-10-28): 14 locked a crew out of planning after two weeks without signal, with no way to sign in where they were. It is the one
- * place access that was withdrawn is noticed by a device that never goes online; everything it saved stays on the device, only the
- * session ends.
- */
-public object OfflineGrace {
-    public const val DAYS: Long = 30
-
-    /**
-     * Whether [session] is past the grace period at [nowEpochSeconds]. A session with no stamp is not: it is stamped at the next answer,
-     * and locking someone out over a missing note would be worse than waiting for it.
-     */
-    public fun expired(session: StoredSession, nowEpochSeconds: Long): Boolean {
-        val verified = session.verifiedAtEpochSeconds ?: return false
-        return nowEpochSeconds - verified > DAYS * 24 * 60 * 60
-    }
-}
-
-/**
- * Kept in place of a session the server ended (or [OfflineGrace] did), with the [code] it gave, so that a launch in a later process can
+ * Kept in place of a session the server ended, with the [code] it gave, so that a launch in a later process can
  * still say why the person has to sign in again: the session may be ended by a sync WorkManager ran with the app closed.
  */
 @Serializable

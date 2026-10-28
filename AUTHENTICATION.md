@@ -107,14 +107,14 @@ identified by `X-EZPZ-Client: android/1.4.0 (212)` (`backend/client_header.py`).
     the account, signing it out (`POST /api/auth/logout`, or another device's
     `DELETE /api/auth/sessions/<id>`), 30 days unused, and a reused token after the
     grace period. Each takes effect at once (below).
-- **Offline on Android** (`OfflineGrace`): a device that has not reached the server
-  for 30 days must sign in again before it unlocks; its plans stay. It was 14 days.
-  30 is the server's window: past it the refresh token has lapsed on the server
-  anyway, so the device then says what is true rather than adding a rule of its
-  own, and a crew two to four weeks without signal is not locked out of planning
-  with no way to sign in where it is. It is still the one bound on how long a
-  suspended account keeps working on a device that never goes online. (The other
-  choice is no offline limit at all, ForeFlight's; the owner's to make.)
+- **No offline limit on Android**, as ForeFlight has none (the owner, 2026-10-28).
+  A device stays signed in however long it is without signal; its plans are on the
+  device. It used to sign out after 14 days without the server (`OfflineGrace`),
+  which locked a crew out of planning with no way to sign in where it was. When the
+  device next reaches the server, a session unused for 30 days, suspended, reset or
+  signed out elsewhere is refused and the person signs in again. The cost: an
+  account suspended while a device is offline keeps working on that device, with
+  what is already on it, until the device reaches the server.
 - **Revocation is immediate.** A session's access token carries its family as `sid`,
   and every request checks the family still has a live token
   (`token_revocation.is_revoked`). So `POST /api/auth/logout` and `DELETE

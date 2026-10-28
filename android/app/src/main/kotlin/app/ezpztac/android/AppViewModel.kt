@@ -116,7 +116,6 @@ class AppViewModel @Inject constructor(
     init {
         viewModelScope.launch {
             backend.restore()
-            backend.endSessionIfOfflineTooLong()
             if (backend.state.value is AuthState.SignedIn) refreshUserQuietly()
         }
         lookAtConfig()

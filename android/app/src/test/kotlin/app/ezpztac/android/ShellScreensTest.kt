@@ -67,9 +67,9 @@ class ShellScreensTest {
     }
 
     @Test
-    fun `being offline too long says why, and that the plans are kept`() {
+    fun `a session an earlier build ended for being offline says why, and that the plans are kept`() {
         val text = signedOutNotice(SignedOutReason.SESSION_ENDED, "offline_too_long")!!
-        assertTrue(text.contains("30 days"))
+        assertTrue(text.contains("offline"))
         assertTrue(text.contains("kept"))
     }
 

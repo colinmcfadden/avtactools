@@ -1347,13 +1347,13 @@ client is built around not losing one:
   `RateLimitedException`, `ApiException`.
 - **The stored session is read once per process** (`restore`; after that it returns the state as it is). The shell and a background
   sync both ask, in either order or at once, and a second read would put back what the first found over what has happened since: a
-  session the server or the 30-day offline rule ended, a refresh's newer user. What it read is set only if nothing else set the state while it
+  session the server ended, a refresh's newer user. What it read is set only if nothing else set the state while it
   read (a compare-and-set; everything else writes the store first). It takes no lock: a launch must not wait behind a refresh a sync
   has in flight, which can take 20 s on a poor signal.
 - **A session the server ended leaves a note in its place** (`SessionStore.end`, `EndedSession`, with the server's `code`): the
   file holds the session or the note, never both, so ending one is one atomic rename. A sync WorkManager runs with the app closed
   may be what finds the session ended, and that process is gone by the time anyone opens the app: the note is how the launch still
-  says why ("Your session expired", or the 30 days) instead of showing a plain sign-in. A call that finds no session reads it too,
+  says why ("Your session expired") instead of showing a plain sign-in. A call that finds no session reads it too,
   so calls refused together do not turn "ended" into "not signed in". Signing in or out removes it.
 
 **The sync engine** (`core-sync`; rules in the plan's "Sync and conflicts", server side in `backend/sync_support.py`):
@@ -1413,13 +1413,12 @@ client is built around not losing one:
   name, so the kind needed no migration; a device that synced before it has its cursor past the briefs it holds on the server (none before B8 makes them here). The
   screens are B8; the weather at a planned time (`weather: at …`) is typed with them.
 - Built since: WorkManager scheduling (`SyncScheduler`: a sync on demand and every 6 hours; not yet seen on a device),
-  conflict choices in the Diagrams, Routes and Points sections (`ConflictPanel`), and the "sign in again" rule
-  (`OfflineGrace`: 30 days without the server, its refresh window; 14 until 2026-10-28).
+  conflict choices in the Diagrams, Routes and Points sections (`ConflictPanel`). **There is no offline limit**: a device
+  offline any length of time stays signed in, as ForeFlight's does (the owner, 2026-10-28; `OfflineGrace` signed one out after 14
+  days without the server, and went). The server ends a session unused for 30 days, which the device hears at its next call.
 - **A scheduled sync can run in a process WorkManager started, with no activity and so no shell** (`EngineSyncRunner`). Only `AppViewModel` used to
   read the stored session, so such a sync found nobody signed in and did nothing. In a process nobody has read it in (`AuthState.Unknown`) the
-  runner now does what the shell does at launch: `restore`, then the 30-day offline rule (`OfflineGrace`) before any call, because a refresh would stamp
-  the session as confirmed and the person would never be asked to sign in again. A process already launched is left alone (the rule is applied
-  at launch, never to someone in the middle of their work). It syncs only when the device's plans are the signed-in account's
+  runner now does what the shell does at launch: `restore`. A process already launched is left alone. It syncs only when the device's plans are the signed-in account's
   (`Ownership.Yours`): another account's stay unsent, and an unclaimed device is the shell's to claim.
 - **Mission packs run with the app** (`app/packs/`: `PackRuntime` over the engine and `PackWorkspace`, `NetworkWatcher`; `AppViewModel`,
   `EngineSyncRunner`). They run only for a signed-in account past the gate, with `mission_packs` on, whose plans the device holds (`packGateFor`),
@@ -1479,9 +1478,9 @@ client is built around not losing one:
   config is public and confirms no session). Nothing waits for a launch's look (the owner's call: the first launch after a raise sends until
   its config answers). With no config to show the update screen (no signal), planning opens and a banner says why nothing is sent, with
   *Update* (`Gate.Ready.tooOld`, from the minimum last heard); **maintenance is a banner, never a block**, because planning is
-  local; no config at launch (no signal) blocks nothing; a device that has not heard from the server for **30 days** (`OfflineGrace`, the server's own window: past it the
-  refresh token has lapsed anyway; it was 14, which locked a crew at a FARP out of planning after two weeks without signal) must
-  sign in again, and its plans stay; **the plans on a device belong to one account** (`AccountScope`): a different person signing in is
+  local; no config at launch (no signal) blocks nothing; **no time offline signs a device out** (the owner, 2026-10-28:
+  a 14-day rule locked a crew at a FARP out of planning with no way to sign in where it was); the server's 30-day window ends a session
+  left unused, at the next contact, and the plans stay; **the plans on a device belong to one account** (`AccountScope`): a different person signing in is
   shown nothing of them, nothing is uploaded under their account, and they choose between clearing them (told how many changes never
   reached the server) and signing out. The plan did not say this, and it matters: without it a second user on a shared device would see
   and sync the first user's LZs.

@@ -8,6 +8,7 @@ import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
 import kotlinx.coroutines.yield
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertNotNull
 import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
@@ -31,7 +32,6 @@ class RestoreTest {
     }
 
     private val revoked = AuthState.SignedOut(SignedOutReason.SESSION_ENDED, "refresh_reuse_detected")
-    private val offlineTooLong = AuthState.SignedOut(SignedOutReason.SESSION_ENDED, "offline_too_long")
 
     @Test
     fun `the store is read once, and a second restore says what has happened since`() = runBlocking<Unit> {
@@ -68,29 +68,30 @@ class RestoreTest {
     }
 
     @Test
-    fun `a session the offline rule ended says so in the next process too`() = runBlocking<Unit> {
-        Rig(initial = session().copy(verifiedAtEpochSeconds = now - 31 * day), time = Clock(now)).use { rig ->
-            rig.client.restore()
-            assertTrue(rig.client.endSessionIfOfflineTooLong())
-            assertEquals(offlineTooLong, rig.nextProcess().restore())
+    fun `a session stored a year ago and never confirmed since is restored, as there is no offline limit`() = runBlocking<Unit> {
+        Rig(initial = session().copy(verifiedAtEpochSeconds = now - 365 * day), time = Clock(now)).use { rig ->
+            assertTrue(rig.client.restore() is AuthState.SignedIn)
+            assertTrue(rig.requests.isEmpty(), "nothing is asked of a server it may not reach")
+            assertNotNull(rig.store.current)
         }
     }
 
     @Test
-    fun `a restore still reading when the offline rule ends the session does not bring the session back`() = runBlocking<Unit> {
-        Rig(initial = session().copy(verifiedAtEpochSeconds = now - 31 * day), time = Clock(now)).use { rig ->
+    fun `a restore still reading when a sign-out ends the session does not bring the session back`() = runBlocking<Unit> {
+        Rig(initial = session(), time = Clock(now)).use { rig ->
+            rig.serve { Recorded.mock("logout") }
             val reading = CompletableDeferred<Unit>()
             val release = CompletableDeferred<Unit>()
             rig.store.beforeNextRead = { reading.complete(Unit); release.await() }
             val restoring = async { rig.client.restore() }
             reading.await()                                                                 // it has the session in hand and has not said so yet
-            val ending = async { rig.client.endSessionIfOfflineTooLong() }
-            yield()                                                                         // as far as the rule can get while the read is open
+            val ending = async { rig.client.logout() }
+            yield()                                                                         // as far as the sign-out can get while the read is open
             release.complete(Unit)
             restoring.await()
+            ending.await()
 
-            assertTrue(ending.await())
-            assertEquals(offlineTooLong, rig.client.state.value)
+            assertEquals(AuthState.SignedOut(SignedOutReason.NOT_SIGNED_IN), rig.client.state.value)
             assertNull(rig.store.current)
         }
     }
