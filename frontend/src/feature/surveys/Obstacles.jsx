@@ -2,13 +2,15 @@ import React, { useId, useState } from "react";
 import { AngleDialog } from "./Disagreements";
 
 /*
- * What the LiDAR found standing on and round the LZ (the snapshot's obstacles, docs/LZ_SURVEYS.md §4): along the best approach and the
- * best exit, from the touchdown point, the shallowest angle that clears what stands in a lane 10 m each side of the track, where that
- * path is 100 ft above the ground (the approach's descent from 100 ft AGL begins there; the exit has climbed to it) and what stands
- * more than 100 ft above the track's ground past it; the tallest in the LZ and within 100 m of it, what stands over 2 m in it and its
- * trees; or why there is nothing, in the server's words. In the way is what stands 5 m or more above its own ground (2 m for what is
- * built) and the ground where it rises (survey/obstacles.py). The editor can type the approach's angle over the LiDAR's: the page
- * prints theirs, and the LiDAR's stays here beside it. Every number names its survey, and the page says what the LiDAR cannot see.
+ * What the LiDAR found standing on and round the LZ (the snapshot's obstacles, docs/LZ_SURVEYS.md §4), and each way as the page plans it
+ * (the survey's ``plans``, survey/flightpath.py): along the best approach and the best exit, from the touchdown point, the angle planned
+ * (30° where what stands allows it, else the shallowest that clears it, said to be steeper) and where its path is the way's height above
+ * the highest obstacle for good (the approach's descent from the survey's height begins there; the exit has climbed to 100 ft), with
+ * how high above the ground that is; beside it the shallowest angle that clears what stands in a lane 10 m each side of the track, and
+ * what sets it; the tallest in the LZ and within 100 m of it, what stands over 2 m in it and its trees; or why there is nothing, in the
+ * server's words. In the way is what stands 5 m or more above its own ground (2 m for what is built) and the ground where it rises
+ * (survey/obstacles.py). The editor can type the approach's angle in place of the plan: the page prints theirs, and the LiDAR's stays
+ * here beside it. Every number names its survey, and the page says what the LiDAR cannot see.
  */
 
 const KIND = {
@@ -23,6 +25,8 @@ const KIND = {
 };
 // Vegetation under a tree's 5 m (survey/obstacles.py's TREE_MIN_M) is brush, as the page says it.
 const TREE_MIN_FT = 16.4;
+// Each way is planned at this where what stands allows it (survey/flightpath.py's PLAN_DEG).
+const PLAN_DEG = 30;
 // Why a way has no angle (survey/obstacles.py's ``missing``).
 const MISSING = {
   no_returns: "No LiDAR returns in its lane",
@@ -59,19 +63,23 @@ export const obstacleWords = (obstacle) => {
   return `${feet(obstacle.heightFt)} ${kindWords(obstacle)} ${out}${over}${side}`;
 };
 
-/** Of a lane's places over 100 ft above its track's ground, those past where its path is 100 ft up (survey/obstacles.py's in_the_way). */
-export const inTheWay = (lane) => {
-  const at = lane?.descent?.fromTargetM;
-  return Number.isFinite(at) ? (lane.tall ?? []).filter((place) => Number.isFinite(place?.toM) && place.toM > at) : [];
+/**
+ * Where a way's planned path is its height above the highest obstacle for good, and how high above the ground that is: "From 100 ft
+ * AHO: 405 m out, 198 ft above the ground" (the approach's descent begins there), "To 100 ft AHO: …" (the exit has climbed to it);
+ * "past 1,000 m" where it is still within that height of what stands at the lane's last step.
+ */
+export const descentWords = (plan, exit = false) => {
+  const descent = plan?.descent;
+  if (!descent) return "—";
+  const height = `${exit ? "To" : "From"} ${feet(plan.heightFt)} AHO`;
+  if (!Number.isFinite(descent.fromTargetM)) return `${height}: past ${metres(descent.pastM ?? 1000)}`;
+  const above = Number.isFinite(descent.topFt) && Number.isFinite(descent.groundFt)
+    ? descent.topFt + plan.heightFt - descent.groundFt
+    : null;
+  return `${height}: ${metres(descent.fromTargetM)} out${above !== null ? `, ${feet(above)} above the ground` : ""}`;
 };
 
-/** Where a way's path is 100 ft above the ground: "204 m out", "Past 1,000 m", or none for a path that needs no climb. */
-const aglWords = (lane) => {
-  if (!lane.descent) return "—";
-  return Number.isFinite(lane.descent.fromTargetM) ? `${metres(lane.descent.fromTargetM)} out` : `Past ${metres(lane.lengthM ?? 1000)}`;
-};
-
-const Way = ({ label, which, lane }) => {
+const Way = ({ label, which, lane, plan }) => {
   if (!lane || !lane.start) {
     return (
       <tr>
@@ -88,9 +96,13 @@ const Way = ({ label, which, lane }) => {
   return (
     <tr>
       <th scope="row">{label} {headingWords(lane.headingDeg)}</th>
-      <td>{clear ? angle(clear.angleDeg) : "—"}</td>
-      <td>{clear ? aglWords(lane) : "—"}</td>
-      <td>{what}</td>
+      <td>
+        {plan ? angle(plan.angleDeg) : "—"}
+        {plan?.steep && <div className="survey-state survey-state--warn">Steeper than {PLAN_DEG}°: nothing less clears it</div>}
+        {plan?.typed && <div className="survey-muted">Yours</div>}
+      </td>
+      <td>{plan ? descentWords(plan, which === "exit") : "—"}</td>
+      <td>{clear ? <><strong>{angle(clear.angleDeg)}</strong>: {what}</> : what}</td>
     </tr>
   );
 };
@@ -103,18 +115,7 @@ const coverageWords = (label, lane) => {
   return `LiDAR over ${metres(lane.covered * step)} of the ${label}'s ${metres(steps * step)}: its angle is over that part.`;
 };
 
-/** What stands over 100 ft above a way's track past where its path is 100 ft up, which a path flown at 100 ft AGL does not clear. */
-const tallWords = (which, lane) => {
-  const places = inTheWay(lane);
-  if (!places.length) return null;
-  const [first] = places;
-  const past = which === "approach" ? "past the approach's descent from 100 ft AGL" : "past where the exit is 100 ft AGL";
-  const more = places.length > 1 ? `, and ${places.length - 1} more place${places.length === 2 ? "" : "s"}` : "";
-  return `Over 100 ft AGL ${past}: a ${kindWords(first.obstacle ?? {})} ${metres(first.obstacle?.fromTargetM ?? first.fromM)} out stands `
-    + `${feet(first.overFt)} above the track's ground${more}.`;
-};
-
-/** The approach's angle the page prints where the editor typed it, beside the LiDAR's, with ways to change it or let it go. */
+/** The approach's angle the page prints where the editor typed it in place of the plan, with ways to change it or let it go. */
 const Printed = ({ row, busy, onType, onUndecide }) => {
   const typed = row?.override?.choice === "typed" ? row.override : null;
   if (!typed && !row?.computed) return null;
@@ -134,7 +135,7 @@ const Printed = ({ row, busy, onType, onUndecide }) => {
           </button>
           {typed && onUndecide && (
             <button type="button" className="ui-btn ui-btn--28 ui-btn--ghost" disabled={busy} onClick={() => onUndecide(row.key)}>
-              Print the LiDAR's
+              Print the plan
             </button>
           )}
         </div>
@@ -143,13 +144,12 @@ const Printed = ({ row, busy, onType, onUndecide }) => {
   );
 };
 
-const Obstacles = ({ obstacles, approach = null, onDecide, onUndecide, busy = false }) => {
+const Obstacles = ({ obstacles, plans = null, heightDirty = false, approach = null, onDecide, onUndecide, busy = false }) => {
   const headingId = useId();
   const [typing, setTyping] = useState(false);
   if (!obstacles) return null;
   const survey = obstacles.survey ? `${obstacles.survey.name}${obstacles.survey.year && !String(obstacles.survey.name).includes(String(obstacles.survey.year)) ? ` (${obstacles.survey.year})` : ""}` : null;
   const partial = [coverageWords("approach", obstacles.approach), coverageWords("exit", obstacles.exit)].filter(Boolean);
-  const tall = [tallWords("approach", obstacles.approach), tallWords("exit", obstacles.exit)].filter(Boolean);
   return (
     <div className="survey-obstacles" aria-labelledby={headingId} role="group">
       <h4 id={headingId} className="survey-obstacles__title">Standing on and round the LZ{survey ? ` · LiDAR ${survey}` : ""}</h4>
@@ -161,18 +161,18 @@ const Obstacles = ({ obstacles, approach = null, onDecide, onUndecide, busy = fa
             <thead>
               <tr>
                 <th scope="col">Way</th>
-                <th scope="col">Clears at</th>
-                <th scope="col">100 ft AGL</th>
-                <th scope="col">What sets it</th>
+                <th scope="col">Planned</th>
+                <th scope="col">Descent / climb</th>
+                <th scope="col">Shallowest clear</th>
               </tr>
             </thead>
             <tbody>
-              <Way label="Approach" which="approach" lane={obstacles.approach} />
-              <Way label="Exit" which="exit" lane={obstacles.exit} />
+              <Way label="Approach" which="approach" lane={obstacles.approach} plan={plans?.approach} />
+              <Way label="Exit" which="exit" lane={obstacles.exit} plan={plans?.exit} />
             </tbody>
           </table>
+          {heightDirty && <p className="survey-muted">Save to plan the approach from the height you have typed.</p>}
           <Printed row={approach} busy={busy} onType={onDecide ? () => setTyping(true) : null} onUndecide={onUndecide} />
-          {tall.map((words) => <p key={words} className="survey-state survey-state--warn">{words}</p>)}
           {partial.map((words) => <p key={words} className="survey-state survey-state--warn">{words}</p>)}
           <dl className="survey-facts">
             <div><dt>Tallest in the LZ</dt><dd>{spotWords(obstacles.inside) ?? "Nothing standing 2 m or more"}</dd></div>
@@ -194,16 +194,20 @@ const Obstacles = ({ obstacles, approach = null, onDecide, onUndecide, busy = fa
             </div>
           </dl>
           <p className="survey-muted">
-            Angles are from the touchdown point, with no margin, over everything in a lane 10 m each side of the track: what stands 5 m or
-            more above its ground (2 m for a building, a wire, a tower or a bridge), and the ground where it rises. The approach is
-            flown at 100 ft above the ground until its descent. These are the tallest things found in the LiDAR, not every obstacle: trees
-            have grown or fallen since it was flown, wires and poles seldom show in it, and treetops read up to a metre low.
+            Each way is planned at {PLAN_DEG}° where what stands allows it, else at the shallowest angle that clears it. Angles are from
+            the touchdown point, with no margin, over everything in a lane 10 m each side of the track: what stands 5 m or more above
+            its ground (2 m for a building, a wire, a tower or a bridge), and the ground where it rises. The approach is flown at the
+            survey's height above the highest obstacle (AHO), the treetops or the ground where nothing stands, until its descent (100 ft
+            where the survey gives none); the exit climbs to 100 ft above it. These are the tallest things found in the LiDAR, not every
+            obstacle: trees have grown or fallen since it was flown, wires and poles seldom show in it, and treetops read up to a metre
+            low.
           </p>
         </>
       )}
       {typing && approach && (
         <AngleDialog
           row={approach}
+          plan={plans?.approach ?? null}
           onCancel={() => setTyping(false)}
           onConfirm={async (value, reason) => {
             const saved = await onDecide(approach.key, "typed", reason, value);
