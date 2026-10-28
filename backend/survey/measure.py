@@ -17,16 +17,16 @@ never replaced in silence, and a published revision keeps the snapshot it was si
   limit only when greater than it at 0.1° (AGENTS.md §13).
 - **The slope map, contours and profiles**: /api/terrain-analysis's answer, kept for the editor and the page.
 - **What stands on and round the LZ** (``obstacles``, step L4): from the USGS LiDAR, the shallowest clear angle from the touchdown point
-  along the best approach and the best exit and what stands highest every 10 m out along them (from which each way is planned:
-  survey/flightpath.py), the tallest in the LZ and within 100 m of it, what stands over 2 m in it, its trees and a picture of every
-  height round it (survey/obstacles.py).
+  along the best approach and what stands highest every 10 m out along it (from which the approach is planned: survey/flightpath.py),
+  the tallest in the LZ and within 100 m of it, what stands over 2 m in it, its trees and a picture of every height round it
+  (survey/obstacles.py). The best exit is not measured (the owner, 2026-10-27: it need not be shown).
   Where it cannot be measured it says why; a reading that failed is a problem, to measure again.
 
 Where something cannot be measured it is None and ``problems`` says why in words: a value is never made up (AGENTS.md §14).
 
-A snapshot keeps what it was measured for (the target, the boundary, the best approach and the best exit), so ``stale`` can say when the
-survey has moved on since: its numbers would then print beside a plan, an approach and an exit they were not measured for, and it is
-measured again before it is sent for review or published.
+A snapshot keeps what it was measured for (the target, the boundary and the best approach), so ``stale`` can say when the survey has
+moved on since: its numbers would then print beside a plan and an approach they were not measured for, and it is measured again before
+it is sent for review or published.
 """
 
 from __future__ import annotations
@@ -42,11 +42,12 @@ import terrain_provider as tp
 from survey import geometry, obstacles
 
 # 2: the snapshot keeps the boundary and the best approach it was measured for (``stale``). 3: and the best exit, with what stands
-# on and round the LZ (``obstacles``), which is measured along both. 4: its obstacles are what stands 2 m or more and the ground where
-# it rises (a 3's angle from the edge could be set by a ground return's scatter a centimetre past it). 5: each way's angle is from the
-# touchdown point along a lane 10 m each side of its track, with what stands highest every 10 m out along it (a 4's, from the LZ's edge
-# across 60 m, read 87-90° on every LZ of the old book). A 5 measured before each way was planned from those steps
-# (survey/flightpath.py) also keeps where its path was 100 ft above the ground and what stood over 100 ft, which nothing reads now.
+# on and round the LZ (``obstacles``), which was measured along both. 4: its obstacles are what stands 2 m or more and the ground where
+# it rises (a 3's angle from the edge could be set by a ground return's scatter a centimetre past it). 5: the angle is from the
+# touchdown point along a lane 10 m each side of the track, with what stands highest every 10 m out along it (a 4's, from the LZ's edge
+# across 60 m, read 87-90° on every LZ of the old book). A 5 measured before the approach was planned from those steps
+# (survey/flightpath.py) also keeps where its path was 100 ft above the ground and what stood over 100 ft, and one measured before the
+# exit was let go (the owner, 2026-10-27) the best exit and its lane: nothing reads them now.
 SNAPSHOT_VERSION = 5
 FEET_PER_METRE = tp.FEET_PER_METRE
 # The UH-60 limits by the names a survey uses (terrain_provider's are the slope tile's "noseHigh"/"noseLow").
@@ -245,7 +246,6 @@ def measure(diagram, field, by_name="", now=None, lidar=None):
         if rect is not None and rect["lengthM"] > MAX_BOUNDARY_M:
             raise CannotMeasure("The boundary (with the target) is more than 3 km across: too large to be an LZ.", "too_large_to_measure")
     heading = heading_of((field or {}).get("approachDeg"))
-    exit_heading = heading_of((field or {}).get("exitDeg"))
     problems = []
 
     snapshot = {
@@ -255,7 +255,6 @@ def measure(diagram, field, by_name="", now=None, lidar=None):
         "target": {"lat": round(lat, 7), "lon": round(lon, 7)},
         "boundary": _rounded_ring(boundary),
         "approachDeg": _rounded_heading(heading),
-        "exitDeg": _rounded_heading(exit_heading),
         "grid": grid_text(lat, lon),
         "latLong": lat_long_text(lat, lon),
         "elevation": None,
@@ -310,8 +309,7 @@ def measure(diagram, field, by_name="", now=None, lidar=None):
         snapshot["terrain"] = _terrain_block(boundary)
     except RuntimeError:
         problems.append("The slope map and profiles could not be drawn: no terrain covers the LZ.")
-    found = obstacles.measure_obstacles((lat, lon), boundary, heading, exit_heading, (snapshot["terrain"] or {}).get("profiles"),
-                                        source=lidar)
+    found = obstacles.measure_obstacles((lat, lon), boundary, heading, (snapshot["terrain"] or {}).get("profiles"), source=lidar)
     snapshot["obstacles"] = found
     if found["status"] == "failed":
         problems.append(found["words"])
@@ -328,7 +326,7 @@ def stale(snapshot, diagram, field):
     if not isinstance(snapshot, dict) or not snapshot:
         return []
     if not isinstance(snapshot.get("version"), int) or snapshot["version"] < SNAPSHOT_VERSION or any(
-            key not in snapshot for key in ("boundary", "approachDeg", "exitDeg")):
+            key not in snapshot for key in ("boundary", "approachDeg")):
         return ["It was measured by an earlier version of EZ/PZ."]
     reasons = []
     target = target_of(diagram)
@@ -337,11 +335,10 @@ def stale(snapshot, diagram, field):
         reasons.append("The target moved after it was measured.")
     if _rounded_ring(boundary_of(diagram)) != snapshot.get("boundary"):
         reasons.append("The boundary changed after it was measured.")
-    for key, words in (("approachDeg", "best approach"), ("exitDeg", "best exit")):
-        now = _rounded_heading(heading_of((field or {}).get(key)))
-        if now != snapshot.get(key):
-            reasons.append(f"The {words} changed after it was measured: measured at {_heading_words(snapshot.get(key))}, "
-                           f"now {_heading_words(now)}.")
+    now = _rounded_heading(heading_of((field or {}).get("approachDeg")))
+    if now != snapshot.get("approachDeg"):
+        reasons.append(f"The best approach changed after it was measured: measured at {_heading_words(snapshot.get('approachDeg'))}, "
+                       f"now {_heading_words(now)}.")
     return reasons
 
 
@@ -373,7 +370,6 @@ COMPARED = (
     ("LiDAR", ("obstacles", "status")),
     ("LiDAR survey", ("obstacles", "survey", "name")),
     ("Approach clears at (°)", ("obstacles", "approach", "clearance", "angleDeg")),
-    ("Exit clears at (°)", ("obstacles", "exit", "clearance", "angleDeg")),
     ("Tallest in the LZ (ft)", ("obstacles", "inside", "heightFt")),
     ("Tallest within 100 m (ft)", ("obstacles", "around", "heightFt")),
     ("Standing over 2 m in the LZ (points)", ("obstacles", "standing", "count")),

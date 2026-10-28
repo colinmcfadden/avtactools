@@ -1,6 +1,6 @@
-"""How each way in and out of an LZ is planned (survey/flightpath.py; docs/LZ_SURVEYS.md §16): at 30° where what stands allows it, at
-the LiDAR's shallowest clear angle where that is steeper, or at the angle the survey's editor typed; descending from the survey's own
-height above the highest obstacle, 100 ft where it gives none and for the exit."""
+"""How the approach to an LZ is planned (survey/flightpath.py; docs/LZ_SURVEYS.md §16): at 30° where what stands allows it, at the
+LiDAR's shallowest clear angle where that is steeper, or at the angle the survey's editor typed; descending from the survey's own height
+above the highest obstacle, 100 ft where it gives none."""
 
 import math
 import sys
@@ -21,8 +21,8 @@ def lane(angle=8.5, start=1000.0, tops=None):
             "clearance": {"angleDeg": angle, "obstacle": None}, "missing": None}
 
 
-def measured(approach=None, exit_=None):
-    return {"obstacles": {"status": "measured", "approach": approach, "exit": exit_}}
+def measured(approach=None):
+    return {"obstacles": {"status": "measured", "approach": approach}}
 
 
 class HeightTests(unittest.TestCase):
@@ -88,34 +88,33 @@ class PlanTests(unittest.TestCase):
             self.assertIsNone(flightpath.plan(found), found)
 
 
-class PlansTests(unittest.TestCase):
+class ApproachPlanTests(unittest.TestCase):
     FIELD = {"profileObstacleFt": "140", "profileDistanceM": "200"}
 
-    def test_the_approach_from_the_survey_s_height_and_the_exit_from_100_ft(self):
-        planned = flightpath.plans(self.FIELD, measured(lane(8.5), lane(4.0)), {})
-        self.assertEqual((planned["approach"]["heightFt"], planned["exit"]["heightFt"]), (140.0, 100.0))
-        self.assertEqual((planned["approach"]["angleDeg"], planned["exit"]["angleDeg"]), (30.0, 30.0))
-        self.assertIsNone(flightpath.plans(self.FIELD, measured(lane(8.5)), {})["exit"])
+    def test_from_the_survey_s_height(self):
+        planned = flightpath.approach_plan(self.FIELD, measured(lane(8.5)), {})
+        self.assertEqual((planned["heightFt"], planned["angleDeg"]), (140.0, 30.0))
+        self.assertIsNone(flightpath.approach_plan(self.FIELD, measured(), {}))                       # no approach measured
 
     def test_at_the_angle_the_editor_typed_while_that_choice_stands(self):
         snapshot = measured(lane(8.5))
         row = next(r for r in compare.compare(self.FIELD, snapshot, {}) if r["key"] == "approach")
         choice = {"approach": {"choice": "typed", "value": 12.0, "reason": "Cut in 2024", "field": row["field"],
                                "computed": row["computed"]}}
-        planned = flightpath.plans(self.FIELD, snapshot, choice)["approach"]
+        planned = flightpath.approach_plan(self.FIELD, snapshot, choice)
         self.assertEqual((planned["angleDeg"], planned["typed"]), (12.0, True))
         rows = compare.compare(self.FIELD, snapshot, choice)
         self.assertEqual(flightpath.typed_of(rows), 12.0)
-        self.assertEqual(flightpath.plans(self.FIELD, snapshot, {}, rows)["approach"]["angleDeg"], 12.0)     # the rows given
+        self.assertEqual(flightpath.approach_plan(self.FIELD, snapshot, {}, rows)["angleDeg"], 12.0)          # the rows given
         # Measured again to another angle, it no longer stands: 30° again.
         again = measured(lane(9.0))
-        self.assertEqual(flightpath.plans(self.FIELD, again, choice)["approach"]["angleDeg"], 30.0)
+        self.assertEqual(flightpath.approach_plan(self.FIELD, again, choice)["angleDeg"], 30.0)
         self.assertIsNone(flightpath.typed_of(compare.compare(self.FIELD, again, choice)))
         self.assertIsNone(flightpath.typed_of([]))
 
     def test_nothing_planned_without_the_lidar(self):
         for snapshot in (None, {}, {"obstacles": None}, {"obstacles": {"status": "unavailable", "approach": lane()}}):
-            self.assertEqual(flightpath.plans(self.FIELD, snapshot, {}), {"approach": None, "exit": None})
+            self.assertIsNone(flightpath.approach_plan(self.FIELD, snapshot, {}))
 
 
 if __name__ == "__main__":

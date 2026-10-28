@@ -1,19 +1,19 @@
 """What stands on and round an LZ, from the USGS LiDAR (docs/LZ_SURVEYS.md §4, step L4).
 
 The survey the 3D view streams for the LZ's place (``lidar.stream``: the newest covering it) is read over just what is measured: the LZ
-and 100 m round it, a lane 10 m each side of the best approach and of the best exit from the touchdown point out to 1,000 m (§11 R5),
-and the slope profile's line through the LZ. Every piece of USGS's octree that meets them is read, at every level (a piece holds points
-between its parent's), each fetched from AWS once and kept beside the streamed pieces as USGS publishes it (``Streamer.laz``): the
-streamed ``.pnts`` keep neither a point's class nor its height above the ground, which is what is wanted here. A reading is bounded: at
-most ``MAX_POINTS`` returns (a 1 km LZ at 3DEP's density), ``FETCH_DEADLINE_S`` to fetch them, and the first piece that cannot be
-fetched or read ends it.
+and 100 m round it, a lane 10 m each side of the best approach from the touchdown point out to 1,000 m (§11 R5; the exit is neither
+measured nor shown, the owner's call of 2026-10-27), and the slope profile's line through the LZ. Every piece of USGS's octree that
+meets them is read, at every level (a piece holds points between its parent's), each fetched from AWS once and kept beside the streamed
+pieces as USGS publishes it (``Streamer.laz``): the streamed ``.pnts`` keep neither a point's class nor its height above the ground,
+which is what is wanted here. A reading is bounded: at most ``MAX_POINTS`` returns (a 1 km LZ at 3DEP's density), ``FETCH_DEADLINE_S``
+to fetch them, and the first piece that cannot be fetched or read ends it.
 
 Every point that is not ground, noise or water is measured above the ground the survey's own ground returns make (the lowest in each
 2 m, between them a triangle at a time), and counts as standing unless it is a lone return, a bird or a glint with no other within 3 m
 (what the survey marks as a wire, a tower or a bridge excepted: a conductor's returns are often further apart). An **obstacle** is what
 stands 2 m or more above its own ground (grass, a crop or a low bush is none). From them:
 
-- along the approach and the exit, from the touchdown point: the shallowest angle that clears everything in the way in the lane with
+- along the approach, from the touchdown point: the shallowest angle that clears everything in the way in the lane with
   no margin (a margin is doctrine's, not EZ/PZ's: AGENTS.md §13), and the thing that sets it, its height, its rise over the touchdown
   point's ground, its distance and what it is. In the way is what stands 5 m or more above its own ground (2 m for what the survey marks
   as built: a building, a wire, a tower or a bridge), and the ground itself where it rises: the median of its returns in each 10 m
@@ -56,7 +56,7 @@ log = logging.getLogger(__name__)
 FEET_PER_METRE = tp.FEET_PER_METRE
 METRES_PER_DEGREE = tp.METRES_PER_DEGREE
 
-# §11 R5: the lane along the best approach and the best exit, from the touchdown point: a UH-60's rotor (16.4 m) and a little each
+# §11 R5: the lane along the best approach, from the touchdown point: a UH-60's rotor (16.4 m) and a little each
 # side of the track. Tried against the old book's 31 survey profiles (docs/LZ_SURVEYS.md §16), from the touchdown point along this lane
 # the LiDAR read a median 7.3° from the field's angle, where the book's grid is clear of the trees; from the LZ's edge across 60 m it read
 # 87-90° on every LZ, taking the tree line beside the path as standing in it.
@@ -68,8 +68,8 @@ BIN_M = 10.0
 # buildings, wires, towers or bridges stand taller, and a wire seldom shows at all.
 LANE_LEAST_M = 5.0
 # The approach is flown this far above the highest obstacle under it (the treetops, or the ground where nothing stands) until its
-# descent begins, where the survey gives no height of its own, and the exit climbs to it (the owner, 2026-10-27: over the treetops, not
-# the ground, which in the old book's timber put every approach at or under the canopy).
+# descent begins, where the survey gives no height of its own (the owner, 2026-10-27: over the treetops, not the ground, which in the old
+# book's timber put every approach at or under the canopy).
 AHO_FT = 100.0
 # The slope profile's treetop line is what stands within this of its line.
 PROFILE_HALF_WIDTH_M = 30.0
@@ -512,13 +512,13 @@ def descent_point(angle_deg, start_ft, tops_ft, ground_ft, height_ft=AHO_FT, bin
     """Where a path at ``angle_deg`` from the touchdown point is ``height_ft`` above the highest obstacle under it for good: the
     outermost place, going out along the track, where it stands no higher than that over what stands there (the treetops, or the ground
     where nothing stands), so that past it the path is more than that above everything. Coming in at that height above the highest
-    obstacle (AHO), the approach meets its path there and descends on it; the exit has climbed to it there. The outermost, not the
-    first going out: a gap in the trees nearer in is not where an aircraft over the canopy comes down. ``start_ft`` is the ground at
-    the touchdown point, ``tops_ft`` and ``ground_ft`` what stands highest and the track's ground in the middle of each ``bin_m`` step
-    out from it (a lane's ``bins``), in feet; a step where nothing is known is passed over. {fromTargetM, topFt, groundFt}: ``topFt``
-    what stands highest there, ``groundFt`` the ground (None where not known). ``fromTargetM`` None, with ``pastM``, where the path is
-    still within that height of what stands at the last step known (the descent begins past it). None for a path that does not rise,
-    no height above it, no ground at the touchdown point, or nothing known standing past it."""
+    obstacle (AHO), the approach meets its path there and descends on it. The outermost, not the first going out: a gap in the trees
+    nearer in is not where an aircraft over the canopy comes down. ``start_ft`` is the ground at the touchdown point, ``tops_ft`` and
+    ``ground_ft`` what stands highest and the track's ground in the middle of each ``bin_m`` step out from it (a lane's ``bins``), in
+    feet; a step where nothing is known is passed over. {fromTargetM, topFt, groundFt}: ``topFt`` what stands highest there,
+    ``groundFt`` the ground (None where not known). ``fromTargetM`` None, with ``pastM``, where the path is still within that height of
+    what stands at the last step known (the descent begins past it). None for a path that does not rise, no height above it, no ground
+    at the touchdown point, or nothing known standing past it."""
     if not (_finite(angle_deg) and 0 < angle_deg < 90 and _finite(start_ft) and _finite(height_ft) and height_ft > 0):
         return None
     above_m = height_ft * 0.3048
@@ -540,12 +540,12 @@ def descent_point(angle_deg, start_ft, tops_ft, ground_ft, height_ft=AHO_FT, bin
     return {"fromTargetM": round(x0 + t * (x1 - x0), 1), "topFt": round(t0 + t * (t1 - t0), 1), "groundFt": ground}
 
 
-def lane(frame, points, ring, heading_deg, *, approach):
-    """One way in or out, from the touchdown point: ``heading_deg`` is the way the aircraft flies (towards the LZ on the approach, away
-    from it on the exit), so the lane lies behind the touchdown point for the approach and ahead of it for the exit. Its ``clearance`` is
-    the shallowest angle that clears everything in the way with no margin, and what sets it; ``bins`` the track's ground and what stands
-    highest in the way, each 10 m out, for the page's figure and the way planned over it (``descent_point``, survey/flightpath.py)."""
-    bearing = (heading_deg + 180.0) % 360.0 if approach else heading_deg % 360.0
+def lane(frame, points, ring, heading_deg):
+    """The approach, from the touchdown point: ``heading_deg`` is the way the aircraft flies in, towards the LZ, so the lane lies behind
+    the touchdown point. Its ``clearance`` is the shallowest angle that clears everything in the way with no margin, and what sets it;
+    ``bins`` the track's ground and what stands highest in the way, each 10 m out, for the page's figure and the approach planned over
+    it (``descent_point``, survey/flightpath.py)."""
+    bearing = (heading_deg + 180.0) % 360.0
     direction = _unit(bearing)
     right = _unit((heading_deg + 90.0) % 360.0)              # the pilot's right, flying the heading
     bins = int(round(LANE_LENGTH_M / BIN_M))
@@ -766,7 +766,7 @@ def profile_tops(frame, points, ring, profiles, approach_deg):
     return {"heading": base, "aboveFt": above}
 
 
-def measure_obstacles(target, boundary, approach_deg, exit_deg, profiles=None, *, source=None):
+def measure_obstacles(target, boundary, approach_deg, profiles=None, *, source=None):
     """What stands on and round the LZ, as the snapshot keeps it (``obstacles``). Never raises for want of data: ``status`` is
     ``measured``; ``none`` where there is nothing to measure here (no survey, one that classifies only the ground, no ground, more than a
     reading holds, an index that cannot be read); ``unavailable`` where this server reads no LiDAR; ``failed`` where USGS could not be
@@ -791,11 +791,8 @@ def measure_obstacles(target, boundary, approach_deg, exit_deg, profiles=None, *
     frame = Frame(lat, lon)
     ring = np.column_stack(frame.local([p[0] for p in boundary], [p[1] for p in boundary]))
     shapes = [_box_strip(ring, AROUND_M)]
-    for heading, approach in ((approach_deg, True), (exit_deg, False)):
-        if heading is None:
-            continue
-        bearing = (heading + 180.0) % 360.0 if approach else heading % 360.0
-        shapes.append(Strip((0.0, 0.0), bearing, 0.0, LANE_LENGTH_M, LANE_HALF_WIDTH_M))
+    if approach_deg is not None:
+        shapes.append(Strip((0.0, 0.0), (approach_deg + 180.0) % 360.0, 0.0, LANE_LENGTH_M, LANE_HALF_WIDTH_M))
     p = None
     if approach_deg is not None:
         from survey import profile as profile_lib
@@ -835,8 +832,7 @@ def measure_obstacles(target, boundary, approach_deg, exit_deg, profiles=None, *
         "survey": named,
         "points": int(points.z.size),
         "pieces": len(nodes),
-        "approach": lane(frame, points, ring, approach_deg, approach=True) if approach_deg is not None else None,
-        "exit": lane(frame, points, ring, exit_deg, approach=False) if exit_deg is not None else None,
+        "approach": lane(frame, points, ring, approach_deg) if approach_deg is not None else None,
         **round_the_lz(frame, points, ring),
         "heightMap": height_map(frame, points, shapes[0]),
         "profileTops": profile_tops(frame, points, ring, profiles, approach_deg) if p is not None else None,

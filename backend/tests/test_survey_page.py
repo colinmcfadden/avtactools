@@ -235,7 +235,7 @@ def test_each_way_is_planned_at_30_with_the_lidar_s_shallowest_beside_it(snapsho
     assert [205.0, 2398.4] in approach['level'] and [605.0, 2431.2] in approach['level']
     assert 'tall' not in approach
     assert approach['obstacle'] == {'fromTargetM': 200.0, 'riseFt': 98.4, 'kind': 'vegetation'}
-    assert clearance['exit'] is None
+    assert 'exit' not in clearance                                                 # the exit is neither measured nor shown
     assert clearance['inside'] == '39′ TREE AT 034° 36 M'
     assert clearance['around'] == '26′ BUILDING AT 360° 110 M (50 M OUT)'
     assert (clearance['standing'], clearance['trees']) == (40, 1)
@@ -251,20 +251,18 @@ def test_each_way_is_planned_at_30_with_the_lidar_s_shallowest_beside_it(snapsho
     assert 'Within 100 m: 26′ BUILDING AT 360° 110 M (50 M OUT)' in html
 
 
-def test_the_approach_descends_from_the_survey_s_own_height_and_the_exit_climbs_to_100_ft(snapshot):
-    # The old book's profiles give 75 to 150 ft: LZ DEERLICK's, 140 ft. The approach descends from 140 ft above the highest obstacle;
-    # the exit, which the survey gives no height, climbs to 100 ft.
+def test_the_approach_descends_from_the_survey_s_own_height(snapshot):
+    # The old book's profiles give 75 to 150 ft: LZ DEERLICK's, 140 ft. The approach descends from 140 ft above the highest obstacle.
+    # A snapshot measured with an exit keeps its lane, which nothing draws.
     found = lidar(snapshot)
     found['obstacles']['exit'] = {**json.loads(json.dumps(found['obstacles']['approach'])), 'headingDeg': 180.0, 'bearingDeg': 180.0}
     field = {**DONOVAN['field'], 'profileObstacleFt': '140 ft'}
-    clearance = page.compile_page(source(found, field=field), book=BOOK)['clearance']
-    approach, exit_ = clearance['approach'], clearance['exit']
+    model = page.compile_page(source(found, field=field), book=BOOK)
+    approach = model['clearance']['approach']
     assert abs(approach['descentM'] - 42.672 / TAN_30) < 0.1 and approach['heightFt'] == 140.0
     assert approach['climb'] == 'DESCEND FROM 140′ AHO AT 74 M'
     assert approach['path'][-1] == [approach['descentM'], 2340.0] and [205.0, 2438.4] in approach['level']
-    assert (exit_['angle'], exit_['climb'], exit_['what']) == ('EXIT 180° · 30.0°', 'CLIMB TO 100′ AHO AT 53 M',
-                                                              'MIN 8.5°: 98′ TREE AT 200 M')
-    assert (exit_['heightFt'], exit_['typed']) == (100.0, False)
+    assert 'exit' not in model['clearance'] and 'EXIT 180°' not in figures.clearance(model['clearance'])
     # With no height of its own (none, nothing to read, nothing over 0), 100 ft.
     for typed in ('', 'about', '0', '-140'):
         clearance = page.compile_page(source(found, field={**field, 'profileObstacleFt': typed}), book=BOOK)['clearance']
@@ -280,12 +278,12 @@ def test_a_way_the_trees_make_steeper_than_30_is_planned_at_the_lidar_s_and_said
     lane['clearance'] = {'angleDeg': 41.0, 'obstacle': stand}
     model = page.compile_page(source(found), book=BOOK)
     approach = model['clearance']['approach']
-    assert (approach['angle'], approach['what']) == ('APCH 360° · 41.0°', 'STEEPER THAN 30°: 171′ TREE AT 60 M')
+    assert (approach['angle'], approach['what']) == ('APCH 360° · 41.0° · STEEPER THAN 30°', 'MIN 41.0°: 171′ TREE AT 60 M')
     assert (approach['angleDeg'], approach['minimumDeg'], approach['typed'], approach['steep']) == (41.0, 41.0, False, True)
     assert 65.0 < approach['descentM'] < 75.0                                        # 100 ft above the stand just past it
     with patch('brief.figures._fetch_tile', _tile):
         html, _files = pages.build(model, lambda _id: None)
-    assert 'APCH 360° · 41.0°' in html and 'STEEPER THAN 30°: 171′ TREE AT 60 M' in html
+    assert 'APCH 360° · 41.0° · STEEPER THAN 30°' in html
 
 
 def test_an_angle_the_editor_typed_is_planned_in_place_of_30(snapshot):
@@ -489,6 +487,11 @@ def test_low_vegetation_is_brush_and_the_figure_draws_the_obstacle_s_rise(snapsh
     tip = float(re.search(r'<polygon points="[-0-9.]+,([-0-9.]+) ', drawn).group(1))
     assert abs(tip - ((104 - 14) - (2314.0 - floor) / (span * 1.06) * ((104 - 14) - 50) - 6)) < 0.1
     assert drawn.count('<circle') == 1 and drawn.count('r="2.4"') == 1               # the descent, and nothing flagged past it
-    # The LZ between the two ways, on the touchdown point's ground.
-    lz_y = float(re.search(r'<rect x="[-0-9.]+" y="([-0-9.]+)"', drawn).group(1))
+    # The LZ at the right end, on the touchdown point's ground, the approach drawn across the rest of the box: 1,000 m out at its left.
+    lz_x, lz_y = (float(v) for v in re.search(r'<rect x="([-0-9.]+)" y="([-0-9.]+)"', drawn).groups())
     assert abs(lz_y - ((104 - 14) - (2200.0 - floor) / (span * 1.06) * ((104 - 14) - 50) - 3)) < 0.1
+    assert lz_x == 512 - 4 - 30.0
+    ground = re.search(r'<polyline points="([^"]+)" fill="none" stroke="#[0-9a-f]+" stroke-width="1.6"', drawn).group(1).split()
+    reach = 512 - 2 * 4 - 30.0                                                     # the box less its margins and the LZ
+    assert abs(float(ground[0].split(',')[0]) - (4 + reach - 5 / 1000 * reach)) < 0.1         # the step 5 m out, at the LZ
+    assert abs(float(ground[-1].split(',')[0]) - (4 + reach - 995 / 1000 * reach)) < 0.1      # the step 995 m out, at the left

@@ -700,8 +700,8 @@ def _full(survey):
         'snapshot': survey.snapshot,
         'stale': measure.stale(survey.snapshot, survey.diagram, survey.field),
         'comparisons': rows,
-        # Each way as the page plans it (survey/flightpath.py): at 30° where what stands allows, from the survey's own height.
-        'plans': flightpath.plans(survey.field, survey.snapshot, survey.overrides, rows),
+        # The approach as the page plans it (survey/flightpath.py): at 30° where what stands allows, from the survey's own height.
+        'approach_plan': flightpath.approach_plan(survey.field, survey.snapshot, survey.overrides, rows),
         'asset_ids': [a.id for a in asset_rows],
         'assets': [_asset_json(a, survey.uuid) for a in asset_rows],
         'created_by': survey.created_by_name,

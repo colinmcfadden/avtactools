@@ -1,7 +1,8 @@
-"""How each way in and out is planned (docs/LZ_SURVEYS.md §16; the owner, 2026-10-27): at 30° where what stands allows it, else at the
+"""How the approach is planned (docs/LZ_SURVEYS.md §16; the owner, 2026-10-27): at 30° where what stands allows it, else at the
 LiDAR's shallowest clear angle, said to be steeper; or at the angle the survey's editor typed over the plan. Its descent begins where
 that path is the survey's own approach height above the highest obstacle for good (survey/obstacles.py's ``descent_point``): the height
-its profile gives (the old book's are 75 to 150 ft), 100 ft where it gives none, and 100 ft for the exit, which the survey gives none.
+its profile gives (the old book's are 75 to 150 ft), 100 ft where it gives none. The exit is not planned: it is neither measured nor
+shown.
 
 Worked out from the lane's 10 m steps whenever the page or the editor asks, never kept in the snapshot: the survey's height can be
 retyped without measuring again.
@@ -30,10 +31,10 @@ def height_of(field):
 
 
 def plan(lane, height_ft=DEFAULT_HEIGHT_FT, typed=None):
-    """One way's plan, from its lane as the snapshot keeps it: {angleDeg, minimumDeg, typed, steep, heightFt, descent}. ``angleDeg`` is
-    30°, or the LiDAR's shallowest clear angle (``minimumDeg``) where that is steeper (``steep``), or the editor's ``typed`` angle;
-    ``descent`` where a path at it is ``height_ft`` above the highest obstacle for good (``descent_point``). None where the LiDAR has
-    no angle along the way (none measured, a lane from before version 5, no returns, no ground at the touchdown point)."""
+    """The approach's plan, from its lane as the snapshot keeps it: {angleDeg, minimumDeg, typed, steep, heightFt, descent}.
+    ``angleDeg`` is 30°, or the LiDAR's shallowest clear angle (``minimumDeg``) where that is steeper (``steep``), or the editor's
+    ``typed`` angle; ``descent`` where a path at it is ``height_ft`` above the highest obstacle for good (``descent_point``). None where
+    the LiDAR has no angle along it (none measured, a lane from before version 5, no returns, no ground at the touchdown point)."""
     if not isinstance(lane, dict) or not isinstance(lane.get("start"), dict):
         return None
     clear = lane.get("clearance")
@@ -57,12 +58,11 @@ def typed_of(rows):
     return compare.typed_angle((row.get("override") or {}).get("value"))
 
 
-def plans(field, snapshot, overrides, rows=None):
-    """The approach's and the exit's plans for a survey as it stands: {approach, exit}, each None where there is none. The approach is
-    planned from the survey's own height, at the angle the editor typed where that choice stands (``rows``, ``compare``'s, worked out
-    here where not given)."""
+def approach_plan(field, snapshot, overrides, rows=None):
+    """The approach's plan for a survey as it stands, or None where there is none: from the survey's own height, at the angle the editor
+    typed where that choice stands (``rows``, ``compare``'s, worked out here where not given)."""
     found = (snapshot or {}).get("obstacles")
     if not isinstance(found, dict) or found.get("status") != "measured":
-        return {"approach": None, "exit": None}
+        return None
     typed = typed_of(compare.compare(field, snapshot, overrides) if rows is None else rows)
-    return {"approach": plan(found.get("approach"), height_of(field), typed), "exit": plan(found.get("exit"))}
+    return plan(found.get("approach"), height_of(field), typed)

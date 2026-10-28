@@ -202,10 +202,7 @@ LIDAR_CAVEAT = ("From the touchdown point, no margin, over 10 m each side of the
 # Why a way has no angle (survey/obstacles.py's ``missing``); "earlier", a snapshot from before the lane (version 4 and older).
 MISSING_WORDS = {"no_returns": "NO LIDAR RETURNS", "no_target_ground": "NO GROUND AT THE TOUCHDOWN POINT",
                  "earlier": "MEASURED BY AN EARLIER EZ/PZ"}
-# Where each way's planned path is its height above the highest obstacle (AHO), as the box says it: the approach's descent from that
-# height begins there, the exit has climbed to it (survey/flightpath.py).
-CLIMB_WORDS = {"APCH": "DESCEND FROM", "EXIT": "CLIMB TO"}
-# A way the trees will not let be flown at 30°, as its third line says it (in its first, it would not fit beside the other way's).
+# An approach the trees will not let be flown at 30° (survey/flightpath.py), as its first line says it.
 STEEP_WORDS = f"STEEPER THAN {flightpath.PLAN_DEG:g}°"
 
 
@@ -416,16 +413,17 @@ def _survey_profile(field):
     return {"obstacleFt": int(round(feet)), "distanceM": int(round(metres)), "angleDeg": round(angle, 1), "who": who}
 
 
-def _lane(lane, label, planned=None):
-    """One way in or out as the clearance box draws it, from the touchdown point: the track's ground and the highest thing in the way
-    every 10 m out; the angle it is ``planned`` at (survey/flightpath.py: 30°, steeper where the LiDAR's shallowest clear angle is, or
-    the editor's), its ``path`` from the touchdown point to where it is its height above the highest obstacle for good (the approach's
-    descent from that height begins there) and the ``level`` that height above what stands past it; and the LiDAR's shallowest clear
-    angle and what sets it; or why there is none. ``partial`` says how much of the lane the survey has returns in, where it is not all
-    of it: an angle over a part is not the lane's."""
+def _lane(lane, planned=None):
+    """The approach as the clearance box draws it, from the touchdown point: the track's ground and the highest thing in the way every
+    10 m out; the angle it is ``planned`` at (survey/flightpath.py: 30°, steeper where the LiDAR's shallowest clear angle is, or the
+    editor's), its ``path`` from the touchdown point to where it is the survey's height above the highest obstacle for good (its descent
+    from that height begins there) and the ``level`` that height above what stands past it; and the LiDAR's shallowest clear angle and
+    what sets it; or why there is none. ``partial`` says how much of the lane the survey has returns in, where it is not all of it: an
+    angle over a part is not the lane's."""
     if not isinstance(lane, dict):
         return None
     bins = [b if isinstance(b, dict) else {} for b in lane.get("bins") or []]
+    label = "APCH"
     heading = heading_words(lane.get("headingDeg"))
     step = lane.get("binM") if _finite(lane.get("binM")) else 10
     covered = lane.get("covered")
@@ -463,18 +461,19 @@ def _lane(lane, label, planned=None):
         return out
     angle, least, height = planned["angleDeg"], planned["minimumDeg"], planned["heightFt"]
     out.update({"angleDeg": angle, "minimumDeg": least, "typed": planned["typed"], "steep": planned["steep"], "heightFt": height,
-                "angle": f"{label} {heading} · {profile.to_fixed(angle, 1)}°"})
+                "angle": " · ".join(t for t in (f"{label} {heading}", f"{profile.to_fixed(angle, 1)}°",
+                                               STEEP_WORDS if planned["steep"] else None) if t)})
     above = f"{profile.js_round(height):,}′ AHO"
     descent = planned["descent"]
     if isinstance(descent, dict) and not _finite(descent.get("fromTargetM")):
         past = descent["pastM"]
-        out["climb"] = f"{CLIMB_WORDS[label]} {above} PAST {profile.js_round(past):,} M"
+        out["climb"] = f"DESCEND FROM {above} PAST {profile.js_round(past):,} M"
         if out["startFt"] is not None:
             out["path"] = [[0.0, out["startFt"]], [past, out["startFt"] + past * math.tan(math.radians(angle)) * FEET_PER_METRE]]
     elif isinstance(descent, dict):
         at = descent["fromTargetM"]
         out["descentM"] = at
-        out["climb"] = f"{CLIMB_WORDS[label]} {above} AT {profile.js_round(at):,} M"
+        out["climb"] = f"DESCEND FROM {above} AT {profile.js_round(at):,} M"
         out["path"] = [[0.0, out["startFt"]], [at, descent["topFt"] + height]]
         out["level"] = [[at, descent["topFt"] + height]] + [
             [(k + 0.5) * step, top + height] for k, top in enumerate(out["topsFt"]) if top is not None and (k + 0.5) * step > at]
@@ -489,13 +488,9 @@ def _lane(lane, label, planned=None):
             what = f"THE GROUND {at}"
         else:
             what = f"{profile.js_round(obstacle.get('heightFt') or 0)}′ {_kind_words(obstacle.get('kind'), obstacle.get('heightFt'))} {at}"
-    # What sets the LiDAR's shallowest clear angle, beside the plan: the editor's angle is said to be theirs, and a way planned steeper
-    # than 30° says so in place of its minimum, which is the angle planned.
+    # The LiDAR's shallowest clear angle beside the plan, and what sets it; beside the editor's angle, said to be theirs.
     minimum = f"MIN {profile.to_fixed(least, 1)}°"
-    if out["typed"]:
-        out["what"] = f"EDITOR'S · LIDAR {minimum}"
-    else:
-        out["what"] = f"{STEEP_WORDS if out['steep'] else minimum}: {what}"
+    out["what"] = f"EDITOR'S · LIDAR {minimum}" if out["typed"] else f"{minimum}: {what}"
     out["words"] = " · ".join(t for t in (out["angle"], out["climb"], out["what"]) if t)
     return out
 
@@ -521,9 +516,9 @@ def _along_tops(tops, profiles):
 
 
 def _clearance(rows, field, snapshot, profiles):
-    """What the LiDAR found (§4, step L4), as the page prints it in place of the field's survey profile: the approach and the exit as
-    each is planned (survey/flightpath.py) with the LiDAR's shallowest clear angle along it, what stands in the LZ and round it, and the
-    profile's treetop line; or why there is none. ``printed`` is "field" where the field's survey profile is printed instead: an editor
+    """What the LiDAR found (§4, step L4), as the page prints it in place of the field's survey profile: the approach as it is planned
+    (survey/flightpath.py) with the LiDAR's shallowest clear angle along it, what stands in the LZ and round it, and the profile's
+    treetop line; or why there is none. ``printed`` is "field" where the field's survey profile is printed instead: an editor
     chose it over the LiDAR's, or the LiDAR has no angle along the approach and the field has one (``note`` says which); "typed" where
     the approach is planned at the angle the editor typed. None for a snapshot from before L4."""
     found = snapshot.get("obstacles") if isinstance(snapshot.get("obstacles"), dict) else None
@@ -536,8 +531,7 @@ def _clearance(rows, field, snapshot, profiles):
            "survey": _one_line(survey.get("name")).upper() or None, "year": year, "printed": "computed", "note": None}
     if found.get("status") != "measured":
         return out
-    planned = flightpath.plans(field, snapshot, None, rows)
-    approach = _lane(found.get("approach"), "APCH", planned["approach"])
+    approach = _lane(found.get("approach"), flightpath.approach_plan(field, snapshot, None, rows))
     if approach and approach["typed"]:
         out["printed"] = "typed"
     if row and row["printed"] == "field":
@@ -549,7 +543,6 @@ def _clearance(rows, field, snapshot, profiles):
     standing = found.get("standing") if isinstance(found.get("standing"), dict) else {}
     out.update({
         "approach": approach,
-        "exit": _lane(found.get("exit"), "EXIT", planned["exit"]),
         "inside": _spot_words(found.get("inside")),
         "around": _spot_words(found.get("around"), out_of_lz=True),
         "standing": standing.get("count") if isinstance(standing.get("count"), int) else 0,
