@@ -134,6 +134,7 @@ const SurveyEditor = ({ surveys }) => {
             diagram={draft.diagram}
             field={draft.field}
             terrain={survey.snapshot?.terrain ?? null}
+            obstacles={survey.snapshot?.obstacles ?? null}
             onSetTarget={setTarget}
             onSetBoundary={setBoundary}
             readOnly={archived}
@@ -145,9 +146,16 @@ const SurveyEditor = ({ surveys }) => {
             canMeasure={!archived && Boolean(draft.diagram?.target)}
             whyNot={why}
             onMeasure={surveys.measure}
+            plan={survey.approach_plan ?? null}
+            heightDirty={(draft.field?.profileObstacleFt ?? "") !== (survey.field?.profileObstacleFt ?? "")}
+            approach={(survey.comparisons ?? []).find((row) => row.key === "approach") ?? null}
+            onDecide={archived ? undefined : surveys.decide}
+            onUndecide={archived ? undefined : surveys.undecide}
+            deciding={Boolean(busy) || archived}
           />
           <Disagreements
             rows={survey.comparisons ?? []}
+            plan={survey.approach_plan ?? null}
             dirtyField={fieldDirty}
             busy={Boolean(busy) || archived}
             onDecide={surveys.decide}

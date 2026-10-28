@@ -556,9 +556,13 @@ export const useSurveys = ({ client = surveyApi } = {}) => {
     }
   }, [client]);
 
-  /** Settles a disagreement: `choice` "computed" (accept what EZ/PZ measured) or "field" (print the survey's, with a reason). */
-  const decide = useCallback((key, choice, reason = "") => {
-    const overrides = { ...(draftRef.current?.overrides ?? {}), [key]: { choice, reason } };
+  /**
+   * Settles a disagreement: `choice` "computed" (accept what EZ/PZ measured), "field" (print the survey's, with a reason) or "typed"
+   * (print `value`, the approach's angle the editor typed, with a reason).
+   */
+  const decide = useCallback((key, choice, reason = "", value = undefined) => {
+    const entry = value === undefined ? { choice, reason } : { choice, reason, value };
+    const overrides = { ...(draftRef.current?.overrides ?? {}), [key]: entry };
     return save({ overrides });
   }, [save]);
 

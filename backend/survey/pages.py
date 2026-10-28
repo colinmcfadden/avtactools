@@ -88,6 +88,7 @@ def sheet(model, asset_bytes, prefix=""):
         across = figures.profile(profiles["across"], "rear", width=380)
         graphs = {"along": Markup(along) if along else None, "across": Markup(across) if across else None}
     survey_profile = figures.survey_profile(model.get("surveyProfile"))
+    drawn = figures.clearance(clearance) if clearance.get("status") == "measured" else None
     context = {
         "m": model,
         "plan": shown["plan"],
@@ -96,6 +97,7 @@ def sheet(model, asset_bytes, prefix=""):
         "graphs": graphs,
         "compass": Markup(figures.compass(model.get("shape"), (model.get("plan") or {}).get("approachDeg"))),
         "survey_profile": Markup(survey_profile) if survey_profile else None,
+        "clearance": Markup(drawn) if drawn else None,
     }
     return context, files
 

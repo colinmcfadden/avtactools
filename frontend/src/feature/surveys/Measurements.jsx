@@ -3,6 +3,7 @@ import Dialog from "../ui/Dialog";
 import Icon from "../ui/Icon";
 import SlopeProfile from "../terrain/SlopeProfile";
 import { slopeProfileFor } from "../terrain/groundProfile";
+import Obstacles from "./Obstacles";
 
 /*
  * What EZ/PZ measured of the LZ (the survey's snapshot, docs/LZ_SURVEYS.md §3.3), and the dialog that shows what a new measurement
@@ -58,7 +59,14 @@ export const measuredHeading = (snapshot) => {
   return Number.isFinite(heading) ? heading : null;
 };
 
-const Measurements = ({ snapshot, stale = [], onMeasure, busy, canMeasure, whyNot }) => {
+/**
+ * `approach` is the approach's comparison (survey/compare.py), for the angle the page prints where the editor typed one; `onDecide`
+ * and `onUndecide` let the editor type it or let it go, `deciding` while they cannot.
+ */
+const Measurements = ({
+  snapshot, stale = [], onMeasure, busy, canMeasure, whyNot, plan = null, heightDirty = false, approach = null, onDecide, onUndecide,
+  deciding = false,
+}) => {
   const heading = measuredHeading(snapshot);
   const profile = useMemo(
     () => (snapshot?.terrain?.profiles && heading !== null ? slopeProfileFor(snapshot.terrain.profiles, heading) : null),
@@ -119,6 +127,15 @@ const Measurements = ({ snapshot, stale = [], onMeasure, busy, canMeasure, whyNo
           )}
           <SlopeTable slope={snapshot.slope} />
           {profile && <div className="survey-profile"><SlopeProfile profile={profile} /></div>}
+          <Obstacles
+            obstacles={snapshot.obstacles}
+            plan={plan}
+            heightDirty={heightDirty}
+            approach={approach}
+            onDecide={onDecide}
+            onUndecide={onUndecide}
+            busy={deciding}
+          />
           {snapshot.problems?.length > 0 && (
             <ul className="survey-problems">
               {snapshot.problems.map((problem) => <li key={problem}>{problem}</li>)}

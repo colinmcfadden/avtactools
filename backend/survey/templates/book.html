@@ -80,7 +80,7 @@
   <div class="classif bottom">UNCLASSIFIED</div>
 </div>
 {% endfor %}
-{% for s in sheets %}{% with m=s.m, plan=s.plan, view3d=s.view3d, photos=s.photos, graphs=s.graphs, compass=s.compass, survey_profile=s.survey_profile %}
+{% for s in sheets %}{% with m=s.m, plan=s.plan, view3d=s.view3d, photos=s.photos, graphs=s.graphs, compass=s.compass, survey_profile=s.survey_profile, clearance=s.clearance %}
 {% include '_survey_sheet.html' %}
 {% endwith %}{% endfor %}
 </body>

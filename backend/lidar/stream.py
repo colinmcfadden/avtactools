@@ -421,6 +421,46 @@ class Streamer:
     def _piece_url(self, survey, node) -> str:
         return f"{self._base}/{survey.name}/ept-data/{node}.laz"
 
+    def laz(self, key: str, node: ept.Node) -> bytes:
+        """A piece of the survey as USGS publishes it (LAZ), fetched once and kept beside the streamed pieces, for what reads a point's
+        class and its height above the ground (survey/obstacles.py): a streamed .pnts keeps neither. Never served (the file route
+        serves only tileset and piece names), and let go of with the pieces when the cache is pruned."""
+        survey = self._survey(key)
+        path = self._laz_path(key, node)
+        try:
+            data = path.read_bytes()
+        except OSError:
+            data = None
+        if data is not None and pieces.readable_header(data):
+            self._touch(path)
+            return data
+        with self._claim(path):
+            try:
+                data = path.read_bytes()
+            except OSError:
+                data = None
+            if data is not None and pieces.readable_header(data):
+                return data
+            # Only a piece that reads as one is kept: one that does not would fail every measure of the LZ, and be touched each time.
+            data = self._fetch(self._piece_url(survey, node), MAX_PIECE_BYTES)
+            if not pieces.readable_header(data):
+                raise StreamError("USGS sent a piece that cannot be read.", code="upstream_unavailable", status=502)
+            _write_atomic(path, data)
+            self._wrote()
+        return data
+
+    def drop_laz(self, key: str, node: ept.Node) -> None:
+        """Let go of a kept piece whose points could not be read, so the next reading fetches it again."""
+        path = self._laz_path(key, node)
+        with self._claim(path):
+            try:
+                path.unlink()
+            except OSError:
+                pass
+
+    def _laz_path(self, key: str, node: ept.Node) -> Path:
+        return self.root / key / "laz" / f"{node}.laz"
+
     def _survey_range(self, key, survey, root_data=None):
         """The survey's intensity range, taken once from its root piece (a
         sample across all of it) and kept, so every piece is shaded alike.
@@ -479,8 +519,9 @@ class Streamer:
 
     def prune(self, cap: float | None = None) -> int:
         """Let go of the pieces used longest ago until the cache is under its
-        cap. The survey's index and tileset files stay: they are small and
-        every view starts from them. Returns the bytes freed."""
+        cap, streamed or kept as USGS publishes them (``laz``). The survey's
+        index and tileset files stay: they are small and every view starts
+        from them. Returns the bytes freed."""
         cap = _cap_bytes() if cap is None else cap
         files, total = [], 0
         for path in self.root.rglob("*"):
@@ -491,7 +532,7 @@ class Streamer:
             except OSError:
                 continue
             total += stat.st_size
-            if path.suffix == ".pnts":
+            if path.suffix in (".pnts", ".laz"):
                 files.append((stat.st_mtime, stat.st_size, path))
         freed = 0
         for _mtime, size, path in sorted(files):

@@ -266,6 +266,63 @@ describe("the survey editor", () => {
     expect(client.saveSurvey.mock.calls[0][2].overrides).toEqual({ elevation: { choice: "field", reason: "Surveyed by GPS on the pad" } });
   });
 
+  it("types the approach's angle over the LiDAR's, with a reason, from field against computed", async () => {
+    const approach = { key: "approach", label: "Approach angle", field: "8.7° (100 ft at 200 m)", computed: "8.5° (LiDAR: 98 ft tree 200 m out)",
+      apart: "0.2° apart", disagrees: false, open: false, override: null, overrideStands: false, printed: "computed" };
+    const client = fakeClient({ getSurvey: jest.fn(async () => survey({ comparisons: [...COMPARISONS, approach] })) });
+    await openDonovan(client);
+    const row = screen.getByRole("rowheader", { name: "Approach angle" }).closest("tr");
+    expect(within(row).queryByRole("button", { name: "Accept computed" })).toBeNull();     // nothing to settle: they agree
+    fireEvent.click(within(row).getByRole("button", { name: "Type the angle…" }));
+    const dialog = screen.getByRole("dialog", { name: "Type the approach's angle" });
+    fireEvent.change(within(dialog).getByLabelText("Angle (°)"), { target: { value: "14.4" } });
+    fireEvent.change(within(dialog).getByLabelText("Reason"), { target: { value: "Flown in by the 2-58th, OCT 2026" } });
+    await act(async () => {
+      fireEvent.click(within(dialog).getByRole("button", { name: "Print this angle" }));
+    });
+    expect(client.saveSurvey.mock.calls[0][2].overrides).toEqual({
+      approach: { choice: "typed", reason: "Flown in by the 2-58th, OCT 2026", value: 14.4 },
+    });
+    const elevation = screen.getByRole("rowheader", { name: "Elevation" }).closest("tr");
+    expect(within(elevation).queryByRole("button", { name: /angle/ })).toBeNull();          // only the approach's angle is typed
+  });
+
+  it("shows the approach as the page plans it, not the exit, and says to save a height typed before it plans from it", async () => {
+    const lane = (headingDeg) => ({ headingDeg, start: { groundFt: 2061 }, bins: [], covered: 100,
+      clearance: { angleDeg: 8.5, obstacle: { heightFt: 98.4, riseFt: 98.4, kind: "vegetation", fromTargetM: 200, offsetM: 0 } } });
+    const obstacles = { status: "measured", words: null, survey: { name: "GA_Statewide_B3_2018", year: 2018 }, approach: lane(360),
+      exit: lane(180), inside: null, around: null, standing: { overM: 2, count: 0 }, trees: [], heightMap: null };
+    const plan = (heightFt) => ({ angleDeg: 30, minimumDeg: 8.5, typed: false, steep: false, heightFt,
+      descent: { fromTargetM: 52.8, topFt: 2061, groundFt: 2061 } });
+    const approach = { key: "approach", label: "Approach angle", field: "8.7° (100 ft at 200 m)", computed: "8.5° (LiDAR: 98 ft tree 200 m out)",
+      apart: "0.2° apart", disagrees: false, open: false, override: null, overrideStands: false, printed: "computed" };
+    const measured = survey({ snapshot: { ...survey().snapshot, obstacles }, comparisons: [...COMPARISONS, approach],
+      approach_plan: plan(100) });
+    await openDonovan(fakeClient({ getSurvey: jest.fn(async () => measured) }));
+    const panel = screen.getByRole("group", { name: "Standing on and round the LZ · LiDAR GA_Statewide_B3_2018" });
+    expect(within(panel).getByRole("row", { name: /Approach 360°/ })).toHaveTextContent("30.0°From 100 ft AHO: 53 m out");
+    expect(within(panel).queryByRole("row", { name: /Exit/ })).toBeNull();                 // measured by an earlier EZ/PZ, not shown
+    expect(within(panel).queryByText(/Save to plan/)).toBeNull();
+    fireEvent.change(screen.getByLabelText("Obstacle height (ft)"), { target: { value: "140" } });
+    expect(within(panel).getByText("Save to plan the approach from the height you have typed.")).toBeInTheDocument();
+    const row = screen.getByRole("rowheader", { name: "Approach angle" }).closest("tr");
+    fireEvent.click(within(row).getByRole("button", { name: "Type the angle…" }));
+    expect(screen.getByRole("dialog", { name: "Type the approach's angle" }))
+      .toHaveTextContent("Planned at 30.0°. Shallowest clear: 8.5° (LiDAR: 98 ft tree 200 m out)");
+  });
+
+  it("offers no survey's value to print where the survey has none, though the row is open again", async () => {
+    const lapsed = { key: "approach", label: "Approach angle", field: "", computed: "9.0° (LiDAR: 98 ft tree 200 m out)", apart: null,
+      disagrees: false, open: true, overrideStands: false, printed: "computed",
+      override: { choice: "typed", value: 12, reason: "Cut in 2024", by: "CW3 Admin", field: "", computed: "8.5° (LiDAR: 98 ft tree 200 m out)" } };
+    await openDonovan(fakeClient({ getSurvey: jest.fn(async () => survey({ comparisons: [...COMPARISONS, lapsed] })) }));
+    const row = screen.getByRole("rowheader", { name: "Approach angle" }).closest("tr");
+    expect(within(row).getByText("Decided on other values: look again")).toBeInTheDocument();
+    expect(within(row).getByRole("button", { name: "Accept computed" })).toBeInTheDocument();
+    expect(within(row).getByRole("button", { name: "Change your angle…" })).toBeInTheDocument();
+    expect(within(row).queryByRole("button", { name: "Print survey's…" })).toBeNull();
+  });
+
   it("says when someone else saved first, and keeps what was typed", async () => {
     const theirs = survey({ revision: 5, updated_by: "SFC Other", field: { ...DONOVAN.field, hazards: "Wires" } });
     const client = fakeClient({
