@@ -77,7 +77,8 @@ def test_the_page_prints_the_measured_values_and_the_field_s_judgements(snapshot
     assert (facts['grid']['value'], facts['grid']['from']) == (snapshot['grid'], 'computed')
     assert facts['latLong']['value'].startswith('N34°') and facts['latLong']['from'] == 'computed'
     assert facts['elevation'] == {'value': f"{snapshot['elevation']['ft']:,}′", 'from': 'computed'}
-    assert (facts['approach'], facts['exit'], facts['maxAc']) == ('360°', '360°', '2 DAY / 2 NIGHT')
+    assert (facts['approach'], facts['maxAc']) == ('360°', '2 DAY / 2 NIGHT')
+    assert 'exit' not in facts and 'exitDeg' not in model['plan']                  # the best exit is not printed (the owner's)
     assert (facts['pprWho'], facts['ppr']) == ('5th RTB Ops', '706-864-3327 x5233')
     assert facts['surface'] == 'GRASS'
     assert facts['slope']['from'] == 'computed' and '(P95)' in facts['slope']['value']
@@ -142,8 +143,10 @@ def test_the_plan_figure_is_drawn_over_the_map(snapshot):
     with patch('brief.figures._fetch_tile', _tile):
         drawn = figures.plan(model['plan'])
     assert drawn['jpeg'][:2] == b'\xff\xd8'
-    for words in ('APCH 360°', 'EXIT 360°', 'DONOVAN', 'stroke-dasharray="16 10"'):
+    for words in ('APCH 360°', 'DONOVAN', 'stroke-dasharray="16 10"'):
         assert words in drawn['svg']
+    assert 'EXIT' not in drawn['svg']                                                # the best exit is not printed
+    assert drawn['svg'].count('stroke-linecap="round"/>') == 2                       # one arrow, its shaft drawn edge then colour
     assert figures.plan({'target': None}) is None
 
 
@@ -161,6 +164,7 @@ def test_the_page_escapes_what_was_typed_and_has_its_pictures(snapshot):
     assert sorted(files) == ['photo-1.jpg', 'plan.jpg']                              # the approach photo is gone from the store
     assert html.count('UNCLASSIFIED') == 2
     assert 'No photo.' in html
+    assert 'Best Apch' in html and 'Best Exit' not in html
 
 
 # -- What the LiDAR found (step L4) -----------------------------------------------------------------------------------
