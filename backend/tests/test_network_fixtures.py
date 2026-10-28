@@ -46,13 +46,14 @@ import refresh_tokens  # noqa: E402
 import terrain_tiles  # noqa: E402
 from auth_harness import ANDROID, PASSWORD, NativeAuthCase  # noqa: E402
 from lidar import catalog, worker  # noqa: E402
-from models import LocalCredential, MissionPackInvite, User, db  # noqa: E402
+from models import LocalCredential, MissionPackInvite, Notification, User, db  # noqa: E402
 from openapi_check import check_response, load_spec  # noqa: E402
 from routes.aircraft_routes import aircraft_bp  # noqa: E402
 from routes.brief_routes import brief_bp  # noqa: E402
 from routes.config_routes import config_bp  # noqa: E402
 from routes.lidar_routes import lidar_bp  # noqa: E402
 from routes.lz_routes import lz_bp  # noqa: E402
+from routes.notification_routes import notification_bp  # noqa: E402
 from routes.pack_routes import pack_bp  # noqa: E402
 from routes.point_sets import point_sets_bp  # noqa: E402
 from routes.saved_routes import saved_routes_bp  # noqa: E402
@@ -138,7 +139,7 @@ def documented(method, path, status):
 
 class NetworkFixtureTests(NativeAuthCase):
     extra_blueprints = (config_bp, lz_bp, saved_routes_bp, point_sets_bp, aircraft_bp, sync_bp, terrain_bp, threat_bp, weather_bp,
-                        pack_bp, team_bp, brief_bp, lidar_bp)
+                        pack_bp, team_bp, brief_bp, lidar_bp, notification_bp)
 
     def setUp(self):
         super().setUp()
@@ -649,6 +650,7 @@ class NetworkFixtureTests(NativeAuthCase):
         self.rec("team invite: not an email address", ask(colin, "post", f"{here_team}/invites", json={"email": "nope"}))
         self.rec("team invites", ask(colin, "get", f"{here_team}/invites"))
         self.rec("invites: mine, to a team", ask(alex, "get", "/api/invites"))
+        self.rec("notifications: an invitation to a team", ask(alex, "get", "/api/notifications"))
         self.rec("invite: decline one addressed to someone else", ask(sam, "post", f"/api/invites/{to_alex['id']}/decline"))
         self.rec("invite: decline", ask(alex, "post", f"/api/invites/{to_alex['id']}/decline"))
         self.rec("invite: decline one already answered", ask(alex, "post", f"/api/invites/{to_alex['id']}/decline"))
@@ -801,6 +803,16 @@ class NetworkFixtureTests(NativeAuthCase):
         self.rec("pack invite: send again, one that is not waiting", ask(colin, "post", f"{invites}/9999/resend"))
         self.rec("pack invite: send again, by an editor", ask(sam, "post", f"{invites}/{to_alex['id']}/resend"))
         self.rec("invites: mine, to a pack", ask(alex, "get", "/api/invites"))
+        # Notifications (docs/NOTIFICATIONS.md): what Alex's devices show of it, and the routes round it. The ETag is a hash of a body
+        # with times in it, so it is not kept.
+        feed = self.rec("notifications: an invitation to a pack", ask(alex, "get", "/api/notifications"), "Cache-Control")
+        self.rec("notifications: nothing new",
+                 self.client.get("/api/notifications", headers={**alex["head"], "If-None-Match": feed.headers["ETag"]}))
+        seen = [n["id"] for n in feed.get_json()["notifications"]]
+        self.rec("notifications: seen", ask(alex, "post", "/api/notifications/seen", json={"ids": seen}))
+        self.rec("notifications: seen, not ids", ask(alex, "post", "/api/notifications/seen", json={"ids": "all"}))
+        self.rec("notifications: settings", ask(alex, "put", "/api/notifications/settings", json={"pack_finished": False}))
+        self.rec("notifications: settings, not true or false", ask(alex, "put", "/api/notifications/settings", json={"invitations": "no"}))
         self.rec("invite: accept one addressed to someone else", ask(sam, "post", f"/api/invites/{to_alex['id']}/accept"))
         self.rec("invite: accept", ask(alex, "post", f"/api/invites/{to_alex['id']}/accept"))
         self.rec("invite: accept one already answered", ask(alex, "post", f"/api/invites/{to_alex['id']}/accept"))
@@ -818,6 +830,11 @@ class NetworkFixtureTests(NativeAuthCase):
         self.rec("member: hand the pack over", ask(colin, "put", f"{members}/{sam['id']}", json={"role": "owner"}))
         self.rec("pack: finish, by an editor", ask(colin, "post", f"{here}/finish"))
         self.rec("pack: finish", ask(sam, "post", f"{here}/finish"))
+        with self.app.app_context():                                     # the two minutes a finish waits, gone by
+            Notification.query.filter_by(type="pack_finished").update({"deliver_after": datetime.utcnow() - timedelta(seconds=1)})
+            db.session.commit()
+        self.rec("notifications: a pack finished", ask(colin, "get", "/api/notifications"))
+        self.rec("notifications: added to a pack, and handed it", ask(sam, "get", "/api/notifications"))
         self.rec("ops: a finished pack", ask(colin, "post", ops, json=delete_points))
         # A batch whose answer was lost, sent again after the pack was finished: the refusal says what the pack took of it.
         self.rec("ops: a batch the pack took, sent again once it was finished", ask(colin, "post", ops, json=edits))

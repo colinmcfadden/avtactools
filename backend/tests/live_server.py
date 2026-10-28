@@ -65,6 +65,7 @@ from routes.brief_routes import brief_bp  # noqa: E402
 from routes.config_routes import config_bp  # noqa: E402
 from routes.lidar_routes import lidar_bp  # noqa: E402
 from routes.lz_routes import lz_bp  # noqa: E402
+from routes.notification_routes import notification_bp  # noqa: E402
 from routes.pack_routes import pack_bp  # noqa: E402
 from routes.point_sets import point_sets_bp  # noqa: E402
 from routes.saved_routes import saved_routes_bp  # noqa: E402
@@ -152,7 +153,8 @@ def create_app():
         return is_revoked(payload)
 
     app.before_request(enforce_affiliation_gate)
-    for blueprint in (auth_bp, config_bp, lz_bp, saved_routes_bp, point_sets_bp, brief_bp, sync_bp, aircraft_bp, pack_bp, team_bp, lidar_bp):
+    for blueprint in (auth_bp, config_bp, lz_bp, saved_routes_bp, point_sets_bp, brief_bp, sync_bp, aircraft_bp, pack_bp, team_bp, lidar_bp,
+                      notification_bp):
         app.register_blueprint(blueprint)
     _lidar(app)
 
