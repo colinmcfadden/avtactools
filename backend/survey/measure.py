@@ -16,6 +16,11 @@ never replaced in silence, and a published revision keeps the snapshot it was si
   with no wind (a survey is not for a day's weather). The average and the steepest are kept beside it. A slope is over its
   limit only when greater than it at 0.1° (AGENTS.md §13).
 - **The slope map, contours and profiles**: /api/terrain-analysis's answer, kept for the editor and the page.
+- **What stands on and round the LZ** (``obstacles``, step L4): from the USGS LiDAR, the shallowest clear angle from the touchdown point
+  along the best approach and what stands highest every 10 m out along it (from which the approach is planned: survey/flightpath.py),
+  the tallest in the LZ and within 100 m of it, what stands over 2 m in it, its trees and a picture of every height round it
+  (survey/obstacles.py). The best exit is not measured (the owner, 2026-10-27: it need not be shown).
+  Where it cannot be measured it says why; a reading that failed is a problem, to measure again.
 
 Where something cannot be measured it is None and ``problems`` says why in words: a value is never made up (AGENTS.md §14).
 
@@ -34,10 +39,16 @@ import numpy as np
 from pygeodesy.ellipsoidalExact import LatLon
 
 import terrain_provider as tp
-from survey import geometry
+from survey import geometry, obstacles
 
-# 2: the snapshot keeps the boundary and the best approach it was measured for (``stale``).
-SNAPSHOT_VERSION = 2
+# 2: the snapshot keeps the boundary and the best approach it was measured for (``stale``). 3: and the best exit, with what stands
+# on and round the LZ (``obstacles``), which was measured along both. 4: its obstacles are what stands 2 m or more and the ground where
+# it rises (a 3's angle from the edge could be set by a ground return's scatter a centimetre past it). 5: the angle is from the
+# touchdown point along a lane 10 m each side of the track, with what stands highest every 10 m out along it (a 4's, from the LZ's edge
+# across 60 m, read 87-90° on every LZ of the old book). A 5 measured before the approach was planned from those steps
+# (survey/flightpath.py) also keeps where its path was 100 ft above the ground and what stood over 100 ft, and one measured before the
+# exit was let go (the owner, 2026-10-27) the best exit and its lane: nothing reads them now.
+SNAPSHOT_VERSION = 5
 FEET_PER_METRE = tp.FEET_PER_METRE
 # The UH-60 limits by the names a survey uses (terrain_provider's are the slope tile's "noseHigh"/"noseLow").
 LIMITS_DEG = {
@@ -222,8 +233,9 @@ def _terrain_block(boundary):
     return {key: analysis.get(key) for key in ("overlay", "bounds", "source", "resolutionM", "verticalDatum", "stats", "contours", "profiles")}
 
 
-def measure(diagram, field, by_name="", now=None):
-    """The snapshot for a survey's diagram and field values. Raises CannotMeasure with no target, or a boundary no LZ could have."""
+def measure(diagram, field, by_name="", now=None, lidar=None):
+    """The snapshot for a survey's diagram and field values. Raises CannotMeasure with no target, or a boundary no LZ could have.
+    ``lidar`` is where the LiDAR is read from (survey/obstacles.py: the process's streamer when None)."""
     target = target_of(diagram)
     if target is None:
         raise CannotMeasure("Set the LZ's target (its touchdown point) before measuring.", "no_target")
@@ -250,6 +262,7 @@ def measure(diagram, field, by_name="", now=None):
         "fit": None,
         "slope": None,
         "terrain": None,
+        "obstacles": None,
         "problems": problems,
     }
 
@@ -296,6 +309,10 @@ def measure(diagram, field, by_name="", now=None):
         snapshot["terrain"] = _terrain_block(boundary)
     except RuntimeError:
         problems.append("The slope map and profiles could not be drawn: no terrain covers the LZ.")
+    found = obstacles.measure_obstacles((lat, lon), boundary, heading, (snapshot["terrain"] or {}).get("profiles"), source=lidar)
+    snapshot["obstacles"] = found
+    if found["status"] == "failed":
+        problems.append(found["words"])
     return snapshot
 
 
@@ -308,7 +325,8 @@ def stale(snapshot, diagram, field):
     elsewhere). The target, the boundary and the best approach are each compared with what it was measured for."""
     if not isinstance(snapshot, dict) or not snapshot:
         return []
-    if not isinstance(snapshot.get("version"), int) or snapshot["version"] < 2 or "boundary" not in snapshot or "approachDeg" not in snapshot:
+    if not isinstance(snapshot.get("version"), int) or snapshot["version"] < SNAPSHOT_VERSION or any(
+            key not in snapshot for key in ("boundary", "approachDeg")):
         return ["It was measured by an earlier version of EZ/PZ."]
     reasons = []
     target = target_of(diagram)
@@ -349,11 +367,21 @@ COMPARED = (
     ("Nose down, 95th percentile (°)", ("slope", "noseDown", "p95")),
     ("Cross slope, 95th percentile (°)", ("slope", "cross", "p95")),
     ("Slope call", ("slope", "call")),
+    ("LiDAR", ("obstacles", "status")),
+    ("LiDAR survey", ("obstacles", "survey", "name")),
+    ("Approach clears at (°)", ("obstacles", "approach", "clearance", "angleDeg")),
+    ("Tallest in the LZ (ft)", ("obstacles", "inside", "heightFt")),
+    ("Tallest within 100 m (ft)", ("obstacles", "around", "heightFt")),
+    ("Standing over 2 m in the LZ (points)", ("obstacles", "standing", "count")),
+    ("Trees in the LZ", ("obstacles", "trees")),
 )
 
 
 def _shown(value):
     if isinstance(value, list):
+        # The trees are said by their count: a list of places is not something to read in a change.
+        if value and isinstance(value[0], dict):
+            return len(value)
         return ", ".join(str(v) for v in value)
     return value
 

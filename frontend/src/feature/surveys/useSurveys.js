@@ -1,9 +1,11 @@
-import { useCallback, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import * as surveyApi from "./surveyApi";
 import { surveyFailure } from "./surveyApi";
 import { fullField } from "./surveyFields";
 import { diagramToSave } from "./surveyDiagram";
 import { readSlopeOpacity } from "../terrain/slopeOpacity";
+import { IMPORT_ACTIVE } from "./SurveyImport";
+import { capturedOn } from "./capture3d";
 
 /*
  * The LZ survey books' state (docs/LZ_SURVEYS.md): the books this person reads or edits, the one open with its surveys, and the
@@ -44,13 +46,45 @@ export const changedBetween = (base, theirs) => {
   return out;
 };
 
+/**
+ * The draft laid over a newer save (`theirs`), part by part against the copy it was made on (`base`): a part typed or drawn here keeps
+ * what is here, any other takes theirs. Null when both changed one part differently: then the next save meets theirs, and says so.
+ */
+export const rebaseDraft = (base, mine, theirs) => {
+  const before = editableOf(base);
+  const after = editableOf(theirs);
+  const out = { ...after, field: { ...after.field } };
+  for (const key of ["name", "hlz_id", "diagram", "overrides"]) {
+    if (sameEdit(mine[key], before[key])) continue;
+    if (!sameEdit(after[key], before[key]) && !sameEdit(after[key], mine[key])) return null;
+    out[key] = mine[key];
+  }
+  for (const key of new Set([...Object.keys(before.field), ...Object.keys(mine.field), ...Object.keys(after.field)])) {
+    if (mine.field[key] === before.field[key]) continue;
+    if (after.field[key] !== before.field[key] && after.field[key] !== mine.field[key]) return null;
+    out.field[key] = mine.field[key];
+  }
+  return out;
+};
+
 const NO_LIST = { status: "idle", book: null, surveys: [], error: null };
+
+/** How often the book's list is read again while the server measures imported surveys in the background. */
+export const IMPORT_POLL_MS = 5000;
+
+/** How often the book's PDF is asked about while the server prints it. */
+export const PRINT_POLL_MS = 3000;
+
+const NO_PRINT = { status: "idle", print: null, error: null };
+// A 3D capture is a few megabytes of PNG: past this its upload is given up, and the window says so, rather than waiting for ever.
+const CAPTURE_UPLOAD_MS = 120000;
 
 export const useSurveys = ({ client = surveyApi } = {}) => {
   const [books, setBooks] = useState({ status: "idle", books: [], teams: [], canMakeForNoTeam: false, error: null });
   const [showArchivedBooks, setShowArchivedBooks] = useState(false);
   const [bookUuid, setBookUuid] = useState(null);
   const [list, setList] = useState(NO_LIST);
+  const [bookPrint, setBookPrint] = useState(NO_PRINT);
   const [showArchived, setShowArchived] = useState(false);
   const [survey, setSurvey] = useState(null);
   const [reading, setReading] = useState(null);
@@ -63,6 +97,10 @@ export const useSurveys = ({ client = surveyApi } = {}) => {
   const surveyRef = useRef(null);
   const draftRef = useRef(null);
   const bookRef = useRef(null);
+  const busyRef = useRef(null);
+  const conflictRef = useRef(null);
+  // Each look at the book's PDF is numbered, a Print too: an answer that comes once a later one was asked for is not how it stands.
+  const printLook = useRef(0);
   // Each survey asked for is numbered: an answer that comes once another was asked for, or the book or survey was closed, is let go.
   const opening = useRef(0);
   const stopOpening = useCallback(() => {
@@ -72,6 +110,8 @@ export const useSurveys = ({ client = surveyApi } = {}) => {
   surveyRef.current = survey;
   draftRef.current = draft;
   bookRef.current = bookUuid;
+  busyRef.current = busy;
+  conflictRef.current = conflict;
 
   const setDraft = useCallback((update) => {
     setDraftState((current) => {
@@ -130,6 +170,7 @@ export const useSurveys = ({ client = surveyApi } = {}) => {
     bookRef.current = uuid;
     setBookUuid(uuid);
     setList({ ...NO_LIST, status: "loading" });
+    setBookPrint(NO_PRINT);
     return refresh(showArchived, uuid);
   }, [refresh, showArchived, stopOpening]);
 
@@ -138,6 +179,7 @@ export const useSurveys = ({ client = surveyApi } = {}) => {
     bookRef.current = null;
     setBookUuid(null);
     setList(NO_LIST);
+    setBookPrint(NO_PRINT);
     take(null);
     setReading(null);
     refreshBooks();
@@ -154,19 +196,173 @@ export const useSurveys = ({ client = surveyApi } = {}) => {
     }
   }, [client, refreshBooks]);
 
+  // -- The book's PDF -------------------------------------------------------------------
+
+  /**
+   * How the open book's PDF stands, asked again. An answer that comes once another book is open, or once a later look or a Print was
+   * asked for, is not how it stands. A book that has gone, or is no longer this person's to read, is not asked about again.
+   */
+  const refreshBookPrint = useCallback(async (uuid = bookRef.current) => {
+    if (!uuid) return null;
+    printLook.current += 1;
+    const look = printLook.current;
+    const current = () => bookRef.current === uuid && printLook.current === look;
+    try {
+      const answer = await client.bookPrint(uuid);
+      if (current()) setBookPrint({ status: "ready", print: answer, error: null });
+      return answer;
+    } catch (err) {
+      if (current()) {
+        const gone = [403, 404].includes(err?.response?.status);
+        const error = surveyFailure(err, "How the book's PDF stands could not be read.");
+        setBookPrint((was) => (gone ? { status: "gone", print: null, error } : { ...was, status: "error", error }));
+      }
+      return null;
+    }
+  }, [client]);
+
+  /** Asks for the book to be printed; how it stands, or throws why not in words. */
+  const printBook = useCallback(async () => {
+    const uuid = bookRef.current;
+    if (!uuid) return null;
+    printLook.current += 1;
+    const look = printLook.current;
+    try {
+      const answer = await client.printBook(uuid);
+      if (bookRef.current === uuid && printLook.current === look) setBookPrint({ status: "ready", print: answer, error: null });
+      return answer;
+    } catch (err) {
+      throw new Error(surveyFailure(err, "The book could not be printed."));
+    }
+  }, [client]);
+
+  /** The book's PDF as a Blob; throws why not in words. */
+  const loadBookPdf = useCallback(async () => {
+    try {
+      return await client.fetchBookPdf(bookRef.current);
+    } catch (err) {
+      if (err?.response?.status === 409) refreshBookPrint();
+      throw new Error(await surveyApi.blobFailure(err, "The book's PDF could not be fetched."));
+    }
+  }, [client, refreshBookPrint]);
+
+  // How the PDF stands is asked when the book opens and whenever its list is read again (a survey published since changes the book).
+  useEffect(() => {
+    if (bookUuid && list.status === "ready") refreshBookPrint(bookUuid);
+  }, [bookUuid, list.status, list.surveys, refreshBookPrint]);
+
+  // While the server prints it, it is asked about again now and then, while the book's page is what is shown: each look once the
+  // one before has answered.
+  const printing = bookPrint.print?.state === "printing" && bookPrint.status !== "gone";
+  useEffect(() => {
+    if (!printing || !bookUuid || survey || reading) return undefined;
+    let stopped = false;
+    let timer = null;
+    const look = async () => {
+      await refreshBookPrint();
+      if (!stopped) timer = setTimeout(look, PRINT_POLL_MS);
+    };
+    timer = setTimeout(look, PRINT_POLL_MS);
+    return () => {
+      stopped = true;
+      clearTimeout(timer);
+    };
+  }, [printing, bookUuid, survey, reading, refreshBookPrint]);
+
+  /** The old book's pages, from the importer's bundle, as drafts in the open book: { created, skipped, source }; throws why not in words. */
+  const importPages = useCallback(async (file) => {
+    const uuid = bookRef.current;
+    if (!uuid) return null;
+    let answer;
+    try {
+      answer = await client.importBook(uuid, file);
+    } catch (err) {
+      throw new Error(surveyFailure(err, "The bundle could not be imported."));
+    }
+    if (bookRef.current === uuid) refresh(showArchived, uuid);
+    return answer;
+  }, [client, refresh, showArchived]);
+
+  // While the server measures imported surveys, the book's list is read again now and then, so each shows how it stands. Only while
+  // the list is what is shown: a survey open in the editor or on its page has no list in view. Each read waits for the one before,
+  // so a slow answer never has another sent behind it.
+  const measuring = useMemo(() => list.surveys.some((row) => IMPORT_ACTIVE.includes(row.imported?.state)), [list.surveys]);
+  const listShown = Boolean(bookUuid) && !survey && !reading;
+  useEffect(() => {
+    if (!measuring || !listShown) return undefined;
+    let stopped = false;
+    let timer = null;
+    const look = async () => {
+      await refresh();
+      if (!stopped) timer = setTimeout(look, IMPORT_POLL_MS);
+    };
+    timer = setTimeout(look, IMPORT_POLL_MS);
+    return () => {
+      stopped = true;
+      clearTimeout(timer);
+    };
+  }, [measuring, listShown, refresh]);
+
+  /**
+   * A newer copy of the open survey, from the import's measuring: what it wrote (the boundary, then the snapshot) comes into the
+   * editor, and what was typed or drawn here meanwhile stays, laid over it. Left alone while a save or a measuring of this person's
+   * is on its way (its answer is the newer), while they settle a conflict, and when both changed one part (the next save says so).
+   */
+  const follow = useCallback((theirs) => {
+    const base = surveyRef.current;
+    if (!base || !theirs?.field || theirs.uuid !== base.uuid || busyRef.current || conflictRef.current) return;
+    if (theirs.revision < base.revision) return;
+    if (theirs.revision === base.revision) {
+      take(theirs, { keepDraft: true });
+      return;
+    }
+    const merged = rebaseDraft(base, draftRef.current, theirs);
+    if (!merged) return;
+    take(theirs, { keepDraft: true });
+    setDraft(merged);
+  }, [setDraft, take]);
+
+  // While the open survey's import is measured in the background, it is read again now and then (`follow`), so the editor is never
+  // a revision behind the measuring, and a save does not meet it as someone else's.
+  const importing = IMPORT_ACTIVE.includes(survey?.imported?.state);
+  const openUuid = survey?.uuid ?? null;
+  useEffect(() => {
+    if (!importing || !openUuid) return undefined;
+    let stopped = false;
+    let timer = null;
+    const look = async () => {
+      try {
+        const theirs = await client.getSurvey(openUuid);
+        if (!stopped) follow(theirs);
+      } catch {
+        // The next look tries again.
+      }
+      if (!stopped) timer = setTimeout(look, IMPORT_POLL_MS);
+    };
+    timer = setTimeout(look, IMPORT_POLL_MS);
+    return () => {
+      stopped = true;
+      clearTimeout(timer);
+    };
+  }, [client, follow, importing, openUuid]);
+
   /** Changes the open book's details (`patch`: name, unit_line, cover_text, page_order, team_id); throws why not in words. */
   const updateBook = useCallback(async (patch) => {
     const book = list.book;
     if (!book) return null;
     try {
       const answer = await client.updateBook(book.uuid, book.revision, patch);
-      if (bookRef.current === book.uuid) setList((current) => ({ ...current, book: answer }));
+      if (bookRef.current === book.uuid) {
+        setList((current) => ({ ...current, book: answer }));
+        // Its name, unit line and cover text are on the PDF: one printed before them is not the book now.
+        refreshBookPrint(book.uuid);
+      }
       return answer;
     } catch (err) {
       if (err?.response?.status === 409) refresh();
       throw new Error(surveyFailure(err, "The book could not be changed."));
     }
-  }, [client, list.book, refresh]);
+  }, [client, list.book, refresh, refreshBookPrint]);
 
   const renameBook = useCallback((name) => updateBook({ name }), [updateBook]);
 
@@ -337,9 +533,39 @@ export const useSurveys = ({ client = surveyApi } = {}) => {
 
   const dismissPreview = useCallback(() => setPreview(null), []);
 
-  /** Settles a disagreement: `choice` "computed" (accept what EZ/PZ measured) or "field" (print the survey's, with a reason). */
-  const decide = useCallback((key, choice, reason = "") => {
-    const overrides = { ...(draftRef.current?.overrides ?? {}), [key]: { choice, reason } };
+  /**
+   * The import's notes on the open survey have been looked at. Not a change to the survey (its revision stays), so only its import
+   * record is taken from the answer: the rest of this copy stays the one its next save is based on.
+   */
+  const markImportChecked = useCallback(async () => {
+    const base = surveyRef.current;
+    if (!base) return null;
+    setBusy("checking");
+    setError(null);
+    try {
+      const answer = await client.markImportChecked(base.uuid);
+      const current = surveyRef.current;
+      if (current?.uuid === base.uuid) {
+        const next = { ...current, imported: answer.imported };
+        surveyRef.current = next;
+        setSurvey(next);
+      }
+      return answer;
+    } catch (err) {
+      setError(surveyFailure(err, "The notes could not be marked as checked."));
+      return null;
+    } finally {
+      setBusy(null);
+    }
+  }, [client]);
+
+  /**
+   * Settles a disagreement: `choice` "computed" (accept what EZ/PZ measured), "field" (print the survey's, with a reason) or "typed"
+   * (print `value`, the approach's angle the editor typed, with a reason).
+   */
+  const decide = useCallback((key, choice, reason = "", value = undefined) => {
+    const entry = value === undefined ? { choice, reason } : { choice, reason, value };
+    const overrides = { ...(draftRef.current?.overrides ?? {}), [key]: entry };
     return save({ overrides });
   }, [save]);
 
@@ -445,6 +671,18 @@ export const useSurveys = ({ client = surveyApi } = {}) => {
     return asset;
   }, [client, withAssets]);
 
+  /** Keeps a frame of the 3D window as the survey's 3D view, with the camera that took it: it takes the place of the last, as the
+   * server keeps it. */
+  const captureView = useCallback(async (blob, pose, { signal } = {}) => {
+    const uuid = surveyRef.current.uuid;
+    const file = new File([blob], "view-3d.png", { type: "image/png" });
+    const { survey: moved, ...asset } = await client.uploadAsset(uuid, file, {
+      kind: "view_3d", caption: "", heading_deg: pose.headingDeg, taken_on: capturedOn(), pose: JSON.stringify(pose),
+    }, { signal, timeout: CAPTURE_UPLOAD_MS });
+    withAssets(uuid, (assets) => [...assets.filter((a) => a.kind !== "view_3d"), asset], moved);
+    return asset;
+  }, [client, withAssets]);
+
   const updatePhoto = useCallback(async (id, meta) => {
     const uuid = surveyRef.current.uuid;
     const { survey: moved, ...asset } = await client.updateAsset(uuid, id, meta);
@@ -470,6 +708,11 @@ export const useSurveys = ({ client = surveyApi } = {}) => {
     updateBook,
     renameBook,
     setBookArchived,
+    importPages,
+    bookPrint,
+    refreshBookPrint,
+    printBook,
+    loadBookPdf,
     list,
     showArchived,
     toggleArchived,
@@ -497,6 +740,7 @@ export const useSurveys = ({ client = surveyApi } = {}) => {
     measure,
     applyMeasure,
     dismissPreview,
+    markImportChecked,
     decide,
     undecide,
     setArchived,
@@ -505,6 +749,7 @@ export const useSurveys = ({ client = surveyApi } = {}) => {
     loadPage,
     loadPdf,
     uploadPhoto,
+    captureView,
     updatePhoto,
     removePhoto,
   };

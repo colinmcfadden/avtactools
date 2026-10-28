@@ -1,10 +1,13 @@
 """Field against computed: where the unit's survey and EZ/PZ's measurement disagree, and what the page prints (docs/LZ_SURVEYS.md §2).
 
-Only the measured quantities have both (§11, R3): the grid, the lat/long, the elevation, the size and the slope. Where both
-exist the computed value is printed, unless an admin overrides it with the field's, with a reason. An admin can also accept
-a disagreement (the computed value stands, said so), which takes it off the count. A choice is kept with the two values it
-was made on: once either changes (the field retyped, the LZ measured again), it no longer settles the disagreement, which
-is counted again until an admin looks at it.
+Only the measured quantities have both (§11, R3): the grid, the lat/long, the elevation, the size, the slope and the approach's
+angle (the survey profile's, against the LiDAR's shallowest clear angle from the touchdown point along the best approach, step L4).
+Where both exist the computed value is printed, unless an admin overrides it with the field's, with a reason. The approach's angle
+can also be typed by the editor over the LiDAR's, with a reason (the owner, 2026-10-27): the page prints it as the editor's. An admin
+can also accept a disagreement (the computed value stands, said so), which takes it off the count. A choice is kept with the two
+values it was made on: once either changes (the field retyped, the LZ measured again), it no longer settles the disagreement, which
+is counted again until an admin looks at it; an angle the editor typed is looked at again whether or not the two disagree, since
+the page no longer prints it.
 
 The thresholds below only flag a value for review; none of them is a safety limit.
 """
@@ -23,16 +26,21 @@ POSITION_M = 50.0          # the import's own check of grid against lat/long (§
 ELEVATION_FT = 25.0        # a few times a 10 m DEM's vertical error
 SLOPE_DEG = 2.0
 SIZE_FRACTION = 0.10
+APPROACH_DEG = 5.0         # the field's angles are paced and judged by eye: the old book's read a median 7.3° from the LiDAR's
+OBSTACLE_TREE_FT = 16.4    # a tree's 5 m (survey/obstacles.py's TREE_MIN_M): vegetation under it is brush
 
-KEYS = ("grid", "latLong", "elevation", "size", "slope")
-LABELS = {"grid": "Grid", "latLong": "Lat/long", "elevation": "Elevation", "size": "Size", "slope": "Slope"}
-CHOICES = ("computed", "field")
+KEYS = ("grid", "latLong", "elevation", "size", "slope", "approach")
+LABELS = {"grid": "Grid", "latLong": "Lat/long", "elevation": "Elevation", "size": "Size", "slope": "Slope",
+          "approach": "Approach angle"}
+CHOICES = ("computed", "field", "typed")
+# What the editor may type over the LiDAR's: the approach's angle, in degrees.
+TYPED = ("approach",)
 MAX_REASON = 500
 
 _NUMBER = re.compile(r"[-−‐–]?\s*[0-9]+(?:\.[0-9]+)?")
 
 
-def _numbers(text):
+def numbers_in(text):
     """The numbers in a field's text; one too long to be a number anyone typed (it reads as infinity) is left out."""
     numbers = (float(m.replace("−", "-").replace("‐", "-").replace("–", "-").replace(" ", "")) for m in _NUMBER.findall(text or ""))
     return [n for n in numbers if math.isfinite(n)]
@@ -144,7 +152,7 @@ def _rows(field, snapshot):
     typed = (field.get("elevationFt") or "").strip()
     elevation = snapshot.get("elevation") or {}
     computed = f"{elevation['ft']} ft MSL" if elevation.get("ft") is not None else ""
-    numbers = _numbers(typed)
+    numbers = numbers_in(typed)
     if typed and computed and numbers:
         feet = elevation["ft"] - numbers[0]
         rows.append(_row("elevation", typed, computed, f"{abs(feet):,.0f} ft apart", abs(feet) > ELEVATION_FT))
@@ -154,7 +162,7 @@ def _rows(field, snapshot):
     typed = (field.get("size") or "").strip()
     size = snapshot.get("size") or {}
     computed = f"{size['lengthFt']:,} × {size['widthFt']:,} ft" if size.get("lengthFt") is not None else ""
-    sizes = _feet(_numbers(typed), typed)
+    sizes = _feet(numbers_in(typed), typed)
     if typed and computed and sizes:
         off = max(abs(sizes[0] - size["lengthFt"]) / max(size["lengthFt"], 1), abs(sizes[1] - size["widthFt"]) / max(size["widthFt"], 1))
         rows.append(_row("size", typed, computed, f"{off * 100:.0f}% apart", off > SIZE_FRACTION))
@@ -169,36 +177,95 @@ def _rows(field, snapshot):
     measured = (slope.get(which) or {}).get("p95") if which else None
     words = {"noseUp": "nose up", "noseDown": "nose down", "cross": "cross"}
     computed = f"{words[which]} {measured:.1f}° (95th percentile)" if measured is not None else ""
-    numbers = _numbers(typed)
+    numbers = numbers_in(typed)
     if typed and computed and numbers:
         degrees = abs(abs(numbers[0]) - measured)
         rows.append(_row("slope", typed, computed, f"{degrees:.1f}° apart", degrees > SLOPE_DEG))
     else:
         rows.append(_row("slope", typed, computed, None, bool(typed and computed)))
+
+    # The survey profile ("100 ft at 200 m": 100 ft up 200 m out from the touchdown point) as an angle, against the LiDAR's shallowest
+    # clear angle from the touchdown point along the best approach.
+    feet, metres = (numbers_in(field.get(key) or "") for key in ("profileObstacleFt", "profileDistanceM"))
+    typed, angle = "", None
+    if feet and metres:
+        typed = f"{feet[0]:g} ft at {metres[0]:g} m"
+        if feet[0] > 0 and metres[0] > 0:
+            angle = math.degrees(math.atan2(feet[0] * 0.3048, metres[0]))
+            typed = f"{angle:.1f}° ({typed})"
+    # A lane measured before its angle was from the touchdown point (a snapshot older than version 5, which has no ``start``) has none.
+    lane = (snapshot.get("obstacles") or {}).get("approach") or {}
+    clearance = lane.get("clearance") if isinstance(lane.get("start"), dict) else None
+    computed = lidar_angle_words(clearance)
+    if typed and computed and angle is None:
+        rows.append(_row("approach", typed, computed, "cannot be read", True))
+    elif typed and computed:
+        degrees = abs(angle - max(clearance["angleDeg"], 0.0))
+        rows.append(_row("approach", typed, computed, f"{degrees:.1f}° apart", degrees > APPROACH_DEG))
+    else:
+        rows.append(_row("approach", typed, computed, None, False))
     return rows
+
+
+def _finite(value):
+    return isinstance(value, (int, float)) and not isinstance(value, bool) and math.isfinite(value)
+
+
+def lidar_angle_words(clearance):
+    """The LiDAR's angle along a way as the comparison says it: "14.4° (LiDAR: 35 ft tree 41 m out)", or "" where it has none."""
+    if not isinstance(clearance, dict) or not _finite(clearance.get("angleDeg")):
+        return ""
+    obstacle = clearance.get("obstacle")
+    if clearance["angleDeg"] <= 0 or not isinstance(obstacle, dict):
+        return f"{max(clearance['angleDeg'], 0.0):.1f}° (LiDAR: nothing in the way)"
+    what = "the ground" if obstacle.get("kind") == "terrain" else f"{obstacle.get('heightFt') or 0:.0f} ft {_thing(obstacle)}"
+    out = f" {obstacle['fromTargetM']:.0f} m out" if _finite(obstacle.get("fromTargetM")) else ""
+    return f"{clearance['angleDeg']:.1f}° (LiDAR: {what}{out})"
+
+
+def _thing(obstacle):
+    """What the LiDAR calls an obstacle, in words: a tree (vegetation of 5 m or more), brush, a building, a tower, a wire."""
+    kind = obstacle.get("kind")
+    if kind == "vegetation":
+        return "tree" if (obstacle.get("heightFt") or 0) >= OBSTACLE_TREE_FT else "brush"
+    return {"building": "building", "tower": "tower", "wire": "wire", "bridge": "bridge"}.get(kind, "obstacle")
+
+
+def typed_angle(value):
+    """An angle the editor typed, as kept: degrees to a tenth, over 0 and under 90; None for anything else."""
+    if not _finite(value):
+        return None
+    value = round(float(value), 1)
+    return value if 0 < value < 90 else None
 
 
 def compare(field, snapshot, overrides):
     """Every measured quantity: the field's and the computed value, how far apart, whether they disagree, the admin's choice if it
-    still stands, and which is ``printed``. ``open`` is a disagreement nobody has settled."""
+    still stands, and which is ``printed``: "computed", "field", "typed" (the editor's angle, the choice's ``value``) or None. ``open``
+    is a disagreement nobody has settled, or an angle the editor typed that no longer stands."""
     overrides = overrides or {}
     out = []
     for row in _rows(field, snapshot):
         choice = overrides.get(row["key"])
+        choice = choice if isinstance(choice, dict) else None
+        typed = bool(choice) and choice.get("choice") == "typed"
         standing = (
-            isinstance(choice, dict)
+            choice is not None
             and choice.get("field") == row["field"]
             and choice.get("computed") == row["computed"]
+            and (not typed or (row["key"] in TYPED and bool(row["computed"]) and typed_angle(choice.get("value")) is not None))
         )
-        row["override"] = choice if isinstance(choice, dict) else None
+        row["override"] = choice
         row["overrideStands"] = bool(standing)
-        if not row["computed"]:
+        if standing and typed:
+            row["printed"] = "typed"
+        elif not row["computed"]:
             row["printed"] = "field" if row["field"] else None
         elif standing and choice.get("choice") == "field":
             row["printed"] = "field"
         else:
             row["printed"] = "computed"
-        row["open"] = row["disagrees"] and not standing
+        row["open"] = (row["disagrees"] or typed) and not standing
         out.append(row)
     return out
 
@@ -208,9 +275,10 @@ def open_count(field, snapshot, overrides):
 
 
 def clean_overrides(value, previous, field, snapshot, by_name, now=None):
-    """The overrides to store from what the client sent: {key: {choice, reason}}. An entry whose choice and reason are as stored is
-    kept as it was (who, when and the values it was made on); a new or changed one is stamped with who made it, when, and the two
-    values it was made on. Raises ValueError for anything else."""
+    """The overrides to store from what the client sent: {key: {choice, reason, value}} (``value`` the angle, for a typed one). An
+    entry whose choice, reason and value are as stored is kept as it was (who, when and the values it was made on); a new or changed
+    one is stamped with who made it, when, and the two values it was made on. A stored choice on a value no longer compared (the
+    approach's obstacle, before its angle) is let go. Raises ValueError for anything else."""
     if not isinstance(value, dict):
         raise ValueError("overrides must be an object")
     previous = previous if isinstance(previous, dict) else {}
@@ -219,20 +287,36 @@ def clean_overrides(value, previous, field, snapshot, by_name, now=None):
     out = {}
     for key, entry in value.items():
         if key not in KEYS:
+            if key in previous:
+                continue
             raise ValueError(f"there is no measured value called {key!r}")
         if not isinstance(entry, dict) or entry.get("choice") not in CHOICES:
-            raise ValueError(f"{key}: the choice is 'computed' or 'field'")
+            raise ValueError(f"{key}: the choice is 'computed', 'field' or 'typed'")
         reason = entry.get("reason") or ""
         if not isinstance(reason, str) or len(reason) > MAX_REASON:
             raise ValueError(f"{key}: the reason is text of at most {MAX_REASON} characters")
         reason = reason.strip()
         if entry["choice"] == "field" and not reason:
             raise ValueError(f"{key}: printing the field's value over the computed one needs a reason")
+        angle = None
+        if entry["choice"] == "typed":
+            if key not in TYPED:
+                raise ValueError(f"{key}: only the approach's angle can be typed")
+            angle = typed_angle(entry.get("value"))
+            if angle is None:
+                raise ValueError(f"{key}: the angle is a number of degrees over 0 and under 90")
+            if not reason:
+                raise ValueError(f"{key}: an angle typed over the LiDAR's needs a reason")
+            if not rows[key]["computed"]:
+                raise ValueError(f"{key}: the LiDAR has no angle here to type over: type the survey profile instead")
         old = previous.get(key)
-        if isinstance(old, dict) and old.get("choice") == entry["choice"] and (old.get("reason") or "") == reason:
+        if (isinstance(old, dict) and old.get("choice") == entry["choice"] and (old.get("reason") or "") == reason
+                and old.get("value") == angle):
             out[key] = old
             continue
         row = rows[key]
         out[key] = {"choice": entry["choice"], "reason": reason, "by": by_name or "", "at": stamp,
                     "field": row["field"], "computed": row["computed"]}
+        if angle is not None:
+            out[key]["value"] = angle
     return out

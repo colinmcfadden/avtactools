@@ -7,8 +7,10 @@ import SurveyMap from "./SurveyMap";
 import Measurements, { MeasurePreview } from "./Measurements";
 import Disagreements from "./Disagreements";
 import SurveyPhotos from "./SurveyPhotos";
+import Survey3D from "./Survey3D";
 import PagePreview, { saveBlob } from "./PagePreview";
 import { PublishDialog, ReviewPanel, Revisions } from "./Publishing";
+import { ImportNotes } from "./SurveyImport";
 
 /*
  * One LZ's survey, for the book's editors (docs/LZ_SURVEYS.md): the field survey's values in the old book's sections, the map in survey
@@ -125,6 +127,7 @@ const SurveyEditor = ({ surveys }) => {
 
       <div className="survey-editor__columns">
         <div className="survey-editor__left">
+          <ImportNotes imported={survey.imported} busy={busy} onChecked={surveys.markImportChecked} />
           <FieldForm field={draft.field} onChange={surveys.setField} readOnly={archived} />
         </div>
         <div className="survey-editor__right">
@@ -132,6 +135,7 @@ const SurveyEditor = ({ surveys }) => {
             diagram={draft.diagram}
             field={draft.field}
             terrain={survey.snapshot?.terrain ?? null}
+            obstacles={survey.snapshot?.obstacles ?? null}
             onSetTarget={setTarget}
             onSetBoundary={setBoundary}
             readOnly={archived}
@@ -143,9 +147,16 @@ const SurveyEditor = ({ surveys }) => {
             canMeasure={!archived && Boolean(draft.diagram?.target)}
             whyNot={why}
             onMeasure={surveys.measure}
+            plan={survey.approach_plan ?? null}
+            heightDirty={(draft.field?.profileObstacleFt ?? "") !== (survey.field?.profileObstacleFt ?? "")}
+            approach={(survey.comparisons ?? []).find((row) => row.key === "approach") ?? null}
+            onDecide={archived ? undefined : surveys.decide}
+            onUndecide={archived ? undefined : surveys.undecide}
+            deciding={Boolean(busy) || archived}
           />
           <Disagreements
             rows={survey.comparisons ?? []}
+            plan={survey.approach_plan ?? null}
             dirtyField={fieldDirty}
             busy={Boolean(busy) || archived}
             onDecide={surveys.decide}
@@ -156,6 +167,15 @@ const SurveyEditor = ({ surveys }) => {
             defaultTakenOn={draft.field.surveyedOn}
             onUpload={surveys.uploadPhoto}
             onUpdate={surveys.updatePhoto}
+            onRemove={surveys.removePhoto}
+          />
+          <Survey3D
+            assets={survey.assets ?? []}
+            target={draft.diagram?.target ?? null}
+            approach={draft.field.approachDeg}
+            survey={survey.snapshot?.obstacles?.survey ?? null}
+            readOnly={archived}
+            onCapture={surveys.captureView}
             onRemove={surveys.removePhoto}
           />
           <ReviewPanel

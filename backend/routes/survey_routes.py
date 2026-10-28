@@ -24,19 +24,21 @@ import uuid as uuid_lib
 from datetime import datetime
 from functools import wraps
 
-from flask import Blueprint, g, jsonify, make_response, request, send_file
+from flask import Blueprint, current_app, g, jsonify, make_response, request, send_file
 from flask_jwt_extended import get_jwt_identity, jwt_required
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm.exc import StaleDataError
+from werkzeug.exceptions import RequestEntityTooLarge
 
 import terrain_tiles
 from brief import gotenberg
 from entitlements import is_admin
-from models import LzSurvey, LzSurveyAsset, LzSurveyRevision, SurveyBook, Team, User, db
+from models import LzSurvey, LzSurveyAsset, LzSurveyImport, LzSurveyRevision, SurveyBook, SurveyBookPrint, Team, User, db
 from survey import access
+from survey import book as book_pdf
 from survey import assets as asset_store
 from survey import changes as change_lines
-from survey import compare, fields, measure, pages
+from survey import compare, fields, flightpath, importing, measure, pages
 from survey.compile import as_date, compile_page
 from version import __version__
 
@@ -287,7 +289,9 @@ def get_book(book_uuid):
         return _not_found('book')
     if access.can_edit(_me(), book):
         surveys = _book_surveys(book, archived=request.args.get('archived') in ('1', 'true'))
-        return _reply({'book': _book_json(book), 'surveys': [_summary(s) for s in surveys]})
+        records = _import_records(surveys)
+        importing.MEASURER.resume(current_app._get_current_object(), records.values())
+        return _reply({'book': _book_json(book), 'surveys': [_summary(s, records.get(s.id)) for s in surveys]})
     listed = []
     for survey in _book_surveys(book):
         latest = _latest(survey)
@@ -378,6 +382,162 @@ def restore_book(book_uuid):
 
 # -- Surveys -----------------------------------------------------------------------
 
+def _import_refusal(book):
+    if book is None:
+        return _not_found('book')
+    if not access.can_edit(_me(), book):
+        return _not_editor()
+    if book.archived_at is not None:
+        return _error('This book is archived: restore it to import into it.', 409, 'book_archived')
+    return None
+
+
+def _import_plan(book, bundle):
+    """Which of the bundle's pages to make, and why each other one is left as it is: a page of the same book imported before (so
+    importing twice, or again after an answer that was lost, adds nothing), a page the bundle has twice, and an HLZ ID the book has
+    already, archived or not, or the bundle has on an earlier page. In page order."""
+    surveys = LzSurvey.query.filter_by(book_id=book.id).all()
+    taken = {s.hlz_id.upper(): s.archived_at is not None for s in surveys if s.hlz_id}
+    done = {(record.source, record.page) for record in
+            LzSurveyImport.query.join(LzSurvey, LzSurvey.id == LzSurveyImport.survey_id).filter(LzSurvey.book_id == book.id)}
+    make, skipped, pages_seen, ids_seen = [], [], set(), {}
+
+    def skip(page, reason):
+        skipped.append({'page': page['page'], 'hlz_id': page['hlzId'], 'name': page['name'], 'reason': reason})
+
+    for page in bundle.pages:
+        number, hlz_id = page['page'], page['hlzId']
+        if bundle.source and (bundle.source, number) in done:
+            skip(page, f'Page {number} of {bundle.source} was imported into this book already: left as it is.')
+        elif number in pages_seen:
+            skip(page, f'Page {number} is in the bundle twice: imported once.')
+        elif hlz_id and hlz_id in taken:
+            skip(page, f'{hlz_id} is in the book already, archived: restore it there.' if taken[hlz_id]
+                 else f'{hlz_id} is in the book already: left as it is.')
+        elif hlz_id and hlz_id in ids_seen:
+            skip(page, f'{hlz_id} is on page {ids_seen[hlz_id]} of the bundle too: imported from that page.')
+        else:
+            make.append(page)
+        pages_seen.add(number)
+        if hlz_id:
+            ids_seen.setdefault(hlz_id, number)
+    return make, skipped
+
+
+def _import_photos(bundle, page, store):
+    """The page's photos read one at a time, made ready as any upload is (no metadata) and kept in the store; what is made of each,
+    or a warning on the page for one that cannot be used."""
+    warnings, kept = page['notes']['warnings'], []
+    for photo in page['photos']:
+        words = importing.photo_words(photo['kind'])
+        try:
+            data = bundle.photo(photo)
+        except importing.Damaged:
+            warnings.append(f'The {words} is damaged in the bundle and was left out.')
+            continue
+        if data is None:
+            warnings.append(f'The {words} is larger than 20 MB and was left out.')
+            continue
+        try:
+            prepared = asset_store.prepare_photo(data)
+        except asset_store.AssetError as problem:
+            # A picture that cannot be read refuses nothing but itself.
+            warnings.append(f'A photo could not be read ({problem}) and was left out.')
+            continue
+        store.put(prepared.key, prepared.data)
+        kept.append({**photo, 'content_type': prepared.content_type, 'width': prepared.width, 'height': prepared.height,
+                     'size_bytes': len(prepared.data), 'sha256': prepared.key})
+    return kept
+
+
+@survey_bp.route('/api/survey-books/<book_uuid>/import', methods=['POST'])
+@signed_in
+def import_pages(book_uuid):
+    """The old book's pages as drafts in this book (docs/LZ_SURVEYS.md §6), from the bundle tools/import_survey_book.py writes. A page
+    imported into the book before, or whose HLZ ID the book has already, is left out, never written over. Each draft is then
+    measured in the background, one at a time.
+
+    Everything slow is done before the book is locked: the upload is read, the bundle checked and every photo made ready and kept,
+    one at a time. Only then is the book taken (two imports, or an import and a new page, go one after the other), what to make
+    worked out again, and the drafts written."""
+    book = _readable_book(book_uuid)
+    refused = _import_refusal(book)
+    if refused:
+        return refused
+    limit = importing.MAX_BUNDLE_BYTES + 64 * 1024
+    # Refused before the form is read: the file would otherwise be spooled whole first. A request that gives no length (chunked) is
+    # held to the same size as it is read.
+    if request.content_length is not None and request.content_length > limit:
+        return _error(importing.TOO_LARGE, 413, 'bundle_too_large')
+    request.max_content_length = limit
+    try:
+        upload = request.files.get('bundle')
+    except RequestEntityTooLarge:
+        return _error(importing.TOO_LARGE, 413, 'bundle_too_large')
+    if upload is None:
+        return _error('Send the bundle as the form\'s "bundle".', 400, 'missing_file')
+    store = asset_store.store()
+    try:
+        with importing.read_bundle(upload.stream.read(importing.MAX_BUNDLE_BYTES + 1)) as bundle:
+            make, _skipped = _import_plan(book, bundle)
+            # Nothing is held while the photos are made ready: they take seconds, and the database's connection goes back meanwhile.
+            db.session.rollback()
+            photos = {page['page']: _import_photos(bundle, page, store) for page in make}
+    except importing.BundleError as problem:
+        return _error(str(problem), 413 if problem.code == 'bundle_too_large' else 400, problem.code)
+
+    book = _readable_book(book_uuid, lock=True)
+    refused = _import_refusal(book)
+    if refused:
+        return refused
+    # Another import may have taken some of these pages meanwhile: their photos stay in the store unused. One that was not to be
+    # made a moment ago (an HLZ ID let go of meanwhile) has had no photos made ready, and waits for the next import.
+    make, skipped = _import_plan(book, bundle)
+    for page in [page for page in make if page['page'] not in photos]:
+        make.remove(page)
+        skipped.append({'page': page['page'], 'hlz_id': page['hlzId'], 'name': page['name'],
+                        'reason': 'The book changed while the bundle was read: import it again to take this page.'})
+    user, who = _me(), _who()
+    made = []
+    for page in make:
+        place, note = importing.place_of(page['field'])
+        warnings = ([note] if note else []) + page['notes']['warnings']
+        survey = LzSurvey(
+            uuid=str(uuid_lib.uuid4()), book_id=book.id, hlz_id=page['hlzId'], name=page['name'], status='draft', revision=1,
+            field=page['field'], overrides={}, diagram=importing.diagram_at(place[0], place[1], page['name']) if place else None,
+            snapshot=None, created_by=user.id, created_by_name=who, updated_by=user.id, updated_by_name=who,
+        )
+        db.session.add(survey)
+        db.session.flush()
+        for photo in photos.get(page['page'], []):
+            db.session.add(LzSurveyAsset(
+                survey_id=survey.id, kind=photo['kind'], caption=f"From page {page['page']} of the old book",
+                heading_deg=photo['heading_deg'], taken_on=photo['taken_on'], content_type=photo['content_type'],
+                width=photo['width'], height=photo['height'], size_bytes=photo['size_bytes'], sha256=photo['sha256'],
+                created_by=user.id, created_by_name=who,
+            ))
+        db.session.add(LzSurveyImport(
+            survey_id=survey.id, source=bundle.source, page=page['page'], notes={**page['notes'], 'warnings': warnings},
+            state='queued' if place else 'no_target',
+            reason=None if place else "Set the LZ's target on the map, then measure it.",
+            imported_by=user.id, imported_by_name=who,
+        ))
+        made.append(survey)
+    if made:
+        book.page_order = list(book.page_order or []) + [s.uuid for s in made]
+        book.revision += 1
+        book.updated_by_name = who
+    db.session.commit()
+    importing.MEASURER.enqueue(current_app._get_current_object(), [s.id for s in made if s.diagram is not None])
+    records = _import_records(made)
+    return _reply({
+        'source': bundle.source,
+        'created': [_summary(s, records.get(s.id)) for s in made],
+        'skipped': skipped,
+        'book': _book_json(book),
+    }, 201)
+
+
 def _survey(survey_uuid):
     return LzSurvey.query.filter_by(uuid=survey_uuid).first()
 
@@ -442,8 +602,52 @@ def _revision_json(revision):
     }
 
 
-def _summary(survey):
+_LOOK = object()
+
+
+def _import_records(surveys):
+    """Each survey's import record, by survey id, read in one query."""
+    ids = [s.id for s in surveys]
+    if not ids:
+        return {}
+    return {r.survey_id: r for r in LzSurveyImport.query.filter(LzSurveyImport.survey_id.in_(ids)).all()}
+
+
+def _import_brief(record, survey):
+    """How an imported survey stands: where it came from, its measuring (done once it is measured, whoever measured it), and how many
+    notes are left to check."""
+    if record is None:
+        return None
+    notes = record.notes or {}
+    measured = survey.snapshot is not None
+    return {
+        'source': record.source,
+        'page': record.page,
+        'state': 'done' if measured else record.state,
+        'reason': None if measured else record.reason,
+        'to_check': 0 if record.checked_at else sum(len(notes.get(key) or []) for key in ('unread', 'blank', 'warnings')),
+        'checked': record.checked_at is not None,
+    }
+
+
+def _import_full(record, survey):
+    if record is None:
+        return None
+    notes = record.notes or {}
+    return {
+        **_import_brief(record, survey),
+        'notes': {key: list(notes.get(key) or []) for key in ('unread', 'blank', 'warnings')},
+        'imported_by': record.imported_by_name,
+        'imported_at': _iso(record.imported_at),
+        'checked_by': record.checked_by_name,
+        'checked_at': _iso(record.checked_at),
+    }
+
+
+def _summary(survey, record=_LOOK):
     snapshot = survey.snapshot or {}
+    if record is _LOOK:
+        record = LzSurveyImport.query.filter_by(survey_id=survey.id).first()
     return {
         'uuid': survey.uuid,
         'hlz_id': survey.hlz_id,
@@ -455,6 +659,7 @@ def _summary(survey):
         'grid': snapshot.get('grid') or (survey.field or {}).get('grid') or '',
         'measured_at': snapshot.get('measuredAt'),
         'published_revision': _latest_number(survey),
+        'imported': _import_brief(record, survey),
         'updated_by': survey.updated_by_name,
         'updated_at': _iso(survey.updated_at),
         'archived': survey.archived_at is not None,
@@ -480,8 +685,11 @@ def _full(survey):
     asset_rows = _assets(survey)
     revisions = _revisions(survey)
     book = _book_of(survey)
+    record = LzSurveyImport.query.filter_by(survey_id=survey.id).first()
+    rows = compare.compare(survey.field, survey.snapshot, survey.overrides)
     return {
-        **_summary(survey),
+        **_summary(survey, record),
+        'imported': _import_full(record, survey),
         'book': {'uuid': book.uuid, 'name': book.name} if book else None,
         'revisions': [_revision_json(r) for r in revisions],
         'next_revision': (revisions[-1].number if revisions else 0) + 1,
@@ -491,7 +699,9 @@ def _full(survey):
         'diagram': survey.diagram,
         'snapshot': survey.snapshot,
         'stale': measure.stale(survey.snapshot, survey.diagram, survey.field),
-        'comparisons': compare.compare(survey.field, survey.snapshot, survey.overrides),
+        'comparisons': rows,
+        # The approach as the page plans it (survey/flightpath.py): at 30° where what stands allows, from the survey's own height.
+        'approach_plan': flightpath.approach_plan(survey.field, survey.snapshot, survey.overrides, rows),
         'asset_ids': [a.id for a in asset_rows],
         'assets': [_asset_json(a, survey.uuid) for a in asset_rows],
         'created_by': survey.created_by_name,
@@ -704,6 +914,24 @@ def measure_survey(survey_uuid):
     })
 
 
+@survey_bp.route('/api/surveys/<survey_uuid>/import/checked', methods=['POST'])
+@signed_in
+def import_checked(survey_uuid):
+    """The import's notes on a survey have been looked at. They are kept, and the book's page no longer counts them. Not a change to
+    the survey: its revision and status stay."""
+    survey, _book, refused = _editable(survey_uuid)
+    if refused:
+        return refused
+    record = LzSurveyImport.query.filter_by(survey_id=survey.id).first()
+    if record is None:
+        return _error('This survey was not imported.', 404, 'not_imported')
+    if record.checked_at is None:
+        record.checked_at = datetime.utcnow()
+        record.checked_by_name = _who()
+        db.session.commit()
+    return _reply(_full(survey))
+
+
 # -- Review and publishing ------------------------------------------------------------
 
 def _status_change(survey_uuid, allowed, to, refusal):
@@ -850,7 +1078,8 @@ def _position(survey, book):
 
 
 def _asset_source(rows):
-    return [{'id': a.id, 'kind': a.kind, 'caption': a.caption, 'heading_deg': a.heading_deg, 'taken_on': a.taken_on} for a in rows]
+    return [{'id': a.id, 'kind': a.kind, 'caption': a.caption, 'heading_deg': a.heading_deg, 'taken_on': a.taken_on, 'pose': a.pose}
+            for a in rows]
 
 
 def _frozen_assets(value):
@@ -899,17 +1128,21 @@ def _suggested_changes(survey, previous):
         return ''
 
 
-def _page_model(survey, revision=None, opacity=None):
+def _page_model(survey, revision=None, opacity=None, page=None, in_book=None):
+    """The page's model: a published revision's as it was signed, else the survey's as it is now. In the whole book's PDF, ``page``
+    numbers it and ``in_book`` (``book.cover_of``) names the book, in place of the place and the book it was published in."""
     book = _book_of(survey)
     if revision is not None:
-        page = revision.page or {}
+        stored = revision.page or {}
+        named = ({'name': in_book['name'], 'unitLine': in_book['unitLine']} if in_book is not None
+                 else {'name': stored.get('bookName') or book.name, 'unitLine': stored.get('unitLine') or ''})
         return compile_page(
             _revision_source(survey, revision),
-            book={'name': page.get('bookName') or book.name, 'unitLine': page.get('unitLine') or ''},
-            page={'n': page['pageN'], 'of': page.get('pageOf')} if isinstance(page.get('pageN'), int) else None,
-            version=page.get('version') or __version__,
-            printed_on=as_date(page.get('printedOn')) or revision.published_at,
-            opacity=_opacity(page.get('opacity')),
+            book=named,
+            page=page or ({'n': stored['pageN'], 'of': stored.get('pageOf')} if isinstance(stored.get('pageN'), int) else None),
+            version=stored.get('version') or __version__,
+            printed_on=as_date(stored.get('printedOn')) or revision.published_at,
+            opacity=_opacity(stored.get('opacity')),
         )
     return compile_page(_current_source(survey), book={'name': book.name, 'unitLine': book.unit_line},
                         page=_position(survey, book), version=__version__, opacity=_opacity(opacity))
@@ -1014,6 +1247,178 @@ def survey_page(survey_uuid):
     return response
 
 
+# -- The whole book's PDF (L6) --------------------------------------------------
+
+def _published(book):
+    """The book's published surveys in its order, each with its latest revision: what its PDF holds."""
+    entries = []
+    for survey in _book_surveys(book):
+        latest = _latest(survey)
+        if latest is not None:
+            entries.append((survey, latest))
+    return entries
+
+
+def _print_for(book, key):
+    """The print that answers for the book as it stands (``key``, its fingerprint): one printed whose file is there, else one on its
+    way, else the last that failed. A print whose file has gone (a redeploy with no SURVEY_ASSETS_DIR, a restore) answers for
+    nothing, so the book can be printed again; nor does a newer print that failed hide one that was printed."""
+    store = asset_store.store()
+    rows = SurveyBookPrint.query.filter_by(book_id=book.id, fingerprint=key).order_by(SurveyBookPrint.id.desc()).all()
+    return (next((r for r in rows if r.state == 'ready' and r.pdf_sha256 and store.has(r.pdf_sha256)), None)
+            or next((r for r in rows if r.state == 'printing'), None)
+            or next((r for r in rows if r.state == 'failed'), None))
+
+
+def _print_json(row, entries):
+    ready = row is not None and row.state == 'ready'
+    return {
+        'state': 'empty' if not entries else row.state if row is not None else 'none',
+        'pages': len(entries),
+        'done_pages': row.done_pages if row is not None and row.state == 'printing' else 0,
+        'printed_at': _iso(row.finished_at) if ready else None,
+        'size_bytes': row.size_bytes if ready else None,
+        'error': row.error if row is not None and row.state == 'failed' else None,
+        'available': bool(gotenberg.url()),
+    }
+
+
+@survey_bp.route('/api/survey-books/<book_uuid>/print', methods=['GET', 'POST'])
+@signed_in
+def book_print(book_uuid):
+    """The book's PDF: how it stands (GET), or printed if it is not (POST). Everyone who reads the book may print it: it holds only its
+    published pages, each its latest revision. Printing is done in the background (survey/book.py) and the PDF kept until a page in it
+    changes; asking again meanwhile changes nothing."""
+    book = _readable_book(book_uuid, lock=request.method == 'POST')
+    if book is None:
+        return _not_found('book')
+    entries = _published(book)
+    key = book_pdf.fingerprint(book_pdf.cover_of(book), entries, __version__)
+    row = _print_for(book, key)
+    app = current_app._get_current_object()
+    if request.method == 'POST':
+        if book.archived_at is not None:
+            return _error('This book is archived: restore it to print it.', 409, 'book_archived')
+        if not entries:
+            return _error('Nothing in the book is published yet: its PDF holds the published pages.', 409, 'nothing_published')
+        if not gotenberg.url():
+            return _error('The PDF is not available on this server.', 503, 'pdf_unavailable')
+        if row is None or row.state == 'failed':
+            row = SurveyBookPrint(book_id=book.id, fingerprint=key, state='printing', pages=len(entries), done_pages=0,
+                                  requested_by=_me().id, requested_by_name=_who(), started_at=datetime.utcnow())
+            db.session.add(row)
+            db.session.commit()
+    if row is not None and row.state == 'printing':
+        # Queued again when nothing holds it: after a restart its thread is gone.
+        book_pdf.PRINTER.resume(app, row.id, _print_book)
+    status = 202 if request.method == 'POST' and row is not None and row.state == 'printing' else 200
+    return _reply(_print_json(row, entries), status)
+
+
+@survey_bp.route('/api/survey-books/<book_uuid>/pdf', methods=['GET'])
+@signed_in
+def book_pdf_file(book_uuid):
+    """The book's PDF as it was printed for the book as it stands; 409 ``not_printed`` until it is. Sent from the disk where the store
+    keeps it there, never read whole into memory (a book is tens of megabytes)."""
+    book = _readable_book(book_uuid)
+    if book is None:
+        return _not_found('book')
+    entries = _published(book)
+    row = _print_for(book, book_pdf.fingerprint(book_pdf.cover_of(book), entries, __version__))
+    store = asset_store.store()
+    if row is None or row.state != 'ready':
+        return _error('The book has not been printed as it stands: print it first.', 409, 'not_printed')
+    words = re.sub(r'[^A-Za-z0-9 _.-]+', '', f'{book.name} {row.finished_at:%Y-%m-%d}').strip() or 'survey book'
+    on_disk = store.path(row.pdf_sha256)
+    data = None if on_disk else store.get(row.pdf_sha256)
+    if on_disk is None and data is None:
+        return _error('The book has not been printed as it stands: print it first.', 409, 'not_printed')
+    response = send_file(on_disk or io.BytesIO(data), mimetype='application/pdf', as_attachment=request.args.get('download') == '1',
+                         download_name=f'{words}.pdf', conditional=False, etag=False)
+    response.headers['Cache-Control'] = 'private, no-store'
+    return response
+
+
+def _print_book(print_id):
+    """Prints one book in the printer's thread: every published page with the book's numbering, the cover and the index, through
+    Gotenberg; then keeps the PDF and lets go of the book's older prints. Says how far it has got as it goes (``done_pages``).
+
+    A print that fails in a way nobody foresaw is marked failed, never left printing: the next look at the book would queue it again,
+    and a page polling every 3 s would print the whole book again and again."""
+    try:
+        _print_book_now(print_id)
+    except Exception:  # noqa: BLE001 - said on the print, which can be asked for again
+        log.exception('surveys: book print %s failed', print_id)
+        db.session.rollback()
+        row = db.session.get(SurveyBookPrint, print_id)
+        if row is not None and row.state == 'printing':
+            row.state, row.error, row.finished_at = 'failed', 'The book could not be printed. Try again in a moment.', datetime.utcnow()
+            db.session.commit()
+
+
+def _print_book_now(print_id):
+    row = db.session.get(SurveyBookPrint, print_id)
+    if row is None or row.state != 'printing':
+        return
+    book = db.session.get(SurveyBook, row.book_id)
+
+    def failed(words):
+        row.state, row.error, row.finished_at = 'failed', words[:300], datetime.utcnow()
+        db.session.commit()
+
+    if book is None or book.archived_at is not None:
+        return failed('The book was archived before it was printed.')
+    entries = _published(book)
+    if not entries:
+        return failed('Nothing in the book is published any more.')
+    # The book may have moved on since it was asked for: what is printed is named for what it holds, its words read once.
+    cover = book_pdf.cover_of(book)
+    key = book_pdf.fingerprint(cover, entries, __version__)
+    store = asset_store.store()
+    done = SurveyBookPrint.query.filter(SurveyBookPrint.book_id == book.id, SurveyBookPrint.fingerprint == key,
+                                        SurveyBookPrint.id != row.id, SurveyBookPrint.state == 'ready').all()
+    if any(other.pdf_sha256 and store.has(other.pdf_sha256) for other in done):
+        # Printed meanwhile, by a print asked for the book as it stood then: nothing is printed twice.
+        db.session.delete(row)
+        db.session.commit()
+        return
+    row.fingerprint, row.pages = key, len(entries)
+    db.session.commit()
+    total = len(entries)
+    pages_in = [(_page_model(survey, revision, page={'n': n, 'of': total}, in_book=cover), _asset_reader(survey))
+                for n, (survey, revision) in enumerate(entries, start=1)]
+    model = book_pdf.compile_book(cover, [(m, rev) for (m, _read), (_s, rev) in zip(pages_in, entries)], datetime.utcnow(), __version__)
+
+    def progress(n):
+        row.done_pages = n
+        db.session.commit()
+
+    try:
+        with terrain_tiles.analysis_running():
+            pdf = pages.print_book(model, pages_in, progress)
+    except gotenberg.Unavailable:
+        return failed('PDFs are not printed on this server.')
+    except gotenberg.Failed as problem:
+        log.warning('surveys: the book %s could not be printed: %s', book.uuid, problem)
+        return failed('The printer could not print the book. Try again in a moment.')
+    pdf_key = hashlib.sha256(pdf).hexdigest()
+    store.put(pdf_key, pdf)
+    row.state, row.pdf_sha256, row.size_bytes, row.done_pages, row.finished_at = 'ready', pdf_key, len(pdf), total, datetime.utcnow()
+    row.error = None
+    db.session.commit()
+    # The book's older prints are let go: only the newest is ever served, and a book is tens of megabytes. A print's file is the
+    # book's alone (its bytes name the book on their cover), so nothing else refers to it. One still marked as printing from before
+    # this process started, that the printer does not hold, was left by a restart for a book that has moved on since: nothing will
+    # look for it. (One started since may be on its way to the printer.)
+    for old in SurveyBookPrint.query.filter(SurveyBookPrint.book_id == book.id, SurveyBookPrint.id != row.id).all():
+        if old.state == 'printing' and (book_pdf.PRINTER.knows(old.id) or old.started_at >= book_pdf.PRINTER.started):
+            continue
+        if old.pdf_sha256 and old.pdf_sha256 != pdf_key:
+            store.delete(old.pdf_sha256)
+        db.session.delete(old)
+    db.session.commit()
+
+
 # -- Photos and captures -------------------------------------------------------
 
 def _float_or_none(value, label):
@@ -1028,8 +1433,42 @@ def _float_or_none(value, label):
     return number % 360.0
 
 
+def _pose(value):
+    """A 3D capture's camera as the editor took it (docs/LZ_SURVEYS.md §5, step L3): its heading (degrees true), pitch (degrees, down
+    is negative), its distance from the LZ (metres) and the LiDAR survey it showed. Sent as JSON text in a form. Raises ValueError."""
+    if value in (None, ''):
+        return None
+    if isinstance(value, str):
+        try:
+            value = json.loads(value)
+        except ValueError:
+            raise ValueError('The camera pose is not JSON') from None
+    if not isinstance(value, dict):
+        raise ValueError('The camera pose is an object')
+
+    def number(key, low, high):
+        found = value.get(key)
+        if found is None:
+            return None
+        if isinstance(found, bool) or not isinstance(found, (int, float)) or not math.isfinite(found) or not low <= found <= high:
+            raise ValueError(f'The camera pose\'s {key} is a number from {low:g} to {high:g}')
+        return round(float(found), 1)
+
+    survey = value.get('survey')
+    if survey is not None:
+        if not isinstance(survey, dict):
+            raise ValueError('The camera pose\'s survey is an object')
+        year = survey.get('year')
+        if year is not None and (isinstance(year, bool) or not isinstance(year, int) or not 1990 <= year <= 2100):
+            raise ValueError('The camera pose\'s survey year is a year')
+        survey = {'name': _clean_text(survey.get('name'), 200, "The survey's name"), 'year': year}
+    return {'headingDeg': number('headingDeg', 0, 360), 'pitchDeg': number('pitchDeg', -90, 90),
+            'rangeM': number('rangeM', 0, 100000), 'survey': survey}
+
+
 def _asset_fields(source, partial):
-    """caption, heading_deg, taken_on and kind from a form or JSON body; only those present when ``partial``."""
+    """caption, heading_deg, taken_on and kind from a form or JSON body; only those present when ``partial``; and, for a new 3D
+    capture, its camera (``pose``), which is what it was taken with and is never changed after."""
     out = {}
     if not partial or 'kind' in source:
         kind = source.get('kind') or ('photo_other' if not partial else None)
@@ -1042,6 +1481,12 @@ def _asset_fields(source, partial):
         out['heading_deg'] = _float_or_none(source.get('heading_deg'), 'The heading')
     if not partial or 'taken_on' in source:
         out['taken_on'] = _clean_text(source.get('taken_on'), MAX_TAKEN_ON, 'When it was taken')
+    if not partial:
+        out['pose'] = _pose(source.get('pose'))
+        if out['pose'] is not None and out['kind'] not in CAPTURE_KINDS:
+            raise ValueError('A photo has no camera pose: only a 3D capture does')
+    elif 'pose' in source:
+        raise ValueError("A capture's camera pose is what it was taken with: capture it again to change it")
     return out
 
 
@@ -1105,9 +1550,16 @@ def upload_asset(survey_uuid):
             return refused
         asset = LzSurveyAsset(
             survey_id=survey.id, kind=meta['kind'], caption=meta['caption'], heading_deg=meta['heading_deg'],
-            taken_on=meta['taken_on'], content_type=prepared.content_type, width=prepared.width, height=prepared.height,
-            size_bytes=len(prepared.data), sha256=key, created_by=user.id, created_by_name=_who(),
+            taken_on=meta['taken_on'], pose=meta['pose'], content_type=prepared.content_type, width=prepared.width,
+            height=prepared.height, size_bytes=len(prepared.data), sha256=key, created_by=user.id, created_by_name=_who(),
         )
+        if meta['kind'] in CAPTURE_KINDS:
+            # The page prints one 3D view: a new capture takes the place of the last, which is kept (a published page may show it).
+            # Two at once go one after the other: each takes the survey's row before it looks for the last, or both stay live.
+            LzSurvey.query.filter_by(id=survey.id).with_for_update().populate_existing().first()
+            now = datetime.utcnow()
+            for old in LzSurveyAsset.query.filter_by(survey_id=survey.id, kind=meta['kind'], removed_at=None).all():
+                old.removed_at = now
         db.session.add(asset)
         moved = _photos_changed(survey)
         if _photo_saved():
@@ -1190,6 +1642,10 @@ def remove_asset(survey_uuid, asset_id):
         if asset.removed_at is not None:
             return _reply({'removed': asset.id, 'survey': {'status': survey.status, 'revision': survey.revision, 'was': survey.revision}})
         asset.removed_at = datetime.utcnow()
+        if asset.kind in CAPTURE_KINDS:
+            # Taking the 3D view off takes it off: another capture still live (two kept at once) would come back in its place.
+            for other in LzSurveyAsset.query.filter_by(survey_id=survey.id, kind=asset.kind, removed_at=None).all():
+                other.removed_at = asset.removed_at
         moved = _photos_changed(survey)
         if _photo_saved():
             return _reply({'removed': asset.id, 'survey': moved})

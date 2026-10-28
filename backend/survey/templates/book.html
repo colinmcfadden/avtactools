@@ -1,0 +1,87 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>{{ title }}</title>
+<style>
+{% include 'survey_style.css' %}
+  /* The book (docs/LZ_SURVEYS.md §5): every sheet starts a printed page, each with its own classification lines. */
+  .sheet + .sheet { break-before: page; }
+  /* The cover and the index are a column between the top line and their foot: what they hold is laid out above the foot and the
+     bottom line, never under them, and those two are drawn over anything that would reach them. */
+  .cover, .index { display: flex; flex-direction: column; padding-bottom: 0.62in; }
+  .cover .classif.bottom, .index .classif.bottom { position: absolute; left: 0; right: 0; bottom: 0; background: #fff; z-index: 3; }
+  .cover-head { flex: none; padding: 0.25in 0 0.18in; border-bottom: 1.3pt solid #111417; }
+  .cover-head .kicker { font-size: 12pt; font-weight: 800; letter-spacing: 0.18em; }
+  .cover-head .cover-name { font-size: 30pt; font-weight: 800; line-height: 1.05; margin-top: 6pt; overflow: hidden;
+    display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 3; overflow-wrap: anywhere; }
+  .cover-head .cover-name.mid { font-size: 22pt; }
+  .cover-head .cover-name.long { font-size: 15pt; }
+  .cover-head .cover-unit { font-size: 13pt; letter-spacing: 0.06em; margin-top: 4pt; overflow: hidden;
+    display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow-wrap: anywhere; }
+  .cover-head .cover-when { font-size: 10pt; margin-top: 8pt; letter-spacing: 0.04em; }
+  .cover-map { flex: 1 1 auto; min-height: 3in; position: relative; margin-top: 0.15in; border: 1.3pt solid #111417; overflow: hidden; background: #d7d3c8; }
+  /* Fitted whole, as its overlay's viewBox is (both centred), so every LZ stays on the map and under its number however tall the
+     header and the text leave it. */
+  .cover-map img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; }
+  .cover-map svg.fig-overlay { position: absolute; inset: 0; width: 100%; height: 100%; }
+  .cover-map .none { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; color: #555b62; font-size: 10pt; }
+  .cover-text { flex: none; margin-top: 0.12in; font-size: 9pt; line-height: 1.3; white-space: pre-wrap; overflow-wrap: anywhere; }
+  .cover-text .cut { font-style: italic; color: #555b62; }
+  .cover-foot { position: absolute; left: 0.3in; right: 0; bottom: 0.26in; font-size: 7.6pt; display: flex; justify-content: space-between;
+    gap: 10pt; background: #fff; z-index: 3; }
+  .index-head { flex: none; padding: 0.18in 0 0.1in; border-bottom: 1.3pt solid #111417; display: flex; justify-content: space-between;
+    align-items: baseline; gap: 10pt; }
+  .index-head .kicker { font-size: 10pt; font-weight: 800; letter-spacing: 0.06em; min-width: 0; white-space: nowrap; overflow: hidden;
+    text-overflow: ellipsis; }
+  .index-head .index-title { flex: none; font-size: 16pt; font-weight: 800; letter-spacing: 0.08em; }
+  /* One line a row, whatever a name or a sign-off holds, so the sheet's rows are always all of them. */
+  .index-table { margin-top: 0.12in; font-size: 8.4pt; table-layout: fixed; width: 100%; }
+  .index-table th { font-size: 7.4pt; letter-spacing: 0.04em; background: #111417; color: #fff; }
+  .index-table th, .index-table td { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .index-table td { padding: 2.4pt 4pt; }
+  .index-table td.name { text-align: left; font-weight: 700; }
+</style>
+</head>
+<body>
+<div class="sheet cover">
+  <div class="classif top">UNCLASSIFIED</div>
+  <header class="cover-head">
+    <div class="kicker">HLZ SURVEY BOOK</div>
+    <div class="cover-name {{ b.book.nameSize }}">{{ b.book.name }}</div>
+    {% if b.book.unitLine %}<div class="cover-unit">{{ b.book.unitLine }}</div>{% endif %}
+    <div class="cover-when">{{ b.count }} LZ SURVEY{{ '' if b.count == 1 else 'S' }} · PRINTED {{ b.printedLong }}</div>
+  </header>
+  <main class="cover-map">
+    {% if overview %}<img src="{{ overview.file }}" alt="">{{ overview.svg }}{% else %}<div class="none">No page in the book has a target to show.</div>{% endif %}
+  </main>
+  {% if b.book.coverLines %}<div class="cover-text">{{ b.book.coverLines|join('\n') }}{% if b.book.coverCut %}
+<span class="cut">The cover's text goes on past what the cover holds: all of it is in the book's details in EZ/PZ.</span>{% endif %}</div>{% endif %}
+  <footer class="cover-foot">
+    <div>Each page is its LZ's latest published revision, as it was signed off. The numbers on the map are the pages.</div>
+    <div>EZ/PZ{% if b.version %} v{{ b.version }}{% endif %}</div>
+  </footer>
+  <div class="classif bottom">UNCLASSIFIED</div>
+</div>
+{% for rows in index_sheets %}
+<div class="sheet index">
+  <div class="classif top">UNCLASSIFIED</div>
+  <header class="index-head">
+    <div class="kicker">{{ b.book.name }}</div>
+    <div class="index-title">INDEX{% if index_sheets|length > 1 %} · {{ loop.index }} OF {{ index_sheets|length }}{% endif %}</div>
+  </header>
+  <table class="index-table">
+    <colgroup><col style="width: 0.42in"><col style="width: 0.8in"><col><col style="width: 1.5in"><col style="width: 0.6in">
+      <col style="width: 0.8in"><col style="width: 1.55in"></colgroup>
+    <tr><th>PAGE</th><th>HLZ ID</th><th>NAME</th><th>MGRS · WGS 84</th><th>REV</th><th>PUBLISHED</th><th>SIGNED OFF</th></tr>
+    {% for row in rows %}<tr><td>{{ row.n }}</td><td>{{ row.hlzId }}</td><td class="name">{{ row.name }}</td><td>{{ row.grid }}</td><td>{{ row.revision }}</td><td>{{ row.publishedOn }}</td><td>{{ row.signoff }}</td></tr>
+    {% endfor %}
+  </table>
+  <div class="classif bottom">UNCLASSIFIED</div>
+</div>
+{% endfor %}
+{% for s in sheets %}{% with m=s.m, plan=s.plan, view3d=s.view3d, photos=s.photos, graphs=s.graphs, compass=s.compass, survey_profile=s.survey_profile, clearance=s.clearance %}
+{% include '_survey_sheet.html' %}
+{% endwith %}{% endfor %}
+</body>
+</html>

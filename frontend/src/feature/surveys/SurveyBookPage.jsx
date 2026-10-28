@@ -2,6 +2,8 @@ import React, { useId, useRef, useState } from "react";
 import Dialog from "../ui/Dialog";
 import Icon from "../ui/Icon";
 import { STATUS_WORDS } from "./surveyFields";
+import { ImportCell, importStateWords } from "./SurveyImport";
+import { saveBlob } from "./PagePreview";
 
 /*
  * One survey book (docs/LZ_SURVEYS.md): for its editors every LZ in page order with its status, how many of its field values disagree
@@ -101,7 +103,83 @@ const ReaderTable = ({ surveys, onOpen }) => (
   </table>
 );
 
-const SurveyBookPage = ({ surveys, onOpen, onNew }) => {
+const sizeWords = (bytes) => (bytes >= 1048576 ? `${(bytes / 1048576).toFixed(1)} MB` : `${Math.max(1, Math.round(bytes / 1024))} KB`);
+
+const pagesWords = (n) => `${n} ${n === 1 ? "page" : "pages"}`;
+
+/**
+ * The whole book's PDF (docs/LZ_SURVEYS.md §5, step L6), for its readers and editors alike: its cover with a map of every LZ, its
+ * index, and every published page. It is printed on the server, in the background, and kept until a page in it changes.
+ */
+export const BookPdf = ({ book, state, onPrint, onDownload }) => {
+  const headingId = useId();
+  const [busy, setBusy] = useState(null);
+  const [error, setError] = useState(null);
+  const print = state?.print;
+  if (!book || (!print && !state?.error)) return null;
+  const run = async (what, action) => {
+    setBusy(what);
+    setError(null);
+    try {
+      await action();
+    } catch (err) {
+      setError(err?.message || "That did not work. Try again.");
+    } finally {
+      setBusy(null);
+    }
+  };
+  const download = () => run("download", async () => saveBlob(await onDownload(), `${book.name}.pdf`));
+  const askToPrint = () => run("print", onPrint);
+  let body;
+  if (!print) {
+    body = null;
+  } else if (print.state === "empty") {
+    body = <p className="survey-muted">It holds the book's published pages, and nothing is published yet.</p>;
+  } else if (print.state === "ready") {
+    body = (
+      <div className="survey-page-bar">
+        <button type="button" className="ui-btn ui-btn--primary ui-btn--34" onClick={download} disabled={Boolean(busy)}>
+          <Icon name="download" size={14} />
+          {busy === "download" ? "Fetching…" : "Download the book"}
+        </button>
+        <span className="survey-muted">
+          {pagesWords(print.pages)} with its cover and index · {sizeWords(print.size_bytes ?? 0)} · printed {print.printed_at?.slice(0, 10)}
+        </span>
+      </div>
+    );
+  } else if (!print.available) {
+    body = <p className="survey-muted">The book's PDF is not printed on this server yet. Each page's preview shows it.</p>;
+  } else if (print.state === "printing") {
+    body = (
+      <p className="survey-muted" role="status">
+        Printing the book: {print.done_pages ? `page ${print.done_pages} of ${print.pages} drawn` : `${pagesWords(print.pages)} to draw`}…
+      </p>
+    );
+  } else {
+    body = (
+      <>
+        {print.state === "failed" && print.error && <p className="survey-state survey-state--warn" role="status">{print.error}</p>}
+        <div className="survey-page-bar">
+          <button type="button" className="ui-btn ui-btn--34" onClick={askToPrint} disabled={Boolean(busy)}>
+            <Icon name="download" size={14} />
+            {busy === "print" ? "Asking…" : print.state === "failed" ? "Try again" : `Print the book (${pagesWords(print.pages)})`}
+          </button>
+          <span className="survey-muted">Printed on the server, a page at a time: a minute or two for a full book.</span>
+        </div>
+      </>
+    );
+  }
+  return (
+    <section className="survey-panel survey-book__pdf" aria-labelledby={headingId}>
+      <h3 id={headingId} className="survey-panel__title">The book's PDF</h3>
+      {body}
+      {state.error && <p className="survey-state survey-state--warn" role="status">{state.error}</p>}
+      {error && <p className="survey-state survey-state--warn" role="status">{error}</p>}
+    </section>
+  );
+};
+
+const SurveyBookPage = ({ surveys, onOpen, onNew, onImport }) => {
   const { list, showArchived } = surveys;
   const editing = Boolean(list.book?.can_edit);
   return (
@@ -119,6 +197,12 @@ const SurveyBookPage = ({ surveys, onOpen, onNew }) => {
             New survey
           </button>
         )}
+        {editing && !list.book?.archived && onImport && (
+          <button type="button" className="ui-btn ui-btn--34" onClick={onImport}>
+            <Icon name="download" size={14} />
+            Import the old book
+          </button>
+        )}
         {editing && (
           <label className="survey-check">
             <input type="checkbox" checked={showArchived} onChange={surveys.toggleArchived} />
@@ -129,6 +213,7 @@ const SurveyBookPage = ({ surveys, onOpen, onNew }) => {
           <Icon name="refresh" size={14} />
         </button>
       </div>
+      <BookPdf book={list.book} state={surveys.bookPrint} onPrint={surveys.printBook} onDownload={surveys.loadBookPdf} />
       {list.status === "error" && (
         <div className="survey-banner survey-banner--error" role="alert">
           <Icon name="alertTriangle" size={16} />
@@ -169,14 +254,15 @@ const SurveyBookPage = ({ surveys, onOpen, onNew }) => {
                   {row.published_revision && row.status !== "published" && <div className="survey-muted">REV {row.published_revision} published</div>}
                 </td>
                 <td>
-                  {/* Never measured is nothing compared yet, not nothing to look at. */}
+                  {/* Never measured is nothing compared yet, not nothing to look at. An import being measured says how it stands. */}
                   {!row.measured_at ? (
-                    <span className="survey-muted">Not measured</span>
+                    importStateWords(row.imported) ? null : <span className="survey-muted">Not measured</span>
                   ) : row.disagreements ? (
                     <span className="survey-state survey-state--warn">{row.disagreements} {row.disagreements === 1 ? "disagreement" : "disagreements"}</span>
                   ) : (
-                    <span className="survey-muted">None</span>
+                    !row.imported?.to_check && <span className="survey-muted">None</span>
                   )}
+                  <ImportCell imported={row.imported} />
                 </td>
                 <td>{row.surveyed_on || "—"}</td>
                 <td>{dateOf(row.measured_at)}</td>

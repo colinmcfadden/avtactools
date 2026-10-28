@@ -20,7 +20,7 @@ export const PHOTO_KINDS = [
 const kindLabel = (id) => PHOTO_KINDS.find((k) => k.id === id)?.label ?? (id === "view_3d" ? "3D view" : id);
 
 /** The picture, fetched with the session's token (an <img> cannot send it) and shown from an object URL. */
-const Thumb = ({ url, alt }) => {
+export const Thumb = ({ url, alt }) => {
   const [src, setSrc] = useState(null);
   const [failed, setFailed] = useState(false);
   useEffect(() => {

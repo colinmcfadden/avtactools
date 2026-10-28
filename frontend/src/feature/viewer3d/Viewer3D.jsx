@@ -27,12 +27,12 @@ import "./viewer3d.css";
 
 /**
  * Frame a bounding sphere the way the view opens: oblique, from the north-west, far enough back to hold it across the view however narrow
- * the view is (framing.js).
+ * the view is (framing.js). ``view`` turns it another way: an LZ survey's capture looks down the best approach (feature/surveys).
  */
-const frameSphere = (Cesium, camera, sphere, { duration } = {}) => {
+const frameSphere = (Cesium, camera, sphere, { duration, view } = {}) => {
   const offset = new Cesium.HeadingPitchRange(
-    Cesium.Math.toRadians(CAMERA_HEADING_DEG),
-    Cesium.Math.toRadians(CAMERA_PITCH_DEG),
+    Cesium.Math.toRadians(view?.headingDeg ?? CAMERA_HEADING_DEG),
+    Cesium.Math.toRadians(view?.pitchDeg ?? CAMERA_PITCH_DEG),
     framingRange(sphere.radius, camera.frustum.aspectRatio, camera.frustum.fov),
   );
   if (duration === undefined) {
@@ -103,8 +103,13 @@ const NO_ROUTES = [];
 // USGS The National Map (backend lidar/photo.py), which asks to be credited.
 const STREAMED_CREDIT = "LiDAR: USGS 3DEP · Point colour: USDA NAIP, from USGS The National Map";
 
+/**
+ * ``view`` ({ headingDeg, pitchDeg }) is the way the view opens and *LZ* flies back to, where it is not the usual one. ``capturable``
+ * keeps each frame's pixels to be read once drawn (WebGL's preserveDrawingBuffer), for a capture of the view (an LZ survey's page);
+ * a view that is only looked at does without it.
+ */
 const Viewer3D = ({ tilesetUrl, contextUrl = null, frame = null, requiresAuth = true,
-                   showTerrain = true, routeScene = NO_ROUTES, onReady }) => {
+                   showTerrain = true, routeScene = NO_ROUTES, view = null, capturable = false, onReady }) => {
   const containerRef = useRef(null);
   const [status, setStatus] = useState({ state: "loading", detail: "" });
 
@@ -118,6 +123,8 @@ const Viewer3D = ({ tilesetUrl, contextUrl = null, frame = null, requiresAuth = 
   // load the tileset again.
   const frameRef = useRef(frame);
   frameRef.current = frame;
+  const viewRef = useRef(view);
+  viewRef.current = view;
   const [pointSize, setPointSize] = useState(storedPointSize);
 
   useEffect(() => {
@@ -157,6 +164,7 @@ const Viewer3D = ({ tilesetUrl, contextUrl = null, frame = null, requiresAuth = 
           // configured. Harmless — the layer is replaced below either way —
           // but it puts a failed request in the console of every session.
           baseLayer: false,
+          ...(capturable ? { contextOptions: { webgl: { preserveDrawingBuffer: true } } } : {}),
         });
 
         viewer.scene.backgroundColor = Cesium.Color.fromCssColorString(BACKGROUND);
@@ -321,7 +329,7 @@ const Viewer3D = ({ tilesetUrl, contextUrl = null, frame = null, requiresAuth = 
         // An LZ is also read obliquely, not from directly overhead: the whole
         // reason for a 3D view is seeing how tall the obstructions are on
         // approach, and that is invisible from straight down.
-        frameSphere(Cesium, viewer.camera, lzSphere(Cesium, tileset, frameRef.current));
+        frameSphere(Cesium, viewer.camera, lzSphere(Cesium, tileset, frameRef.current), { view: viewRef.current });
       })
       .catch((error) => {
         if (!cancelled) {
@@ -336,7 +344,7 @@ const Viewer3D = ({ tilesetUrl, contextUrl = null, frame = null, requiresAuth = 
       // destroy they outlive unmount and the next viewer fails to get a context.
       if (viewer && !viewer.isDestroyed()) viewer.destroy();
     };
-  }, [tilesetUrl, contextUrl, requiresAuth, showTerrain, onReady]);
+  }, [tilesetUrl, contextUrl, requiresAuth, showTerrain, capturable, onReady]);
 
   useEffect(() => {
     const { viewer, Cesium, routes } = sceneRef.current;
@@ -351,7 +359,7 @@ const Viewer3D = ({ tilesetUrl, contextUrl = null, frame = null, requiresAuth = 
     const { viewer, Cesium, tilesets } = sceneRef.current;
     if (!viewer || viewer.isDestroyed() || !tilesets[0]) return;
     frameSphere(Cesium, viewer.camera, lzSphere(Cesium, tilesets[0], frameRef.current),
-                { duration: FRAME_SECONDS });
+                { duration: FRAME_SECONDS, view: viewRef.current });
   };
 
   const frameRoutes = () => {

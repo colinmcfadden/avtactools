@@ -1,5 +1,5 @@
 import { act, renderHook } from "@testing-library/react";
-import useSurveys, { changedBetween, editableOf } from "./useSurveys";
+import useSurveys, { IMPORT_POLL_MS, PRINT_POLL_MS, changedBetween, editableOf, rebaseDraft } from "./useSurveys";
 
 const { readFixture } = require("../../contracts/readFixture");
 
@@ -49,6 +49,7 @@ const fakeClient = (overrides = {}) => ({
   uploadAsset: jest.fn(async () => ({ id: 7, kind: "photo_north", url: "/surveys/s-1/assets/7" })),
   updateAsset: jest.fn(async (uuid, id, meta) => ({ id, kind: "photo_north", ...meta })),
   removeAsset: jest.fn(async () => ({ removed: 7 })),
+  bookPrint: jest.fn(async () => ({ state: "empty", pages: 0, available: true })),
   ...overrides,
 });
 
@@ -238,6 +239,10 @@ describe("useSurveys", () => {
       await result.current.undecide("elevation");
     });
     expect(client.saveSurvey.mock.calls[1][2].overrides).toEqual({});
+    await act(async () => {
+      await result.current.decide("approach", "typed", "Tree line cut in 2024", 12.5);
+    });
+    expect(client.saveSurvey.mock.calls[2][2].overrides).toEqual({ approach: { choice: "typed", reason: "Tree line cut in 2024", value: 12.5 } });
   });
 
   it("keeps photos as they come, without a new revision", async () => {
@@ -346,6 +351,238 @@ describe("useSurveys", () => {
       await result.current.setBookArchived(true);
     });
     expect(result.current.bookUuid).toBeNull();
+  });
+
+  it("imports the old book into the open book, then reads the book again", async () => {
+    const answer = { created: [{ uuid: "s-2" }], skipped: [], source: "book.pdf" };
+    const client = fakeClient({ importBook: jest.fn(async () => answer) });
+    const { result } = renderHook(() => useSurveys({ client }));
+    await act(async () => {
+      await result.current.openBook("b-1");
+    });
+    const file = new Blob(["PK"]);
+    let got;
+    await act(async () => {
+      got = await result.current.importPages(file);
+    });
+    expect(got).toBe(answer);
+    expect(client.importBook).toHaveBeenCalledWith("b-1", file);
+    expect(client.getBook).toHaveBeenCalledTimes(2);
+  });
+
+  it("reads the book again while the server measures imported surveys, and stops when they are measured", async () => {
+    jest.useFakeTimers();
+    try {
+      const measuring = { surveys: [{ uuid: "s-1", name: DONOVAN.name, imported: { state: "queued" } }] };
+      const measured = { surveys: [{ uuid: "s-1", name: DONOVAN.name, imported: { state: "done" } }] };
+      const client = fakeClient({ getBook: jest.fn(async () => ({ book: BOOK, ...measuring })) });
+      const { result } = renderHook(() => useSurveys({ client }));
+      await act(async () => {
+        await result.current.openBook("b-1");
+      });
+      expect(client.getBook).toHaveBeenCalledTimes(1);
+      client.getBook.mockImplementation(async () => ({ book: BOOK, ...measured }));
+      await act(async () => {
+        jest.advanceTimersByTime(IMPORT_POLL_MS);
+      });
+      expect(client.getBook).toHaveBeenCalledTimes(2);
+      await act(async () => {
+        jest.advanceTimersByTime(IMPORT_POLL_MS * 3);
+      });
+      expect(client.getBook).toHaveBeenCalledTimes(2);                          // measured: no more reading
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
+  it("follows the open survey while its import is measured, keeping what was typed meanwhile", async () => {
+    jest.useFakeTimers();
+    try {
+      const queued = surveyAt(1, { imported: { state: "queued" } });
+      const boundary = { ...queued.diagram, status: "analyzed", analysis: { detectedLZ: [[34.6, -84.13], [34.6, -84.12], [34.59, -84.12]] } };
+      const measured = surveyAt(3, { diagram: boundary, snapshot: { grid: "16S GD 63415 31995" }, updated_by: "EZ/PZ (import)",
+        imported: { state: "done" } });
+      const client = fakeClient({ getSurvey: jest.fn(async () => queued) });
+      const { result } = await opened(client);
+      act(() => result.current.setField("ppr", "Typed while it was measured"));
+      client.getSurvey.mockImplementation(async () => measured);
+      await act(async () => {
+        jest.advanceTimersByTime(IMPORT_POLL_MS);
+      });
+      expect(result.current.survey.revision).toBe(3);                          // the next save is on the measuring's revision
+      expect(result.current.draft.diagram).toEqual(boundary);
+      expect(result.current.draft.field.ppr).toBe("Typed while it was measured");
+      expect(result.current.dirty).toBe(true);
+      const reads = client.getSurvey.mock.calls.length;
+      await act(async () => {
+        jest.advanceTimersByTime(IMPORT_POLL_MS * 3);
+      });
+      expect(client.getSurvey).toHaveBeenCalledTimes(reads);                    // measured: no more reading
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
+  it("leaves the draft alone when the measuring and this person changed the same part", async () => {
+    jest.useFakeTimers();
+    try {
+      const queued = surveyAt(1, { imported: { state: "queued" } });
+      const client = fakeClient({ getSurvey: jest.fn(async () => queued) });
+      const { result } = await opened(client);
+      const drawn = { ...queued.diagram, analysis: { customLZ: [[1, 2], [3, 4], [5, 6]] } };
+      act(() => result.current.setDiagram(drawn));
+      client.getSurvey.mockImplementation(async () => surveyAt(2, { diagram: { ...queued.diagram, analysis: { detectedLZ: [[7, 8]] } },
+        imported: { state: "measuring" } }));
+      await act(async () => {
+        jest.advanceTimersByTime(IMPORT_POLL_MS);
+      });
+      expect(result.current.survey.revision).toBe(1);                          // the next save meets theirs, and says so
+      expect(result.current.draft.diagram).toEqual(drawn);
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
+  it("lays a draft over a newer save part by part", () => {
+    const base = surveyAt(1);
+    const mine = { ...editableOf(base), name: "LZ MINE", field: { ...editableOf(base).field, ppr: "mine" } };
+    const theirs = surveyAt(2, { field: { ...DONOVAN.field, surface: "gravel" }, snapshot: { grid: "x" } });
+    const merged = rebaseDraft(base, mine, theirs);
+    expect([merged.name, merged.field.ppr, merged.field.surface]).toEqual(["LZ MINE", "mine", "gravel"]);
+    expect(rebaseDraft(base, mine, surveyAt(2, { name: "LZ THEIRS" }))).toBeNull();
+    expect(rebaseDraft(base, mine, surveyAt(2, { name: "LZ MINE" })).name).toBe("LZ MINE");   // the same change on both sides
+  });
+
+  it("marks the import's notes checked without taking the rest of the answer as its copy", async () => {
+    const client = fakeClient({
+      getSurvey: jest.fn(async () => surveyAt(1, { imported: { state: "done", checked: false, to_check: 2 } })),
+      markImportChecked: jest.fn(async () => surveyAt(5, { name: "SOMEONE ELSE'S", imported: { state: "done", checked: true, to_check: 0 } })),
+    });
+    const { result } = await opened(client);
+    await act(async () => {
+      await result.current.markImportChecked();
+    });
+    expect(result.current.survey.imported.checked).toBe(true);
+    expect(result.current.survey.revision).toBe(1);
+    expect(result.current.survey.name).toBe(DONOVAN.name);
+  });
+
+  it("asks how the book's PDF stands as the book opens, and again only while the server prints it", async () => {
+    jest.useFakeTimers();
+    try {
+      const answers = [{ state: "none", pages: 1, available: true }];
+      const client = fakeClient({
+        bookPrint: jest.fn(async () => answers[answers.length - 1]),
+        printBook: jest.fn(async () => ({ state: "printing", pages: 1, done_pages: 0, available: true })),
+      });
+      const { result } = renderHook(() => useSurveys({ client }));
+      await act(async () => {
+        await result.current.openBook("b-1");
+      });
+      expect(client.bookPrint).toHaveBeenCalledWith("b-1");
+      expect(result.current.bookPrint.print.state).toBe("none");
+      const asked = client.bookPrint.mock.calls.length;
+      await act(async () => {
+        jest.advanceTimersByTime(PRINT_POLL_MS * 2);
+      });
+      expect(client.bookPrint.mock.calls.length).toBe(asked);                     // not printing: nobody asks
+      await act(async () => {
+        await result.current.printBook();
+      });
+      expect(result.current.bookPrint.print.state).toBe("printing");
+      answers.push({ state: "ready", pages: 1, size_bytes: 10, printed_at: "2026-10-27T00:00:00Z", available: true });
+      await act(async () => {
+        jest.advanceTimersByTime(PRINT_POLL_MS);
+      });
+      expect(result.current.bookPrint.print.state).toBe("ready");
+      const after = client.bookPrint.mock.calls.length;
+      await act(async () => {
+        jest.advanceTimersByTime(PRINT_POLL_MS * 3);
+      });
+      expect(client.bookPrint.mock.calls.length).toBe(after);
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
+  it("does not let a look at the PDF asked before Print undo it", async () => {
+    let answerEarlier;
+    const client = fakeClient({ printBook: jest.fn(async () => ({ state: "printing", pages: 1, done_pages: 0, available: true })) });
+    const { result } = renderHook(() => useSurveys({ client }));
+    await act(async () => {
+      await result.current.openBook("b-1");
+    });
+    client.bookPrint.mockImplementation(() => new Promise((resolve) => { answerEarlier = resolve; }));
+    let earlier;
+    act(() => {
+      earlier = result.current.refreshBookPrint();                           // a list refresh's look, on its way
+    });
+    await act(async () => {
+      await result.current.printBook();
+    });
+    await act(async () => {
+      answerEarlier({ state: "none", pages: 1, available: true });
+      await earlier;
+    });
+    expect(result.current.bookPrint.print.state).toBe("printing");
+  });
+
+  it("stops asking about the PDF of a book that has gone, and says so", async () => {
+    jest.useFakeTimers();
+    try {
+      const client = fakeClient({
+        bookPrint: jest.fn(async () => ({ state: "printing", pages: 1, done_pages: 0, available: true })),
+      });
+      const { result } = renderHook(() => useSurveys({ client }));
+      await act(async () => {
+        await result.current.openBook("b-1");
+      });
+      client.bookPrint.mockImplementation(async () => { throw Object.assign(new Error("404"), { response: { status: 404, data: { code: "not_found" } } }); });
+      await act(async () => {
+        jest.advanceTimersByTime(PRINT_POLL_MS);
+      });
+      expect(result.current.bookPrint.status).toBe("gone");
+      expect(result.current.bookPrint.error).toBe("That is no longer there, or you cannot open it.");
+      const asked = client.bookPrint.mock.calls.length;
+      await act(async () => {
+        jest.advanceTimersByTime(PRINT_POLL_MS * 5);
+      });
+      expect(client.bookPrint.mock.calls.length).toBe(asked);
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
+  it("asks about the PDF again once the book's own words change", async () => {
+    const client = fakeClient();
+    const { result } = renderHook(() => useSurveys({ client }));
+    await act(async () => {
+      await result.current.openBook("b-1");
+    });
+    const asked = client.bookPrint.mock.calls.length;
+    await act(async () => {
+      await result.current.renameBook("NEW NAME");
+    });
+    expect(client.bookPrint.mock.calls.length).toBe(asked + 1);
+  });
+
+  it("keeps a 3D capture with its camera, in place of the last", async () => {
+    const pose = { headingDeg: 90, pitchDeg: -20, rangeM: 550, survey: { name: "GA_Statewide_B3_2018", year: 2018 } };
+    const client = fakeClient({
+      getSurvey: jest.fn(async () => surveyAt(1, { assets: [{ id: 2, kind: "view_3d" }, { id: 3, kind: "photo_north" }] })),
+      uploadAsset: jest.fn(async () => ({ id: 7, kind: "view_3d", pose, survey: { status: "draft", revision: 1, was: 1 } })),
+    });
+    const { result } = await opened(client);
+    const blob = new Blob(["png"], { type: "image/png" });
+    await act(async () => {
+      await result.current.captureView(blob, pose);
+    });
+    const [uuid, file, meta] = client.uploadAsset.mock.calls[0];
+    expect(uuid).toBe("s-1");
+    expect([file.name, file.type]).toEqual(["view-3d.png", "image/png"]);
+    expect(meta).toEqual({ kind: "view_3d", caption: "", heading_deg: 90, taken_on: expect.stringMatching(/^\d{1,2} [A-Z]{3} \d{4}$/),
+                           pose: JSON.stringify(pose) });
+    expect(result.current.survey.assets.map((a) => a.id)).toEqual([3, 7]);       // the last capture is taken off, as on the server
   });
 
   it("names what someone else changed", () => {

@@ -87,6 +87,11 @@ const fakeClient = (overrides = {}) => ({
   uploadAsset: jest.fn(),
   updateAsset: jest.fn(),
   removeAsset: jest.fn(),
+  importBook: jest.fn(),
+  markImportChecked: jest.fn(),
+  bookPrint: jest.fn(async () => ({ state: "empty", pages: 0, done_pages: 0, available: true })),
+  printBook: jest.fn(),
+  fetchBookPdf: jest.fn(),
   ...overrides,
 });
 
@@ -259,6 +264,63 @@ describe("the survey editor", () => {
       fireEvent.click(within(dialog).getByRole("button", { name: "Print the survey's" }));
     });
     expect(client.saveSurvey.mock.calls[0][2].overrides).toEqual({ elevation: { choice: "field", reason: "Surveyed by GPS on the pad" } });
+  });
+
+  it("types the approach's angle over the LiDAR's, with a reason, from field against computed", async () => {
+    const approach = { key: "approach", label: "Approach angle", field: "8.7° (100 ft at 200 m)", computed: "8.5° (LiDAR: 98 ft tree 200 m out)",
+      apart: "0.2° apart", disagrees: false, open: false, override: null, overrideStands: false, printed: "computed" };
+    const client = fakeClient({ getSurvey: jest.fn(async () => survey({ comparisons: [...COMPARISONS, approach] })) });
+    await openDonovan(client);
+    const row = screen.getByRole("rowheader", { name: "Approach angle" }).closest("tr");
+    expect(within(row).queryByRole("button", { name: "Accept computed" })).toBeNull();     // nothing to settle: they agree
+    fireEvent.click(within(row).getByRole("button", { name: "Type the angle…" }));
+    const dialog = screen.getByRole("dialog", { name: "Type the approach's angle" });
+    fireEvent.change(within(dialog).getByLabelText("Angle (°)"), { target: { value: "14.4" } });
+    fireEvent.change(within(dialog).getByLabelText("Reason"), { target: { value: "Flown in by the 2-58th, OCT 2026" } });
+    await act(async () => {
+      fireEvent.click(within(dialog).getByRole("button", { name: "Print this angle" }));
+    });
+    expect(client.saveSurvey.mock.calls[0][2].overrides).toEqual({
+      approach: { choice: "typed", reason: "Flown in by the 2-58th, OCT 2026", value: 14.4 },
+    });
+    const elevation = screen.getByRole("rowheader", { name: "Elevation" }).closest("tr");
+    expect(within(elevation).queryByRole("button", { name: /angle/ })).toBeNull();          // only the approach's angle is typed
+  });
+
+  it("shows the approach as the page plans it, not the exit, and says to save a height typed before it plans from it", async () => {
+    const lane = (headingDeg) => ({ headingDeg, start: { groundFt: 2061 }, bins: [], covered: 100,
+      clearance: { angleDeg: 8.5, obstacle: { heightFt: 98.4, riseFt: 98.4, kind: "vegetation", fromTargetM: 200, offsetM: 0 } } });
+    const obstacles = { status: "measured", words: null, survey: { name: "GA_Statewide_B3_2018", year: 2018 }, approach: lane(360),
+      exit: lane(180), inside: null, around: null, standing: { overM: 2, count: 0 }, trees: [], heightMap: null };
+    const plan = (heightFt) => ({ angleDeg: 30, minimumDeg: 8.5, typed: false, steep: false, heightFt,
+      descent: { fromTargetM: 52.8, topFt: 2061, groundFt: 2061 } });
+    const approach = { key: "approach", label: "Approach angle", field: "8.7° (100 ft at 200 m)", computed: "8.5° (LiDAR: 98 ft tree 200 m out)",
+      apart: "0.2° apart", disagrees: false, open: false, override: null, overrideStands: false, printed: "computed" };
+    const measured = survey({ snapshot: { ...survey().snapshot, obstacles }, comparisons: [...COMPARISONS, approach],
+      approach_plan: plan(100) });
+    await openDonovan(fakeClient({ getSurvey: jest.fn(async () => measured) }));
+    const panel = screen.getByRole("group", { name: "Standing on and round the LZ · LiDAR GA_Statewide_B3_2018" });
+    expect(within(panel).getByRole("row", { name: /Approach 360°/ })).toHaveTextContent("30.0°From 100 ft AHO: 53 m out");
+    expect(within(panel).queryByRole("row", { name: /Exit/ })).toBeNull();                 // measured by an earlier EZ/PZ, not shown
+    expect(within(panel).queryByText(/Save to plan/)).toBeNull();
+    fireEvent.change(screen.getByLabelText("Obstacle height (ft)"), { target: { value: "140" } });
+    expect(within(panel).getByText("Save to plan the approach from the height you have typed.")).toBeInTheDocument();
+    const row = screen.getByRole("rowheader", { name: "Approach angle" }).closest("tr");
+    fireEvent.click(within(row).getByRole("button", { name: "Type the angle…" }));
+    expect(screen.getByRole("dialog", { name: "Type the approach's angle" }))
+      .toHaveTextContent("Planned at 30.0°. Shallowest clear: 8.5° (LiDAR: 98 ft tree 200 m out)");
+  });
+
+  it("offers no survey's value to print where the survey has none, though the row is open again", async () => {
+    const lapsed = { key: "approach", label: "Approach angle", field: "", computed: "9.0° (LiDAR: 98 ft tree 200 m out)", apart: null,
+      disagrees: false, open: true, overrideStands: false, printed: "computed",
+      override: { choice: "typed", value: 12, reason: "Cut in 2024", by: "CW3 Admin", field: "", computed: "8.5° (LiDAR: 98 ft tree 200 m out)" } };
+    await openDonovan(fakeClient({ getSurvey: jest.fn(async () => survey({ comparisons: [...COMPARISONS, lapsed] })) }));
+    const row = screen.getByRole("rowheader", { name: "Approach angle" }).closest("tr");
+    expect(within(row).getByText("Decided on other values: look again")).toBeInTheDocument();
+    expect(within(row).getByRole("button", { name: "Accept computed" })).toBeInTheDocument();
+    expect(within(row).getByRole("button", { name: "Change your angle…" })).toBeInTheDocument();
+    expect(within(row).queryByRole("button", { name: "Print survey's…" })).toBeNull();
   });
 
   it("says when someone else saved first, and keeps what was typed", async () => {
@@ -472,3 +534,198 @@ describe("publishing", () => {
     expect(await screen.findByText(/PDFs are not printed on this server yet/)).toBeInTheDocument();
   });
 });
+
+describe("importing the old book", () => {
+  const IMPORTED = {
+    source: "LZ-SURVEYS-OCT-2023.pdf", page: 5, state: "done", reason: null, to_check: 3, checked: false,
+    notes: { unread: ["Best Exit"], blank: ["Surface Condition"], warnings: ["The book's grid and lat/long are 527 m apart: the target is at the grid. Check which is right."] },
+    imported_by: "CW3 Admin", imported_at: "2026-10-27T01:00:00Z", checked_by: null, checked_at: null,
+  };
+
+  it("sends the importer's bundle to the book and says what it made", async () => {
+    const client = fakeClient({
+      importBook: jest.fn(async () => ({
+        source: "LZ-SURVEYS-OCT-2023.pdf",
+        created: [{ uuid: "s-2" }, { uuid: "s-3" }],
+        skipped: [{ page: 5, hlz_id: "GA 034", name: "LZ DONOVAN", reason: "GA 034 is in the book already: left as it is." }],
+      })),
+    });
+    await renderBook(client);
+    fireEvent.click(screen.getByRole("button", { name: "Import the old book" }));
+    const dialog = screen.getByRole("dialog", { name: "Import the old book" });
+    expect(within(dialog).getByText(/tools\/import_survey_book\.py/)).toBeInTheDocument();
+    await act(async () => {
+      fireEvent.click(within(dialog).getByRole("button", { name: "Import" }));
+    });
+    expect(within(dialog).getByText("Choose the bundle the importer wrote.")).toBeInTheDocument();
+    expect(client.importBook).not.toHaveBeenCalled();
+    const bundle = new File(["PK"], "book-bundle.zip", { type: "application/zip" });
+    fireEvent.change(within(dialog).getByLabelText("Bundle"), { target: { files: [bundle] } });
+    const reads = client.getBook.mock.calls.length;
+    await act(async () => {
+      fireEvent.click(within(dialog).getByRole("button", { name: "Import" }));
+    });
+    expect(client.importBook).toHaveBeenCalledWith("b-1", bundle);
+    const done = screen.getByRole("dialog", { name: "The old book is imported" });
+    expect(within(done).getByText(/2 pages/)).toBeInTheDocument();
+    expect(within(done).getByText(/LZ-SURVEYS-OCT-2023\.pdf are drafts in AASF 1 HLZ SURVEY BOOK/)).toBeInTheDocument();
+    expect(within(done).getByText(/Page 5, GA 034 LZ DONOVAN: GA 034 is in the book already/)).toBeInTheDocument();
+    expect(client.getBook.mock.calls.length).toBeGreaterThan(reads);           // the list is read again
+    expect(within(done).getByRole("button", { name: "Done" })).toHaveFocus();   // not lost with the Import button it replaced
+    fireEvent.click(within(done).getByRole("button", { name: "Done" }));
+    expect(screen.queryByRole("dialog", { name: "The old book is imported" })).toBeNull();
+  });
+
+  it("lists two warnings that read alike, each once", async () => {
+    const twice = { ...IMPORTED, notes: { unread: [], blank: [], warnings: ["A photo could not be read (bad) and was left out.",
+      "A photo could not be read (bad) and was left out."] } };
+    const errors = jest.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      await openDonovan(fakeClient({ getSurvey: jest.fn(async () => survey({ imported: twice })) }));
+      const panel = screen.getByRole("region", { name: "From the old book" });
+      expect(within(panel).getAllByText("A photo could not be read (bad) and was left out.")).toHaveLength(2);
+      expect(errors.mock.calls.some((call) => String(call[0]).includes("same key"))).toBe(false);
+    } finally {
+      errors.mockRestore();
+    }
+  });
+
+  it("says why a bundle was refused, in the server's words for it", async () => {
+    const refused = Object.assign(new Error("400"), {
+      response: { status: 400, data: { code: "invalid_bundle", error: "That is not a bundle from tools/import_survey_book.py: it is not a zip." } },
+    });
+    const client = fakeClient({ importBook: jest.fn(async () => { throw refused; }) });
+    await renderBook(client);
+    fireEvent.click(screen.getByRole("button", { name: "Import the old book" }));
+    const dialog = screen.getByRole("dialog", { name: "Import the old book" });
+    fireEvent.change(within(dialog).getByLabelText("Bundle"), { target: { files: [new File(["%PDF"], "book.pdf")] } });
+    await act(async () => {
+      fireEvent.click(within(dialog).getByRole("button", { name: "Import" }));
+    });
+    expect(within(dialog).getByRole("alert")).toHaveTextContent("it is not a zip");
+  });
+
+  it("shows how each imported survey stands while the server measures it", async () => {
+    const rows = [
+      { ...ROW, measured_at: null, disagreements: 0, imported: { ...IMPORTED, state: "queued", to_check: 1 } },
+      { ...ROW, uuid: "s-2", name: "LZ BIG STAMP", measured_at: null, disagreements: 0, imported: { ...IMPORTED, state: "no_boundary", to_check: 0 } },
+      { ...ROW, uuid: "s-3", name: "LZ CAVENDER", disagreements: 0, imported: { ...IMPORTED, to_check: 2 } },
+    ];
+    await renderBook(fakeClient({ getBook: jest.fn(async () => ({ book: BOOK, surveys: rows })) }));
+    const cell = (name) => screen.getByRole("button", { name }).closest("tr");
+    expect(within(cell("LZ DONOVAN")).getByText("Waiting to be measured")).toBeInTheDocument();
+    expect(within(cell("LZ DONOVAN")).getByText("1 import note to check")).toBeInTheDocument();
+    expect(within(cell("LZ DONOVAN")).queryByText("Not measured")).toBeNull();
+    expect(within(cell("LZ BIG STAMP")).getByText("No boundary found: draw it")).toBeInTheDocument();
+    expect(within(cell("LZ CAVENDER")).getByText("2 import notes to check")).toBeInTheDocument();
+    expect(within(cell("LZ CAVENDER")).queryByText("None")).toBeNull();
+  });
+
+  it("shows a survey's notes from the old book in its editor, until they are checked", async () => {
+    const client = fakeClient({
+      getSurvey: jest.fn(async () => survey({ imported: IMPORTED })),
+      markImportChecked: jest.fn(async () => survey({
+        revision: 9, imported: { ...IMPORTED, to_check: 0, checked: true, checked_by: "CW3 Admin", checked_at: "2026-10-27T02:00:00Z" },
+      })),
+    });
+    await openDonovan(client);
+    const panel = screen.getByRole("region", { name: "From the old book" });
+    expect(within(panel).getByText(/Page 5 of LZ-SURVEYS-OCT-2023\.pdf, imported 2026-10-27 by CW3 Admin/)).toBeInTheDocument();
+    expect(within(panel).getByText("Not on the page: Best Exit.")).toBeInTheDocument();
+    expect(within(panel).getByText("Blank on the page: Surface Condition.")).toBeInTheDocument();
+    expect(within(panel).getByText(/527 m apart/)).toBeInTheDocument();
+    await act(async () => {
+      fireEvent.click(within(panel).getByRole("button", { name: "Mark as checked" }));
+    });
+    expect(client.markImportChecked).toHaveBeenCalledWith("s-1");
+    expect(within(panel).getByText("Checked by CW3 Admin on 2026-10-27.")).toHaveFocus();   // the button it replaces had it
+    expect(within(panel).queryByRole("button", { name: "Mark as checked" })).toBeNull();
+    expect(screen.getByText(/Saved · revision 4/)).toBeInTheDocument();          // not a change to the survey: its revision stays
+  });
+});
+
+describe("the book's PDF", () => {
+  const READY = { state: "ready", pages: 2, done_pages: 0, size_bytes: 3355443, printed_at: "2026-10-27T01:00:00Z", available: true };
+
+  it("says it holds the published pages when nothing is published", async () => {
+    await renderBook();
+    const panel = screen.getByRole("region", { name: "The book's PDF" });
+    expect(within(panel).getByText(/nothing is published yet/)).toBeInTheDocument();
+    expect(within(panel).queryByRole("button")).toBeNull();
+  });
+
+  it("is printed when asked, said while it prints, and downloaded once printed", async () => {
+    const answers = [{ state: "none", pages: 2, done_pages: 0, available: true }];
+    const client = fakeClient({
+      bookPrint: jest.fn(async () => answers[answers.length - 1]),
+      printBook: jest.fn(async () => ({ state: "printing", pages: 2, done_pages: 0, available: true })),
+      fetchBookPdf: jest.fn(async () => new Blob(["%PDF"], { type: "application/pdf" })),
+    });
+    await renderBook(client);
+    const panel = await screen.findByRole("region", { name: "The book's PDF" });
+    await act(async () => {
+      fireEvent.click(within(panel).getByRole("button", { name: "Print the book (2 pages)" }));
+    });
+    expect(client.printBook).toHaveBeenCalledWith("b-1");
+    expect(within(panel).getByText("Printing the book: 2 pages to draw…")).toBeInTheDocument();
+    answers.push(READY);
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "Refresh the list" }));
+    });
+    expect(within(panel).getByText(/2 pages with its cover and index · 3.2 MB · printed 2026-10-27/)).toBeInTheDocument();
+    const created = jest.fn(() => "blob:book");
+    Object.assign(URL, { createObjectURL: created, revokeObjectURL: jest.fn() });
+    const clicked = jest.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(() => {});   // jsdom does not navigate
+    await act(async () => {
+      fireEvent.click(within(panel).getByRole("button", { name: "Download the book" }));
+    });
+    expect(client.fetchBookPdf).toHaveBeenCalledWith("b-1");
+    expect(created).toHaveBeenCalled();
+    expect(clicked).toHaveBeenCalled();
+  });
+
+  it("says why it could not be printed, and offers to try again", async () => {
+    const client = fakeClient({
+      bookPrint: jest.fn(async () => ({ state: "failed", pages: 2, done_pages: 0, error: "The printer could not print the book. Try again in a moment.", available: true })),
+      printBook: jest.fn(async () => { throw Object.assign(new Error("503"), { response: { status: 503, data: { code: "pdf_unavailable" } } }); }),
+    });
+    await renderBook(client);
+    const panel = await screen.findByRole("region", { name: "The book's PDF" });
+    expect(within(panel).getByText("The printer could not print the book. Try again in a moment.")).toBeInTheDocument();
+    await act(async () => {
+      fireEvent.click(within(panel).getByRole("button", { name: "Try again" }));
+    });
+    expect(within(panel).getByText(/PDFs are not printed on this server yet/)).toBeInTheDocument();
+  });
+
+  it("says when the server prints no PDFs", async () => {
+    await renderBook(fakeClient({ bookPrint: jest.fn(async () => ({ state: "none", pages: 1, done_pages: 0, available: false })) }));
+    const panel = await screen.findByRole("region", { name: "The book's PDF" });
+    expect(within(panel).getByText(/not printed on this server yet/)).toBeInTheDocument();
+    expect(within(panel).queryByRole("button")).toBeNull();
+  });
+
+  it("lets a reader download the book once printed", async () => {
+    const client = fakeClient({
+      getBook: jest.fn(async () => ({ book: { ...BOOK, can_edit: false }, surveys: [{ ...ROW, status: "published", published_revision: 1 }] })),
+      bookPrint: jest.fn(async () => READY),
+      fetchBookPdf: jest.fn(async () => new Blob(["%PDF"], { type: "application/pdf" })),
+    });
+    await renderBook(client);
+    const panel = await screen.findByRole("region", { name: "The book's PDF" });
+    Object.assign(URL, { createObjectURL: jest.fn(() => "blob:book"), revokeObjectURL: jest.fn() });
+    const clicked = jest.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(() => {});
+    await act(async () => {
+      fireEvent.click(within(panel).getByRole("button", { name: "Download the book" }));
+    });
+    expect(client.fetchBookPdf).toHaveBeenCalledWith("b-1");
+    expect(clicked).toHaveBeenCalled();
+  });
+
+  it("says why how the PDF stands could not be read", async () => {
+    await renderBook(fakeClient({ bookPrint: jest.fn(async () => { throw new Error("offline"); }) }));
+    const panel = await screen.findByRole("region", { name: "The book's PDF" });
+    expect(within(panel).getByText("No connection to the server. Try again when you have one.")).toBeInTheDocument();
+  });
+});
+

@@ -3,6 +3,7 @@ If-Match on every save, archived never deleted, measured over a synthetic DEM, p
 which book is test_survey_books.py's."""
 
 import io
+import json
 import os
 import sys
 import tempfile
@@ -96,10 +97,13 @@ class PermissionTests(SurveyCase):
         book = f'/api/survey-books/{self.book["uuid"]}'
         return (('get', '/api/survey-books', None), ('post', '/api/survey-books', {'name': 'X'}),
                 ('get', book, None), ('patch', book, {'name': 'X'}), ('post', f'{book}/archive', None),
-                ('post', f'{book}/restore', None), ('post', '/api/surveys', {'book': self.book['uuid'], 'name': 'LZ X'}),
+                ('post', f'{book}/restore', None), ('post', f'{book}/import', None),
+                ('get', f'{book}/print', None), ('post', f'{book}/print', None), ('get', f'{book}/pdf', None),
+                ('post', '/api/surveys', {'book': self.book['uuid'], 'name': 'LZ X'}),
                 ('get', base, None), ('patch', base, {'name': 'X'}), ('post', f'{base}/archive', None),
                 ('post', f'{base}/restore', None), ('post', f'{base}/measure', {}),
                 ('post', f'{base}/submit', None), ('post', f'{base}/draft', None), ('post', f'{base}/publish', {}),
+                ('post', f'{base}/import/checked', None),
                 ('get', f'{base}/pdf', None), ('get', f'{base}/page', None),
                 ('post', f'{base}/assets', None), ('get', f'{base}/assets/1', None),
                 ('patch', f'{base}/assets/1', {'caption': 'x'}), ('delete', f'{base}/assets/1', None))
@@ -261,6 +265,36 @@ class MeasureRouteTests(SurveyCase):
         no_reason = self.patch_survey(survey, {'overrides': {'latLong': {'choice': 'field'}}})
         self.assertEqual(no_reason.status_code, 400)
 
+    def test_an_angle_is_typed_only_over_the_lidar_s(self):
+        survey = self.new_survey()
+        with Terrain(east_deg=5.0):
+            measured = self.client.post(f'/api/surveys/{survey["uuid"]}/measure', headers=self.at(1), json={'apply': True}).get_json()['survey']
+        typed = {'overrides': {'approach': {'choice': 'typed', 'value': 12, 'reason': 'Tree line cut in 2024'}}}
+        self.assertIsNone(measured['approach_plan'])                      # this server reads no LiDAR: nothing to plan
+        response = self.patch_survey(measured, typed)                     # this server reads no LiDAR: no angle to type over
+        self.assertEqual((response.status_code, response.get_json()['code']), (400, 'invalid_survey'))
+        self.assertIn('no angle here', response.get_json()['error'])
+        # Where the LiDAR found an angle, the editor's is kept with who typed it and printed in its place.
+        lane = {'start': {'groundFt': 1850.0},
+                'clearance': {'angleDeg': 8.5, 'obstacle': {'heightFt': 98.4, 'kind': 'vegetation', 'fromTargetM': 200.0}}}
+        with self.app.app_context():
+            row = LzSurvey.query.one()
+            row.snapshot = {**row.snapshot, 'obstacles': {'status': 'measured', 'approach': lane}}
+            row.revision += 1
+            db.session.commit()
+        response = self.patch_survey(measured, typed, revision=measured['revision'] + 1)
+        self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
+        survey = response.get_json()
+        entry = survey['overrides']['approach']
+        self.assertEqual((entry['choice'], entry['value'], entry['by'], entry['computed']),
+                         ('typed', 12.0, 'CW3 Admin', '8.5° (LiDAR: 98 ft tree 200 m out)'))
+        row = next(r for r in survey['comparisons'] if r['key'] == 'approach')
+        self.assertEqual((row['printed'], row['open']), ('typed', False))
+        # The editor is sent the approach as the page plans it: at the angle typed, from the survey's own height.
+        self.assertEqual({k: survey['approach_plan'][k] for k in ('angleDeg', 'minimumDeg', 'typed', 'steep')},
+                         {'angleDeg': 12.0, 'minimumDeg': 8.5, 'typed': True, 'steep': False})
+        self.assertNotIn('plans', survey)
+
     def test_a_survey_with_no_target_is_not_measured(self):
         survey = self.new_survey(diagram={'schemaVersion': 2, 'analysis': {}})
         response = self.client.post(f'/api/surveys/{survey["uuid"]}/measure', headers=self.admin, json={})
@@ -359,6 +393,50 @@ class AssetTests(SurveyCase):
         asset = self.upload(out.getvalue(), filename='view.png', kind='view_3d').get_json()
         self.assertEqual((asset['width'], asset['height'], asset['size_bytes']), (1600, 1000, len(out.getvalue())))
         self.assertEqual(self.upload(jpeg_with_exif((10, 10), 1), kind='view_3d').get_json()['code'], 'unsupported_image')
+
+    def png(self):
+        out = io.BytesIO()
+        Image.new('RGB', (1600, 1000), (1, 2, 3)).save(out, 'PNG')
+        return out.getvalue()
+
+    def test_a_capture_keeps_its_camera_and_takes_the_place_of_the_last(self):
+        pose = {'headingDeg': 90.04, 'pitchDeg': -20, 'rangeM': 550.4, 'survey': {'name': 'GA_Statewide_B3_2018', 'year': 2018}}
+        first = self.upload(self.png(), filename='view.png', kind='view_3d', heading_deg='90', pose=json.dumps(pose)).get_json()
+        self.assertEqual(first['pose'], {'headingDeg': 90.0, 'pitchDeg': -20.0, 'rangeM': 550.4,
+                                         'survey': {'name': 'GA_Statewide_B3_2018', 'year': 2018}})
+        second = self.upload(self.png(), filename='view.png', kind='view_3d', heading_deg='270').get_json()
+        self.assertIsNone(second['pose'])
+        full = self.client.get(f'/api/surveys/{self.survey["uuid"]}', headers=self.admin).get_json()
+        self.assertEqual([a['id'] for a in full['assets'] if a['kind'] == 'view_3d'], [second['id']])   # the page prints one
+        kept = self.client.get(f'/api/surveys/{self.survey["uuid"]}/assets/{first["id"]}', headers=self.admin)
+        self.assertEqual(kept.status_code, 200)                                    # kept: a published page may show it
+
+    def test_taking_the_3d_view_off_takes_off_every_capture_still_live(self):
+        # The review's: two captures made at once both stayed live, and taking the newest off brought the other back to the page.
+        first = self.upload(self.png(), filename='view.png', kind='view_3d', heading_deg='90').get_json()
+        with self.app.app_context():
+            kept = db.session.get(LzSurveyAsset, first['id'])
+            twin = LzSurveyAsset(survey_id=kept.survey_id, kind='view_3d', caption='', heading_deg=270.0, content_type=kept.content_type,
+                                 width=kept.width, height=kept.height, size_bytes=kept.size_bytes, sha256=kept.sha256,
+                                 created_by=kept.created_by, created_by_name=kept.created_by_name)
+            db.session.add(twin)
+            db.session.commit()
+            twin_id = twin.id
+        removed = self.client.delete(f'/api/surveys/{self.survey["uuid"]}/assets/{twin_id}', headers=self.admin)
+        self.assertEqual(removed.status_code, 200)
+        full = self.client.get(f'/api/surveys/{self.survey["uuid"]}', headers=self.admin).get_json()
+        self.assertEqual([a['id'] for a in full['assets'] if a['kind'] == 'view_3d'], [])
+
+    def test_a_pose_is_a_capture_s_and_is_checked(self):
+        pose = json.dumps({'headingDeg': 90, 'pitchDeg': -20, 'rangeM': 500})
+        self.assertEqual(self.upload(jpeg_with_exif((800, 600), 1), kind='photo_north', pose=pose).get_json()['code'], 'invalid_asset')
+        for bad in ('{"headingDeg": 400}', '{"rangeM": -1}', '{"survey": {"name": "X", "year": "2018"}}', 'not json', '[1]'):
+            with self.subTest(bad=bad):
+                answer = self.upload(self.png(), filename='view.png', kind='view_3d', pose=bad)
+                self.assertEqual((answer.status_code, answer.get_json()['code']), (400, 'invalid_asset'))
+        asset = self.upload(self.png(), filename='view.png', kind='view_3d', pose=pose).get_json()
+        path = f'/api/surveys/{self.survey["uuid"]}/assets/{asset["id"]}'
+        self.assertEqual(self.client.patch(path, headers=self.admin, json={'pose': {'headingDeg': 1}}).status_code, 400)
 
     def test_caption_heading_and_removal(self):
         asset = self.upload(jpeg_with_exif((800, 600), 1), kind='photo_approach').get_json()

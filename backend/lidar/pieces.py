@@ -99,6 +99,20 @@ def read_laz(data: bytes):
             np.asarray(las.intensity, dtype=np.float64))
 
 
+def readable_header(data: bytes) -> bool:
+    """Whether ``data`` begins as a LAS or LAZ file does: its signature, and a
+    header laspy reads (no point is decoded)."""
+    if data[:4] != b"LASF":
+        return False
+    import laspy
+
+    try:
+        laspy.LasHeader.read_from(io.BytesIO(data))
+    except Exception:  # noqa: BLE001 — laspy raises many kinds
+        return False
+    return True
+
+
 def heights_above_ground(x, y, z, classification) -> np.ndarray:
     """Each point's height above the piece's nearest ground return, or what its
     class says of it where the piece has none."""

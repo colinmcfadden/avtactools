@@ -90,6 +90,12 @@ def _text(x, y, words, size, colour=WHITE, anchor="start", weight=700, halo=INK,
             f'stroke-width="{halo_w}" paint-order="stroke" font-weight="{weight}">{escape(str(words))}</text>')
 
 
+def _fit(words, most):
+    """``words`` cut to at most ``most`` characters, the last of them "…", where they are longer."""
+    most = max(most, 2)
+    return words if len(words) <= most else words[:most - 1].rstrip() + "…"
+
+
 def _box_label(x, y, words, size=20, anchor="start"):
     """A word on a white box, as the draft's contour and arrow labels are."""
     words = str(words)
@@ -210,8 +216,10 @@ def plan(spec, width_px=PLAN_W, height_px=PLAN_H):
     # The name's box and the target are kept clear; a contour's number that would sit on them, or on a number already placed, is left
     # out (the server spaces them 40 m apart, which at a page's zoom can be a label's width), majors first.
     tx, ty = frame.project(*target)
-    name = spec.get("label") or ""
-    sub = spec.get("sublabel") or ""
+    # A name too long for the room on either side of the target is cut to the wider side, never drawn off the picture.
+    room = max(frame.width - 10 - (tx + 26), tx - 26 - 10)
+    name = _fit(spec.get("label") or "", int((room - 16) // 16))
+    sub = _fit(spec.get("sublabel") or "", int((room - 16) // 12))
     name_w = max(len(name) * 16 + 16, len(sub) * 12 + 16)
     name_x = tx + 26 if tx + 26 + name_w < frame.width - 10 else tx - 26 - name_w
     taken = [(tx - 18, ty - 18, tx + 18, ty + 18), (name_x, ty - 34, name_x + name_w, ty + 22)]
@@ -362,10 +370,24 @@ def profile(line, view, width=640, height=170, treetops=None):
         parts.append(f'<polygon points="{sx(run[0][0]):.1f},{bottom} {pts} {sx(run[-1][0]):.1f},{bottom}" fill="url(#hatch-{view})"/>')
         parts.append(f'<polyline points="{pts}" fill="none" stroke="{INK}" stroke-width="2.2" stroke-linejoin="round"/>')
     if tops:
-        pts = [(d, t) for d, t in zip(line["distancesFt"], treetops) if t is not None]
-        if len(pts) > 1:
-            parts.append(f'<polyline points="{" ".join(f"{sx(d):.1f},{sy(t):.1f}" for d, t in pts)}" fill="none" stroke="#2e7d32" '
-                         f'stroke-width="1.8" stroke-dasharray="3 2"/>')
+        # A run of steps where something stands: one stand of trees is not joined to the next across the ground between them.
+        tree_runs, run = [], []
+        for d, t in zip(line["distancesFt"], treetops):
+            if t is None:
+                if run:
+                    tree_runs.append(run)
+                run = []
+            else:
+                run.append((d, t))
+        if run:
+            tree_runs.append(run)
+        for run in tree_runs:
+            if len(run) == 1:
+                (d, t), = run
+                parts.append(f'<line x1="{sx(d):.1f}" y1="{sy(t):.1f}" x2="{sx(d):.1f}" y2="{bottom:.1f}" stroke="#2e7d32" stroke-width="1.8"/>')
+            else:
+                parts.append(f'<polyline points="{" ".join(f"{sx(d):.1f},{sy(t):.1f}" for d, t in run)}" fill="none" stroke="#2e7d32" '
+                             f'stroke-width="1.8" stroke-dasharray="3 2"/>')
     # The highest ground in the LZ, as the draft marks it, and the axis's low end in the gutter.
     inside = [(d, h) for d, h in zip(line["distancesFt"], line["elevationsFt"]) if h is not None and lz and lz[0] <= d <= lz[1]]
     if inside:
@@ -411,3 +433,128 @@ def survey_profile(spec, width=300, height=120):
         f'<text x="{(hx + ox) / 2 - 10}" y="{(ground + oy) / 2 - 8}" font-size="15" font-weight="800" text-anchor="middle">{spec["angleDeg"]:.1f}°</text>',
     ]
     return f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {width} {height}" class="field-profile">{"".join(parts)}</svg>'
+
+
+TREETOPS = "#2e6b30"
+
+
+def clearance(spec, width=512, height=104):
+    """The LiDAR's approach (step L4) as the page's clearance box draws it, from the touchdown point: flown from the left towards the LZ
+    at the right, its track's ground (thicker over the LZ) and the highest thing in the way in each 10 m of its lane out to 1,000 m; the
+    path at the angle planned (survey/flightpath.py) out to where it is the survey's height above the highest obstacle for good (a dot),
+    then that height above what stands past it (dashed); the thing that sets the LiDAR's shallowest clear angle (a triangle); and its
+    words over it (how much of the lane the survey covers in the corner, where it is not all of it). None where the approach was not
+    measured. The box prints it 0.58 in high and its full width, about 0.40 pt to a unit: its words are 11 to 15 units, 4.4 to 6 pt."""
+    side = (spec or {}).get("approach")
+    if not isinstance(side, dict):
+        return None
+    values = [v for v in side["groundFt"] + side["topsFt"] + [side.get("startFt")] if _num(v)]
+    values += [h for _m, h in (side.get("path") or []) + (side.get("level") or []) if _num(h)]
+    if not values:
+        return None
+    low, high = min(values), max(values)
+    span = max(high - low, 60.0)
+    floor = low - span * 0.06
+    # The plot starts below the third line of words, and the marks drawn over its top (a triangle's tip) clear them.
+    top, bottom, pad, gap = 50.0, height - 14.0, 4.0, 30.0
+    reach = width - 2 * pad - gap
+    step = side.get("binM") or 10
+    length = step * max(len(side["groundFt"]), 1)
+
+    def sx(metres):
+        return pad + reach - metres / length * reach
+
+    def sy(h):
+        return bottom - (h - floor) / (span * 1.06) * (bottom - top)
+
+    def line(points, colour, widthpx, dashed=False):
+        runs, run = [], []
+        for metres, v in points:
+            if _num(v):
+                run.append(f"{sx(metres):.1f},{sy(v):.1f}")
+            else:
+                if len(run) > 1:
+                    runs.append(run)
+                run = []
+        if len(run) > 1:
+            runs.append(run)
+        dash = ' stroke-dasharray="4 3"' if dashed else ""
+        return "".join(f'<polyline points="{" ".join(r)}" fill="none" stroke="{colour}" stroke-width="{widthpx}" '
+                       f'stroke-linejoin="round"{dash}/>' for r in runs)
+
+    def steps(values):
+        return [((k + 0.5) * step, v) for k, v in enumerate(values)]
+
+    # The LZ at the right, on the touchdown point's ground where it is known (the approach starts from it).
+    lz_y = sy(side["startFt"]) - 3 if _num(side.get("startFt")) else bottom - 6
+    parts = [f'<rect x="{pad + reach:.1f}" y="{lz_y:.1f}" width="{gap:.1f}" height="6" fill="{INK}"/>',
+             f'<text x="{pad + reach + gap / 2:.1f}" y="{height - 2:.1f}" font-size="12" font-weight="800" text-anchor="middle">LZ</text>']
+    # The treetops under the ground's line, so they show only where something stands above it; the ground thicker over the LZ.
+    parts.append(line(steps(side["topsFt"]), TREETOPS, 1.1))
+    parts.append(line(steps(side["groundFt"]), INK, 1.6))
+    if _num(side.get("edgeM")) and _num(side.get("startFt")):
+        inside = [(0.0, side["startFt"])] + [(m, v) for m, v in steps(side["groundFt"]) if m < side["edgeM"]]
+        parts.append(line(inside, INK, 3.2))
+    path, level = side.get("path") or [], side.get("level") or []
+    parts.append(line([tuple(p) for p in path], INK, 1.3))
+    parts.append(line([tuple(p) for p in level], INK, 1.1, dashed=True))
+    if level:
+        parts.append(f'<circle cx="{sx(level[0][0]):.1f}" cy="{sy(level[0][1]):.1f}" r="2.4" fill="{INK}"/>')
+    obstacle = side.get("obstacle")
+    if obstacle and _num(side.get("startFt")) and _num(obstacle.get("riseFt")) and _num(obstacle.get("fromTargetM")):
+        # The thing that sets the LiDAR's angle, as the angle sees it: its rise over the touchdown point's ground.
+        x1, y1 = sx(obstacle["fromTargetM"]), sy(side["startFt"] + obstacle["riseFt"])
+        parts.append(f'<polygon points="{x1:.1f},{y1 - 6:.1f} {x1 - 4:.1f},{y1 + 1:.1f} {x1 + 4:.1f},{y1 + 1:.1f}" fill="{INK}"/>')
+    lines = ((13, 15, 800, side.get("angle") or side["label"] + " " + (side.get("heading") or "")),
+             (27, 13, 400, side.get("climb")),
+             (40, 11.5, 800, side.get("what")))
+    for y, size, weight, words in lines:
+        if words:
+            parts.append(f'<text x="{pad + 2:.1f}" y="{y}" font-size="{size}" font-weight="{weight}">{escape(words)}</text>')
+    parts.append(f'<text x="{pad:.1f}" y="{height - 2:.1f}" font-size="11" font-weight="{800 if side.get("partial") else 400}">'
+                 f'{escape(side.get("partial") or f"{length / 1000:g} KM")}</text>')
+    return f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {width} {height}" class="clearance">{"".join(parts)}</svg>'
+
+
+# The cover's overview map: about 7.6 by 7.0 inches at the plan's 200 pixels to the inch.
+OVERVIEW_W, OVERVIEW_H = 1520, 1400
+
+
+def overview(spec, width_px=OVERVIEW_W, height_px=OVERVIEW_H):
+    """The book's cover map: {'jpeg', 'svg'}, every page's LZ as a dot with its page number beside it, on the topographic map; None with
+    no point to show. ``spec``: {'points': [{'n', 'lat', 'lon'}]}. A number goes beside its dot where it keeps clear of those already
+    placed (right, left, above, below), else to the right regardless: LZs half a kilometre apart share a few pixels at this scale."""
+    points = [(p["lat"], p["lon"], p["n"]) for p in (spec or {}).get("points") or []
+              if isinstance(p, dict) and _num(p.get("lat")) and _num(p.get("lon")) and isinstance(p.get("n"), int)]
+    if not points:
+        return None
+    bounds = brief_figures.bounds_around([(lat, lon) for lat, lon, _n in points], pad_m=1500)
+    frame = brief_figures.Frame(bounds, "topo", width_px, height_px)
+    image, missing = brief_figures.base_image(frame, "topo")
+    parts, labels, taken = [], [], []
+    placed = [(frame.project(lat, lon), n) for lat, lon, n in points]
+    for (x, y), _n in placed:
+        taken.append((x - 9, y - 9, x + 9, y + 9))
+        parts.append(f'<circle cx="{x:.1f}" cy="{y:.1f}" r="8" fill="#d62828" stroke="{WHITE}" stroke-width="3"/>')
+
+    def clear(box):
+        return all(box[2] < t[0] or box[0] > t[2] or box[3] < t[1] or box[1] > t[3] for t in taken)
+
+    for (x, y), n in placed:
+        words = str(n)
+        w, h = 22 * 0.62 * len(words) + 12, 30
+        tries = [(x + 12, y - h / 2), (x - 12 - w, y - h / 2), (x - w / 2, y - 14 - h), (x - w / 2, y + 14)]
+        left, top = next(((l, t) for l, t in tries if clear((l, t, l + w, t + h))), tries[0])
+        taken.append((left, top, left + w, top + h))
+        labels.append(f'<rect x="{left:.1f}" y="{top:.1f}" width="{w:.1f}" height="{h}" fill="{WHITE}" stroke="{INK}" stroke-width="1.6"/>'
+                      f'<text x="{left + w / 2:.1f}" y="{top + 22:.1f}" font-size="22" text-anchor="middle" fill="{INK}" '
+                      f'font-weight="800">{escape(words)}</text>')
+    parts.extend(labels)
+    parts.append(_north(frame))
+    parts.append(_scale_bar(frame))
+    note = frame.source["attribution"]
+    if missing:
+        note = f"{missing} map tile{'s' if missing != 1 else ''} could not be fetched · {note}"
+    parts.append(_text(frame.width - 12, frame.height - 12, note, 16, anchor="end", weight=400, halo_w=4))
+    svg = f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {frame.width} {frame.height}" class="fig-overlay">{"".join(parts)}</svg>'
+    return {"jpeg": brief_figures.jpeg(image), "svg": svg, "zoom": frame.zoom, "missing": missing}
