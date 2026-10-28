@@ -196,11 +196,12 @@ def lidar(snapshot, **over):
 
 
 def descent_of(lane, angle, height_ft=100.0):
-    """Where survey/obstacles.py puts the descent from ``height_ft`` above the highest obstacle for ``lane``'s steps at ``angle``."""
+    """Where survey/obstacles.py puts the descent at ``angle`` for ``lane``'s steps, the approach flown along the ground ``height_ft``
+    above the tallest in the lane."""
     from survey import obstacles
 
-    return obstacles.descent_point(angle, lane['start']['groundFt'], [b['topFt'] for b in lane['bins']],
-                                   [b['groundFt'] for b in lane['bins']], height_ft=height_ft)
+    _tallest, above = obstacles.path_height(lane['bins'], height_ft)
+    return obstacles.descent_point(angle, lane['start']['groundFt'], [b['groundFt'] for b in lane['bins']], above)
 
 
 def typed_over(found, value):
@@ -221,18 +222,19 @@ def test_each_way_is_planned_at_30_with_the_lidar_s_shallowest_beside_it(snapsho
     clearance = model['clearance']
     assert (clearance['status'], clearance['survey'], clearance['printed']) == ('measured', 'GA_STATEWIDE_B3_2018', 'computed')
     approach = clearance['approach']
-    # At 30° the path is the survey's 100 ft over the open ground 53 m out, and above everything past it: the 98 ft tree 200 m out
-    # that sets the LiDAR's 8.5°, and the 131 ft one 600 m out.
-    assert abs(approach['descentM'] - 30.48 / TAN_30) < 0.1
-    words = 'DESCEND FROM 100′ AHO AT 53 M'
+    # Flown along the ground 100 ft above the tallest in the lane, the 131 ft tree 600 m out (the 98 ft one 200 m out sets the
+    # LiDAR's 8.5°), 231 ft over the open ground: the path at 30° meets it 122 m out.
+    assert abs(approach['descentM'] - 231.2 * 0.3048 / TAN_30) < 0.1
+    words = 'DESCEND FROM 100′ AHO AT 122 M'
     assert (approach['angle'], approach['climb'], approach['what']) == ('APCH 360° · 30.0°', words, 'MIN 8.5°: 98′ TREE AT 200 M')
     assert approach['words'] == f'APCH 360° · 30.0° · {words} · MIN 8.5°: 98′ TREE AT 200 M'
     assert (approach['angleDeg'], approach['minimumDeg'], approach['typed'], approach['steep'], approach['heightFt']) == (
         30.0, 8.5, False, False, 100.0)
-    # The path from the touchdown point to its descent, then 100 ft over what stands highest: over both trees too.
-    assert approach['path'] == [[0.0, 2200.0], [approach['descentM'], 2300.0]]
-    assert approach['level'][0] == [approach['descentM'], 2300.0] and approach['level'][-1] == [995.0, 2300.0]
-    assert [205.0, 2398.4] in approach['level'] and [605.0, 2431.2] in approach['level']
+    # The path from the touchdown point to its descent, then along the ground 231 ft over it, over both trees and the open ground
+    # between them alike: not up and down over each tree.
+    assert approach['path'] == [[0.0, 2200.0], [approach['descentM'], 2431.2]]
+    assert approach['level'][0] == [approach['descentM'], 2431.2] and approach['level'][-1] == [995.0, 2431.2]
+    assert {height for _m, height in approach['level']} == {2431.2}
     assert 'tall' not in approach
     assert approach['obstacle'] == {'fromTargetM': 200.0, 'riseFt': 98.4, 'kind': 'vegetation'}
     assert 'exit' not in clearance                                                 # the exit is neither measured nor shown
@@ -252,21 +254,21 @@ def test_each_way_is_planned_at_30_with_the_lidar_s_shallowest_beside_it(snapsho
 
 
 def test_the_approach_descends_from_the_survey_s_own_height(snapshot):
-    # The old book's profiles give 75 to 150 ft: LZ DEERLICK's, 140 ft. The approach descends from 140 ft above the highest obstacle.
+    # The old book's profiles give 75 to 150 ft: LZ DEERLICK's, 140 ft. The approach is flown 140 ft above the tallest in the lane.
     # A snapshot measured with an exit keeps its lane, which nothing draws.
     found = lidar(snapshot)
     found['obstacles']['exit'] = {**json.loads(json.dumps(found['obstacles']['approach'])), 'headingDeg': 180.0, 'bearingDeg': 180.0}
     field = {**DONOVAN['field'], 'profileObstacleFt': '140 ft'}
     model = page.compile_page(source(found, field=field), book=BOOK)
     approach = model['clearance']['approach']
-    assert abs(approach['descentM'] - 42.672 / TAN_30) < 0.1 and approach['heightFt'] == 140.0
-    assert approach['climb'] == 'DESCEND FROM 140′ AHO AT 74 M'
-    assert approach['path'][-1] == [approach['descentM'], 2340.0] and [205.0, 2438.4] in approach['level']
+    assert abs(approach['descentM'] - 271.2 * 0.3048 / TAN_30) < 0.1 and approach['heightFt'] == 140.0
+    assert approach['climb'] == 'DESCEND FROM 140′ AHO AT 143 M'
+    assert approach['path'][-1] == [approach['descentM'], 2471.2] and [205.0, 2471.2] in approach['level']
     assert 'exit' not in model['clearance'] and 'EXIT 180°' not in figures.clearance(model['clearance'])
     # With no height of its own (none, nothing to read, nothing over 0), 100 ft.
     for typed in ('', 'about', '0', '-140'):
         clearance = page.compile_page(source(found, field={**field, 'profileObstacleFt': typed}), book=BOOK)['clearance']
-        assert clearance['approach']['climb'] == 'DESCEND FROM 100′ AHO AT 53 M', typed
+        assert clearance['approach']['climb'] == 'DESCEND FROM 100′ AHO AT 122 M', typed
 
 
 def test_a_way_the_trees_make_steeper_than_30_is_planned_at_the_lidar_s_and_said_so(snapshot):
@@ -280,7 +282,7 @@ def test_a_way_the_trees_make_steeper_than_30_is_planned_at_the_lidar_s_and_said
     approach = model['clearance']['approach']
     assert (approach['angle'], approach['what']) == ('APCH 360° · 41.0° · STEEPER THAN 30°', 'MIN 41.0°: 171′ TREE AT 60 M')
     assert (approach['angleDeg'], approach['minimumDeg'], approach['typed'], approach['steep']) == (41.0, 41.0, False, True)
-    assert 65.0 < approach['descentM'] < 75.0                                        # 100 ft above the stand just past it
+    assert abs(approach['descentM'] - 270.6 * 0.3048 / math.tan(math.radians(41.0))) < 0.1    # 100 ft above the stand's 171 ft
     with patch('brief.figures._fetch_tile', _tile):
         html, _files = pages.build(model, lambda _id: None)
     assert 'APCH 360° · 41.0° · STEEPER THAN 30°' in html
@@ -294,8 +296,8 @@ def test_an_angle_the_editor_typed_is_planned_in_place_of_30(snapshot):
     model = page.compile_page(source(found, overrides=choice), book=BOOK)
     assert model['clearance']['printed'] == 'typed'
     approach = model['clearance']['approach']
-    descent = descent_of(found['obstacles']['approach'], 12.0)                  # 100 ft above the 98 ft tree, at 12.0°
-    assert 205.0 < descent['fromTargetM'] < 215.0
+    descent = descent_of(found['obstacles']['approach'], 12.0)                  # 100 ft above the 131 ft tree, at 12.0°
+    assert abs(descent['fromTargetM'] - 231.2 * 0.3048 / math.tan(math.radians(12.0))) < 0.1
     assert (approach['angle'], approach['climb'], approach['what']) == (
         'APCH 360° · 12.0°', f'DESCEND FROM 100′ AHO AT {profile.js_round(descent["fromTargetM"])} M', "EDITOR'S · LIDAR MIN 8.5°")
     assert (approach['angleDeg'], approach['minimumDeg'], approach['typed'], approach['steep']) == (12.0, 8.5, True, False)
@@ -317,19 +319,23 @@ def test_an_angle_the_editor_typed_is_planned_in_place_of_30(snapshot):
     assert (approach['angle'], approach['what']) == ('APCH 360° · 30.0°', 'MIN 9.0°: 98′ TREE AT 200 M')
 
 
-def test_the_descent_is_100_ft_above_the_treetops_not_the_ground(snapshot):
-    # A forest 98 ft tall from 60 m out, with a gap at 80-90 m: the 30° path is 100 ft above the treetops 105 m out, where over the
-    # ground it would be 53 m out; and the gap nearer in, where the path is already 100 ft over the ground, does not bring it in.
+def test_the_approach_follows_the_ground_100_ft_above_the_tallest_tree_not_each_tree(snapshot):
+    # The owner's (2026-10-27): a forest from 60 m out, 98 ft and 40 ft trees by turns with a gap at 80-90 m, over ground rising 1 ft
+    # every 10 m. The approach is flown 198 ft over the ground, 100 ft above the tallest tree, and rises with the ground: never up and
+    # down over each tree, nor down into the gap. The path at 30° meets it 110 m out.
     found = lidar(snapshot)
     lane = found['obstacles']['approach']
-    for k in range(6, 100):
-        lane['bins'][k] = {'groundFt': 2200.0, 'topFt': 2298.4, 'tallestFt': 98.4}
-    lane['bins'][8] = {'groundFt': 2200.0, 'topFt': 2200.0, 'tallestFt': None}
+    for k in range(100):
+        ground = 2200.0 + k
+        tree = (98.4 if k % 2 else 40.0) if k >= 6 and k != 8 else None
+        lane['bins'][k] = {'groundFt': ground, 'topFt': ground + (tree or 0.0), 'tallestFt': tree}
     lane['clearance'] = {'angleDeg': 26.6, 'obstacle': {**lane['clearance']['obstacle'], 'fromTargetM': 60.0, 'distanceM': 60.0}}
     approach = page.compile_page(source(found), book=BOOK)['clearance']['approach']
-    assert abs(approach['descentM'] - (30.0 + 30.48) / TAN_30) < 0.5
-    assert approach['climb'] == 'DESCEND FROM 100′ AHO AT 105 M'
-    assert all(top == 2398.4 for _m, top in approach['level'])                    # 100 ft over the canopy all the way out
+    assert abs(approach['descentM'] - (198.4 - 0.5) / (TAN_30 * 3.28084 - 0.1)) < 0.1
+    assert approach['climb'] == 'DESCEND FROM 100′ AHO AT 110 M'
+    grounds = {(k + 0.5) * 10.0: 2200.0 + k for k in range(100)}
+    assert all(abs(height - grounds[m] - 198.4) < 1e-6 for m, height in approach['level'][1:])
+    assert abs(approach['level'][0][1] - (2200.0 + approach['descentM'] / 10.0 - 0.5 + 198.4)) < 0.1
 
 
 def test_a_descent_past_the_lane_is_said_so(snapshot):
@@ -450,6 +456,8 @@ def test_nothing_in_the_way_is_said_and_held_against_the_field_s(snapshot):
     from survey import compare
 
     found = lidar(snapshot)
+    for step in found['obstacles']['approach']['bins']:                           # open ground all the way out
+        step.update({'topFt': step['groundFt'], 'tallestFt': None})
     found['obstacles']['approach'].update({'clearance': {'angleDeg': 0.0, 'obstacle': None}})
     model = page.compile_page(source(found), book=BOOK)
     assert model['clearance']['approach']['words'] == (

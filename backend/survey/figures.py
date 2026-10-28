@@ -441,10 +441,11 @@ TREETOPS = "#2e6b30"
 def clearance(spec, width=512, height=104):
     """The LiDAR's approach (step L4) as the page's clearance box draws it, from the touchdown point: flown from the left towards the LZ
     at the right, its track's ground (thicker over the LZ) and the highest thing in the way in each 10 m of its lane out to 1,000 m; the
-    path at the angle planned (survey/flightpath.py) out to where it is the survey's height above the highest obstacle for good (a dot),
-    then that height above what stands past it (dashed); the thing that sets the LiDAR's shallowest clear angle (a triangle); and its
-    words over it (how much of the lane the survey covers in the corner, where it is not all of it). None where the approach was not
-    measured. The box prints it 0.58 in high and its full width, about 0.40 pt to a unit: its words are 11 to 15 units, 4.4 to 6 pt."""
+    path at the angle planned (survey/flightpath.py) out to where its descent begins (a dot), then the approach flown along the ground's
+    line at the survey's height above the tallest thing in the lane (dashed); the thing that sets the LiDAR's shallowest clear angle (a
+    triangle); and its words over it (how much of the lane the survey covers in the corner, where it is not all of it). None where the
+    approach was not measured. The box prints it 0.58 in high and its full width, about 0.40 pt to a unit: its words are 11 to 15 units,
+    4.4 to 6 pt."""
     side = (spec or {}).get("approach")
     if not isinstance(side, dict):
         return None

@@ -1,6 +1,6 @@
 """How the approach to an LZ is planned (survey/flightpath.py; docs/LZ_SURVEYS.md §16): at 30° where what stands allows it, at the
-LiDAR's shallowest clear angle where that is steeper, or at the angle the survey's editor typed; descending from the survey's own height
-above the highest obstacle, 100 ft where it gives none."""
+LiDAR's shallowest clear angle where that is steeper, or at the angle the survey's editor typed; flown until its descent along the
+ground at the survey's own height above the tallest thing in the lane, 100 ft where it gives none, never up and down over each tree."""
 
 import math
 import sys
@@ -14,9 +14,14 @@ from survey import compare, flightpath  # noqa: E402
 TAN_30 = math.tan(math.radians(30.0))
 
 
-def lane(angle=8.5, start=1000.0, tops=None):
-    """A way's lane as survey/obstacles.py keeps it: open ground at ``start`` ft, or ``tops(k)`` standing in step ``k``."""
-    bins = [{"groundFt": start, "topFt": tops(k) if tops else start, "tallestFt": None} for k in range(100)]
+def lane(angle=8.5, start=1000.0, trees=None, ground=None):
+    """A way's lane as survey/obstacles.py keeps it: open ground at ``start`` ft (or ``ground(k)`` in step ``k``), with a tree
+    ``trees(k)`` ft tall standing in step ``k`` where that is not None."""
+    bins = []
+    for k in range(100):
+        under = ground(k) if ground else start
+        tree = trees(k) if trees else None
+        bins.append({"groundFt": under, "topFt": under + (tree or 0.0), "tallestFt": tree})
     return {"headingDeg": 360.0, "bearingDeg": 180.0, "start": {"groundFt": start}, "binM": 10.0, "bins": bins, "covered": 100,
             "clearance": {"angleDeg": angle, "obstacle": None}, "missing": None}
 
@@ -42,7 +47,8 @@ class PlanTests(unittest.TestCase):
         planned = flightpath.plan(lane(8.5))
         self.assertEqual({k: planned[k] for k in ("angleDeg", "minimumDeg", "typed", "steep", "heightFt")},
                          {"angleDeg": 30.0, "minimumDeg": 8.5, "typed": False, "steep": False, "heightFt": 100.0})
-        self.assertEqual(planned["descent"], {"fromTargetM": round(30.48 / TAN_30, 1), "topFt": 1000.0, "groundFt": 1000.0})
+        self.assertEqual(planned["descent"], {"fromTargetM": round(30.48 / TAN_30, 1), "groundFt": 1000.0})
+        self.assertEqual((planned["tallestFt"], planned["aboveGroundFt"]), (None, 100.0))      # nothing stands: 100 ft over the ground
         exactly = flightpath.plan(lane(30.0))
         self.assertEqual((exactly["angleDeg"], exactly["steep"]), (30.0, False))
         nothing = flightpath.plan(lane(-2.0))                                       # nothing above the touchdown point: 0°
@@ -53,11 +59,23 @@ class PlanTests(unittest.TestCase):
         self.assertEqual((planned["angleDeg"], planned["minimumDeg"], planned["steep"]), (41.0, 41.0, True))
         self.assertAlmostEqual(planned["descent"]["fromTargetM"], 30.48 / math.tan(math.radians(41.0)), delta=0.1)
 
-    def test_from_the_survey_s_own_height_above_the_highest_obstacle(self):
-        canopy = lane(8.5, tops=lambda k: 1000.0 + 30.0 * 3.28084)                 # 30 m of trees all the way out
+    def test_from_the_survey_s_own_height_above_the_tallest_tree(self):
+        canopy = lane(8.5, trees=lambda k: 98.4)                                     # 30 m of trees all the way out
         self.assertAlmostEqual(flightpath.plan(canopy, 140.0)["descent"]["fromTargetM"], (30.0 + 42.672) / TAN_30, delta=0.1)
         self.assertAlmostEqual(flightpath.plan(canopy)["descent"]["fromTargetM"], (30.0 + 30.48) / TAN_30, delta=0.1)
-        self.assertEqual(flightpath.plan(canopy, 140.0)["heightFt"], 140.0)
+        planned = flightpath.plan(canopy, 140.0)
+        self.assertEqual((planned["heightFt"], planned["tallestFt"], planned["aboveGroundFt"]), (140.0, 98.4, 238.4))
+
+    def test_along_the_ground_not_up_and_down_over_each_tree(self):
+        # The owner's (2026-10-27): one 98 ft tree 400 m out sets how high the approach is flown all the way in, 198 ft over the
+        # ground, though nothing stands where it descends; trees of other heights, and gaps, change nothing.
+        lone = flightpath.plan(lane(8.5, trees=lambda k: 98.4 if k == 40 else None))
+        self.assertAlmostEqual(lone["descent"]["fromTargetM"], 198.4 * 0.3048 / TAN_30, delta=0.1)
+        mixed = flightpath.plan(lane(8.5, trees=lambda k: (98.4, 40.0, None)[k % 3]))
+        self.assertEqual((mixed["descent"], mixed["aboveGroundFt"]), (lone["descent"], 198.4))
+        # The ground rising 1 m a step: the approach rises with it, 198 ft over it, so the path meets it further out.
+        rising = flightpath.plan(lane(8.5, trees=lambda k: 98.4 if k == 40 else None, ground=lambda k: 1000.0 + k * 3.28084))
+        self.assertAlmostEqual(rising["descent"]["fromTargetM"], (198.4 * 0.3048 - 0.5) / (TAN_30 - 0.1), delta=0.1)
 
     def test_at_the_angle_the_editor_typed(self):
         for least, typed in ((8.5, 12.0), (8.5, 35.0), (41.0, 12.0)):
@@ -73,12 +91,11 @@ class PlanTests(unittest.TestCase):
         self.assertEqual(flightpath.plan(loose)["descent"]["fromTargetM"], round(30.48 / TAN_30, 1))
 
     def test_the_lane_s_own_steps(self):
-        # A 98 ft tree in the fourth step: 35 m out in 10 m steps, under the path; 70 m out in 20 m steps, where the path is 100 ft
-        # above it only past 79.7 m.
-        tree = lane(8.5, tops=lambda k: 1000.0 + 98.4 if k == 3 else 1000.0)
-        self.assertEqual(flightpath.plan(tree)["descent"]["fromTargetM"], round(30.48 / TAN_30, 1))
-        tree["binM"] = 20.0
-        self.assertEqual(flightpath.plan(tree)["descent"]["fromTargetM"], 79.7)
+        # The ground rising 1 m a step: over 10 m steps 1 m in 10, over 20 m steps 1 m in 20, so the path meets the approach sooner.
+        rising = lane(8.5, ground=lambda k: 1000.0 + k * 3.28084)
+        self.assertAlmostEqual(flightpath.plan(rising)["descent"]["fromTargetM"], (30.48 - 0.5) / (TAN_30 - 0.1), delta=0.1)
+        rising["binM"] = 20.0
+        self.assertAlmostEqual(flightpath.plan(rising)["descent"]["fromTargetM"], (30.48 - 0.5) / (TAN_30 - 0.05), delta=0.1)
 
     def test_no_plan_where_the_lidar_has_no_angle(self):
         earlier = lane()

@@ -64,18 +64,16 @@ export const obstacleWords = (obstacle) => {
 };
 
 /**
- * Where the approach's planned path is the survey's height above the highest obstacle for good, its descent from that height beginning
- * there, and how high above the ground that is: "From 100 ft AHO: 405 m out, 198 ft above the ground"; "past 1,000 m" where it is still
- * within that height of what stands at the lane's last step.
+ * Where the approach's planned path meets the approach flown along the ground's line at the survey's height above the tallest thing in
+ * the lane, its descent beginning there, and how high above the ground that is: "From 100 ft AHO: 405 m out, 198 ft above the ground"
+ * (100 ft over a 98 ft tree); "past 1,000 m" where the path is still under it at the lane's last step.
  */
 export const descentWords = (plan) => {
   const descent = plan?.descent;
   if (!descent) return "—";
   const height = `From ${feet(plan.heightFt)} AHO`;
   if (!Number.isFinite(descent.fromTargetM)) return `${height}: past ${metres(descent.pastM ?? 1000)}`;
-  const above = Number.isFinite(descent.topFt) && Number.isFinite(descent.groundFt)
-    ? descent.topFt + plan.heightFt - descent.groundFt
-    : null;
+  const above = Number.isFinite(plan.aboveGroundFt) ? plan.aboveGroundFt : null;
   return `${height}: ${metres(descent.fromTargetM)} out${above !== null ? `, ${feet(above)} above the ground` : ""}`;
 };
 
@@ -195,10 +193,10 @@ const Obstacles = ({ obstacles, plan = null, heightDirty = false, approach = nul
           <p className="survey-muted">
             The approach is planned at {PLAN_DEG}° where what stands allows it, else at the shallowest angle that clears it. Angles are
             from the touchdown point, with no margin, over everything in a lane 10 m each side of the track: what stands 5 m or more
-            above its ground (2 m for a building, a wire, a tower or a bridge), and the ground where it rises. The approach is flown at
-            the survey's height above the highest obstacle (AHO), the treetops or the ground where nothing stands, until its descent
-            (100 ft where the survey gives none). These are the tallest things found in the LiDAR, not every obstacle: trees have grown
-            or fallen since it was flown, wires and poles seldom show in it, and treetops read up to a metre low.
+            above its ground (2 m for a building, a wire, a tower or a bridge), and the ground where it rises. Until its descent the
+            approach is flown along the ground at the survey's height above the highest obstacle (AHO), the tallest thing standing in
+            the lane (100 ft where the survey gives none). These are the tallest things found in the LiDAR, not every obstacle: trees
+            have grown or fallen since it was flown, wires and poles seldom show in it, and treetops read up to a metre low.
           </p>
         </>
       )}
