@@ -146,7 +146,7 @@ const SurveyEditor = ({ surveys }) => {
             canMeasure={!archived && Boolean(draft.diagram?.target)}
             whyNot={why}
             onMeasure={surveys.measure}
-            plans={survey.plans ?? null}
+            plan={survey.approach_plan ?? null}
             heightDirty={(draft.field?.profileObstacleFt ?? "") !== (survey.field?.profileObstacleFt ?? "")}
             approach={(survey.comparisons ?? []).find((row) => row.key === "approach") ?? null}
             onDecide={archived ? undefined : surveys.decide}
@@ -155,7 +155,7 @@ const SurveyEditor = ({ surveys }) => {
           />
           <Disagreements
             rows={survey.comparisons ?? []}
-            plan={survey.plans?.approach ?? null}
+            plan={survey.approach_plan ?? null}
             dirtyField={fieldDirty}
             busy={Boolean(busy) || archived}
             onDecide={surveys.decide}

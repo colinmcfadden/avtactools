@@ -64,7 +64,7 @@ export const measuredHeading = (snapshot) => {
  * and `onUndecide` let the editor type it or let it go, `deciding` while they cannot.
  */
 const Measurements = ({
-  snapshot, stale = [], onMeasure, busy, canMeasure, whyNot, plans = null, heightDirty = false, approach = null, onDecide, onUndecide,
+  snapshot, stale = [], onMeasure, busy, canMeasure, whyNot, plan = null, heightDirty = false, approach = null, onDecide, onUndecide,
   deciding = false,
 }) => {
   const heading = measuredHeading(snapshot);
@@ -129,7 +129,7 @@ const Measurements = ({
           {profile && <div className="survey-profile"><SlopeProfile profile={profile} /></div>}
           <Obstacles
             obstacles={snapshot.obstacles}
-            plans={plans}
+            plan={plan}
             heightDirty={heightDirty}
             approach={approach}
             onDecide={onDecide}

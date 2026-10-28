@@ -287,7 +287,7 @@ describe("the survey editor", () => {
     expect(within(elevation).queryByRole("button", { name: /angle/ })).toBeNull();          // only the approach's angle is typed
   });
 
-  it("shows each way as the page plans it, and says to save a height typed before it plans from it", async () => {
+  it("shows the approach as the page plans it, not the exit, and says to save a height typed before it plans from it", async () => {
     const lane = (headingDeg) => ({ headingDeg, start: { groundFt: 2061 }, bins: [], covered: 100,
       clearance: { angleDeg: 8.5, obstacle: { heightFt: 98.4, riseFt: 98.4, kind: "vegetation", fromTargetM: 200, offsetM: 0 } } });
     const obstacles = { status: "measured", words: null, survey: { name: "GA_Statewide_B3_2018", year: 2018 }, approach: lane(360),
@@ -297,11 +297,11 @@ describe("the survey editor", () => {
     const approach = { key: "approach", label: "Approach angle", field: "8.7° (100 ft at 200 m)", computed: "8.5° (LiDAR: 98 ft tree 200 m out)",
       apart: "0.2° apart", disagrees: false, open: false, override: null, overrideStands: false, printed: "computed" };
     const measured = survey({ snapshot: { ...survey().snapshot, obstacles }, comparisons: [...COMPARISONS, approach],
-      plans: { approach: plan(100), exit: plan(100) } });
+      approach_plan: plan(100) });
     await openDonovan(fakeClient({ getSurvey: jest.fn(async () => measured) }));
     const panel = screen.getByRole("group", { name: "Standing on and round the LZ · LiDAR GA_Statewide_B3_2018" });
     expect(within(panel).getByRole("row", { name: /Approach 360°/ })).toHaveTextContent("30.0°From 100 ft AHO: 53 m out");
-    expect(within(panel).getByRole("row", { name: /Exit 180°/ })).toHaveTextContent("30.0°To 100 ft AHO: 53 m out");
+    expect(within(panel).queryByRole("row", { name: /Exit/ })).toBeNull();                 // measured by an earlier EZ/PZ, not shown
     expect(within(panel).queryByText(/Save to plan/)).toBeNull();
     fireEvent.change(screen.getByLabelText("Obstacle height (ft)"), { target: { value: "140" } });
     expect(within(panel).getByText("Save to plan the approach from the height you have typed.")).toBeInTheDocument();

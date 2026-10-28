@@ -40,29 +40,24 @@ const MEASURED = {
   trees: [{ ...SPOT, heightFt: 39.4 }],
   heightMap: { overlay: "data:image/png;base64,AAAA", bounds: [[34.59, -84.13], [34.6, -84.12]] },
 };
-// Each way as the server plans it (survey/flightpath.py): at 30°, from the survey's 100 ft above the highest obstacle.
-const OPEN = { fromTargetM: 52.8, topFt: 2200, groundFt: 2200 };
-const PLANS = {
-  approach: { angleDeg: 30, minimumDeg: 8.5, typed: false, steep: false, heightFt: 100, descent: OPEN },
-  exit: { angleDeg: 30, minimumDeg: 0, typed: false, steep: false, heightFt: 100, descent: { fromTargetM: 47.6, topFt: 2190, groundFt: 2190 } },
-};
+// The approach as the server plans it (survey/flightpath.py): at 30°, from the survey's 100 ft above the highest obstacle.
+const PLAN = { angleDeg: 30, minimumDeg: 8.5, typed: false, steep: false, heightFt: 100, descent: { fromTargetM: 52.8, topFt: 2200, groundFt: 2200 } };
 const APPROACH_ROW = {
   key: "approach", label: "Approach angle", field: "8.7° (100 ft at 200 m)", computed: "8.5° (LiDAR: 98 ft tree 200 m out)",
   apart: "0.2° apart", disagrees: false, open: false, override: null, overrideStands: false, printed: "computed",
 };
 
 describe("what the LiDAR found", () => {
-  it("says each way's plan, where its descent begins, the shallowest angle that clears it and what sets that, and what stands", () => {
-    render(<Obstacles obstacles={MEASURED} plans={PLANS} />);
+  it("says the approach's plan, where its descent begins, the shallowest angle that clears it and what sets that, and what stands", () => {
+    render(<Obstacles obstacles={MEASURED} plan={PLAN} />);
     const group = screen.getByRole("group", { name: "Standing on and round the LZ · LiDAR GA_Statewide_B3_2018" });
     expect(within(group).getAllByRole("columnheader").map((cell) => cell.textContent))
-      .toEqual(["Way", "Planned", "Descent / climb", "Shallowest clear"]);
+      .toEqual(["Way", "Planned", "Descent", "Shallowest clear"]);
     const approach = within(group).getByRole("row", { name: /Approach 090°/ });
     expect(within(approach).getAllByRole("cell").map((cell) => cell.textContent)).toEqual([
       "30.0°", "From 100 ft AHO: 53 m out, 100 ft above the ground", "8.5°: 98 ft tree 200 m out, 4 m left of the track"]);
-    const exit = within(group).getByRole("row", { name: /Exit 270°/ });
-    expect(within(exit).getAllByRole("cell").map((cell) => cell.textContent)).toEqual([
-      "30.0°", "To 100 ft AHO: 48 m out, 100 ft above the ground", "0.0°: Nothing in the way"]);
+    expect(within(group).getAllByRole("row")).toHaveLength(2);                 // the heading and the approach: no exit, though measured
+    expect(within(group).queryByText(/Exit/)).toBeNull();
     expect(within(group).queryByText(/Steeper than/)).toBeNull();
     expect(within(group).getByText("39 ft tree, 36 m at 034°")).toBeInTheDocument();
     expect(within(group).getByText("50 m outside the boundary")).toBeInTheDocument();
@@ -71,32 +66,31 @@ describe("what the LiDAR found", () => {
     expect(within(group).getByText(/wires and poles seldom show in it/)).toBeInTheDocument();
   });
 
-  it("says where the descent from the way's height above the highest obstacle begins, and how high above the ground that is", () => {
-    const canopy = { ...PLANS.approach, descent: { fromTargetM: 404.7, topFt: 2298.4, groundFt: 2200 } };
+  it("says where the descent from the survey's height above the highest obstacle begins, and how high above the ground that is", () => {
+    const canopy = { ...PLAN, descent: { fromTargetM: 404.7, topFt: 2298.4, groundFt: 2200 } };
     expect(descentWords(canopy)).toBe("From 100 ft AHO: 405 m out, 198 ft above the ground");      // 100 ft over 98 ft treetops
     expect(descentWords({ ...canopy, heightFt: 140, descent: { fromTargetM: 73.9, topFt: 2200, groundFt: 2200 } }))
       .toBe("From 140 ft AHO: 74 m out, 140 ft above the ground");                                 // the survey's own 140 ft
-    expect(descentWords(PLANS.exit, true)).toBe("To 100 ft AHO: 48 m out, 100 ft above the ground");
     expect(descentWords({ ...canopy, descent: { fromTargetM: 152.4, topFt: 2200, groundFt: null } })).toBe("From 100 ft AHO: 152 m out");
     expect(descentWords({ ...canopy, descent: { fromTargetM: null, pastM: 310 } })).toBe("From 100 ft AHO: past 310 m");
     expect(descentWords({ ...canopy, descent: null })).toBe("—");
     expect(descentWords(null)).toBe("—");
   });
 
-  it("says a way planned steeper than 30°, and one at the editor's angle", () => {
-    const steep = { ...PLANS.approach, angleDeg: 41, minimumDeg: 41, steep: true };
-    const { rerender } = render(<Obstacles obstacles={MEASURED} plans={{ ...PLANS, approach: steep }} />);
+  it("says an approach planned steeper than 30°, and one at the editor's angle", () => {
+    const steep = { ...PLAN, angleDeg: 41, minimumDeg: 41, steep: true };
+    const { rerender } = render(<Obstacles obstacles={MEASURED} plan={steep} />);
     const approach = screen.getByRole("row", { name: /Approach 090°/ });
     expect(within(approach).getAllByRole("cell")[0]).toHaveTextContent("41.0°Steeper than 30°: nothing less clears it");
     expect(within(approach).getByText("Steeper than 30°: nothing less clears it")).toHaveClass("survey-state--warn");
-    rerender(<Obstacles obstacles={MEASURED} plans={{ ...PLANS, approach: { ...PLANS.approach, angleDeg: 12, typed: true } }} />);
+    rerender(<Obstacles obstacles={MEASURED} plan={{ ...PLAN, angleDeg: 12, typed: true }} />);
     expect(within(screen.getByRole("row", { name: /Approach 090°/ })).getAllByRole("cell")[0]).toHaveTextContent("12.0°Yours");
     expect(screen.queryByText(/Steeper than/)).toBeNull();
   });
 
   it("says a descent past the lane, a plan not yet sent, a height not yet saved, and a lane measured by an earlier EZ/PZ", () => {
-    const past = { ...PLANS, approach: { ...PLANS.approach, descent: { fromTargetM: null, pastM: 1000 } } };
-    const { rerender } = render(<Obstacles obstacles={MEASURED} plans={past} />);
+    const past = { ...PLAN, descent: { fromTargetM: null, pastM: 1000 } };
+    const { rerender } = render(<Obstacles obstacles={MEASURED} plan={past} />);
     expect(screen.getByRole("row", { name: /Approach 090°/ })).toHaveTextContent("From 100 ft AHO: past 1,000 m");
     expect(screen.queryByText(/Save to plan/)).toBeNull();
     rerender(<Obstacles obstacles={MEASURED} heightDirty />);
@@ -104,7 +98,7 @@ describe("what the LiDAR found", () => {
       .toEqual(["—", "—", "8.5°: 98 ft tree 200 m out, 4 m left of the track"]);
     expect(screen.getByText("Save to plan the approach from the height you have typed.")).toBeInTheDocument();
     const { start: _start, ...earlier } = MEASURED.approach;
-    rerender(<Obstacles obstacles={{ ...MEASURED, approach: earlier }} plans={PLANS} />);
+    rerender(<Obstacles obstacles={{ ...MEASURED, approach: earlier }} plan={PLAN} />);
     expect(screen.getByRole("row", { name: /Approach 090°/ })).toHaveTextContent("Measured by an earlier EZ/PZ: measure the LZ again.");
   });
 
@@ -117,14 +111,14 @@ describe("what the LiDAR found", () => {
     expect(screen.queryByRole("group")).toBeNull();
   });
 
-  it("names a way that was not measured, and why a measured one has no angle", () => {
-    const { rerender } = render(<Obstacles obstacles={{ ...MEASURED, exit: null }} />);
-    expect(screen.getByText("Not measured: set the best exit and measure again.")).toBeInTheDocument();
-    const none = { headingDeg: 270, start: { groundFt: null }, clearance: null };
-    rerender(<Obstacles obstacles={{ ...MEASURED, exit: { ...none, missing: "no_target_ground" } }} />);
-    expect(screen.getByRole("row", { name: /Exit 270°/ })).toHaveTextContent("No ground at the touchdown point in the LiDAR");
-    rerender(<Obstacles obstacles={{ ...MEASURED, exit: { ...none, missing: "no_returns" } }} />);
-    expect(screen.getByRole("row", { name: /Exit 270°/ })).toHaveTextContent("No LiDAR returns in its lane");
+  it("says the approach was not measured, and why a measured one has no angle", () => {
+    const { rerender } = render(<Obstacles obstacles={{ ...MEASURED, approach: null }} />);
+    expect(screen.getByRole("row", { name: "Approach Not measured: set the best approach and measure again." })).toBeInTheDocument();
+    const none = { headingDeg: 90, start: { groundFt: null }, clearance: null };
+    rerender(<Obstacles obstacles={{ ...MEASURED, approach: { ...none, missing: "no_target_ground" } }} />);
+    expect(screen.getByRole("row", { name: /Approach 090°/ })).toHaveTextContent("No ground at the touchdown point in the LiDAR");
+    rerender(<Obstacles obstacles={{ ...MEASURED, approach: { ...none, missing: "no_returns" } }} />);
+    expect(screen.getByRole("row", { name: /Approach 090°/ })).toHaveTextContent("No LiDAR returns in its lane");
   });
 
   it("says how much of a lane the survey covers, where it is not all of it", () => {
@@ -138,7 +132,7 @@ describe("what the LiDAR found", () => {
     const onDecide = jest.fn(async () => ({}));
     const onUndecide = jest.fn();
     const { rerender } = render(
-      <Obstacles obstacles={MEASURED} plans={PLANS} approach={APPROACH_ROW} onDecide={onDecide} onUndecide={onUndecide} />);
+      <Obstacles obstacles={MEASURED} plan={PLAN} approach={APPROACH_ROW} onDecide={onDecide} onUndecide={onUndecide} />);
     fireEvent.click(screen.getByRole("button", { name: "Type the approach's angle…" }));
     const dialog = screen.getByRole("dialog", { name: "Type the approach's angle" });
     expect(dialog).toHaveTextContent("Planned at 30.0°. Shallowest clear: 8.5° (LiDAR: 98 ft tree 200 m out)");
@@ -155,8 +149,8 @@ describe("what the LiDAR found", () => {
     expect(onDecide).toHaveBeenCalledWith("approach", "typed", "The tree line was cut in 2024.", 12);
     const typed = { ...APPROACH_ROW, override: { choice: "typed", value: 12, reason: "The tree line was cut in 2024.", by: "CW3 Admin" },
       overrideStands: true, printed: "typed" };
-    const yours = { ...PLANS, approach: { ...PLANS.approach, angleDeg: 12, typed: true } };
-    rerender(<Obstacles obstacles={MEASURED} plans={yours} approach={typed} onDecide={onDecide} onUndecide={onUndecide} />);
+    const yours = { ...PLAN, angleDeg: 12, typed: true };
+    rerender(<Obstacles obstacles={MEASURED} plan={yours} approach={typed} onDecide={onDecide} onUndecide={onUndecide} />);
     expect(screen.getByText("The page prints 12.0° for the approach, typed by CW3 Admin: “The tree line was cut in 2024.”"))
       .toHaveClass("survey-state--info");
     expect(screen.getByRole("row", { name: /Approach 090°/ })).toHaveTextContent("8.5°: 98 ft tree");   // the LiDAR's, beside it
