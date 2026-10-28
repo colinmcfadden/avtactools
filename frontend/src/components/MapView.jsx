@@ -163,6 +163,8 @@ const MapView = ({
   targetLocation,
   mapData,
   detectedLZ,
+  lzMeasurements,
+  onLzMeasureChange,
   assets,
   aircraftProfiles,
   activeAircraftProfile,
@@ -387,6 +389,8 @@ const MapView = ({
           <LZDimensions
             key={`lz-dimensions-${activeDiagramId ?? "none"}`}
             detectedLZ={detectedLZ}
+            measurements={lzMeasurements}
+            onChange={onLzMeasureChange}
           />
         )}
 
