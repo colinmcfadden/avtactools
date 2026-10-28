@@ -38,7 +38,7 @@ from survey import access
 from survey import book as book_pdf
 from survey import assets as asset_store
 from survey import changes as change_lines
-from survey import compare, fields, importing, measure, pages
+from survey import compare, fields, flightpath, importing, measure, pages
 from survey.compile import as_date, compile_page
 from version import __version__
 
@@ -686,6 +686,7 @@ def _full(survey):
     revisions = _revisions(survey)
     book = _book_of(survey)
     record = LzSurveyImport.query.filter_by(survey_id=survey.id).first()
+    rows = compare.compare(survey.field, survey.snapshot, survey.overrides)
     return {
         **_summary(survey, record),
         'imported': _import_full(record, survey),
@@ -698,7 +699,9 @@ def _full(survey):
         'diagram': survey.diagram,
         'snapshot': survey.snapshot,
         'stale': measure.stale(survey.snapshot, survey.diagram, survey.field),
-        'comparisons': compare.compare(survey.field, survey.snapshot, survey.overrides),
+        'comparisons': rows,
+        # Each way as the page plans it (survey/flightpath.py): at 30° where what stands allows, from the survey's own height.
+        'plans': flightpath.plans(survey.field, survey.snapshot, survey.overrides, rows),
         'asset_ids': [a.id for a in asset_rows],
         'assets': [_asset_json(a, survey.uuid) for a in asset_rows],
         'created_by': survey.created_by_name,

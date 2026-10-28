@@ -26,7 +26,7 @@ if str(BACKEND_DIR) not in sys.path:
     sys.path.insert(0, str(BACKEND_DIR))
 
 from lidar import coverage, ept, names, stream  # noqa: E402
-from survey import obstacles  # noqa: E402
+from survey import flightpath, obstacles  # noqa: E402
 from test_lidar_stream import write_laz  # noqa: E402
 
 LAT, LON = 34.596407, -84.128098           # Ellijay
@@ -203,13 +203,21 @@ class SceneTests(ObstacleCase):
         for k in (25, 26):                                                       # the tree line, 258-262 m
             self.assertAlmostEqual(approach["bins"][k]["tallestFt"], 30.0 * FEET, delta=0.5)
         self.assertAlmostEqual(approach["bins"][0]["groundFt"], 300.0 * FEET, delta=0.2)
-        # The descent from 100 ft AGL, at that angle over the level track; the tree line, 98 ft, is no place over 100 ft.
-        self.assertAlmostEqual(approach["descent"]["fromTargetM"], obstacles.AGL_M / math.tan(math.radians(clear["angleDeg"])),
-                               delta=0.5)
-        self.assertEqual(approach["tall"], [])
+        # The steps hold what a descent is planned over: at the LiDAR's angle, 100 ft above the highest obstacle, the path passes the
+        # tree line's top with no margin, and the open ground past it is more than 100 ft under the path from the step after: so it
+        # begins just past the tree line (the 10 m step past 262 m). The lane keeps no descent of its own: the page plans it.
+        descent = descent_over(approach, clear["angleDeg"])
+        self.assertGreater(descent["fromTargetM"], 265.0)
+        self.assertLess(descent["fromTargetM"], 275.0)
+        self.assertNotIn("descent", approach)
+        self.assertNotIn("tall", approach)
         self.assertIsNone(approach["missing"])
+        # Planned at 30°, which clears the tree line by far, it descends from 100 ft over the open ground short of it.
+        planned = flightpath.plan(approach)
+        self.assertEqual((planned["angleDeg"], planned["steep"], planned["heightFt"]), (30.0, False, 100.0))
+        self.assertAlmostEqual(planned["descent"]["fromTargetM"], 30.48 / math.tan(math.radians(30.0)), delta=1.5)
 
-    def test_the_exit_clears_the_tower_and_flags_it_over_100_ft(self):
+    def test_the_exit_clears_the_tower_and_climbs_past_it(self):
         exit_ = self.found()["exit"]
         self.assertEqual(exit_["bearingDeg"], 90.0)
         clear = exit_["clearance"]
@@ -217,13 +225,10 @@ class SceneTests(ObstacleCase):
         self.assertEqual(clear["obstacle"]["kind"], "tower")
         self.assertAlmostEqual(clear["obstacle"]["heightFt"], 50.0 * FEET, delta=0.5)
         self.assertLess(clear["obstacle"]["offsetM"], 0)                         # left of the track, flying it
-        descent = exit_["descent"]
-        self.assertAlmostEqual(descent["fromTargetM"], obstacles.AGL_M / math.tan(math.radians(clear["angleDeg"])), delta=0.5)
-        (place,) = exit_["tall"]                                                 # 164 ft: over the 100 ft the exit climbs to
-        self.assertEqual((place["fromM"], place["toM"]), (450.0, 470.0))
-        self.assertEqual(place["obstacle"]["kind"], "tower")
-        self.assertAlmostEqual(place["overFt"], 50.2 * FEET, delta=0.5)          # over the track's ground, 10 m beside its own
-        self.assertEqual(obstacles.in_the_way(exit_["tall"], descent), [place])
+        descent = descent_over(exit_, clear["angleDeg"])                         # 100 ft above everything just past the tower
+        self.assertGreater(descent["fromTargetM"], 465.0)
+        self.assertLess(descent["fromTargetM"], 475.0)
+        self.assertNotIn("descent", exit_)
 
     def test_what_stands_in_the_lz_and_round_it(self):
         found = self.found()
@@ -477,6 +482,12 @@ def flat(east, north):
     return np.full(np.shape(east), 300.0)
 
 
+def descent_over(lane, angle, height_ft=obstacles.AHO_FT):
+    """Where survey/obstacles.py puts a descent at ``angle`` over the 10 m steps a lane keeps: what the page plans over (flightpath)."""
+    return obstacles.descent_point(angle, lane["start"]["groundFt"], [b["topFt"] for b in lane["bins"]],
+                                   [b["groundFt"] for b in lane["bins"]], height_ft=height_ft)
+
+
 def approach(points, ring=RING):
     return obstacles.lane(FRAME, points, ring, APPROACH, approach=True)
 
@@ -496,7 +507,6 @@ class LaneTests(unittest.TestCase):
         e, n = rng.uniform(-1100.0, -1.0, 60000), rng.uniform(-70.0, 70.0, 60000)
         found = approach(points_over(flat, extra=[(e, n, rng.uniform(0.1, 0.4, e.size), 3)], noise=0.10))
         self.assertEqual(found["clearance"], {"angleDeg": 0.0, "obstacle": None})
-        self.assertIsNone(found["descent"])                                      # nothing to clear, so no descent to fly it
         self.assertIsNone(found["missing"])
 
     def test_brush_is_in_no_one_s_way_and_what_is_built_is_from_2_m(self):
@@ -542,29 +552,24 @@ class LaneTests(unittest.TestCase):
         self.assertEqual(clear["obstacle"]["kind"], "wire")
         self.assertAlmostEqual(clear["angleDeg"], math.degrees(math.atan2(20.0, 360.0)), delta=0.1)
 
-    def test_the_descent_and_what_stands_over_100_ft_past_it(self):
-        # A 20 m stand 100 m out sets the angle; past where its path is 100 ft up, a 40 m tree 600 m out and a 28 m one on a bank 5 m over
-        # the track's ground, 500 m out, stand over the 100 ft the approach is flown at; a 29 m one on the track does not.
-        def bank(east, north):
-            return 300.0 + np.clip(np.asarray(north, float) - 3.0, 0.0, None) * 1.0
-
-        found = approach(points_over(bank, extra=[stand(100.0, 20.0, across=(-6.0, 2.0)), stand(600.0, 40.0, across=(-6.0, 2.0)),
-                                                  stand(500.0, 28.0, across=(8.0, 8.0)), stand(800.0, 29.0, across=(-6.0, 2.0))]))
+    def test_the_steps_put_a_descent_100_ft_above_the_highest_obstacle(self):
+        # A 20 m stand 100 m out sets the angle (11.3°); past it, from 150 m, a forest 25 m tall. Flown at that angle 100 ft above the
+        # treetops, the approach descends where the path is 100 ft over them: 25 m + 30.48 m at tan 11.3°, 277 m out, not the 152 m
+        # where it would be 100 ft over the ground.
+        forest = (*np.meshgrid(np.arange(-1000.0, -150.0, 2.0), np.arange(-6.0, 6.5, 2.0)), 25.0, 5)
+        found = approach(points_over(flat, extra=[stand(100.0, 20.0, across=(-6.0, 2.0)), forest]))
         clear = found["clearance"]
         self.assertAlmostEqual(clear["angleDeg"], math.degrees(math.atan2(20.0, 100.0)), delta=0.2)
-        descent = found["descent"]
-        self.assertAlmostEqual(descent["fromTargetM"], obstacles.AGL_M / math.tan(math.radians(clear["angleDeg"])), delta=0.5)
+        descent = descent_over(found, clear["angleDeg"])
+        slope = math.tan(math.radians(clear["angleDeg"]))
+        self.assertAlmostEqual(descent["fromTargetM"], (25.0 + 30.48) / slope, delta=1.0)
+        self.assertAlmostEqual(descent["topFt"], 325.0 * FEET, delta=0.5)           # the treetops there
         self.assertAlmostEqual(descent["groundFt"], 300.0 * FEET, delta=0.2)
-        bank_tree, far_tree = found["tall"]                                      # nearest first
-        self.assertEqual((bank_tree["fromM"], bank_tree["toM"]), (500.0, 510.0))
-        self.assertAlmostEqual(bank_tree["obstacle"]["heightFt"], 28.0 * FEET, delta=0.5)   # its own height, under 100 ft
-        self.assertAlmostEqual(bank_tree["overFt"], 33.0 * FEET, delta=0.5)                 # over the track's ground, not
-        self.assertEqual((far_tree["fromM"], far_tree["toM"]), (600.0, 610.0))
-        self.assertAlmostEqual(far_tree["overFt"], 40.0 * FEET, delta=0.5)
-        self.assertEqual(obstacles.in_the_way(found["tall"], descent), [bank_tree, far_tree])
-        self.assertEqual(obstacles.in_the_way(found["tall"], {"fromTargetM": 560.0}), [far_tree])
-        self.assertEqual(obstacles.in_the_way(found["tall"], {"fromTargetM": None, "groundFt": None}), [])   # all under the path
-        self.assertEqual(obstacles.in_the_way(found["tall"], None), [])
+        # From the survey's own 140 ft above them, further out; and the same stand with no forest past it: 100 ft above what stands is
+        # 100 ft over the open ground.
+        self.assertAlmostEqual(descent_over(found, clear["angleDeg"], 140.0)["fromTargetM"], (25.0 + 42.672) / slope, delta=1.0)
+        open_ground = approach(points_over(flat, extra=[stand(100.0, 20.0, across=(-6.0, 2.0))]))
+        self.assertAlmostEqual(descent_over(open_ground, clear["angleDeg"])["fromTargetM"], 30.48 / slope, delta=1.0)
 
     def test_how_much_of_the_lane_the_survey_covers_is_kept(self):
         found = approach(points_over(flat, lane_to=-360.0))
@@ -579,7 +584,7 @@ class LaneTests(unittest.TestCase):
         east_only = obstacles.Points(e, n, flat(e, n), np.full(e.size, 2, np.uint8))  # nothing west of the touchdown point at all
         east_only.measure_ground()
         empty = approach(east_only)
-        self.assertEqual((empty["covered"], empty["clearance"], empty["descent"], empty["missing"]), (0, None, None, "no_returns"))
+        self.assertEqual((empty["covered"], empty["clearance"], empty["missing"]), (0, None, "no_returns"))
 
     def test_with_no_ground_at_the_touchdown_point_there_is_no_angle_and_why(self):
         rng = np.random.default_rng(5)
@@ -588,7 +593,7 @@ class LaneTests(unittest.TestCase):
         points.measure_ground()
         points.drop_lone()
         found = approach(points)
-        self.assertEqual((found["clearance"], found["descent"], found["missing"]), (None, None, "no_target_ground"))
+        self.assertEqual((found["clearance"], found["missing"]), (None, "no_target_ground"))
 
     def test_the_ground_is_answered_in_the_order_asked(self):
         points = points_over(lambda e, n: 300.0 + 0.01 * e + 0.02 * n)
@@ -598,37 +603,70 @@ class LaneTests(unittest.TestCase):
 
 
 class DescentTests(unittest.TestCase):
-    """Where a path from the touchdown point is 100 ft above the ground under it: the approach's descent from 100 ft AGL begins there."""
+    """Where a path from the touchdown point is a height above the highest obstacle under it for good (100 ft unless the survey gives
+    its own): the approach's descent from that height above the highest obstacle (AHO) begins there."""
 
     @staticmethod
-    def ground(slope, start=1000.0):
-        return [start + slope * (k + 0.5) * 10.0 * FEET for k in range(100)]
+    def steps(height_m=0.0, slope=0.0, start=1000.0):
+        """What stands highest and the ground in each 10 m step: ``height_m`` of trees over ground rising by ``slope``."""
+        ground = [start + slope * (k + 0.5) * 10.0 * FEET for k in range(100)]
+        return [g + height_m * FEET for g in ground], ground
 
-    def test_over_level_ground_it_is_100_ft_over_the_tangent(self):
-        found = obstacles.descent_point(14.4, 1000.0, self.ground(0.0))
-        self.assertEqual(found, {"fromTargetM": round(30.48 / math.tan(math.radians(14.4)), 1), "groundFt": 1000.0})
-        far = obstacles.descent_point(3.0, 1000.0, self.ground(0.0))                 # a shallow path: 582 m out, most of the lane
-        self.assertEqual(far, {"fromTargetM": round(30.48 / math.tan(math.radians(3.0)), 1), "groundFt": 1000.0})
+    def test_over_open_ground_it_is_100_ft_over_the_tangent(self):
+        tops, ground = self.steps()
+        found = obstacles.descent_point(14.4, 1000.0, tops, ground)
+        self.assertEqual(found, {"fromTargetM": round(30.48 / math.tan(math.radians(14.4)), 1), "topFt": 1000.0, "groundFt": 1000.0})
+        far = obstacles.descent_point(3.0, 1000.0, tops, ground)                    # a shallow path: 582 m out, most of the lane
+        self.assertEqual(far["fromTargetM"], round(30.48 / math.tan(math.radians(3.0)), 1))
 
-    def test_ground_rising_away_puts_it_further_out_and_falling_nearer(self):
+    def test_over_the_canopy_it_is_100_ft_over_the_treetops(self):
+        tops, ground = self.steps(height_m=30.0)
         tangent = math.tan(math.radians(14.4))
-        rising = obstacles.descent_point(14.4, 1000.0, self.ground(0.05))
-        self.assertAlmostEqual(rising["fromTargetM"], 30.48 / (tangent - 0.05), delta=0.1)
-        self.assertAlmostEqual(rising["groundFt"], 1000.0 + 0.05 * rising["fromTargetM"] * FEET, delta=0.1)
-        falling = obstacles.descent_point(14.4, 1000.0, self.ground(-0.05))
-        self.assertAlmostEqual(falling["fromTargetM"], 30.48 / (tangent + 0.05), delta=0.1)
+        found = obstacles.descent_point(14.4, 1000.0, tops, ground)
+        self.assertAlmostEqual(found["fromTargetM"], (30.0 + 30.48) / tangent, delta=0.1)
+        self.assertEqual((found["topFt"], found["groundFt"]), (round(1000.0 + 30.0 * FEET, 1), 1000.0))
+        rising_tops, rising_ground = self.steps(height_m=30.0, slope=0.05)        # the canopy rising away puts it further out
+        self.assertAlmostEqual(obstacles.descent_point(14.4, 1000.0, rising_tops, rising_ground)["fromTargetM"],
+                               (30.0 + 30.48) / (tangent - 0.05), delta=0.1)
 
-    def test_a_step_with_no_ground_is_passed_over(self):
-        ground = self.ground(0.0)
-        ground[10] = ground[11] = None                                           # the steps either side of 118.7 m
-        ground[12] = float("nan")
-        self.assertAlmostEqual(obstacles.descent_point(14.4, 1000.0, ground)["fromTargetM"], 118.7, delta=0.1)
+    def test_a_gap_in_the_trees_nearer_in_does_not_bring_it_in(self):
+        # Coming in over the canopy, the aircraft meets its path where the canopy is, not where a gap nearer in leaves open ground the
+        # path is already 100 ft over.
+        tops, ground = self.steps(height_m=30.0)
+        whole = obstacles.descent_point(14.4, 1000.0, tops, ground)
+        tops[15] = ground[15]                                                       # 150-160 m: a gap, 39.8 m under the path
+        self.assertEqual(obstacles.descent_point(14.4, 1000.0, tops, ground), whole)
 
-    def test_a_path_not_100_ft_up_in_the_lane_or_not_rising_has_none(self):
-        self.assertEqual(obstacles.descent_point(1.0, 1000.0, self.ground(0.0)), {"fromTargetM": None, "groundFt": None})
+    def test_a_step_with_nothing_known_is_passed_over(self):
+        tops, ground = self.steps()
+        tops[10] = tops[11] = None                                                  # the steps either side of 118.7 m
+        tops[12] = float("nan")
+        self.assertAlmostEqual(obstacles.descent_point(14.4, 1000.0, tops, ground)["fromTargetM"], 118.7, delta=0.1)
+        ground[13] = None                                                           # the ground unknown either side: none said
+        self.assertIsNone(obstacles.descent_point(14.4, 1000.0, tops, ground)["groundFt"])
+
+    def test_a_path_still_within_100_ft_at_the_last_step_known_is_past_it(self):
+        tops, ground = self.steps()
+        self.assertEqual(obstacles.descent_point(1.0, 1000.0, tops, ground),
+                         {"fromTargetM": None, "pastM": 1000.0, "topFt": None, "groundFt": None})
+        tops[31:] = [None] * 69                                                     # the survey covers 310 m
+        self.assertEqual(obstacles.descent_point(3.0, 1000.0, tops, ground)["pastM"], 310.0)
+
+    def test_from_the_survey_s_own_height(self):
+        tops, ground = self.steps(height_m=30.0)
+        tangent = math.tan(math.radians(30.0))
+        for height_ft in (75.0, 140.0, 150.0):
+            found = obstacles.descent_point(30.0, 1000.0, tops, ground, height_ft=height_ft)
+            self.assertAlmostEqual(found["fromTargetM"], (30.0 + height_ft * 0.3048) / tangent, delta=0.1)
+        for height_ft in (0.0, -100.0, None, float("nan"), float("inf")):
+            self.assertIsNone(obstacles.descent_point(30.0, 1000.0, tops, ground, height_ft=height_ft))
+
+    def test_a_path_that_does_not_rise_or_has_nothing_to_measure_has_none(self):
+        tops, ground = self.steps()
         for angle in (0.0, -3.0, 90.0, None, float("nan"), True):
-            self.assertIsNone(obstacles.descent_point(angle, 1000.0, self.ground(0.0)))
-        self.assertIsNone(obstacles.descent_point(14.4, None, self.ground(0.0)))
+            self.assertIsNone(obstacles.descent_point(angle, 1000.0, tops, ground))
+        self.assertIsNone(obstacles.descent_point(14.4, None, tops, ground))
+        self.assertIsNone(obstacles.descent_point(14.4, 1000.0, [None] * 100, ground))
 
 
 class RoundTheLzTests(unittest.TestCase):

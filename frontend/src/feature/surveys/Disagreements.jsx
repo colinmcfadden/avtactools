@@ -98,7 +98,14 @@ export const ReasonDialog = ({ row, onConfirm, onCancel }) => {
  * Asks for the approach's angle to print over the LiDAR's, and why: both are required, and both are kept with the survey, with who
  * typed them and the two values they were typed against. `row` is the approach's comparison; an angle typed before is offered again.
  */
-export const AngleDialog = ({ row, onConfirm, onCancel }) => {
+/** What the approach is planned at, and the LiDAR's shallowest clear angle, over the dialog that types an angle in place of the plan. */
+const angleSubtitle = (row, plan) => {
+  if (!row?.computed) return undefined;
+  if (!plan || plan.typed) return `Shallowest clear: ${row.computed}`;
+  return `Planned at ${plan.angleDeg.toFixed(1)}°. Shallowest clear: ${row.computed}`;
+};
+
+export const AngleDialog = ({ row, plan = null, onConfirm, onCancel }) => {
   const id = useId();
   const angleInput = useRef(null);
   const reasonInput = useRef(null);
@@ -131,7 +138,7 @@ export const AngleDialog = ({ row, onConfirm, onCancel }) => {
   return (
     <Dialog
       title="Type the approach's angle"
-      subtitle={row?.computed ? `The LiDAR's: ${row.computed}` : undefined}
+      subtitle={angleSubtitle(row, plan)}
       icon="pencil"
       onClose={busy ? undefined : onCancel}
       dismissible={!busy}
@@ -159,7 +166,7 @@ export const AngleDialog = ({ row, onConfirm, onCancel }) => {
             setError(null);
           }}
         />
-        {hint("angle", "From the touchdown point. The page prints it as yours, and where its descent from 100 ft AGL begins.")}
+        {hint("angle", "From the touchdown point, in place of the plan. The page prints it as yours, with where its descent begins from the survey's height above the highest obstacle.")}
       </div>
       <div className="ui-field">
         <label htmlFor={`${id}-reason`} className="ui-field__label">Reason</label>
@@ -183,7 +190,7 @@ export const AngleDialog = ({ row, onConfirm, onCancel }) => {
   );
 };
 
-const Disagreements = ({ rows = [], onDecide, onUndecide, dirtyField = false, busy = false }) => {
+const Disagreements = ({ rows = [], plan = null, onDecide, onUndecide, dirtyField = false, busy = false }) => {
   const [asking, setAsking] = useState(null);
   const [typing, setTyping] = useState(null);
   const open = rows.filter((row) => row.open).length;
@@ -249,6 +256,7 @@ const Disagreements = ({ rows = [], onDecide, onUndecide, dirtyField = false, bu
       {typing && (
         <AngleDialog
           row={typing}
+          plan={plan}
           onCancel={() => setTyping(null)}
           onConfirm={async (value, reason) => {
             const saved = await onDecide(typing.key, "typed", reason, value);

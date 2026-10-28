@@ -40,7 +40,7 @@ MAX_REASON = 500
 _NUMBER = re.compile(r"[-−‐–]?\s*[0-9]+(?:\.[0-9]+)?")
 
 
-def _numbers(text):
+def numbers_in(text):
     """The numbers in a field's text; one too long to be a number anyone typed (it reads as infinity) is left out."""
     numbers = (float(m.replace("−", "-").replace("‐", "-").replace("–", "-").replace(" ", "")) for m in _NUMBER.findall(text or ""))
     return [n for n in numbers if math.isfinite(n)]
@@ -152,7 +152,7 @@ def _rows(field, snapshot):
     typed = (field.get("elevationFt") or "").strip()
     elevation = snapshot.get("elevation") or {}
     computed = f"{elevation['ft']} ft MSL" if elevation.get("ft") is not None else ""
-    numbers = _numbers(typed)
+    numbers = numbers_in(typed)
     if typed and computed and numbers:
         feet = elevation["ft"] - numbers[0]
         rows.append(_row("elevation", typed, computed, f"{abs(feet):,.0f} ft apart", abs(feet) > ELEVATION_FT))
@@ -162,7 +162,7 @@ def _rows(field, snapshot):
     typed = (field.get("size") or "").strip()
     size = snapshot.get("size") or {}
     computed = f"{size['lengthFt']:,} × {size['widthFt']:,} ft" if size.get("lengthFt") is not None else ""
-    sizes = _feet(_numbers(typed), typed)
+    sizes = _feet(numbers_in(typed), typed)
     if typed and computed and sizes:
         off = max(abs(sizes[0] - size["lengthFt"]) / max(size["lengthFt"], 1), abs(sizes[1] - size["widthFt"]) / max(size["widthFt"], 1))
         rows.append(_row("size", typed, computed, f"{off * 100:.0f}% apart", off > SIZE_FRACTION))
@@ -177,16 +177,16 @@ def _rows(field, snapshot):
     measured = (slope.get(which) or {}).get("p95") if which else None
     words = {"noseUp": "nose up", "noseDown": "nose down", "cross": "cross"}
     computed = f"{words[which]} {measured:.1f}° (95th percentile)" if measured is not None else ""
-    numbers = _numbers(typed)
+    numbers = numbers_in(typed)
     if typed and computed and numbers:
         degrees = abs(abs(numbers[0]) - measured)
         rows.append(_row("slope", typed, computed, f"{degrees:.1f}° apart", degrees > SLOPE_DEG))
     else:
         rows.append(_row("slope", typed, computed, None, bool(typed and computed)))
 
-    # The survey profile ("100 ft at 200 m": 100 ft up 200 m out from the touchdown point, where the descent from 100 ft AGL begins) as
-    # an angle, against the LiDAR's shallowest clear angle from the touchdown point along the best approach.
-    feet, metres = (_numbers(field.get(key) or "") for key in ("profileObstacleFt", "profileDistanceM"))
+    # The survey profile ("100 ft at 200 m": 100 ft up 200 m out from the touchdown point) as an angle, against the LiDAR's shallowest
+    # clear angle from the touchdown point along the best approach.
+    feet, metres = (numbers_in(field.get(key) or "") for key in ("profileObstacleFt", "profileDistanceM"))
     typed, angle = "", None
     if feet and metres:
         typed = f"{feet[0]:g} ft at {metres[0]:g} m"

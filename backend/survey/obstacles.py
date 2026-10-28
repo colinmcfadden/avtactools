@@ -19,10 +19,10 @@ stands 2 m or more above its own ground (grass, a crop or a low bush is none). F
   as built: a building, a wire, a tower or a bridge), and the ground itself where it rises: the median of its returns in each 10 m
   square of the lane, where that is more than 0.3 m over the touchdown point's ground (a ground return scatters by a few centimetres,
   and the steepest of thousands of them a centimetre out once read 86-89° on flat ground). Each is measured from the touchdown point's
-  ground on its own line across the lane, so a slope across it takes nothing from the angle. With it: where that path stands 100 ft
-  above the ground under it (the approach's descent from 100 ft AGL begins there, and the exit is 100 ft up), the places where
-  something stands more than 100 ft above the track's ground (flown at 100 ft AGL, it is in the way), and how many of the lane's 10 m
-  steps the survey has returns in;
+  ground on its own line across the lane, so a slope across it takes nothing from the angle. With it: what stands highest in each of
+  the lane's 10 m steps, from which the page works out where a descent from the survey's approach height above the highest obstacle
+  begins (``descent_point``; the plan itself, at 30° where what stands allows, is survey/flightpath.py's), and how many of the steps
+  the survey has returns in;
 - the tallest obstacle inside the boundary, and within 100 m round it, with its bearing and distance from the touchdown point;
 - the points standing more than 2 m inside the boundary, counted;
 - the trees inside the boundary, one by one: the canopy's highest point within 3 m round, standing 5 m or more (a building, a wire, a
@@ -67,11 +67,10 @@ BIN_M = 10.0
 # leave out too (2 m read 9.3° from the field's angle, 5 m 7.3°). What the survey marks as built is in the way from ``STANDING_M``: few
 # buildings, wires, towers or bridges stand taller, and a wire seldom shows at all.
 LANE_LEAST_M = 5.0
-# The approach is flown this far above the ground until its descent begins, and the exit climbs to it (the owner, 2026-10-27).
-AGL_FT = 100.0
-AGL_M = AGL_FT * 0.3048
-# At most this many places where something stands more than ``AGL_FT`` above the track's ground are kept for a way, nearest first.
-MAX_TALL_PLACES = 20
+# The approach is flown this far above the highest obstacle under it (the treetops, or the ground where nothing stands) until its
+# descent begins, where the survey gives no height of its own, and the exit climbs to it (the owner, 2026-10-27: over the treetops, not
+# the ground, which in the old book's timber put every approach at or under the canopy).
+AHO_FT = 100.0
 # The slope profile's treetop line is what stands within this of its line.
 PROFILE_HALF_WIDTH_M = 30.0
 # §4: round the LZ.
@@ -509,45 +508,43 @@ def _finite(value):
     return isinstance(value, (int, float)) and not isinstance(value, bool) and math.isfinite(value)
 
 
-def descent_point(angle_deg, start_ft, ground_ft, bin_m=BIN_M):
-    """Where a path at ``angle_deg`` from the touchdown point first stands ``AGL_FT`` above the ground under it, going out along the
-    track: the approach's descent from 100 ft AGL begins there (the nearest it can, to fly that angle), and the exit is 100 ft up there.
-    ``start_ft`` is the ground at the touchdown point and ``ground_ft`` the track's ground in the middle of each ``bin_m`` step out from
-    it (a lane's ``bins``), in feet; a step with no ground is passed over, the path measured over the ground either side of it.
-    {fromTargetM, groundFt}, both None where the path is not 100 ft up within the steps; None for a path that does not rise, or no ground
-    at the touchdown point."""
-    if not (_finite(angle_deg) and 0 < angle_deg < 90 and _finite(start_ft)):
+def descent_point(angle_deg, start_ft, tops_ft, ground_ft, height_ft=AHO_FT, bin_m=BIN_M):
+    """Where a path at ``angle_deg`` from the touchdown point is ``height_ft`` above the highest obstacle under it for good: the
+    outermost place, going out along the track, where it stands no higher than that over what stands there (the treetops, or the ground
+    where nothing stands), so that past it the path is more than that above everything. Coming in at that height above the highest
+    obstacle (AHO), the approach meets its path there and descends on it; the exit has climbed to it there. The outermost, not the
+    first going out: a gap in the trees nearer in is not where an aircraft over the canopy comes down. ``start_ft`` is the ground at
+    the touchdown point, ``tops_ft`` and ``ground_ft`` what stands highest and the track's ground in the middle of each ``bin_m`` step
+    out from it (a lane's ``bins``), in feet; a step where nothing is known is passed over. {fromTargetM, topFt, groundFt}: ``topFt``
+    what stands highest there, ``groundFt`` the ground (None where not known). ``fromTargetM`` None, with ``pastM``, where the path is
+    still within that height of what stands at the last step known (the descent begins past it). None for a path that does not rise,
+    no height above it, no ground at the touchdown point, or nothing known standing past it."""
+    if not (_finite(angle_deg) and 0 < angle_deg < 90 and _finite(start_ft) and _finite(height_ft) and height_ft > 0):
         return None
+    above_m = height_ft * 0.3048
     slope = math.tan(math.radians(angle_deg))
-    before = (0.0, start_ft, 0.0)
-    for k, ground in enumerate(ground_ft):
-        if not _finite(ground):
-            continue
-        x = (k + 0.5) * bin_m
-        height = x * slope - (ground - start_ft) / FEET_PER_METRE
-        if height >= AGL_M:
-            x0, g0, h0 = before
-            t = (AGL_M - h0) / (height - h0)
-            return {"fromTargetM": round(x0 + t * (x - x0), 1), "groundFt": round(g0 + t * (ground - g0), 1)}
-        before = (x, ground, height)
-    return {"fromTargetM": None, "groundFt": None}
-
-
-def in_the_way(tall, descent):
-    """Of a lane's ``tall`` places, where something stands more than ``AGL_FT`` above the track's ground, those past ``descent``: the
-    approach is flown there at 100 ft AGL, and the exit is 100 ft up. None where the path is not 100 ft up within the lane (all of it is
-    under the path), or does not rise."""
-    if not isinstance(descent, dict) or not _finite(descent.get("fromTargetM")):
-        return []
-    return [p for p in tall or [] if isinstance(p, dict) and _finite(p.get("toM")) and p["toM"] > descent["fromTargetM"]]
+    steps = [(0.0, start_ft, start_ft)]
+    for k, top in enumerate(tops_ft):
+        if _finite(top):
+            ground = ground_ft[k] if k < len(ground_ft) else None
+            steps.append(((k + 0.5) * bin_m, top, ground if _finite(ground) else None))
+    if len(steps) == 1:
+        return None
+    heights = [x * slope - (top - start_ft) / FEET_PER_METRE for x, top, _ground in steps]
+    last = max(i for i, height in enumerate(heights) if height <= above_m)      # the touchdown point's own is 0: there is one
+    if last == len(steps) - 1:
+        return {"fromTargetM": None, "pastM": round(steps[-1][0] + bin_m / 2.0, 1), "topFt": None, "groundFt": None}
+    (x0, t0, g0), (x1, t1, g1) = steps[last], steps[last + 1]
+    t = (above_m - heights[last]) / (heights[last + 1] - heights[last])
+    ground = round(g0 + t * (g1 - g0), 1) if g0 is not None and g1 is not None else None
+    return {"fromTargetM": round(x0 + t * (x1 - x0), 1), "topFt": round(t0 + t * (t1 - t0), 1), "groundFt": ground}
 
 
 def lane(frame, points, ring, heading_deg, *, approach):
     """One way in or out, from the touchdown point: ``heading_deg`` is the way the aircraft flies (towards the LZ on the approach, away
     from it on the exit), so the lane lies behind the touchdown point for the approach and ahead of it for the exit. Its ``clearance`` is
-    the shallowest angle that clears everything in the way with no margin, and what sets it; ``descent`` where that path is 100 ft above
-    the track's ground; ``tall`` the places where something stands more than 100 ft above the track's ground; ``bins`` the track's ground
-    and what stands in the way, each 10 m out, for the page's figure."""
+    the shallowest angle that clears everything in the way with no margin, and what sets it; ``bins`` the track's ground and what stands
+    highest in the way, each 10 m out, for the page's figure and the way planned over it (``descent_point``, survey/flightpath.py)."""
     bearing = (heading_deg + 180.0) % 360.0 if approach else heading_deg % 360.0
     direction = _unit(bearing)
     right = _unit((heading_deg + 90.0) % 360.0)              # the pilot's right, flying the heading
@@ -626,31 +623,8 @@ def lane(frame, points, ring, heading_deg, *, approach):
         return {"angleDeg": round(math.degrees(float(top_t)), 1),
                 "obstacle": _ground_spot(frame, east, north, float(t_top[best_t]), extra)}
 
-    # Where something stands more than 100 ft above the track's ground: in each 10 m step the one standing highest over it, and a run
-    # of such steps one place, said by the highest in it.
-    places = []
-    if s.size:
-        over = points.z[s] - points.ground_at(direction[0] * s_along, direction[1] * s_along)
-        high = np.flatnonzero(np.isfinite(over) & (over > AGL_M))
-        if high.size:
-            order = high[np.lexsort((-over[high], s_bin[high]))]
-            steps, first = np.unique(s_bin[order], return_index=True)
-            best = order[first]
-            begin = 0
-            for k in range(1, steps.size + 1):
-                if k < steps.size and steps[k] == steps[k - 1] + 1:
-                    continue
-                j = int(best[begin + int(np.argmax(over[best[begin:k]]))])
-                places.append({"fromM": float(steps[begin] * BIN_M), "toM": float((steps[k - 1] + 1) * BIN_M),
-                               "overFt": _ft(float(over[j])),
-                               "obstacle": _spot(frame, points, int(s[j]), {"fromTargetM": round(float(s_along[j]), 1),
-                                                                            "offsetM": round(float(s_offset[j]), 1)})})
-                begin = k
-                if len(places) == MAX_TALL_PLACES:
-                    break
-
-    # Each 10 m step for the page's figure: the track's ground, and over it the highest thing in the way as the angle sees it (the
-    # touchdown point's ground and its rise over its own line's), so ground rising to one side draws nothing standing.
+    # Each 10 m step for the descent and the page's figure: the track's ground, and over it the highest thing in the way as the angle sees
+    # it (the touchdown point's ground and its rise over its own line's), so ground rising to one side draws nothing standing.
     rise = np.full(bins, -np.inf)
     tallest = np.full(bins, -np.inf)
     if s.size:
@@ -677,8 +651,6 @@ def lane(frame, points, ring, heading_deg, *, approach):
         "bins": rows,
         "covered": int(covered.sum()),
         "clearance": None,
-        "descent": None,
-        "tall": places,
         "missing": None,
     }
     if not index.size:
@@ -687,8 +659,6 @@ def lane(frame, points, ring, heading_deg, *, approach):
     result["clearance"] = steepest()
     if result["clearance"] is None:
         result["missing"] = "no_target_ground"
-        return result
-    result["descent"] = descent_point(result["clearance"]["angleDeg"], result["start"]["groundFt"], [r["groundFt"] for r in rows])
     return result
 
 
