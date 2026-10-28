@@ -192,14 +192,17 @@ class MeasureTests(unittest.TestCase):
         self.assertEqual(snap['latLong'], measure.lat_long_text(*TARGET))
         self.assertEqual((snap['measuredAt'], snap['measuredBy'], snap['version']), ('2026-10-26T12:00:00Z', 'Admin', 5))
 
-    def test_the_exit_is_kept_and_a_change_to_it_is_said(self):
+    def test_the_exit_is_not_measured_nor_a_change_to_it_a_reason_to_measure_again(self):
+        # The owner's call (2026-10-27): the exit is neither measured nor shown, so a survey whose best exit changes is as measured.
         field = {'approachDeg': '360', 'exitDeg': '180'}
         with Terrain():
             snap = self.snapshot(field=field, boundary=square())
-        self.assertEqual(snap['exitDeg'], 180.0)
-        self.assertEqual(measure.stale(snap, diagram(boundary=square()), field), [])
-        self.assertEqual(measure.stale(snap, diagram(boundary=square()), {**field, 'exitDeg': '090'}),
-                         ['The best exit changed after it was measured: measured at 180°, now 090°.'])
+        self.assertNotIn('exitDeg', snap)
+        self.assertEqual(measure.stale(snap, diagram(boundary=square()), {**field, 'exitDeg': '090'}), [])
+        self.assertEqual(measure.stale(snap, diagram(boundary=square()), {**field, 'approachDeg': '090'}),
+                         ['The best approach changed after it was measured: measured at 360°, now 090°.'])
+        # One measured before, with the exit it was measured for, is not measured again for it either.
+        self.assertEqual(measure.stale({**snap, 'exitDeg': 180.0}, diagram(boundary=square()), {**field, 'exitDeg': '090'}), [])
         self.assertEqual(measure.stale({**snap, 'version': 2}, diagram(boundary=square()), field),
                          ['It was measured by an earlier version of EZ/PZ.'])           # measured before the obstacles were
         self.assertEqual(measure.stale({**snap, 'version': 3}, diagram(boundary=square()), field),
@@ -222,7 +225,7 @@ class MeasureTests(unittest.TestCase):
         self.assertEqual(snap['obstacles']['status'], 'failed')
         self.assertIn(obstacles.FAILED, snap['problems'])
 
-    def test_what_stands_is_measured_along_the_approach_and_the_exit(self):
+    def test_what_stands_is_measured_along_the_approach(self):
         from test_survey_obstacles import BASE, SECRET, FakeSurvey
         from lidar import stream
 
@@ -235,7 +238,8 @@ class MeasureTests(unittest.TestCase):
             snap = measure.measure(diagram(boundary=square()), {'approachDeg': '090', 'exitDeg': '090'}, 'Admin', self.NOW, lidar=source)
         found = snap['obstacles']
         self.assertEqual((found['status'], found['survey']['name']), ('measured', survey.name))
-        self.assertEqual((found['approach']['headingDeg'], found['exit']['headingDeg']), (90.0, 90.0))
+        self.assertEqual(found['approach']['headingDeg'], 90.0)
+        self.assertNotIn('exit', found)
         self.assertEqual(found['profileTops']['heading'], 90)                      # the line the page's profile along 090° draws
         changed = {**snap, 'obstacles': {**found, 'inside': {**(found['inside'] or {}), 'heightFt': 1.0}}}
         self.assertIn('Tallest in the LZ (ft)', [c['label'] for c in measure.differences(snap, changed)])

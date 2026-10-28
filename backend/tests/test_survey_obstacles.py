@@ -1,10 +1,10 @@
 """What stands on and round an LZ, from the LiDAR (survey/obstacles.py; docs/LZ_SURVEYS.md §4, step L4).
 
 The survey here is made by the tests, as tests/test_lidar_stream.py's are: an EPT octree of a scene laid out round the Ellijay test LZ,
-its pieces written with laspy and served from memory in place of AWS, through the stream's own ``Streamer``. Every object in the scene is
-where the test can say what must be found: a tree line 200 m past the approach's edge, a tower 400 m past the exit's, a tree in the LZ,
-a building 50 m outside it, a lone return (a bird) and noise, over ground that rises 2 m in every 100 m to the north. No USGS data is
-committed."""
+its pieces written with laspy and served from memory in place of AWS, through the stream's own ``Streamer``. Every object in the scene
+is where the test can say what must be found: a tree line 200 m past the approach's edge, a tower 400 m past the other edge (where the
+exit's lane was, which is no longer measured), a tree in the LZ, a building 50 m outside it, a lone return (a bird) and noise, over
+ground that rises 2 m in every 100 m to the north. No USGS data is committed."""
 
 import base64
 import io
@@ -33,9 +33,9 @@ LAT, LON = 34.596407, -84.128098           # Ellijay
 SECRET = "t" * 40
 BASE = "https://aws.example/usgs-lidar-public"
 FEET = 3.28084
-# The LZ: a square 120 m on a side round the touchdown point; the approach flown east (from the west), the exit flown east.
+# The LZ: a square 120 m on a side round the touchdown point; the approach flown east (from the west).
 HALF = 60.0
-APPROACH, EXIT = 90.0, 90.0
+APPROACH = 90.0
 FRAME = obstacles.Frame(LAT, LON)
 BOUNDARY = [list(FRAME.latlon(e, n)) for e, n in ((-HALF, -HALF), (HALF, -HALF), (HALF, HALF), (-HALF, HALF))]
 
@@ -59,7 +59,7 @@ def scene():
     for h in (10.0, 20.0, 25.0, 28.0, 30.0):                                   # the tree line, 200 m past the approach's edge
         e, n = np.meshgrid(np.arange(-262.0, -257.5, 1.0), np.arange(-40.0, 40.5, 1.0))
         add(e, n, h, 5)
-    for h in np.arange(0.0, 50.5, 2.0):                                         # the tower, 400 m past the exit's edge, 10 m left
+    for h in np.arange(0.0, 50.5, 2.0):                                         # the tower, 400 m past the east edge, 10 m north
         e, n = np.meshgrid([459.0, 460.0, 461.0], [9.0, 10.0, 11.0])
         add(e, n, h, 15)
     angles = np.linspace(0, 2 * math.pi, 12, endpoint=False)
@@ -162,8 +162,8 @@ class ObstacleCase(unittest.TestCase):
         self.streamer = stream.Streamer(self.root, fetch=self.survey.fetch, geoid=lambda lons, lats: [-30.35] * len(lons),
                                         index=self.survey.index(), base=BASE, secret=SECRET)
 
-    def measure(self, approach=APPROACH, exit_=EXIT, source=None, boundary=BOUNDARY):
-        return obstacles.measure_obstacles((LAT, LON), boundary, approach, exit_, profiles(),
+    def measure(self, approach=APPROACH, source=None, boundary=BOUNDARY):
+        return obstacles.measure_obstacles((LAT, LON), boundary, approach, profiles(),
                                            source=self.streamer if source is None else source)
 
 
@@ -199,6 +199,7 @@ class SceneTests(ObstacleCase):
         self.assertAlmostEqual(clear["obstacle"]["fromTargetM"], 258.0, delta=0.6)
         self.assertLessEqual(abs(clear["obstacle"]["offsetM"]), 10.0)
         self.assertEqual(len(approach["bins"]), 100)
+        self.assertEqual(approach["covered"], 100)      # the scene's ground runs the lane's whole kilometre, past the profile's 300 m
         self.assertIsNone(approach["bins"][24]["tallestFt"])                    # 240-250 m out: only ground
         for k in (25, 26):                                                       # the tree line, 258-262 m
             self.assertAlmostEqual(approach["bins"][k]["tallestFt"], 30.0 * FEET, delta=0.5)
@@ -217,18 +218,12 @@ class SceneTests(ObstacleCase):
         self.assertEqual((planned["angleDeg"], planned["steep"], planned["heightFt"]), (30.0, False, 100.0))
         self.assertAlmostEqual(planned["descent"]["fromTargetM"], 30.48 / math.tan(math.radians(30.0)), delta=1.5)
 
-    def test_the_exit_clears_the_tower_and_climbs_past_it(self):
-        exit_ = self.found()["exit"]
-        self.assertEqual(exit_["bearingDeg"], 90.0)
-        clear = exit_["clearance"]
-        self.assertAlmostEqual(clear["angleDeg"], math.degrees(math.atan2(50.0, 459.0)), delta=0.1)
-        self.assertEqual(clear["obstacle"]["kind"], "tower")
-        self.assertAlmostEqual(clear["obstacle"]["heightFt"], 50.0 * FEET, delta=0.5)
-        self.assertLess(clear["obstacle"]["offsetM"], 0)                         # left of the track, flying it
-        descent = descent_over(exit_, clear["angleDeg"])                         # 100 ft above everything just past the tower
-        self.assertGreater(descent["fromTargetM"], 465.0)
-        self.assertLess(descent["fromTargetM"], 475.0)
-        self.assertNotIn("descent", exit_)
+    def test_the_exit_is_not_measured(self):
+        # The owner's call (2026-10-27): the exit is neither measured nor shown, so nothing measured names the tower standing where its
+        # lane was.
+        found = self.found()
+        self.assertNotIn("exit", found)
+        self.assertNotIn('"tower"', json.dumps(found))
 
     def test_what_stands_in_the_lz_and_round_it(self):
         found = self.found()
@@ -298,20 +293,19 @@ class CacheTests(ObstacleCase):
 
 class WithoutNumbersTests(ObstacleCase):
     def test_no_heading_no_lane(self):
-        found = self.measure(approach=None, exit_=None)
+        found = self.measure(approach=None)
         self.assertEqual(found["status"], "measured")
         self.assertIsNone(found["approach"])
-        self.assertIsNone(found["exit"])
         self.assertIsNone(found["profileTops"])
         self.assertIsNotNone(found["inside"])
 
     def test_without_streaming_nothing_is_measured(self):
         with patch.object(obstacles, "default_source", return_value=None):
-            found = obstacles.measure_obstacles((LAT, LON), BOUNDARY, APPROACH, EXIT, profiles())
+            found = obstacles.measure_obstacles((LAT, LON), BOUNDARY, APPROACH, profiles())
         self.assertEqual(found, {"status": "unavailable", "words": obstacles.NO_SERVER})
 
     def test_no_survey_here(self):
-        found = obstacles.measure_obstacles((LAT + 5, LON), BOUNDARY, APPROACH, EXIT, profiles(), source=self.streamer)
+        found = obstacles.measure_obstacles((LAT + 5, LON), BOUNDARY, APPROACH, profiles(), source=self.streamer)
         self.assertEqual(found, {"status": "none", "words": obstacles.NO_SURVEY})
 
     def test_a_piece_that_cannot_be_fetched_is_a_measure_to_try_again(self):
@@ -489,7 +483,7 @@ def descent_over(lane, angle, height_ft=obstacles.AHO_FT):
 
 
 def approach(points, ring=RING):
-    return obstacles.lane(FRAME, points, ring, APPROACH, approach=True)
+    return obstacles.lane(FRAME, points, ring, APPROACH)
 
 
 def stand(along, height, cls=5, across=(-6.0, 6.0)):
@@ -524,8 +518,8 @@ class LaneTests(unittest.TestCase):
         self.assertAlmostEqual(found["clearance"]["obstacle"]["fromTargetM"], 30.0, delta=0.6)
         beside = approach(points_over(flat, extra=[stand(30.0, 10.0, across=(12.0, 20.0))]))   # beside the lane: not in it
         self.assertEqual(beside["clearance"], {"angleDeg": 0.0, "obstacle": None})
-        behind = obstacles.lane(FRAME, points_over(flat, extra=[stand(30.0, 10.0)]), RING, APPROACH, approach=False)
-        self.assertEqual(behind["clearance"], {"angleDeg": 0.0, "obstacle": None})   # the exit's lane lies the other way
+        ahead = approach(points_over(flat, extra=[stand(-32.0, 10.0)]))          # past the touchdown point: not in its way
+        self.assertEqual(ahead["clearance"], {"angleDeg": 0.0, "obstacle": None})
 
     def test_the_ground_where_it_rises_along_the_way_sets_the_angle(self):
         rising = approach(points_over(lambda e, n: 300.0 + np.where(e < -HALF, 0.05 * (-HALF - e), 0.0), noise=0.05))

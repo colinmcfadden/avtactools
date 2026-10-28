@@ -439,89 +439,80 @@ TREETOPS = "#2e6b30"
 
 
 def clearance(spec, width=512, height=104):
-    """The LiDAR's angles (step L4) as the page's clearance box draws them, from the touchdown point: the approach on the left, flown
-    towards the LZ, and the exit on the right, each its track's ground (thicker over the LZ) and the highest thing in the way in each 10
-    m of its lane out to 1,000 m; the path at the angle planned (survey/flightpath.py) out to where it is the way's height above the
-    highest obstacle for good (a dot), then that height above what stands past it (dashed); the thing that sets the LiDAR's shallowest
-    clear angle (a triangle); and its words over it (how much of the lane the survey covers in the corner, where it is not all of it).
-    None where neither way was measured. The box prints it 0.58 in high and its full width, about 0.40 pt to a unit: its words are 11
-    to 15 units, 4.4 to 6 pt."""
-    sides = [s for s in ((spec or {}).get("approach"), (spec or {}).get("exit")) if isinstance(s, dict)]
-    values = [v for s in sides for v in s["groundFt"] + s["topsFt"] + [s.get("startFt")] if _num(v)]
-    values += [h for s in sides for _m, h in (s.get("path") or []) + (s.get("level") or []) if _num(h)]
+    """The LiDAR's approach (step L4) as the page's clearance box draws it, from the touchdown point: flown from the left towards the LZ
+    at the right, its track's ground (thicker over the LZ) and the highest thing in the way in each 10 m of its lane out to 1,000 m; the
+    path at the angle planned (survey/flightpath.py) out to where it is the survey's height above the highest obstacle for good (a dot),
+    then that height above what stands past it (dashed); the thing that sets the LiDAR's shallowest clear angle (a triangle); and its
+    words over it (how much of the lane the survey covers in the corner, where it is not all of it). None where the approach was not
+    measured. The box prints it 0.58 in high and its full width, about 0.40 pt to a unit: its words are 11 to 15 units, 4.4 to 6 pt."""
+    side = (spec or {}).get("approach")
+    if not isinstance(side, dict):
+        return None
+    values = [v for v in side["groundFt"] + side["topsFt"] + [side.get("startFt")] if _num(v)]
+    values += [h for _m, h in (side.get("path") or []) + (side.get("level") or []) if _num(h)]
     if not values:
         return None
     low, high = min(values), max(values)
     span = max(high - low, 60.0)
     floor = low - span * 0.06
-    # The plot starts below the third line of words, and the marks drawn over its top (a triangle's tip, a ring) clear them.
+    # The plot starts below the third line of words, and the marks drawn over its top (a triangle's tip) clear them.
     top, bottom, pad, gap = 50.0, height - 14.0, 4.0, 30.0
-    half = (width - 2 * pad - gap) / 2.0
+    reach = width - 2 * pad - gap
+    step = side.get("binM") or 10
+    length = step * max(len(side["groundFt"]), 1)
+
+    def sx(metres):
+        return pad + reach - metres / length * reach
 
     def sy(h):
         return bottom - (h - floor) / (span * 1.06) * (bottom - top)
 
-    # The LZ between the two ways, on the touchdown point's ground where it is known (both ways start from it).
-    start = next((s["startFt"] for s in sides if _num(s.get("startFt"))), None)
-    lz_y = sy(start) - 3 if start is not None else bottom - 6
-    parts = [f'<rect x="{pad + half:.1f}" y="{lz_y:.1f}" width="{gap:.1f}" height="6" fill="{INK}"/>',
-             f'<text x="{width / 2:.1f}" y="{height - 2:.1f}" font-size="12" font-weight="800" text-anchor="middle">LZ</text>']
-    for spec_side, left in ((spec.get("approach"), True), (spec.get("exit"), False)):
-        if not isinstance(spec_side, dict):
-            continue
-        step = spec_side.get("binM") or 10
-        length = step * max(len(spec_side["groundFt"]), 1)
+    def line(points, colour, widthpx, dashed=False):
+        runs, run = [], []
+        for metres, v in points:
+            if _num(v):
+                run.append(f"{sx(metres):.1f},{sy(v):.1f}")
+            else:
+                if len(run) > 1:
+                    runs.append(run)
+                run = []
+        if len(run) > 1:
+            runs.append(run)
+        dash = ' stroke-dasharray="4 3"' if dashed else ""
+        return "".join(f'<polyline points="{" ".join(r)}" fill="none" stroke="{colour}" stroke-width="{widthpx}" '
+                       f'stroke-linejoin="round"{dash}/>' for r in runs)
 
-        def sx(metres, left=left, length=length):
-            return (pad + half - metres / length * half) if left else (pad + half + gap + metres / length * half)
+    def steps(values):
+        return [((k + 0.5) * step, v) for k, v in enumerate(values)]
 
-        def line(points, colour, widthpx, dashed=False):
-            runs, run = [], []
-            for metres, v in points:
-                if _num(v):
-                    run.append(f"{sx(metres):.1f},{sy(v):.1f}")
-                else:
-                    if len(run) > 1:
-                        runs.append(run)
-                    run = []
-            if len(run) > 1:
-                runs.append(run)
-            dash = ' stroke-dasharray="4 3"' if dashed else ""
-            return "".join(f'<polyline points="{" ".join(r)}" fill="none" stroke="{colour}" stroke-width="{widthpx}" '
-                           f'stroke-linejoin="round"{dash}/>' for r in runs)
-
-        def steps(values, step=step):
-            return [((k + 0.5) * step, v) for k, v in enumerate(values)]
-
-        # The treetops under the ground's line, so they show only where something stands above it; the ground thicker over the LZ.
-        parts.append(line(steps(spec_side["topsFt"]), TREETOPS, 1.1))
-        parts.append(line(steps(spec_side["groundFt"]), INK, 1.6))
-        if _num(spec_side.get("edgeM")) and _num(spec_side.get("startFt")):
-            inside = [(0.0, spec_side["startFt"])] + [(m, v) for m, v in steps(spec_side["groundFt"]) if m < spec_side["edgeM"]]
-            parts.append(line(inside, INK, 3.2))
-        path, level = spec_side.get("path") or [], spec_side.get("level") or []
-        parts.append(line([tuple(p) for p in path], INK, 1.3))
-        parts.append(line([tuple(p) for p in level], INK, 1.1, dashed=True))
-        if level:
-            x, y = sx(level[0][0]), sy(level[0][1])
-            parts.append(f'<circle cx="{x:.1f}" cy="{y:.1f}" r="2.4" fill="{INK}"/>')
-        obstacle = spec_side.get("obstacle")
-        if obstacle and _num(spec_side.get("startFt")) and _num(obstacle.get("riseFt")) and _num(obstacle.get("fromTargetM")):
-            # The thing that sets the LiDAR's angle, as the angle sees it: its rise over the touchdown point's ground.
-            x1, y1 = sx(obstacle["fromTargetM"]), sy(spec_side["startFt"] + obstacle["riseFt"])
-            parts.append(f'<polygon points="{x1:.1f},{y1 - 6:.1f} {x1 - 4:.1f},{y1 + 1:.1f} {x1 + 4:.1f},{y1 + 1:.1f}" fill="{INK}"/>')
-        x_words = pad + 2 if left else width - pad - 2
-        anchor = "start" if left else "end"
-        lines = ((13, 15, 800, spec_side.get("angle") or spec_side["label"] + " " + (spec_side.get("heading") or "")),
-                 (27, 13, 400, spec_side.get("climb")),
-                 (40, 11.5, 800, spec_side.get("what")))
-        for y, size, weight, words in lines:
-            if words:
-                parts.append(f'<text x="{x_words:.1f}" y="{y}" font-size="{size}" font-weight="{weight}" text-anchor="{anchor}">'
-                             f'{escape(words)}</text>')
-        parts.append(f'<text x="{(pad if left else width - pad):.1f}" y="{height - 2:.1f}" font-size="11" '
-                     f'font-weight="{800 if spec_side.get("partial") else 400}" text-anchor="{anchor}">'
-                     f'{escape(spec_side.get("partial") or f"{length / 1000:g} KM")}</text>')
+    # The LZ at the right, on the touchdown point's ground where it is known (the approach starts from it).
+    lz_y = sy(side["startFt"]) - 3 if _num(side.get("startFt")) else bottom - 6
+    parts = [f'<rect x="{pad + reach:.1f}" y="{lz_y:.1f}" width="{gap:.1f}" height="6" fill="{INK}"/>',
+             f'<text x="{pad + reach + gap / 2:.1f}" y="{height - 2:.1f}" font-size="12" font-weight="800" text-anchor="middle">LZ</text>']
+    # The treetops under the ground's line, so they show only where something stands above it; the ground thicker over the LZ.
+    parts.append(line(steps(side["topsFt"]), TREETOPS, 1.1))
+    parts.append(line(steps(side["groundFt"]), INK, 1.6))
+    if _num(side.get("edgeM")) and _num(side.get("startFt")):
+        inside = [(0.0, side["startFt"])] + [(m, v) for m, v in steps(side["groundFt"]) if m < side["edgeM"]]
+        parts.append(line(inside, INK, 3.2))
+    path, level = side.get("path") or [], side.get("level") or []
+    parts.append(line([tuple(p) for p in path], INK, 1.3))
+    parts.append(line([tuple(p) for p in level], INK, 1.1, dashed=True))
+    if level:
+        parts.append(f'<circle cx="{sx(level[0][0]):.1f}" cy="{sy(level[0][1]):.1f}" r="2.4" fill="{INK}"/>')
+    obstacle = side.get("obstacle")
+    if obstacle and _num(side.get("startFt")) and _num(obstacle.get("riseFt")) and _num(obstacle.get("fromTargetM")):
+        # The thing that sets the LiDAR's angle, as the angle sees it: its rise over the touchdown point's ground.
+        x1, y1 = sx(obstacle["fromTargetM"]), sy(side["startFt"] + obstacle["riseFt"])
+        parts.append(f'<polygon points="{x1:.1f},{y1 - 6:.1f} {x1 - 4:.1f},{y1 + 1:.1f} {x1 + 4:.1f},{y1 + 1:.1f}" fill="{INK}"/>')
+    lines = ((13, 15, 800, side.get("angle") or side["label"] + " " + (side.get("heading") or "")),
+             (27, 13, 400, side.get("climb")),
+             (40, 11.5, 800, side.get("what")))
+    for y, size, weight, words in lines:
+        if words:
+            parts.append(f'<text x="{pad + 2:.1f}" y="{y}" font-size="{size}" font-weight="{weight}">{escape(words)}</text>')
+    parts.append(f'<text x="{pad:.1f}" y="{height - 2:.1f}" font-size="11" font-weight="{800 if side.get("partial") else 400}">'
+                 f'{escape(side.get("partial") or f"{length / 1000:g} KM")}</text>')
     return f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {width} {height}" class="clearance">{"".join(parts)}</svg>'
 
 

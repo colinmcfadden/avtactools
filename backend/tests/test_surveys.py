@@ -270,7 +270,7 @@ class MeasureRouteTests(SurveyCase):
         with Terrain(east_deg=5.0):
             measured = self.client.post(f'/api/surveys/{survey["uuid"]}/measure', headers=self.at(1), json={'apply': True}).get_json()['survey']
         typed = {'overrides': {'approach': {'choice': 'typed', 'value': 12, 'reason': 'Tree line cut in 2024'}}}
-        self.assertEqual(measured['plans'], {'approach': None, 'exit': None})   # this server reads no LiDAR: nothing to plan
+        self.assertIsNone(measured['approach_plan'])                      # this server reads no LiDAR: nothing to plan
         response = self.patch_survey(measured, typed)                     # this server reads no LiDAR: no angle to type over
         self.assertEqual((response.status_code, response.get_json()['code']), (400, 'invalid_survey'))
         self.assertIn('no angle here', response.get_json()['error'])
@@ -290,10 +290,10 @@ class MeasureRouteTests(SurveyCase):
                          ('typed', 12.0, 'CW3 Admin', '8.5° (LiDAR: 98 ft tree 200 m out)'))
         row = next(r for r in survey['comparisons'] if r['key'] == 'approach')
         self.assertEqual((row['printed'], row['open']), ('typed', False))
-        # The editor is sent each way as the page plans it: the approach at the angle typed, from the survey's own height.
-        self.assertEqual({k: survey['plans']['approach'][k] for k in ('angleDeg', 'minimumDeg', 'typed', 'steep')},
+        # The editor is sent the approach as the page plans it: at the angle typed, from the survey's own height.
+        self.assertEqual({k: survey['approach_plan'][k] for k in ('angleDeg', 'minimumDeg', 'typed', 'steep')},
                          {'angleDeg': 12.0, 'minimumDeg': 8.5, 'typed': True, 'steep': False})
-        self.assertIsNone(survey['plans']['exit'])
+        self.assertNotIn('plans', survey)
 
     def test_a_survey_with_no_target_is_not_measured(self):
         survey = self.new_survey(diagram={'schemaVersion': 2, 'analysis': {}})
