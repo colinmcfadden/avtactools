@@ -167,10 +167,8 @@ def test_the_page_escapes_what_was_typed_and_has_its_pictures(snapshot):
 
 def lidar(snapshot, **over):
     """``snapshot`` with what survey/obstacles.py would find: on the approach (flown north, so its lane lies south) a 98 ft tree 200 m out
-    that sets its angle, a 131 ft one 600 m out past its descent from 100 ft AGL; a 39 ft tree in the LZ, a building 50 m outside it,
-    and a treetop line along the profile."""
-    from survey import obstacles
-
+    that sets its angle over open ground, and a 131 ft one 600 m out; a 39 ft tree in the LZ, a building 50 m outside it, and a treetop
+    line along the profile."""
     bins = [{'groundFt': 2200.0, 'topFt': 2200.0, 'tallestFt': None} for _ in range(100)]
     bins[20] = {'groundFt': 2200.0, 'topFt': 2298.4, 'tallestFt': 98.4}
     bins[60] = {'groundFt': 2200.0, 'topFt': 2331.2, 'tallestFt': 131.2}
@@ -180,17 +178,12 @@ def lidar(snapshot, **over):
     above[3], above[4] = 98.4, 2.0                                                 # a tree line, and a bush under a metre
     tree = {**spot, 'heightFt': 98.4, 'topFt': 2298.4, 'bearingDeg': 180.0, 'distanceM': 200.0, 'kind': 'vegetation',
             'fromTargetM': 200.0, 'offsetM': 4.0, 'riseFt': 98.4, 'baseFt': 2200.0}
-    tall = {'fromM': 600.0, 'toM': 610.0, 'overFt': 131.2,
-            'obstacle': {**spot, 'heightFt': 131.2, 'topFt': 2331.2, 'bearingDeg': 180.0, 'distanceM': 600.0, 'kind': 'vegetation',
-                         'fromTargetM': 600.0, 'offsetM': -3.0}}
     found = {
         'status': 'measured', 'words': None, 'survey': {'name': 'GA_Statewide_B3_2018', 'year': 2018}, 'points': 1000, 'pieces': 12,
         'approach': {'headingDeg': 360.0, 'bearingDeg': 180.0, 'start': {'groundFt': 2200.0},
                      'edge': {**spot, 'fromTargetM': 60.0, 'groundFt': 2200.0},
                      'lengthM': 1000.0, 'halfWidthM': 10.0, 'binM': 10.0, 'bins': bins, 'covered': 100,
-                     'clearance': {'angleDeg': 8.5, 'obstacle': tree},
-                     'descent': obstacles.descent_point(8.5, 2200.0, [b['groundFt'] for b in bins]),
-                     'tall': [tall], 'missing': None},
+                     'clearance': {'angleDeg': 8.5, 'obstacle': tree}, 'missing': None},
         'exit': None,
         'inside': {**spot, 'heightFt': 39.4, 'topFt': 2240.0, 'bearingDeg': 33.7, 'distanceM': 36.1, 'kind': 'vegetation'},
         'around': {**spot, 'heightFt': 26.2, 'topFt': 2226.0, 'bearingDeg': 0.0, 'distanceM': 110.0, 'kind': 'building', 'fromEdgeM': 50.0},
@@ -202,20 +195,45 @@ def lidar(snapshot, **over):
     return {**snapshot, 'obstacles': {**found, **over}}
 
 
-def test_the_lidar_s_angle_is_printed_in_place_of_the_survey_profile(snapshot):
-    model = page.compile_page(source(lidar(snapshot)), book=BOOK)
+def descent_of(lane, angle, height_ft=100.0):
+    """Where survey/obstacles.py puts the descent from ``height_ft`` above the highest obstacle for ``lane``'s steps at ``angle``."""
+    from survey import obstacles
+
+    return obstacles.descent_point(angle, lane['start']['groundFt'], [b['topFt'] for b in lane['bins']],
+                                   [b['groundFt'] for b in lane['bins']], height_ft=height_ft)
+
+
+def typed_over(found, value):
+    """The editor's choice of ``value`` degrees for the approach, made on the values the comparison has for ``found``."""
+    from survey import compare
+
+    row = next(r for r in compare.compare(DONOVAN['field'], found, {}) if r['key'] == 'approach')
+    return {'approach': {'choice': 'typed', 'value': value, 'reason': 'The tree line 200 m out was cut in 2024.', 'by': 'CW3 Admin',
+                         'at': '2026-10-27T12:00:00Z', 'field': row['field'], 'computed': row['computed']}}
+
+
+TAN_30 = math.tan(math.radians(30.0))
+
+
+def test_each_way_is_planned_at_30_with_the_lidar_s_shallowest_beside_it(snapshot):
+    found = lidar(snapshot)
+    model = page.compile_page(source(found), book=BOOK)
     clearance = model['clearance']
     assert (clearance['status'], clearance['survey'], clearance['printed']) == ('measured', 'GA_STATEWIDE_B3_2018', 'computed')
     approach = clearance['approach']
-    descent = round(30.48 / math.tan(math.radians(8.5)), 1)
-    assert (approach['angle'], approach['climb'], approach['what']) == (
-        'APCH 360° · 8.5°', 'DESCEND FROM 100′ AGL AT 204 M', '98′ TREE AT 200 M')
-    assert approach['words'] == 'APCH 360° · 8.5° · DESCEND FROM 100′ AGL AT 204 M · 98′ TREE AT 200 M'
-    assert (approach['angleDeg'], approach['lidarDeg'], approach['typed'], approach['descentM']) == (8.5, 8.5, False, descent)
-    # The path from the touchdown point to its descent, then 100 ft over the track's ground; the 131 ft tree past it, over that.
-    assert approach['path'] == [[0.0, 2200.0], [descent, 2300.0]]
-    assert approach['level'][0] == [descent, 2300.0] and approach['level'][-1] == [995.0, 2300.0]
-    assert approach['tall'] == [{'fromTargetM': 600.0, 'overFt': 131.2, 'topFt': 2331.2, 'kind': 'TREE'}]
+    # At 30° the path is the survey's 100 ft over the open ground 53 m out, and above everything past it: the 98 ft tree 200 m out
+    # that sets the LiDAR's 8.5°, and the 131 ft one 600 m out.
+    assert abs(approach['descentM'] - 30.48 / TAN_30) < 0.1
+    words = 'DESCEND FROM 100′ AHO AT 53 M'
+    assert (approach['angle'], approach['climb'], approach['what']) == ('APCH 360° · 30.0°', words, 'MIN 8.5°: 98′ TREE AT 200 M')
+    assert approach['words'] == f'APCH 360° · 30.0° · {words} · MIN 8.5°: 98′ TREE AT 200 M'
+    assert (approach['angleDeg'], approach['minimumDeg'], approach['typed'], approach['steep'], approach['heightFt']) == (
+        30.0, 8.5, False, False, 100.0)
+    # The path from the touchdown point to its descent, then 100 ft over what stands highest: over both trees too.
+    assert approach['path'] == [[0.0, 2200.0], [approach['descentM'], 2300.0]]
+    assert approach['level'][0] == [approach['descentM'], 2300.0] and approach['level'][-1] == [995.0, 2300.0]
+    assert [205.0, 2398.4] in approach['level'] and [605.0, 2431.2] in approach['level']
+    assert 'tall' not in approach
     assert approach['obstacle'] == {'fromTargetM': 200.0, 'riseFt': 98.4, 'kind': 'vegetation'}
     assert clearance['exit'] is None
     assert clearance['inside'] == '39′ TREE AT 034° 36 M'
@@ -223,90 +241,113 @@ def test_the_lidar_s_angle_is_printed_in_place_of_the_survey_profile(snapshot):
     assert (clearance['standing'], clearance['trees']) == (40, 1)
     assert model['hazards'][0] == {
         'text': 'LiDAR: 39 ft tree in the LZ, 36 m at 034° from the touchdown point; 1 tree of 5 m or more.', 'from': 'computed'}
-    # What stands over 100 ft past the descent is a note: the hazards' box holds three lines, and the field's own come last.
-    assert "LiDAR: past the approach's descent from 100 ft AGL, a tree 600 m out stands 131 ft above the track's ground." in model['notes']
-    assert not any('100 ft AGL' in h['text'] for h in model['hazards'])
+    # Flown 100 ft above the highest obstacle, nothing stands in the way past the descent: no note, no hazard says otherwise.
+    assert not any('AHO' in n or 'AGL' in n for n in model['notes'])
     with patch('brief.figures._fetch_tile', _tile):
         html, _files = pages.build(model, lambda _id: None)
     assert 'CLEARANCE · 2018 · GA_STATEWIDE_B3_2018' in html and 'SURVEY PROFILE' not in html       # the year before a name cut short
     assert 'class="clearance"' in html and 'NO LIDAR RETURNS' not in html
-    assert 'DESCEND FROM 100′ AGL AT 204 M' in html
+    assert 'APCH 360° · 30.0°' in html and words in html and 'MIN 8.5°: 98′ TREE AT 200 M' in html
     assert 'Within 100 m: 26′ BUILDING AT 360° 110 M (50 M OUT)' in html
 
 
-def test_an_angle_the_editor_typed_is_printed_as_theirs(snapshot):
+def test_the_approach_descends_from_the_survey_s_own_height_and_the_exit_climbs_to_100_ft(snapshot):
+    # The old book's profiles give 75 to 150 ft: LZ DEERLICK's, 140 ft. The approach descends from 140 ft above the highest obstacle;
+    # the exit, which the survey gives no height, climbs to 100 ft.
+    found = lidar(snapshot)
+    found['obstacles']['exit'] = {**json.loads(json.dumps(found['obstacles']['approach'])), 'headingDeg': 180.0, 'bearingDeg': 180.0}
+    field = {**DONOVAN['field'], 'profileObstacleFt': '140 ft'}
+    clearance = page.compile_page(source(found, field=field), book=BOOK)['clearance']
+    approach, exit_ = clearance['approach'], clearance['exit']
+    assert abs(approach['descentM'] - 42.672 / TAN_30) < 0.1 and approach['heightFt'] == 140.0
+    assert approach['climb'] == 'DESCEND FROM 140′ AHO AT 74 M'
+    assert approach['path'][-1] == [approach['descentM'], 2340.0] and [205.0, 2438.4] in approach['level']
+    assert (exit_['angle'], exit_['climb'], exit_['what']) == ('EXIT 180° · 30.0°', 'CLIMB TO 100′ AHO AT 53 M',
+                                                              'MIN 8.5°: 98′ TREE AT 200 M')
+    assert (exit_['heightFt'], exit_['typed']) == (100.0, False)
+    # With no height of its own (none, nothing to read, nothing over 0), 100 ft.
+    for typed in ('', 'about', '0', '-140'):
+        clearance = page.compile_page(source(found, field={**field, 'profileObstacleFt': typed}), book=BOOK)['clearance']
+        assert clearance['approach']['climb'] == 'DESCEND FROM 100′ AHO AT 53 M', typed
+
+
+def test_a_way_the_trees_make_steeper_than_30_is_planned_at_the_lidar_s_and_said_so(snapshot):
+    # A 171 ft stand 60 m out, as round LZ LITTLE SAL: nothing shallower than 41° clears it.
+    found = lidar(snapshot)
+    lane = found['obstacles']['approach']
+    lane['bins'][6] = {'groundFt': 2200.0, 'topFt': 2370.6, 'tallestFt': 170.6}
+    stand = {**lane['clearance']['obstacle'], 'heightFt': 170.6, 'riseFt': 170.6, 'fromTargetM': 60.0, 'distanceM': 60.0}
+    lane['clearance'] = {'angleDeg': 41.0, 'obstacle': stand}
+    model = page.compile_page(source(found), book=BOOK)
+    approach = model['clearance']['approach']
+    assert (approach['angle'], approach['what']) == ('APCH 360° · 41.0°', 'STEEPER THAN 30°: 171′ TREE AT 60 M')
+    assert (approach['angleDeg'], approach['minimumDeg'], approach['typed'], approach['steep']) == (41.0, 41.0, False, True)
+    assert 65.0 < approach['descentM'] < 75.0                                        # 100 ft above the stand just past it
+    with patch('brief.figures._fetch_tile', _tile):
+        html, _files = pages.build(model, lambda _id: None)
+    assert 'APCH 360° · 41.0°' in html and 'STEEPER THAN 30°: 171′ TREE AT 60 M' in html
+
+
+def test_an_angle_the_editor_typed_is_planned_in_place_of_30(snapshot):
     from survey import compare
 
     found = lidar(snapshot)
-    row = next(r for r in compare.compare(DONOVAN['field'], found, {}) if r['key'] == 'approach')
-    choice = {'approach': {'choice': 'typed', 'value': 12.0, 'reason': 'The tree line 200 m out was cut in 2024.', 'by': 'CW3 Admin',
-                           'at': '2026-10-27T12:00:00Z', 'field': row['field'], 'computed': row['computed']}}
+    choice = typed_over(found, 12.0)
     model = page.compile_page(source(found, overrides=choice), book=BOOK)
     assert model['clearance']['printed'] == 'typed'
     approach = model['clearance']['approach']
+    descent = descent_of(found['obstacles']['approach'], 12.0)                  # 100 ft above the 98 ft tree, at 12.0°
+    assert 205.0 < descent['fromTargetM'] < 215.0
     assert (approach['angle'], approach['climb'], approach['what']) == (
-        'APCH 360° · 12.0°', 'DESCEND FROM 100′ AGL AT 143 M', "EDITOR'S · LIDAR 8.5°")
-    assert (approach['angleDeg'], approach['lidarDeg'], approach['typed']) == (12.0, 8.5, True)
-    assert approach['descentM'] == round(30.48 / math.tan(math.radians(12.0)), 1)
+        'APCH 360° · 12.0°', f'DESCEND FROM 100′ AHO AT {profile.js_round(descent["fromTargetM"])} M', "EDITOR'S · LIDAR MIN 8.5°")
+    assert (approach['angleDeg'], approach['minimumDeg'], approach['typed'], approach['steep']) == (12.0, 8.5, True, False)
+    assert approach['descentM'] == descent['fromTargetM']
     assert approach['obstacle'] == {'fromTargetM': 200.0, 'riseFt': 98.4, 'kind': 'vegetation'}   # the LiDAR's still drawn
-    assert [t['fromTargetM'] for t in approach['tall']] == [600.0]
     assert 'set by the editor' in changes.first(DONOVAN['field'], found, choice)
     with patch('brief.figures._fetch_tile', _tile):
         html, _files = pages.build(model, lambda _id: None)
-    assert 'APCH 360° · 12.0°' in html and "EDITOR'S · LIDAR 8.5°" in html and 'SURVEY PROFILE' not in html
-    # Measured again to another angle, the editor's no longer stands: the LiDAR's is printed, and it is to be looked at again.
+    assert 'APCH 360° · 12.0°' in html and "EDITOR'S · LIDAR MIN 8.5°" in html and 'SURVEY PROFILE' not in html
+    # Steeper than 30° where 30° would clear, it is the editor's, not the trees': not said to be steeper.
+    steeper = page.compile_page(source(found, overrides=typed_over(found, 35.0)), book=BOOK)['clearance']['approach']
+    assert (steeper['angle'], steeper['steep']) == ('APCH 360° · 35.0°', False)
+    # Measured again to another angle, the editor's no longer stands: the plan at 30° is printed, and it is to be looked at again.
     again = lidar(snapshot)
     again['obstacles']['approach']['clearance']['angleDeg'] = 9.0
     row = next(r for r in compare.compare(DONOVAN['field'], again, choice) if r['key'] == 'approach')
     assert (row['printed'], row['overrideStands'], row['open'], row['disagrees']) == ('computed', False, True, False)
-    assert page.compile_page(source(again, overrides=choice), book=BOOK)['clearance']['approach']['angle'] == 'APCH 360° · 9.0°'
+    approach = page.compile_page(source(again, overrides=choice), book=BOOK)['clearance']['approach']
+    assert (approach['angle'], approach['what']) == ('APCH 360° · 30.0°', 'MIN 9.0°: 98′ TREE AT 200 M')
 
 
-def test_only_what_stands_over_100_ft_past_the_descent_is_flagged(snapshot):
-    from survey import compare
-
-    # An editor's 3.0°, shallower than the LiDAR's: its descent from 100 ft AGL begins 582 m out, so the 131 ft tree 600 m out is past
-    # it and one 300 m out is under its path (which the LiDAR's own angle clears), not in the way at 100 ft AGL.
+def test_the_descent_is_100_ft_above_the_treetops_not_the_ground(snapshot):
+    # A forest 98 ft tall from 60 m out, with a gap at 80-90 m: the 30° path is 100 ft above the treetops 105 m out, where over the
+    # ground it would be 53 m out; and the gap nearer in, where the path is already 100 ft over the ground, does not bring it in.
     found = lidar(snapshot)
     lane = found['obstacles']['approach']
-    lane['tall'] = [{**lane['tall'][0], 'fromM': 300.0, 'toM': 310.0, 'obstacle': {**lane['tall'][0]['obstacle'], 'fromTargetM': 300.0}},
-                    lane['tall'][0]]
-    row = next(r for r in compare.compare(DONOVAN['field'], found, {}) if r['key'] == 'approach')
-    choice = {'approach': {'choice': 'typed', 'value': 3.0, 'reason': 'Flown so by the 2-58th', 'field': row['field'],
-                           'computed': row['computed']}}
-    model = page.compile_page(source(found, overrides=choice), book=BOOK)
-    assert model['clearance']['approach']['climb'] == 'DESCEND FROM 100′ AGL AT 582 M'
-    assert [t['fromTargetM'] for t in model['clearance']['approach']['tall']] == [600.0]
-    assert [n for n in model['notes'] if '100 ft AGL' in n] == [
-        "LiDAR: past the approach's descent from 100 ft AGL, a tree 600 m out stands 131 ft above the track's ground."]
+    for k in range(6, 100):
+        lane['bins'][k] = {'groundFt': 2200.0, 'topFt': 2298.4, 'tallestFt': 98.4}
+    lane['bins'][8] = {'groundFt': 2200.0, 'topFt': 2200.0, 'tallestFt': None}
+    lane['clearance'] = {'angleDeg': 26.6, 'obstacle': {**lane['clearance']['obstacle'], 'fromTargetM': 60.0, 'distanceM': 60.0}}
+    approach = page.compile_page(source(found), book=BOOK)['clearance']['approach']
+    assert abs(approach['descentM'] - (30.0 + 30.48) / TAN_30) < 0.5
+    assert approach['climb'] == 'DESCEND FROM 100′ AHO AT 105 M'
+    assert all(top == 2398.4 for _m, top in approach['level'])                    # 100 ft over the canopy all the way out
 
 
 def test_a_descent_past_the_lane_is_said_so(snapshot):
+    # Typed as shallow as 1.5°, the path is still within 100 ft of what stands at 1,000 m.
     found = lidar(snapshot)
     lane = found['obstacles']['approach']
-    lane['clearance']['angleDeg'] = 1.5
-    model = page.compile_page(source(found), book=BOOK)
-    approach = model['clearance']['approach']
-    assert approach['climb'] == 'DESCEND FROM 100′ AGL PAST 1,000 M'
+    choice = typed_over(found, 1.5)
+    approach = page.compile_page(source(found, overrides=choice), book=BOOK)['clearance']['approach']
+    assert approach['climb'] == 'DESCEND FROM 100′ AHO PAST 1,000 M'
     assert approach['path'] == [[0.0, 2200.0], [1000.0, 2200.0 + 1000.0 * math.tan(math.radians(1.5)) * 3.28084]]
-    assert (approach['level'], approach['tall'], approach['descentM']) == ([], [], None)   # all of the lane is under the path
-    assert not any('100 ft AGL' in n for n in model['notes'])
-
-
-def test_what_stands_over_100_ft_past_the_exit_s_climb_is_a_note(snapshot):
-    from survey import obstacles
-
-    found = lidar(snapshot)
-    lane = json.loads(json.dumps(found['obstacles']['approach']))
-    lane.update({'headingDeg': 180.0, 'bearingDeg': 180.0})
-    lane['tall'] = [{'fromM': 450.0, 'toM': 470.0, 'overFt': 164.7,
-                     'obstacle': {**lane['tall'][0]['obstacle'], 'kind': 'tower', 'heightFt': 164.0, 'fromTargetM': 459.0}},
-                    {**lane['tall'][0], 'fromM': 900.0, 'toM': 910.0}]
-    lane['descent'] = obstacles.descent_point(8.5, 2200.0, [b['groundFt'] for b in lane['bins']])
-    found['obstacles']['exit'] = lane
-    model = page.compile_page(source(found), book=BOOK)
-    assert model['clearance']['exit']['climb'] == 'CLIMB TO 100′ AGL AT 204 M'
-    assert "LiDAR: past where the exit is 100 ft AGL, a tower 459 m out stands 165 ft above the track's ground; 1 more place." in model['notes']
+    assert (approach['level'], approach['descentM']) == ([], None)
+    lane['covered'] = 31
+    for k in range(31, 100):
+        lane['bins'][k] = {'groundFt': None, 'topFt': None, 'tallestFt': None}
+    approach = page.compile_page(source(found, overrides=choice), book=BOOK)['clearance']['approach']
+    assert approach['climb'] == 'DESCEND FROM 100′ AHO PAST 310 M'                  # the survey covers 310 m
 
 
 def test_a_lane_measured_by_an_earlier_ez_pz_is_not_printed_as_this_one(snapshot):
@@ -360,7 +401,7 @@ def test_the_survey_profile_s_angle_is_held_against_the_lidar_s(snapshot):
     def approach(field, snap, overrides=None):
         return next(r for r in compare.compare(field, snap, overrides or {}) if r['key'] == 'approach')
 
-    # The profile's "100 ft at 200 m": 100 ft up 200 m out, where the descent from 100 ft AGL begins, so 8.7°.
+    # The profile's "100 ft at 200 m": 100 ft up 200 m out, so 8.7°.
     row = approach(DONOVAN['field'], lidar(snapshot))
     assert (row['label'], row['field'], row['computed'], row['apart'], row['disagrees']) == (
         'Approach angle', '8.7° (100 ft at 200 m)', '8.5° (LiDAR: 98 ft tree 200 m out)', '0.2° apart', False)
@@ -397,7 +438,7 @@ def test_an_approach_with_no_clearance_prints_the_field_s_profile_and_says_why(s
     # The review's case: the approach was measured, but the LiDAR has no ground at the touchdown point to measure from. The page said
     # "no LiDAR returns in its corridor" and dropped the field's own profile.
     found = lidar(snapshot)
-    found['obstacles']['approach'].update({'clearance': None, 'descent': None, 'missing': 'no_target_ground'})
+    found['obstacles']['approach'].update({'clearance': None, 'missing': 'no_target_ground'})
     model = page.compile_page(source(found), book=BOOK)
     clearance = model['clearance']
     assert clearance['printed'] == 'field'
@@ -411,10 +452,11 @@ def test_nothing_in_the_way_is_said_and_held_against_the_field_s(snapshot):
     from survey import compare
 
     found = lidar(snapshot)
-    found['obstacles']['approach'].update({'clearance': {'angleDeg': 0.0, 'obstacle': None}, 'descent': None, 'tall': []})
+    found['obstacles']['approach'].update({'clearance': {'angleDeg': 0.0, 'obstacle': None}})
     model = page.compile_page(source(found), book=BOOK)
-    assert model['clearance']['approach']['words'] == 'APCH 360° · 0.0° · NOTHING IN THE WAY'
-    assert (model['clearance']['approach']['path'], model['clearance']['approach']['level']) == ([], [])
+    assert model['clearance']['approach']['words'] == (
+        'APCH 360° · 30.0° · DESCEND FROM 100′ AHO AT 53 M · MIN 0.0°: NOTHING IN THE WAY')
+    assert model['clearance']['approach']['obstacle'] is None
     row = next(r for r in compare.compare(DONOVAN['field'], found, {}) if r['key'] == 'approach')
     assert (row['computed'], row['apart'], row['disagrees']) == ('0.0° (LiDAR: nothing in the way)', '8.7° apart', True)
 
@@ -436,7 +478,7 @@ def test_low_vegetation_is_brush_and_the_figure_draws_the_obstacle_s_rise(snapsh
     model = page.compile_page(source(found), book=BOOK)
     assert model['clearance']['inside'] == '10′ BRUSH AT 034° 36 M'
     spec = model['clearance']['approach']
-    assert spec['what'] == '49′ TREE AT 200 M'
+    assert spec['what'] == 'MIN 8.5°: 49′ TREE AT 200 M'
     assert spec['obstacle'] == {'fromTargetM': 200.0, 'riseFt': 114.0, 'kind': 'vegetation'}
     drawn = figures.clearance(model['clearance'])
     # The triangle's tip stands over the touchdown point's ground and the obstacle's rise (2314 ft), where the angle sees it.
@@ -446,7 +488,7 @@ def test_low_vegetation_is_brush_and_the_figure_draws_the_obstacle_s_rise(snapsh
     floor = min(values) - span * 0.06
     tip = float(re.search(r'<polygon points="[-0-9.]+,([-0-9.]+) ', drawn).group(1))
     assert abs(tip - ((104 - 14) - (2314.0 - floor) / (span * 1.06) * ((104 - 14) - 50) - 6)) < 0.1
-    assert drawn.count('r="3"') == 1 and drawn.count('r="2.4"') == 1                 # the 131 ft tree past the descent; the descent
+    assert drawn.count('<circle') == 1 and drawn.count('r="2.4"') == 1               # the descent, and nothing flagged past it
     # The LZ between the two ways, on the touchdown point's ground.
     lz_y = float(re.search(r'<rect x="[-0-9.]+" y="([-0-9.]+)"', drawn).group(1))
     assert abs(lz_y - ((104 - 14) - (2200.0 - floor) / (span * 1.06) * ((104 - 14) - 50) - 3)) < 0.1

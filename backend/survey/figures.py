@@ -441,11 +441,11 @@ TREETOPS = "#2e6b30"
 def clearance(spec, width=512, height=104):
     """The LiDAR's angles (step L4) as the page's clearance box draws them, from the touchdown point: the approach on the left, flown
     towards the LZ, and the exit on the right, each its track's ground (thicker over the LZ) and the highest thing in the way in each 10
-    m of its lane out to 1,000 m; the path at the angle printed out to where it is 100 ft above the ground (a dot), then 100 ft above
-    the ground past it (dashed); the thing that sets the LiDAR's angle (a triangle) and what stands higher than 100 ft past the dot (a
-    ring); and its words over it (how much of the lane the survey covers in the corner, where it is not all of it). None where neither
-    way was measured. The box prints it 0.58 in high and its full width, about 0.40 pt to a unit: its words are 11 to 15 units, 4.4 to
-    6 pt."""
+    m of its lane out to 1,000 m; the path at the angle planned (survey/flightpath.py) out to where it is the way's height above the
+    highest obstacle for good (a dot), then that height above what stands past it (dashed); the thing that sets the LiDAR's shallowest
+    clear angle (a triangle); and its words over it (how much of the lane the survey covers in the corner, where it is not all of it).
+    None where neither way was measured. The box prints it 0.58 in high and its full width, about 0.40 pt to a unit: its words are 11
+    to 15 units, 4.4 to 6 pt."""
     sides = [s for s in ((spec or {}).get("approach"), (spec or {}).get("exit")) if isinstance(s, dict)]
     values = [v for s in sides for v in s["groundFt"] + s["topsFt"] + [s.get("startFt")] if _num(v)]
     values += [h for s in sides for _m, h in (s.get("path") or []) + (s.get("level") or []) if _num(h)]
@@ -510,9 +510,6 @@ def clearance(spec, width=512, height=104):
             # The thing that sets the LiDAR's angle, as the angle sees it: its rise over the touchdown point's ground.
             x1, y1 = sx(obstacle["fromTargetM"]), sy(spec_side["startFt"] + obstacle["riseFt"])
             parts.append(f'<polygon points="{x1:.1f},{y1 - 6:.1f} {x1 - 4:.1f},{y1 + 1:.1f} {x1 + 4:.1f},{y1 + 1:.1f}" fill="{INK}"/>')
-        for tall in spec_side.get("tall") or []:
-            parts.append(f'<circle cx="{sx(tall["fromTargetM"]):.1f}" cy="{sy(tall["topFt"]):.1f}" r="3" fill="#ffffff" stroke="{INK}" '
-                         f'stroke-width="1.2"/>')
         x_words = pad + 2 if left else width - pad - 2
         anchor = "start" if left else "end"
         lines = ((13, 15, 800, spec_side.get("angle") or spec_side["label"] + " " + (spec_side.get("heading") or "")),

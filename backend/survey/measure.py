@@ -17,8 +17,9 @@ never replaced in silence, and a published revision keeps the snapshot it was si
   limit only when greater than it at 0.1° (AGENTS.md §13).
 - **The slope map, contours and profiles**: /api/terrain-analysis's answer, kept for the editor and the page.
 - **What stands on and round the LZ** (``obstacles``, step L4): from the USGS LiDAR, the shallowest clear angle from the touchdown point
-  along the best approach and the best exit, where its path is 100 ft above the ground and what stands over 100 ft there, the tallest
-  in the LZ and within 100 m of it, what stands over 2 m in it, its trees and a picture of every height round it (survey/obstacles.py).
+  along the best approach and the best exit and what stands highest every 10 m out along them (from which each way is planned:
+  survey/flightpath.py), the tallest in the LZ and within 100 m of it, what stands over 2 m in it, its trees and a picture of every
+  height round it (survey/obstacles.py).
   Where it cannot be measured it says why; a reading that failed is a problem, to measure again.
 
 Where something cannot be measured it is None and ``problems`` says why in words: a value is never made up (AGENTS.md §14).
@@ -43,8 +44,9 @@ from survey import geometry, obstacles
 # 2: the snapshot keeps the boundary and the best approach it was measured for (``stale``). 3: and the best exit, with what stands
 # on and round the LZ (``obstacles``), which is measured along both. 4: its obstacles are what stands 2 m or more and the ground where
 # it rises (a 3's angle from the edge could be set by a ground return's scatter a centimetre past it). 5: each way's angle is from the
-# touchdown point along a lane 10 m each side of its track, with where its path is 100 ft above the ground and what stands over 100 ft
-# (a 4's, from the LZ's edge across 60 m, read 87-90° on every LZ of the old book).
+# touchdown point along a lane 10 m each side of its track, with what stands highest every 10 m out along it (a 4's, from the LZ's edge
+# across 60 m, read 87-90° on every LZ of the old book). A 5 measured before each way was planned from those steps
+# (survey/flightpath.py) also keeps where its path was 100 ft above the ground and what stood over 100 ft, which nothing reads now.
 SNAPSHOT_VERSION = 5
 FEET_PER_METRE = tp.FEET_PER_METRE
 # The UH-60 limits by the names a survey uses (terrain_provider's are the slope tile's "noseHigh"/"noseLow").
@@ -371,11 +373,7 @@ COMPARED = (
     ("LiDAR", ("obstacles", "status")),
     ("LiDAR survey", ("obstacles", "survey", "name")),
     ("Approach clears at (°)", ("obstacles", "approach", "clearance", "angleDeg")),
-    ("Approach's descent from 100 ft AGL (m out)", ("obstacles", "approach", "descent", "fromTargetM")),
-    ("Approach: places over 100 ft above the track", ("obstacles", "approach", "tall")),
     ("Exit clears at (°)", ("obstacles", "exit", "clearance", "angleDeg")),
-    ("Exit at 100 ft AGL (m out)", ("obstacles", "exit", "descent", "fromTargetM")),
-    ("Exit: places over 100 ft above the track", ("obstacles", "exit", "tall")),
     ("Tallest in the LZ (ft)", ("obstacles", "inside", "heightFt")),
     ("Tallest within 100 m (ft)", ("obstacles", "around", "heightFt")),
     ("Standing over 2 m in the LZ (points)", ("obstacles", "standing", "count")),
