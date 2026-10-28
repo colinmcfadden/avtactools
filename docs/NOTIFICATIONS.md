@@ -1,9 +1,9 @@
 # Notifications — plan
 
-Status: **proposed, nothing built** (2026-10-28). The owner asked for notifications that are few and useful: a Mission Pack invitation
+Status: **decided, nothing built** (2026-10-28). The owner asked for notifications that are few and useful: a Mission Pack invitation
 and a pack finished, and "a couple more" that earn their place. This file proposes which ones, how they reach Android first and then the
-web, and what the server keeps. **§10 holds the questions only the owner can answer**; nothing is built until he has. Answered so far:
-Android polls (§4.3, the owner, 2026-10-28). Where this plan and
+web, and what the server keeps. **§10 holds the owner's answers** (2026-10-28): Android polls every 15 minutes, the web is in-app only, the
+list stands as §2 has it, and the names always show on a lock screen. Only a new-device sign-in email (question 6) is still open. Where this plan and
 the code disagree once it is built, the code wins (AGENTS.md §16).
 
 ---
@@ -185,7 +185,7 @@ if crews find the poll too slow.
 
 - **The worker** (`NotificationWorker`, unique periodic, every 15 min, network required) asks the outbox with its last `ETag`, posts what it
   has not shown, takes down what is seen or withdrawn, and keeps the ids shown (a preference, per account, at most 200). It also runs once
-  when the app comes to the front, so opening the app brings what waits. Its period is the owner's to set (§10, question 2).
+  when the app comes to the front, so opening the app brings what waits. Every 15 minutes is the owner's choice (§10, question 2).
 - **Only for the account whose plans are on the device**, signed in, not below the server's minimum version, as the sync runner checks
   (`EngineSyncRunner`); **a sign-out cancels every posted notification and forgets the ids**, as it wipes the threat picture.
 - **Access approved**: while the account is gated the worker asks `GET /api/auth/me` instead (the only route a gated account reaches) and
@@ -193,8 +193,9 @@ if crews find the poll too slow.
 - **In the front, a toast, not a system notification**: the frame's toasts (`ToastHost`) say it, with its action, and it is marked seen.
 - **Channels**, one per setting group (§2.1), so the system's own per-channel switch works too: *Invitations* (high importance),
   *Finished packs*, *Packs handed to you*, *Account* (access approved), *Changes kept* (default importance).
-- **Lock screen**: `VISIBILITY_PRIVATE` with a public version that names nothing (*EZ/PZ: 1 invitation*). The text never holds a place
-  anyway (§6); this respects a person who set their phone to hide notification content.
+- **Lock screen**: `VISIBILITY_PUBLIC`, **the names always shown** (the owner, 2026-10-28), even on a phone set to hide sensitive
+  notification content. That is safe only because the text never holds a place, an item or anything from a pack (§6), so §6 is the rule
+  that must hold; a test checks every notification's words against it.
 - **Small icon**: the app's mark in one colour, as Android requires; no new artwork beyond that.
 
 ### 4.5 Asking for `POST_NOTIFICATIONS` (Android 13+)
@@ -297,11 +298,11 @@ and `docs/HANDOFF.md` updated in the same commit.
 ## 10. Questions for the owner
 
 1. ~~**Android delivery**~~ **Answered, 2026-10-28: polling (A).** FCM is a later step (N4), if the poll proves too slow.
-2. **The poll's period** if A: every 15 minutes (the least WorkManager allows; one small request, 304 when nothing is new), or 30?
-3. **Web delivery**: in-app only (recommended), or Web Push too (`pywebpush` and a service worker)?
-4. **The list**: §2.1's six — invitations (pack, added, team), finished, handed to you, access approved, changes kept — and §2.2's exclusions?
-   In particular: is a **reopen** silent (it only cancels a finish not yet sent), and are **role changes and removals** left out?
-5. **The lock screen**: private by default (names hidden when the phone is set to hide sensitive content), or always show the names?
+2. ~~**The poll's period**~~ **Answered: every 15 minutes**, the least WorkManager allows.
+3. ~~**Web delivery**~~ **Answered: in-app only** (§8.2). Web Push stays a later step (N5).
+4. ~~**The list**~~ **Answered: as proposed.** §2.1's six; a reopen is silent (it only cancels a finish not yet sent); role changes and
+   removals are left out (§2.2).
+5. ~~**The lock screen**~~ **Answered: always show the names** (`VISIBILITY_PUBLIC`, §4.4), resting on §6.
 6. **New-device sign-in** as an email (§2.2), a separate small change: wanted?
 
 ---
