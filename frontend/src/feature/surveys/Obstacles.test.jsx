@@ -40,8 +40,12 @@ const MEASURED = {
   trees: [{ ...SPOT, heightFt: 39.4 }],
   heightMap: { overlay: "data:image/png;base64,AAAA", bounds: [[34.59, -84.13], [34.6, -84.12]] },
 };
-// The approach as the server plans it (survey/flightpath.py): at 30°, from the survey's 100 ft above the highest obstacle.
-const PLAN = { angleDeg: 30, minimumDeg: 8.5, typed: false, steep: false, heightFt: 100, descent: { fromTargetM: 52.8, topFt: 2200, groundFt: 2200 } };
+// The approach as the server plans it (survey/flightpath.py): at 30°, flown along the ground 100 ft above the tallest in the lane
+// (here nothing stands in it).
+const PLAN = {
+  angleDeg: 30, minimumDeg: 8.5, typed: false, steep: false, heightFt: 100, tallestFt: null, aboveGroundFt: 100,
+  descent: { fromTargetM: 52.8, groundFt: 2200 },
+};
 const APPROACH_ROW = {
   key: "approach", label: "Approach angle", field: "8.7° (100 ft at 200 m)", computed: "8.5° (LiDAR: 98 ft tree 200 m out)",
   apart: "0.2° apart", disagrees: false, open: false, override: null, overrideStands: false, printed: "computed",
@@ -66,12 +70,12 @@ describe("what the LiDAR found", () => {
     expect(within(group).getByText(/wires and poles seldom show in it/)).toBeInTheDocument();
   });
 
-  it("says where the descent from the survey's height above the highest obstacle begins, and how high above the ground that is", () => {
-    const canopy = { ...PLAN, descent: { fromTargetM: 404.7, topFt: 2298.4, groundFt: 2200 } };
-    expect(descentWords(canopy)).toBe("From 100 ft AHO: 405 m out, 198 ft above the ground");      // 100 ft over 98 ft treetops
-    expect(descentWords({ ...canopy, heightFt: 140, descent: { fromTargetM: 73.9, topFt: 2200, groundFt: 2200 } }))
-      .toBe("From 140 ft AHO: 74 m out, 140 ft above the ground");                                 // the survey's own 140 ft
-    expect(descentWords({ ...canopy, descent: { fromTargetM: 152.4, topFt: 2200, groundFt: null } })).toBe("From 100 ft AHO: 152 m out");
+  it("says where the descent from the survey's height above the tallest in the lane begins, and how high above the ground that is", () => {
+    const canopy = { ...PLAN, tallestFt: 98.4, aboveGroundFt: 198.4, descent: { fromTargetM: 104.7, groundFt: 2200 } };
+    expect(descentWords(canopy)).toBe("From 100 ft AHO: 105 m out, 198 ft above the ground");      // 100 ft over a 98 ft tree
+    expect(descentWords({ ...canopy, heightFt: 140, aboveGroundFt: 238.4, descent: { fromTargetM: 125.9, groundFt: 2200 } }))
+      .toBe("From 140 ft AHO: 126 m out, 238 ft above the ground");                               // the survey's own 140 ft
+    expect(descentWords({ ...canopy, aboveGroundFt: undefined })).toBe("From 100 ft AHO: 105 m out");
     expect(descentWords({ ...canopy, descent: { fromTargetM: null, pastM: 310 } })).toBe("From 100 ft AHO: past 310 m");
     expect(descentWords({ ...canopy, descent: null })).toBe("—");
     expect(descentWords(null)).toBe("—");

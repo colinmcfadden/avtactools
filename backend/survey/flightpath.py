@@ -1,8 +1,8 @@
 """How the approach is planned (docs/LZ_SURVEYS.md §16; the owner, 2026-10-27): at 30° where what stands allows it, else at the
-LiDAR's shallowest clear angle, said to be steeper; or at the angle the survey's editor typed over the plan. Its descent begins where
-that path is the survey's own approach height above the highest obstacle for good (survey/obstacles.py's ``descent_point``): the height
-its profile gives (the old book's are 75 to 150 ft), 100 ft where it gives none. The exit is not planned: it is neither measured nor
-shown.
+LiDAR's shallowest clear angle, said to be steeper; or at the angle the survey's editor typed over the plan. Until its descent the
+approach is flown along the ground's line at the survey's own height above the tallest thing standing in the lane (survey/obstacles.py's
+``path_height``), never up and down over each tree, and its descent begins where the path meets it (``descent_point``): the height
+its profile gives (the old book's are 75 to 150 ft), 100 ft where it gives none. The exit's angle is neither measured nor shown.
 
 Worked out from the lane's 10 m steps whenever the page or the editor asks, never kept in the snapshot: the survey's height can be
 retyped without measuring again.
@@ -31,10 +31,12 @@ def height_of(field):
 
 
 def plan(lane, height_ft=DEFAULT_HEIGHT_FT, typed=None):
-    """The approach's plan, from its lane as the snapshot keeps it: {angleDeg, minimumDeg, typed, steep, heightFt, descent}.
-    ``angleDeg`` is 30°, or the LiDAR's shallowest clear angle (``minimumDeg``) where that is steeper (``steep``), or the editor's
-    ``typed`` angle; ``descent`` where a path at it is ``height_ft`` above the highest obstacle for good (``descent_point``). None where
-    the LiDAR has no angle along it (none measured, a lane from before version 5, no returns, no ground at the touchdown point)."""
+    """The approach's plan, from its lane as the snapshot keeps it: {angleDeg, minimumDeg, typed, steep, heightFt, tallestFt,
+    aboveGroundFt, descent}. ``angleDeg`` is 30°, or the LiDAR's shallowest clear angle (``minimumDeg``) where that is steeper
+    (``steep``), or the editor's ``typed`` angle; ``aboveGroundFt`` the height over the ground it is flown at until its descent,
+    ``height_ft`` above the tallest thing standing in the lane (``tallestFt``: ``path_height``); ``descent`` where a path at the angle
+    meets it (``descent_point``). None where the LiDAR has no angle along it (none measured, a lane from before version 5, no returns,
+    no ground at the touchdown point)."""
     if not isinstance(lane, dict) or not isinstance(lane.get("start"), dict):
         return None
     clear = lane.get("clearance")
@@ -44,10 +46,10 @@ def plan(lane, height_ft=DEFAULT_HEIGHT_FT, typed=None):
     angle = typed if typed is not None else max(least, PLAN_DEG)
     bins = [b if isinstance(b, dict) else {} for b in lane.get("bins") or []]
     step = lane.get("binM") if _finite(lane.get("binM")) else obstacles.BIN_M
-    descent = obstacles.descent_point(angle, lane["start"].get("groundFt"), [b.get("topFt") for b in bins],
-                                      [b.get("groundFt") for b in bins], height_ft=height_ft, bin_m=step)
+    tallest, above = obstacles.path_height(bins, height_ft)
+    descent = obstacles.descent_point(angle, lane["start"].get("groundFt"), [b.get("groundFt") for b in bins], above, bin_m=step)
     return {"angleDeg": angle, "minimumDeg": least, "typed": typed is not None, "steep": typed is None and least > PLAN_DEG,
-            "heightFt": height_ft, "descent": descent}
+            "heightFt": height_ft, "tallestFt": tallest, "aboveGroundFt": above, "descent": descent}
 
 
 def typed_of(rows):

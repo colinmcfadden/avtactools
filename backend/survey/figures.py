@@ -436,36 +436,91 @@ def survey_profile(spec, width=300, height=120):
 
 
 TREETOPS = "#2e6b30"
+TREE_FILL = "#d6e8cf"
+# The clearance box draws the approach close in, as the old book's survey profile did (the owner, 2026-10-27: "pretty immediate, like
+# within 50-100 m out"): from the touchdown point to a little past where the descent begins, never under 60 m; 200 m where the path
+# meets the approach past the lane, or there is no path.
+CLOSE_PAST = 1.3
+CLOSE_MIN_M = 60.0
+CLOSE_NO_DESCENT_M = 200.0
+
+
+def close_range(side, length):
+    """How far out from the touchdown point the clearance box draws ``side`` (compile's ``_lane``), in metres, at most ``length``."""
+    at = side.get("descentM")
+    reach = max(CLOSE_MIN_M, math.ceil(at * CLOSE_PAST / 10.0) * 10.0) if _num(at) else CLOSE_NO_DESCENT_M
+    return min(reach, length)
+
+
+def _js_round(value):
+    """A whole number as the page's words round one (halves up, as JavaScript's Math.round), for a dimension's words."""
+    return int(math.floor(value + 0.5))
+
+
+def _across(x0, x1, y, words):
+    """A dimension across, as the old book's profile marks its distance: a tick at each end, the line between with its arrowheads, the
+    words under its middle."""
+    return (f'<path d="M{x0:.1f} {y - 4:.1f}V{y + 4:.1f}M{x1:.1f} {y - 4:.1f}V{y + 4:.1f}M{x0:.1f} {y:.1f}H{x1:.1f}" stroke="{INK}" '
+            f'stroke-width="0.9" fill="none"/>'
+            f'<polygon points="{x0:.1f},{y:.1f} {x0 + 6:.1f},{y - 2.4:.1f} {x0 + 6:.1f},{y + 2.4:.1f}" fill="{INK}"/>'
+            f'<polygon points="{x1:.1f},{y:.1f} {x1 - 6:.1f},{y - 2.4:.1f} {x1 - 6:.1f},{y + 2.4:.1f}" fill="{INK}"/>'
+            f'<text x="{(x0 + x1) / 2:.1f}" y="{y + 13:.1f}" font-size="11" font-weight="700" text-anchor="middle">{escape(words)}</text>')
+
+
+def _up(x, y_low, y_high, number, unit):
+    """A dimension up, as the old book's profile marks its height: a tick at each end, the line between with its arrowheads, the number
+    and its unit beside it."""
+    middle = (y_low + y_high) / 2
+    return (f'<path d="M{x - 3:.1f} {y_low:.1f}H{x + 3:.1f}M{x - 3:.1f} {y_high:.1f}H{x + 3:.1f}M{x:.1f} {y_low:.1f}V{y_high:.1f}" '
+            f'stroke="{INK}" stroke-width="0.9" fill="none"/>'
+            f'<polygon points="{x:.1f},{y_high:.1f} {x - 2.4:.1f},{y_high + 6:.1f} {x + 2.4:.1f},{y_high + 6:.1f}" fill="{INK}"/>'
+            f'<polygon points="{x:.1f},{y_low:.1f} {x - 2.4:.1f},{y_low - 6:.1f} {x + 2.4:.1f},{y_low - 6:.1f}" fill="{INK}"/>'
+            f'<text x="{x + 5:.1f}" y="{middle - 1:.1f}" font-size="11" font-weight="700">{escape(number)}</text>'
+            f'<text x="{x + 5:.1f}" y="{middle + 10:.1f}" font-size="10">{escape(unit)}</text>')
 
 
 def clearance(spec, width=512, height=104):
-    """The LiDAR's approach (step L4) as the page's clearance box draws it, from the touchdown point: flown from the left towards the LZ
-    at the right, its track's ground (thicker over the LZ) and the highest thing in the way in each 10 m of its lane out to 1,000 m; the
-    path at the angle planned (survey/flightpath.py) out to where it is the survey's height above the highest obstacle for good (a dot),
-    then that height above what stands past it (dashed); the thing that sets the LiDAR's shallowest clear angle (a triangle); and its
-    words over it (how much of the lane the survey covers in the corner, where it is not all of it). None where the approach was not
-    measured. The box prints it 0.58 in high and its full width, about 0.40 pt to a unit: its words are 11 to 15 units, 4.4 to 6 pt."""
+    """The LiDAR's approach (step L4) as the page's clearance box draws it, close in as the old book's survey profile was (the owner,
+    2026-10-27): the LZ at the left and the approach coming in from the right, from the touchdown point out to a little past where its
+    descent begins (``close_range``). The track's ground (thicker over the LZ) and the trees standing over it in each 10 m, shaded green;
+    the helicopter where the descent begins, its path down to the touchdown point an arrow (survey/flightpath.py's plan), and the approach
+    before it, along the ground at the survey's height above the tallest in the lane (dashed); how far out the descent begins and how high
+    over the ground the approach is flown, measured as the old profile measured its distance and height; the thing that sets the LiDAR's
+    shallowest clear angle (a triangle) where it falls in the box; and its words over the sky the path leaves at the upper left (how much
+    of the lane the survey covers in the corner, where it is not all of it). None where the approach was not measured. The box prints it
+    0.58 in high and its full width, about 0.40 pt to a unit: its words are 10 to 15 units, 4 to 6 pt."""
     side = (spec or {}).get("approach")
     if not isinstance(side, dict):
         return None
-    values = [v for v in side["groundFt"] + side["topsFt"] + [side.get("startFt")] if _num(v)]
-    values += [h for _m, h in (side.get("path") or []) + (side.get("level") or []) if _num(h)]
+    step = side.get("binM") or 10
+    length = step * max(len(side["groundFt"]), 1)
+    shown = close_range(side, length)
+    start = side["startFt"] if _num(side.get("startFt")) else None
+
+    def steps(values):
+        return [((k + 0.5) * step, v) for k, v in enumerate(values) if (k + 0.5) * step <= shown]
+
+    ground, tops = steps(side["groundFt"]), steps(side["topsFt"])
+    level = [(m, h) for m, h in (side.get("level") or []) if m <= shown]
+    path = [tuple(p) for p in side.get("path") or []]
+    if len(path) == 2 and path[1][0] > shown and path[1][0] > path[0][0]:
+        # A descent past the box: the path as far as the box goes.
+        (m0, h0), (m1, h1) = path
+        path = [(m0, h0), (shown, h0 + (h1 - h0) * (shown - m0) / (m1 - m0))]
+    values = [v for _m, v in ground + tops + level + path if _num(v)] + ([start] if start is not None else [])
     if not values:
         return None
     low, high = min(values), max(values)
     span = max(high - low, 60.0)
-    floor = low - span * 0.06
-    # The plot starts below the third line of words, and the marks drawn over its top (a triangle's tip) clear them.
-    top, bottom, pad, gap = 50.0, height - 14.0, 4.0, 30.0
-    reach = width - 2 * pad - gap
-    step = side.get("binM") or 10
-    length = step * max(len(side["groundFt"]), 1)
+    floor = low - span * 0.04
+    top, bottom, pad, gap, room = 14.0, 80.0, 4.0, 30.0, 36.0
+    left, right = pad + gap, width - pad - room
 
     def sx(metres):
-        return pad + reach - metres / length * reach
+        return left + metres / shown * (right - left)
 
     def sy(h):
-        return bottom - (h - floor) / (span * 1.06) * (bottom - top)
+        return bottom - (h - floor) / (span * 1.04) * (bottom - top)
 
     def line(points, colour, widthpx, dashed=False):
         runs, run = [], []
@@ -482,37 +537,65 @@ def clearance(spec, width=512, height=104):
         return "".join(f'<polyline points="{" ".join(r)}" fill="none" stroke="{colour}" stroke-width="{widthpx}" '
                        f'stroke-linejoin="round"{dash}/>' for r in runs)
 
-    def steps(values):
-        return [((k + 0.5) * step, v) for k, v in enumerate(values)]
-
-    # The LZ at the right, on the touchdown point's ground where it is known (the approach starts from it).
-    lz_y = sy(side["startFt"]) - 3 if _num(side.get("startFt")) else bottom - 6
-    parts = [f'<rect x="{pad + reach:.1f}" y="{lz_y:.1f}" width="{gap:.1f}" height="6" fill="{INK}"/>',
-             f'<text x="{pad + reach + gap / 2:.1f}" y="{height - 2:.1f}" font-size="12" font-weight="800" text-anchor="middle">LZ</text>']
-    # The treetops under the ground's line, so they show only where something stands above it; the ground thicker over the LZ.
-    parts.append(line(steps(side["topsFt"]), TREETOPS, 1.1))
-    parts.append(line(steps(side["groundFt"]), INK, 1.6))
-    if _num(side.get("edgeM")) and _num(side.get("startFt")):
-        inside = [(0.0, side["startFt"])] + [(m, v) for m, v in steps(side["groundFt"]) if m < side["edgeM"]]
-        parts.append(line(inside, INK, 3.2))
-    path, level = side.get("path") or [], side.get("level") or []
-    parts.append(line([tuple(p) for p in path], INK, 1.3))
-    parts.append(line([tuple(p) for p in level], INK, 1.1, dashed=True))
-    if level:
-        parts.append(f'<circle cx="{sx(level[0][0]):.1f}" cy="{sy(level[0][1]):.1f}" r="2.4" fill="{INK}"/>')
+    parts = []
+    # The trees: from the track's ground up to what stands highest in each step, where something stands over it.
+    run = []
+    for (m, g), (_m, t) in list(zip(ground, tops)) + [((None, None), (None, None))]:
+        if _num(g) and _num(t) and t > g:
+            run.append((m, g, t))
+            continue
+        if len(run) > 1:
+            outline = " ".join(f"{sx(m):.1f},{sy(t):.1f}" for m, _g, t in run)
+            under = " ".join(f"{sx(m):.1f},{sy(g):.1f}" for m, g, _t in reversed(run))
+            parts.append(f'<polygon points="{outline} {under}" fill="{TREE_FILL}"/>')
+        run = []
+    parts.append(line(tops, TREETOPS, 1.3))
+    parts.append(line(([(0.0, start)] if start is not None else []) + ground, INK, 1.6))
+    # The LZ at the left, on the touchdown point's ground, and the ground over it ahead of the touchdown point thicker.
+    lz_y = sy(start) - 3 if start is not None else bottom - 6
+    parts.append(f'<rect x="{pad:.1f}" y="{lz_y:.1f}" width="{gap:.1f}" height="6" fill="{INK}"/>'
+                 f'<text x="{pad + gap / 2:.1f}" y="{height - 3:.1f}" font-size="12" font-weight="800" text-anchor="middle">LZ</text>')
+    if _num(side.get("edgeM")) and start is not None:
+        parts.append(line([(0.0, start)] + [(m, v) for m, v in ground if m < side["edgeM"]], INK, 3.2))
+    parts.append(line(level, INK, 1.1, dashed=True))
     obstacle = side.get("obstacle")
-    if obstacle and _num(side.get("startFt")) and _num(obstacle.get("riseFt")) and _num(obstacle.get("fromTargetM")):
+    if (obstacle and start is not None and _num(obstacle.get("riseFt")) and _num(obstacle.get("fromTargetM"))
+            and obstacle["fromTargetM"] <= shown):
         # The thing that sets the LiDAR's angle, as the angle sees it: its rise over the touchdown point's ground.
-        x1, y1 = sx(obstacle["fromTargetM"]), sy(side["startFt"] + obstacle["riseFt"])
+        x1, y1 = sx(obstacle["fromTargetM"]), sy(start + obstacle["riseFt"])
         parts.append(f'<polygon points="{x1:.1f},{y1 - 6:.1f} {x1 - 4:.1f},{y1 + 1:.1f} {x1 + 4:.1f},{y1 + 1:.1f}" fill="{INK}"/>')
-    lines = ((13, 15, 800, side.get("angle") or side["label"] + " " + (side.get("heading") or "")),
-             (27, 13, 400, side.get("climb")),
-             (40, 11.5, 800, side.get("what")))
-    for y, size, weight, words in lines:
+    if len(path) == 2 and all(_num(v) for _m, v in path):
+        # The path down to the touchdown point, an arrow pointing at the LZ as the old book's did.
+        (m0, h0), (m1, h1) = path
+        x0, y0, x1, y1 = sx(m0), sy(h0), sx(m1), sy(h1)
+        along = math.hypot(x1 - x0, y1 - y0) or 1.0
+        ux, uy = (x1 - x0) / along, (y1 - y0) / along
+        bx, by = x0 + ux * 8.0, y0 + uy * 8.0
+        parts.append(f'<line x1="{x1:.1f}" y1="{y1:.1f}" x2="{bx:.1f}" y2="{by:.1f}" stroke="{INK}" stroke-width="1.4"/>'
+                     f'<polygon points="{x0:.1f},{y0:.1f} {bx - uy * 3.4:.1f},{by + ux * 3.4:.1f} {bx + uy * 3.4:.1f},{by - ux * 3.4:.1f}" '
+                     f'fill="{INK}"/>')
+        at = side.get("descentM")
+        if _num(at) and m1 == at:
+            # The helicopter where the descent begins, nose to the LZ, and how far out that is.
+            art_w, art_h, paths = HELI_SIDE
+            scale = 1.15
+            parts.append(f'<g transform="translate({x1 + art_w / 2 * scale:.1f} {y1 - art_h / 2 * scale:.1f}) scale({-scale} {scale})" '
+                         f'fill="{INK}">' + "".join(f'<path d="{d}"/>' for d in paths) + "</g>")
+            parts.append(_across(x0, x1, 88.0, f"{_js_round(at):,} M"))
+    if level and _num(side.get("aboveGroundFt")):
+        # How high over the ground the approach is flown, measured at the box's end as the old profile measured its height.
+        m_end, h_end = level[-1]
+        g_end = next((g for m, g in ground if m == m_end), None)
+        if _num(g_end) and _num(h_end):
+            parts.append(_up(right + 4, sy(g_end), sy(h_end), f"{_js_round(side['aboveGroundFt']):,}′", "AGL"))
+    for y, size, weight, words in ((13, 15, 800, side.get("angle") or side["label"] + " " + (side.get("heading") or "")),
+                                   (27, 13, 400, side.get("climb")),
+                                   (40, 11.5, 800, side.get("what"))):
         if words:
             parts.append(f'<text x="{pad + 2:.1f}" y="{y}" font-size="{size}" font-weight="{weight}">{escape(words)}</text>')
-    parts.append(f'<text x="{pad:.1f}" y="{height - 2:.1f}" font-size="11" font-weight="{800 if side.get("partial") else 400}">'
-                 f'{escape(side.get("partial") or f"{length / 1000:g} KM")}</text>')
+    if side.get("partial"):
+        parts.append(f'<text x="{width - pad:.1f}" y="{height - 3:.1f}" font-size="10" font-weight="800" text-anchor="end">'
+                     f'{escape(side["partial"])}</text>')
     return f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {width} {height}" class="clearance">{"".join(parts)}</svg>'
 
 

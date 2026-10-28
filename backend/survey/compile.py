@@ -427,10 +427,10 @@ def _survey_profile(field):
 def _lane(lane, planned=None):
     """The approach as the clearance box draws it, from the touchdown point: the track's ground and the highest thing in the way every
     10 m out; the angle it is ``planned`` at (survey/flightpath.py: 30°, steeper where the LiDAR's shallowest clear angle is, or the
-    editor's), its ``path`` from the touchdown point to where it is the survey's height above the highest obstacle for good (its descent
-    from that height begins there) and the ``level`` that height above what stands past it; and the LiDAR's shallowest clear angle and
-    what sets it; or why there is none. ``partial`` says how much of the lane the survey has returns in, where it is not all of it: an
-    angle over a part is not the lane's."""
+    editor's), its ``path`` from the touchdown point to where its descent begins and the ``level`` it is flown at past that: along the
+    ground's line, the survey's height above the tallest thing in the lane (flightpath's ``aboveGroundFt``), never up and down over each
+    tree (the owner, 2026-10-27); and the LiDAR's shallowest clear angle and what sets it; or why there is none. ``partial`` says how
+    much of the lane the survey has returns in, where it is not all of it: an angle over a part is not the lane's."""
     if not isinstance(lane, dict):
         return None
     bins = [b if isinstance(b, dict) else {} for b in lane.get("bins") or []]
@@ -458,6 +458,7 @@ def _lane(lane, planned=None):
         "typed": False,
         "steep": False,
         "heightFt": None,
+        "aboveGroundFt": None,
         "obstacle": None,
         "descentM": None,
         "path": [],
@@ -485,9 +486,11 @@ def _lane(lane, planned=None):
         at = descent["fromTargetM"]
         out["descentM"] = at
         out["climb"] = f"DESCEND FROM {above} AT {profile.js_round(at):,} M"
-        out["path"] = [[0.0, out["startFt"]], [at, descent["topFt"] + height]]
-        out["level"] = [[at, descent["topFt"] + height]] + [
-            [(k + 0.5) * step, top + height] for k, top in enumerate(out["topsFt"]) if top is not None and (k + 0.5) * step > at]
+        over = out["aboveGroundFt"] = planned["aboveGroundFt"]
+        out["path"] = [[0.0, out["startFt"]], [at, descent["groundFt"] + over]]
+        out["level"] = [[at, descent["groundFt"] + over]] + [[(k + 0.5) * step, ground + over]
+                                                              for k, ground in enumerate(out["groundFt"])
+                                                              if ground is not None and (k + 0.5) * step > at]
     clear = lane.get("clearance") if isinstance(lane.get("clearance"), dict) else {}
     obstacle = clear.get("obstacle") if isinstance(clear.get("obstacle"), dict) else None
     what = "NOTHING IN THE WAY"

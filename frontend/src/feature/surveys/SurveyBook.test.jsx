@@ -292,8 +292,8 @@ describe("the survey editor", () => {
       clearance: { angleDeg: 8.5, obstacle: { heightFt: 98.4, riseFt: 98.4, kind: "vegetation", fromTargetM: 200, offsetM: 0 } } });
     const obstacles = { status: "measured", words: null, survey: { name: "GA_Statewide_B3_2018", year: 2018 }, approach: lane(360),
       exit: lane(180), inside: null, around: null, standing: { overM: 2, count: 0 }, trees: [], heightMap: null };
-    const plan = (heightFt) => ({ angleDeg: 30, minimumDeg: 8.5, typed: false, steep: false, heightFt,
-      descent: { fromTargetM: 52.8, topFt: 2061, groundFt: 2061 } });
+    const plan = (heightFt) => ({ angleDeg: 30, minimumDeg: 8.5, typed: false, steep: false, heightFt, tallestFt: null,
+      aboveGroundFt: heightFt, descent: { fromTargetM: 52.8, groundFt: 2061 } });
     const approach = { key: "approach", label: "Approach angle", field: "8.7° (100 ft at 200 m)", computed: "8.5° (LiDAR: 98 ft tree 200 m out)",
       apart: "0.2° apart", disagrees: false, open: false, override: null, overrideStands: false, printed: "computed" };
     const measured = survey({ snapshot: { ...survey().snapshot, obstacles }, comparisons: [...COMPARISONS, approach],

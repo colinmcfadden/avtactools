@@ -19,10 +19,10 @@ stands 2 m or more above its own ground (grass, a crop or a low bush is none). F
   as built: a building, a wire, a tower or a bridge), and the ground itself where it rises: the median of its returns in each 10 m
   square of the lane, where that is more than 0.3 m over the touchdown point's ground (a ground return scatters by a few centimetres,
   and the steepest of thousands of them a centimetre out once read 86-89° on flat ground). Each is measured from the touchdown point's
-  ground on its own line across the lane, so a slope across it takes nothing from the angle. With it: what stands highest in each of
-  the lane's 10 m steps, from which the page works out where a descent from the survey's approach height above the highest obstacle
-  begins (``descent_point``; the plan itself, at 30° where what stands allows, is survey/flightpath.py's), and how many of the steps
-  the survey has returns in;
+  ground on its own line across the lane, so a slope across it takes nothing from the angle. With it: the track's ground and what
+  stands highest in each of the lane's 10 m steps, from which the page works out the approach flown along the ground at the
+  survey's height above the tallest of them (``path_height``) and where its descent begins (``descent_point``; the plan itself, at
+  30° where what stands allows, is survey/flightpath.py's), and how many of the steps the survey has returns in;
 - the tallest obstacle inside the boundary, and within 100 m round it, with its bearing and distance from the touchdown point;
 - the points standing more than 2 m inside the boundary, counted;
 - the trees inside the boundary, one by one: the canopy's highest point within 3 m round, standing 5 m or more (a building, a wire, a
@@ -67,9 +67,9 @@ BIN_M = 10.0
 # leave out too (2 m read 9.3° from the field's angle, 5 m 7.3°). What the survey marks as built is in the way from ``STANDING_M``: few
 # buildings, wires, towers or bridges stand taller, and a wire seldom shows at all.
 LANE_LEAST_M = 5.0
-# The approach is flown this far above the highest obstacle under it (the treetops, or the ground where nothing stands) until its
-# descent begins, where the survey gives no height of its own (the owner, 2026-10-27: over the treetops, not the ground, which in the old
-# book's timber put every approach at or under the canopy).
+# The approach is flown this far above the tallest thing standing in its lane, along the ground's line, until its descent begins,
+# where the survey gives no height of its own (the owner, 2026-10-27: over the trees, not the ground, which in the old book's timber
+# put every approach at or under the canopy; and along the ground, not up and down over each tree: ``path_height``).
 AHO_FT = 100.0
 # The slope profile's treetop line is what stands within this of its line.
 PROFILE_HALF_WIDTH_M = 30.0
@@ -508,36 +508,39 @@ def _finite(value):
     return isinstance(value, (int, float)) and not isinstance(value, bool) and math.isfinite(value)
 
 
-def descent_point(angle_deg, start_ft, tops_ft, ground_ft, height_ft=AHO_FT, bin_m=BIN_M):
-    """Where a path at ``angle_deg`` from the touchdown point is ``height_ft`` above the highest obstacle under it for good: the
-    outermost place, going out along the track, where it stands no higher than that over what stands there (the treetops, or the ground
-    where nothing stands), so that past it the path is more than that above everything. Coming in at that height above the highest
-    obstacle (AHO), the approach meets its path there and descends on it. The outermost, not the first going out: a gap in the trees
-    nearer in is not where an aircraft over the canopy comes down. ``start_ft`` is the ground at the touchdown point, ``tops_ft`` and
-    ``ground_ft`` what stands highest and the track's ground in the middle of each ``bin_m`` step out from it (a lane's ``bins``), in
-    feet; a step where nothing is known is passed over. {fromTargetM, topFt, groundFt}: ``topFt`` what stands highest there,
-    ``groundFt`` the ground (None where not known). ``fromTargetM`` None, with ``pastM``, where the path is still within that height of
-    what stands at the last step known (the descent begins past it). None for a path that does not rise, no height above it, no ground
-    at the touchdown point, or nothing known standing past it."""
-    if not (_finite(angle_deg) and 0 < angle_deg < 90 and _finite(start_ft) and _finite(height_ft) and height_ft > 0):
+def path_height(bins, height_ft=AHO_FT):
+    """How high over the ground the approach is flown until its descent (the owner, 2026-10-27): ``height_ft`` above the tallest thing
+    standing anywhere in the lane out to 1,000 m (its steps' ``tallestFt``, each above its own ground), along the ground's line. So it
+    clears every tree by that much at least, and follows the ground rather than rising and falling over each tree. (tallestFt,
+    aboveFt): ``tallestFt`` None where nothing stands in the lane, the approach then ``height_ft`` over the ground."""
+    tallest = max((b["tallestFt"] for b in bins if isinstance(b, dict) and _finite(b.get("tallestFt"))), default=None)
+    return tallest, round((tallest or 0.0) + height_ft, 1)
+
+
+def descent_point(angle_deg, start_ft, ground_ft, above_ft, bin_m=BIN_M):
+    """Where a path at ``angle_deg`` from the touchdown point meets the approach flown ``above_ft`` over the ground (``path_height``):
+    the outermost place, going out along the track, where the path stands no higher than that over the ground, so that past it the path
+    is above the approach. Coming in at that height along the ground, the aircraft meets its path there and descends on it. The
+    outermost, not the first going out: a dip in the ground nearer in is not where an aircraft flying the ground's line comes down.
+    ``start_ft`` is the ground at the touchdown point and ``ground_ft`` the track's ground in the middle of each ``bin_m`` step out from it
+    (a lane's ``bins``), in feet; a step whose ground is not known is passed over. {fromTargetM, groundFt}: ``groundFt`` the ground
+    there. ``fromTargetM`` None, with ``pastM``, where the path is still within that height of the ground at the last step known (the
+    descent begins past it). None for a path that does not rise, no height over the ground, no ground at the touchdown point, or no
+    ground known past it."""
+    if not (_finite(angle_deg) and 0 < angle_deg < 90 and _finite(start_ft) and _finite(above_ft) and above_ft > 0):
         return None
-    above_m = height_ft * 0.3048
+    above_m = above_ft * 0.3048
     slope = math.tan(math.radians(angle_deg))
-    steps = [(0.0, start_ft, start_ft)]
-    for k, top in enumerate(tops_ft):
-        if _finite(top):
-            ground = ground_ft[k] if k < len(ground_ft) else None
-            steps.append(((k + 0.5) * bin_m, top, ground if _finite(ground) else None))
+    steps = [(0.0, start_ft)] + [((k + 0.5) * bin_m, g) for k, g in enumerate(ground_ft) if _finite(g)]
     if len(steps) == 1:
         return None
-    heights = [x * slope - (top - start_ft) / FEET_PER_METRE for x, top, _ground in steps]
+    heights = [x * slope - (g - start_ft) / FEET_PER_METRE for x, g in steps]
     last = max(i for i, height in enumerate(heights) if height <= above_m)      # the touchdown point's own is 0: there is one
     if last == len(steps) - 1:
-        return {"fromTargetM": None, "pastM": round(steps[-1][0] + bin_m / 2.0, 1), "topFt": None, "groundFt": None}
-    (x0, t0, g0), (x1, t1, g1) = steps[last], steps[last + 1]
+        return {"fromTargetM": None, "pastM": round(steps[-1][0] + bin_m / 2.0, 1), "groundFt": None}
+    (x0, g0), (x1, g1) = steps[last], steps[last + 1]
     t = (above_m - heights[last]) / (heights[last + 1] - heights[last])
-    ground = round(g0 + t * (g1 - g0), 1) if g0 is not None and g1 is not None else None
-    return {"fromTargetM": round(x0 + t * (x1 - x0), 1), "topFt": round(t0 + t * (t1 - t0), 1), "groundFt": ground}
+    return {"fromTargetM": round(x0 + t * (x1 - x0), 1), "groundFt": round(g0 + t * (g1 - g0), 1)}
 
 
 def lane(frame, points, ring, heading_deg):
