@@ -1,5 +1,4 @@
 from flask import Flask, redirect, request
-from flask_cors import CORS
 from flask_jwt_extended import JWTManager
 from dotenv import load_dotenv
 from datetime import timedelta
@@ -51,24 +50,10 @@ from routes.sync_routes import sync_bp
 from routes.pack_routes import pack_bp
 from routes.team_routes import team_bp
 from routes.survey_routes import survey_bp
-from client_header import CLIENT_HEADER
+from cors_config import configure_cors, cors_origins
 
 app = Flask(__name__)
-cors_origins = [
-    origin.strip()
-    for origin in os.environ.get(
-        'CORS_ORIGINS', 'http://localhost:3000'
-    ).split(',')
-    if origin.strip()
-]
-CORS(
-    app,
-    resources={r'/api/*': {'origins': cors_origins}},
-    # The native apps (and, later, the web) identify themselves with X-EZPZ-Client. The web's LZ surveys
-    # save with PATCH and name the revision they were made on with If-Match.
-    allow_headers=['Authorization', 'Content-Type', 'If-Match', CLIENT_HEADER],
-    methods=['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-)
+configure_cors(app, cors_origins(os.environ))
 
 basedir = os.path.abspath(os.path.dirname(__file__))
 
@@ -98,9 +83,10 @@ validate_email_configuration(os.environ)
 # Tileset keys are an HMAC under this; a deployment without it would name new
 # tilesets with a public secret, which hashes back into places.
 lidar_catalog.key_secret(os.environ)
-# A one-day session balances an operational planning workflow with reasonable
-# exposure if a bearer token is lost. Password resets revoke older tokens via
-# the per-account session-version claim below.
+# An access token lives a day at most: a native app's, and a web sign-in's, which a browser that will not
+# keep the refresh cookie holds as the web always has. A web refresh mints 15-minute ones (routes/auth.py).
+# Any token tied to a device session (`sid`) is refused the moment that session ends, and a password reset
+# revokes older tokens through the per-account session-version claim.
 app.config['JWT_ACCESS_TOKEN_EXPIRES'] = timedelta(hours=24)
 
 # Server-side session for the admin dashboard (separate from the SPA's JWT).

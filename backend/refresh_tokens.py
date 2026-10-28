@@ -1,15 +1,15 @@
-"""Refresh tokens for the native apps: staying signed in for days with no signal.
+"""Refresh tokens: one sign-in that lasts while the account is active and the device is used.
 
 A crew planning at a FARP cannot be asked to sign in every 24 hours, and the
-access token (a JWT) lives that long. The Android and iOS apps are also given a
-refresh token, which buys a new access token without a password.
+access token (a JWT) lives at most that long. A refresh token buys a new access
+token without a password, as ForeFlight's sign-in lasts until it is ended.
 
 Design, and why:
 
-* **Native clients only.** A refresh token lives 30 days, far longer than the web
-  app's 24 h token, and the web keeps its token in ``localStorage`` where any
-  script can read it. So only a client that identifies itself as android or ios
-  (``X-EZPZ-Client``) is issued one; the web's exposure does not change.
+* **Where it is kept.** A native app (``X-EZPZ-Client`` android or ios) is given
+  it in the response body and keeps it in the device's encrypted store. The web
+  is given it only as an HttpOnly cookie (``refresh_cookie``), never in a body:
+  ``localStorage`` is open to any script on the page.
 * **Rotating.** Each use spends the token and returns the next one, so a copied
   token is good once at most. The next ones form a *family*: one signed-in device.
 * **Reuse detection.** A spent token coming back is either a lost response (the
@@ -18,9 +18,13 @@ Design, and why:
   whole family is revoked.
 * **Stored hashed**, like every other account token (SHA-256 of a 384-bit random
   string), as ``AccountToken`` rows with purpose ``refresh``.
-* **Sliding, with a cap.** Each refresh extends the life by 30 days, but a family
-  ends 180 days after its first sign-in, so a device that is never signed out
-  does not stay signed in for ever.
+* **Sliding, with no cap.** Each refresh extends the life by 30 days, so a device
+  used at least once a month stays signed in for as long as the account is active.
+  A family used to end 180 days after its sign-in whatever its use (``refresh_expired``);
+  the owner's call of 2026-10-28 dropped that. A session ends when the device goes
+  30 days unused, at a password reset, when the account is suspended or deleted,
+  when it is signed out (here or from another device), and when a spent token comes
+  back after the grace period.
 * **Immediate revoke.** The access tokens carry the family as ``sid`` and are
   refused as soon as the family has no live token (``token_revocation``), so
   "sign out my lost phone" does not wait up to a day for the access token to lapse.
@@ -37,7 +41,6 @@ from models import AccountToken, db
 REFRESH_PURPOSE = 'refresh'
 
 REFRESH_LIFETIME = timedelta(days=30)
-FAMILY_MAX_AGE = timedelta(days=180)
 
 # A spent token presented again within this long is read as a lost response, not theft.
 REUSE_GRACE = timedelta(seconds=30)
@@ -152,18 +155,11 @@ def family_is_live(family, now=None):
     ).first() is not None
 
 
-def _family_started(family):
-    return db.session.query(db.func.min(AccountToken.created_at)).filter(
-        AccountToken.family == family,
-        AccountToken.purpose == REFRESH_PURPOSE,
-    ).scalar()
-
-
 def rotate(found, now=None):
     """Spend ``found`` and issue the next token in its family.
 
-    Returns ``(raw_token, None)`` on success or ``(None, code)`` where ``code`` is
-    ``refresh_reuse_detected`` or ``refresh_expired``. Either way the caller must
+    Returns ``(raw_token, None)`` on success or ``(None, 'refresh_reuse_detected')``
+    for a spent token past the grace period. Either way the caller must
     commit, because a failure may have revoked the family.
     """
     now = now or datetime.utcnow()
@@ -185,11 +181,6 @@ def rotate(found, now=None):
         # A lost response, not a copy: drop whatever that response was carrying
         # and give the device a fresh one.
         _drop_live_tokens(family, now)
-
-    started = _family_started(family) or now
-    if now - started > FAMILY_MAX_AGE:
-        revoke_family(family, now)
-        return None, 'refresh_expired'
 
     _prune(found.user_id, now)
     return _new_row(found.user_id, family, found.client, found.session_version, now), None
