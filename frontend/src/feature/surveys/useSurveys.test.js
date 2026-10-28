@@ -566,6 +566,25 @@ describe("useSurveys", () => {
     expect(client.bookPrint.mock.calls.length).toBe(asked + 1);
   });
 
+  it("keeps a 3D capture with its camera, in place of the last", async () => {
+    const pose = { headingDeg: 90, pitchDeg: -20, rangeM: 550, survey: { name: "GA_Statewide_B3_2018", year: 2018 } };
+    const client = fakeClient({
+      getSurvey: jest.fn(async () => surveyAt(1, { assets: [{ id: 2, kind: "view_3d" }, { id: 3, kind: "photo_north" }] })),
+      uploadAsset: jest.fn(async () => ({ id: 7, kind: "view_3d", pose, survey: { status: "draft", revision: 1, was: 1 } })),
+    });
+    const { result } = await opened(client);
+    const blob = new Blob(["png"], { type: "image/png" });
+    await act(async () => {
+      await result.current.captureView(blob, pose);
+    });
+    const [uuid, file, meta] = client.uploadAsset.mock.calls[0];
+    expect(uuid).toBe("s-1");
+    expect([file.name, file.type]).toEqual(["view-3d.png", "image/png"]);
+    expect(meta).toEqual({ kind: "view_3d", caption: "", heading_deg: 90, taken_on: expect.stringMatching(/^\d{1,2} [A-Z]{3} \d{4}$/),
+                           pose: JSON.stringify(pose) });
+    expect(result.current.survey.assets.map((a) => a.id)).toEqual([3, 7]);       // the last capture is taken off, as on the server
+  });
+
   it("names what someone else changed", () => {
     const base = surveyAt(1);
     expect(changedBetween(base, surveyAt(2))).toEqual([]);

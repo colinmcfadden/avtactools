@@ -7,6 +7,7 @@ import SurveyMap from "./SurveyMap";
 import Measurements, { MeasurePreview } from "./Measurements";
 import Disagreements from "./Disagreements";
 import SurveyPhotos from "./SurveyPhotos";
+import Survey3D from "./Survey3D";
 import PagePreview, { saveBlob } from "./PagePreview";
 import { PublishDialog, ReviewPanel, Revisions } from "./Publishing";
 import { ImportNotes } from "./SurveyImport";
@@ -166,6 +167,15 @@ const SurveyEditor = ({ surveys }) => {
             defaultTakenOn={draft.field.surveyedOn}
             onUpload={surveys.uploadPhoto}
             onUpdate={surveys.updatePhoto}
+            onRemove={surveys.removePhoto}
+          />
+          <Survey3D
+            assets={survey.assets ?? []}
+            target={draft.diagram?.target ?? null}
+            approach={draft.field.approachDeg}
+            survey={survey.snapshot?.obstacles?.survey ?? null}
+            readOnly={archived}
+            onCapture={surveys.captureView}
             onRemove={surveys.removePhoto}
           />
           <ReviewPanel

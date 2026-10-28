@@ -495,3 +495,17 @@ def test_low_vegetation_is_brush_and_the_figure_draws_the_obstacle_s_rise(snapsh
     reach = 512 - 2 * 4 - 30.0                                                     # the box less its margins and the LZ
     assert abs(float(ground[0].split(',')[0]) - (4 + reach - 5 / 1000 * reach)) < 0.1         # the step 5 m out, at the LZ
     assert abs(float(ground[-1].split(',')[0]) - (4 + reach - 995 / 1000 * reach)) < 0.1      # the step 995 m out, at the left
+
+
+def test_the_page_s_3d_view_is_the_newest_capture_named_for_its_survey(snapshot):
+    assets = [{'id': 3, 'kind': 'view_3d', 'heading_deg': 270.0, 'pose': None},
+              {'id': 9, 'kind': 'view_3d', 'heading_deg': 89.6, 'pose': {'survey': {'name': 'GA_Statewide_B3_2018', 'year': 2018}}}]
+    model = page.compile_page(source(snapshot, assets=assets), book=BOOK)
+    assert model['view3d'] == {'assetId': 9, 'caption': '3D · LOOKING 090°T · LIDAR 2018'}       # the year, a short tag over the picture
+    model = page.compile_page(source(snapshot, assets=assets[:1]), book=BOOK)
+    assert model['view3d'] == {'assetId': 3, 'caption': '3D · LOOKING 270°T'}
+    # Rounded as the editor rounds it (halves up), and a survey with no year named, cut at a word's length.
+    assets[1].update({'heading_deg': 90.5, 'pose': {'survey': {'name': 'USGS_LPC_TN_27County_blk2_2015', 'year': None}}})
+    model = page.compile_page(source(snapshot, assets=assets), book=BOOK)
+    assert model['view3d']['caption'] == '3D · LOOKING 091°T · LIDAR USGS_LPC_TN_27COUNTY_BL…'
+    assert page.heading_words(0.4) == '360°' and page.heading_words(359.5) == '360°' and page.heading_words(2.5) == '003°'

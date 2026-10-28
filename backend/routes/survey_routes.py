@@ -1078,7 +1078,8 @@ def _position(survey, book):
 
 
 def _asset_source(rows):
-    return [{'id': a.id, 'kind': a.kind, 'caption': a.caption, 'heading_deg': a.heading_deg, 'taken_on': a.taken_on} for a in rows]
+    return [{'id': a.id, 'kind': a.kind, 'caption': a.caption, 'heading_deg': a.heading_deg, 'taken_on': a.taken_on, 'pose': a.pose}
+            for a in rows]
 
 
 def _frozen_assets(value):
@@ -1432,8 +1433,42 @@ def _float_or_none(value, label):
     return number % 360.0
 
 
+def _pose(value):
+    """A 3D capture's camera as the editor took it (docs/LZ_SURVEYS.md §5, step L3): its heading (degrees true), pitch (degrees, down
+    is negative), its distance from the LZ (metres) and the LiDAR survey it showed. Sent as JSON text in a form. Raises ValueError."""
+    if value in (None, ''):
+        return None
+    if isinstance(value, str):
+        try:
+            value = json.loads(value)
+        except ValueError:
+            raise ValueError('The camera pose is not JSON') from None
+    if not isinstance(value, dict):
+        raise ValueError('The camera pose is an object')
+
+    def number(key, low, high):
+        found = value.get(key)
+        if found is None:
+            return None
+        if isinstance(found, bool) or not isinstance(found, (int, float)) or not math.isfinite(found) or not low <= found <= high:
+            raise ValueError(f'The camera pose\'s {key} is a number from {low:g} to {high:g}')
+        return round(float(found), 1)
+
+    survey = value.get('survey')
+    if survey is not None:
+        if not isinstance(survey, dict):
+            raise ValueError('The camera pose\'s survey is an object')
+        year = survey.get('year')
+        if year is not None and (isinstance(year, bool) or not isinstance(year, int) or not 1990 <= year <= 2100):
+            raise ValueError('The camera pose\'s survey year is a year')
+        survey = {'name': _clean_text(survey.get('name'), 200, "The survey's name"), 'year': year}
+    return {'headingDeg': number('headingDeg', 0, 360), 'pitchDeg': number('pitchDeg', -90, 90),
+            'rangeM': number('rangeM', 0, 100000), 'survey': survey}
+
+
 def _asset_fields(source, partial):
-    """caption, heading_deg, taken_on and kind from a form or JSON body; only those present when ``partial``."""
+    """caption, heading_deg, taken_on and kind from a form or JSON body; only those present when ``partial``; and, for a new 3D
+    capture, its camera (``pose``), which is what it was taken with and is never changed after."""
     out = {}
     if not partial or 'kind' in source:
         kind = source.get('kind') or ('photo_other' if not partial else None)
@@ -1446,6 +1481,12 @@ def _asset_fields(source, partial):
         out['heading_deg'] = _float_or_none(source.get('heading_deg'), 'The heading')
     if not partial or 'taken_on' in source:
         out['taken_on'] = _clean_text(source.get('taken_on'), MAX_TAKEN_ON, 'When it was taken')
+    if not partial:
+        out['pose'] = _pose(source.get('pose'))
+        if out['pose'] is not None and out['kind'] not in CAPTURE_KINDS:
+            raise ValueError('A photo has no camera pose: only a 3D capture does')
+    elif 'pose' in source:
+        raise ValueError("A capture's camera pose is what it was taken with: capture it again to change it")
     return out
 
 
@@ -1509,9 +1550,16 @@ def upload_asset(survey_uuid):
             return refused
         asset = LzSurveyAsset(
             survey_id=survey.id, kind=meta['kind'], caption=meta['caption'], heading_deg=meta['heading_deg'],
-            taken_on=meta['taken_on'], content_type=prepared.content_type, width=prepared.width, height=prepared.height,
-            size_bytes=len(prepared.data), sha256=key, created_by=user.id, created_by_name=_who(),
+            taken_on=meta['taken_on'], pose=meta['pose'], content_type=prepared.content_type, width=prepared.width,
+            height=prepared.height, size_bytes=len(prepared.data), sha256=key, created_by=user.id, created_by_name=_who(),
         )
+        if meta['kind'] in CAPTURE_KINDS:
+            # The page prints one 3D view: a new capture takes the place of the last, which is kept (a published page may show it).
+            # Two at once go one after the other: each takes the survey's row before it looks for the last, or both stay live.
+            LzSurvey.query.filter_by(id=survey.id).with_for_update().populate_existing().first()
+            now = datetime.utcnow()
+            for old in LzSurveyAsset.query.filter_by(survey_id=survey.id, kind=meta['kind'], removed_at=None).all():
+                old.removed_at = now
         db.session.add(asset)
         moved = _photos_changed(survey)
         if _photo_saved():
@@ -1594,6 +1642,10 @@ def remove_asset(survey_uuid, asset_id):
         if asset.removed_at is not None:
             return _reply({'removed': asset.id, 'survey': {'status': survey.status, 'revision': survey.revision, 'was': survey.revision}})
         asset.removed_at = datetime.utcnow()
+        if asset.kind in CAPTURE_KINDS:
+            # Taking the 3D view off takes it off: another capture still live (two kept at once) would come back in its place.
+            for other in LzSurveyAsset.query.filter_by(survey_id=survey.id, kind=asset.kind, removed_at=None).all():
+                other.removed_at = asset.removed_at
         moved = _photos_changed(survey)
         if _photo_saved():
             return _reply({'removed': asset.id, 'survey': moved})

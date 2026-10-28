@@ -106,13 +106,14 @@ export const fetchPdf = async (uuid, options = {}) =>
   heavy(async () => (await api.get(`/surveys/${uuid}/pdf`, { params: pageParams(options), responseType: "blob" })).data);
 
 /** `meta`: kind, caption, heading_deg, taken_on. */
-export const uploadAsset = async (uuid, file, meta = {}) => {
+/** A photo or a capture, uploaded. ``signal`` lets the caller give up on it, ``timeout`` (ms) gives up by itself. */
+export const uploadAsset = async (uuid, file, meta = {}, { signal, timeout } = {}) => {
   const form = new FormData();
   form.append("file", file);
   Object.entries(meta).forEach(([key, value]) => {
     if (value !== undefined && value !== null) form.append(key, String(value));
   });
-  return (await api.post(`/surveys/${uuid}/assets`, form)).data;
+  return (await api.post(`/surveys/${uuid}/assets`, form, { signal, timeout })).data;
 };
 
 export const updateAsset = async (uuid, id, meta) => (await api.patch(`/surveys/${uuid}/assets/${id}`, meta)).data;

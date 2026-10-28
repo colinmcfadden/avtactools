@@ -41,6 +41,22 @@ describe("Dialog", () => {
     expect(opener).toHaveFocus();
   });
 
+  it("keeps Escape to itself when it will not close, so the dialog under it does not close instead", () => {
+    // The review's: Escape while a 3D capture was being kept closed the survey book under it.
+    const outer = jest.fn();
+    const inner = jest.fn();
+    render(
+      <Dialog title="Survey book" onClose={outer}>
+        <Dialog title="3D view for the page" onClose={inner} dismissible={false}>
+          <button type="button">Capture</button>
+        </Dialog>
+      </Dialog>,
+    );
+    fireEvent.keyDown(screen.getByRole("dialog", { name: "3D view for the page" }), { key: "Escape" });
+    expect(inner).not.toHaveBeenCalled();
+    expect(outer).not.toHaveBeenCalled();
+  });
+
   it("never puts focus on a destructive answer first", () => {
     render(<ConfirmDialog title="Delete “LZ HAWK”?" text="Gone for good." confirmLabel="Delete" confirmTone="danger" onConfirm={() => {}} onCancel={() => {}} />);
     expect(screen.getByRole("button", { name: "Cancel" })).toHaveFocus();
