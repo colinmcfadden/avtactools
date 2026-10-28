@@ -567,9 +567,6 @@ python contracts/scripts/light_fixtures.py check  # brief light data vs Skyfield
   settles numbers to a tolerance and labels as a set (`settled` in `mgrsGridFixtures.test.js`),
   and keeps the committed digits when regenerating, so a regenerated file changes only where
   the grid did.
-- `frontend/package-lock.json` is out of sync under npm 10 (`npm ci` reports
-  `Missing: yaml@2.9.1`), so install with `npm install` and restore the lockfile
-  (`git checkout frontend/package-lock.json`) if you only needed `node_modules`.
 - The build prints many pre-existing ESLint warnings; add none of your own.
 - **Jest finds no tests in a Claude worktree** (`.claude/worktrees/<name>/`): CRA's `testMatch`
   globs skip paths with a dot directory. Pass the pattern yourself, e.g.
