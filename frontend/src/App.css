@@ -1891,6 +1891,38 @@ input:checked + .slider:before {
   color: var(--ff-text-main);
 }
 
+/* The grid copies itself when clicked: a button that reads as the menu's title until it is pointed at. */
+.ctx-title--copy {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  margin: 0 0 2px;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: transparent;
+  cursor: pointer;
+  transition: background 120ms ease, border-color 120ms ease;
+}
+
+.ctx-title--copy svg {
+  flex: none;
+  color: var(--ff-text-muted);
+}
+
+.ctx-title--copy:hover,
+.ctx-title--copy:focus-visible {
+  border-color: var(--hairline-strong);
+  background: var(--surface-3);
+  outline: none;
+}
+
+.ctx-title--copy:hover svg,
+.ctx-title--copy:focus-visible svg {
+  color: var(--ff-accent-hover);
+}
+
 .ctx-label {
   padding: 2px 6px;
   font-size: 9px;

@@ -1,6 +1,7 @@
 package app.ezpztac.android
 
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -36,6 +37,7 @@ import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.paneTitle
 import androidx.compose.ui.semantics.semantics
@@ -170,8 +172,11 @@ private fun menuWidth(grid: String): Dp {
 @Composable
 internal fun ColumnScope.MapMenuItems(place: MapMenuPlace, choices: MapMenuChoices, onDismiss: () -> Unit) {
     var objects by remember(place) { mutableStateOf(false) }
+    // A tap on the grid copies it, as *Copy grid* does (the web's menu title copies itself too): a finger's height, so a glove finds it.
     Row(
-        Modifier.heightIn(min = 40.dp).padding(start = 14.dp, end = 16.dp).semantics(mergeDescendants = true) { heading() },
+        Modifier.heightIn(min = 48.dp)
+            .clickable(onClickLabel = "Copy grid", role = Role.Button) { onDismiss(); choices.copyGrid() }
+            .padding(start = 14.dp, end = 16.dp).semantics(mergeDescendants = true) { heading() },
         verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp),
     ) {
         Icon(painterResource(EzpzIcons.locationOnFill), contentDescription = null, tint = EzpzTheme.status.accent, modifier = Modifier.size(20.dp))

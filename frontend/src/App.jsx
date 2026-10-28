@@ -45,6 +45,7 @@ import ThreatExportModal from "./feature/threats/ThreatExportModal";
 import UnitBuilder from "./feature/unit/UnitBuilder";
 import { useLzWorkspace } from "./feature/lzWorkspace/useLzWorkspace";
 import { withLzMeasure } from "./feature/lzMeasure/lzMeasure";
+import CopyGridTitle from "./components/CopyGridTitle";
 import Lz3DWindow from "./feature/viewer3d/Lz3DWindow";
 import { releaseAbandonedBuilds } from "./feature/viewer3d/useLidarTileset";
 import { useBuildOnSave } from "./feature/viewer3d/useBuildOnSave";
@@ -1763,7 +1764,7 @@ function App() {
         >
           {contextMenu.type === "map" ? (
             <>
-              <div className="ctx-title">{clickedGrid}</div>
+              <CopyGridTitle grid={clickedGrid} onCopied={() => setContextMenu(null)} />
               <button
                 className="ctx-btn ctx-btn--success"
                 onClick={handleSetAsTarget}
@@ -1780,7 +1781,7 @@ function App() {
           ) : contextMenu.type === "lz" ? (
             // --- THE LZ CONTEXT MENU ---
             <>
-              <div className="ctx-title">{clickedGrid}</div>
+              <CopyGridTitle grid={clickedGrid} onCopied={() => setContextMenu(null)} />
               <button
                 className="ctx-btn ctx-btn--success"
                 onClick={handleSetAsTarget}

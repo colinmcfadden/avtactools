@@ -2269,7 +2269,8 @@ client is built around not losing one:
 - **The map's long press** (S8; `feature-map`: `LongPressTouches`, `DragMapView`, `EzpzMap(onPress)`; `app`: `MapMenu`, `HomeViewModel.pressed`, `MapHome`;
   `feature-workspace`: `RoutesViewModel.pointAction` / `addPointAt`, `savedToLibrary` / `offersLibrary`). A long press on nothing that can be picked up opens the design's map menu
   (`MapMenu`): headed by the grid under the finger, *New LZ/PZ here* (`DiagramsViewModel.newAt`), *Add threat here* (the threat's form at that place), *Add route point here* and *Copy
-  grid*, each only for an account offered its panel (*Copy grid* always). And the *Saved* toast offers *Open Library*. Things to keep true:
+  grid*, each only for an account offered its panel (*Copy grid* always). A tap on the grid heading the menu copies it too (the owner's request of 2026-10-28; the web's menu title
+  copies itself the same way, `components/CopyGridTitle.jsx`). And the *Saved* toast offers *Open Library*. Things to keep true:
   - **No menu while taps are a boundary's corners, a route's points or a tool's placements** (`pressed` is null then, as `dragStarted` picks nothing up). A press on nothing takes the rest
     of that touch from the map (a cancel, as a drag does), so the map does not pan away from the menu while the finger is still down. A longitude past ±180 (the map repeats the world
     across the date line) is brought back: it is the same place.

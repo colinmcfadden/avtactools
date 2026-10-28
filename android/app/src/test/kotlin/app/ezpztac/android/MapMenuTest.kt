@@ -85,6 +85,20 @@ class MapMenuTest {
     }
 
     @Test
+    fun `a tap on the grid at its head copies it, as Copy grid does, and closes the menu first`() {
+        val done = mutableListOf<String>()
+        show(MapMenuChoices(copyGrid = { done += "copy" }), dismissed = { done += "shut" })
+        val saysItCopies = SemanticsMatcher("says it copies") {
+            it.config.getOrElseNullable(androidx.compose.ui.semantics.SemanticsActions.OnClick) { null }?.label == "Copy grid"
+        }
+        compose.onNode(
+            isHeading() and hasText("16S GC 28788 55432") and hasClickAction() and saysItCopies and
+                SemanticsMatcher.expectValue(SemanticsProperties.Role, androidx.compose.ui.semantics.Role.Button),
+        ).performClick()
+        assertEquals(listOf("shut", "copy"), done)
+    }
+
+    @Test
     fun `a choice whose panel the account is not offered is not shown, and copying the grid always is`() {
         show(MapMenuChoices())
         compose.onNodeWithText("New LZ/PZ here").assertDoesNotExist()
