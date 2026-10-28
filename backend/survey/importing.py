@@ -361,9 +361,8 @@ def _now_iso():
 
 def diagram_at(lat, lon, name):
     """A new LZ/PZ diagram with its target at (lat, lon): the web's schema-2 document, as createLzDiagramFromTarget makes it and
-    serializeLzDiagram saves it (frontend/src/feature/lzWorkspace/useLzWorkspace.js). No doghouses yet: the editor makes the standard
-    two and turns the landing one to the best approach when it next saves (surveyDiagram.withApproach), and the page reads the
-    approach from the field."""
+    serializeLzDiagram saves it (frontend/src/feature/lzWorkspace/useLzWorkspace.js). No doghouses yet: the editor turns the standard
+    two to the best approach and exit when it next saves (surveyDiagram.withApproachAndExit), and the page reads them from the field."""
     grid = measure.grid_text(lat, lon)
     now = _now_iso()
     return {

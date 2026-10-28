@@ -1,6 +1,6 @@
 """A survey page's figures, drawn on the server from the snapshot (docs/LZ_SURVEYS.md §5), never screenshots of the editor, so the
 page is the same whoever prints it: the plan (satellite tiles stitched as the brief's are, the slope map at the asked opacity, the
-contours, the boundary, the approach), the compass rose with the LZ's shape, the slope profiles as the web's
+contours, the boundary, the approach and exit), the compass rose with the LZ's shape, the slope profiles as the web's
 ``SlopeProfile.jsx`` draws them, and the field survey's profile.
 
 Lines and words are SVG, so they print sharp; the map under the plan is a JPEG. Everything here is escaped or a number.
@@ -23,6 +23,7 @@ WHITE = "#ffffff"
 INK = "#101317"
 BOUNDARY = "#ffd166"
 APPROACH = "#ffffff"
+EXIT = "#ffffff"
 CONTOUR = "#101317"
 CONTOUR_HALO = "rgba(255,255,255,0.85)"
 METRES_PER_DEG = 111320.0
@@ -243,19 +244,27 @@ def plan(spec, width_px=PLAN_W, height_px=PLAN_H):
         parts.append(f'<polygon points="{d}" fill="none" stroke="{INK}" stroke-width="7" stroke-opacity="0.55"/>'
                      f'<polygon points="{d}" fill="none" stroke="{BOUNDARY}" stroke-width="4" stroke-dasharray="16 10"/>')
 
-    # The best approach, flown in to the boundary's edge; the best exit is not printed (the owner, 2026-10-27).
-    heading = spec.get("approachDeg")
-    if _num(heading):
-        edge = _edge_distance(target, boundary, (heading + 180) % 360) or 25.0
+    for heading, words, outward in ((spec.get("approachDeg"), spec.get("approachWords"), False), (spec.get("exitDeg"), spec.get("exitWords"), True)):
+        if not _num(heading):
+            continue
+        edge = _edge_distance(target, boundary, heading if outward else (heading + 180) % 360) or 25.0
         length = max(70.0, min(220.0, extent * 0.45))
-        start = _offset(*target, (heading + 180) % 360, edge + 12 + length)
-        end = _offset(*target, (heading + 180) % 360, edge + 12)
+        if outward:
+            start = _offset(*target, heading, edge + 12)
+            end = _offset(*target, heading, edge + 12 + length)
+            label_at = end
+            text = f"EXIT {words}"
+        else:
+            start = _offset(*target, (heading + 180) % 360, edge + 12 + length)
+            end = _offset(*target, (heading + 180) % 360, edge + 12)
+            label_at = start
+            text = f"APCH {words}"
         (x0, y0), (x1, y1) = frame.project(*start), frame.project(*end)
-        parts.append(_arrow(x0, y0, x1, y1, APPROACH))
-        lx, ly = frame.project(*start)
+        parts.append(_arrow(x0, y0, x1, y1, APPROACH if not outward else EXIT))
+        lx, ly = frame.project(*label_at)
         lx = min(max(lx + 14, 70), frame.width - 150)
         ly = min(max(ly + 8, 40), frame.height - 50)
-        parts.append(_box_label(lx, ly, f"APCH {spec.get('approachWords')}", size=21))
+        parts.append(_box_label(lx, ly, text, size=21))
 
     parts.append(f'<circle cx="{tx:.1f}" cy="{ty:.1f}" r="15" fill="{WHITE}" stroke="{INK}" stroke-width="3"/>'
                  f'<circle cx="{tx:.1f}" cy="{ty:.1f}" r="6" fill="{INK}"/>')

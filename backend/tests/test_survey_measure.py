@@ -373,12 +373,6 @@ class FieldTests(unittest.TestCase):
         self.assertEqual(set(DONOVAN['field']), set(FIELD_KEYS))
         self.assertEqual(clean_field(DONOVAN['field']), DONOVAN['field'])
 
-    def test_the_best_exit_a_survey_saved_before_has_is_let_go_not_refused(self):
-        # The owner's call (2026-10-27): the survey keeps no best exit. A survey saved before, a page left open or an import bundle
-        # made before may still send one.
-        self.assertNotIn('exitDeg', FIELD_KEYS)
-        self.assertEqual(clean_field({'approachDeg': '360', 'exitDeg': '180'}), {'approachDeg': '360'})
-
     def test_a_value_the_survey_does_not_have_is_refused(self):
         for bad in ({'colour': 'red'}, {'grid': 12}, {'grid': 'x' * 2001}, ['grid']):
             with self.subTest(bad=bad), self.assertRaises(ValueError):

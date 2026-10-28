@@ -34,7 +34,7 @@ A survey joins two sources that disagree, and the page must never hide which it 
 | | Field (the unit's survey) | Computed (EZ/PZ) |
 |---|---|---|
 | Measured quantities | grid, lat/long, elevation, slope felt, size, the survey profile's obstacle | the same, from the DEM, the boundary and the LiDAR |
-| Judgements | max A/C day and night, best approach, surface, hazards, remarks, PPR (the book's best exit is not kept: the owner, 2026-10-27) | — |
+| Judgements | max A/C day and night, best approach and exit, surface, hazards, remarks, PPR | — |
 | Media | the two photos, the survey date, the surveyor | the plan view, the profiles, the 3D capture |
 
 **Where both exist, the computed value is printed** (the owner, 2026-10-26). The editor still shows the field value beside it, says
@@ -59,7 +59,7 @@ counterpart and is the admin's to edit (§11, R3). The LZ DONOVAN draft shows wh
 | Table | Holds |
 |---|---|
 | `survey_book` | A book (one per unit or team, §11 R8): its name ("AASF 1 HLZ SURVEY BOOK"), the unit line, the team it is for (or none), the page order, the cover's text; archived, never deleted |
-| `lz_survey` | One LZ: `uuid`, HLZ ID (`GA 034`), name, `status` (§3.4), `revision` (bumped by every save, for `If-Match`), the **field** values as JSON, the **overrides** as JSON (value, reason, who, when), an embedded **LZ/PZ diagram** (the web's schema-2 document: target, boundary, its landing doghouse turned to the best approach), the current **snapshot** (§3.3), its asset ids, who made and last changed it, `archived_at` |
+| `lz_survey` | One LZ: `uuid`, HLZ ID (`GA 034`), name, `status` (§3.4), `revision` (bumped by every save, for `If-Match`), the **field** values as JSON, the **overrides** as JSON (value, reason, who, when), an embedded **LZ/PZ diagram** (the web's schema-2 document: target, boundary, doghouses for approach and exit), the current **snapshot** (§3.3), its asset ids, who made and last changed it, `archived_at` |
 | `lz_survey_revision` | Every published revision, never changed: the field values, overrides, diagram, snapshot and asset ids as they were, the sign-off (§3.4), the CHANGES line, and the page's PDF (§5) |
 | `lz_survey_asset` | A photo or a 3D capture: its kind (`photo_north`, `photo_approach`, `photo_other`, `view_3d`), caption, the heading it looks down, the date taken, the camera pose for a capture (§5), size, SHA-256, and where its bytes are (§3.2) |
 
@@ -122,7 +122,8 @@ ground returns), and the pieces are cached on the server (`LIDAR_STREAM_CACHE_DI
   gives one) and what sets it; the approach planned at 30° where that clears it, else at the shallowest angle and said to be steeper,
   with where its descent begins from the survey's own height above the highest obstacle (100 ft where it gives none; the owner's,
   2026-10-27; §16). The editor may type the approach's angle in place of the plan, with a reason: the page prints it as the editor's.
-  The exit is neither measured, printed nor kept (the owner, 2026-10-27): a survey has no best exit (§5, §12).
+  The exit's angle is neither measured nor shown (the owner, 2026-10-27); the best exit itself, the departure heading, stays the
+  field's (R3), typed in the form and printed in the facts and on the plan (§12, §16).
 - **Obstacles in and round the LZ:** the tallest point inside the boundary and within 100 m of it, with bearing, distance and height;
   points standing more than 2 m inside the boundary counted and drawn, and trees found one by one where there are some
   (built as a local-maximum finder over the canopy's 1 m grid, §16; `filters.litree` was tried on Ellijay hardwood: AGENTS.md §13). This
@@ -154,11 +155,11 @@ figures, lays the page out as HTML and has Gotenberg print it (`GOTENBERG_URL`, 
 
 - **Header:** HLZ ID and book, the date, the page number in the book, DRAFT (until published) or the revision, the LZ's name; UNCLASSIFIED
   top and bottom.
-- **Facts:** grid, lat/long, PPR; best approach, LZ axis, max A/C, elevation (a survey keeps no best exit: the owner, 2026-10-27);
-  hazards (the computed slope call first, then the field's); surface, slope at the best approach (no altimeter source: R9); the numbered
-  notes; a compass rose with the boundary's shape, its size and area.
+- **Facts:** grid, lat/long, PPR; best approach, best exit, LZ axis, max A/C, elevation; hazards (the computed slope call first, then the
+  field's); surface, slope at the best approach, altimeter source; the numbered notes; a compass rose with the boundary's shape, its size
+  and area.
 - **Plan:** satellite tiles stitched as the brief's figures are (`brief/figures.base_image`), the slope map at the person's opacity, the
-  contours with their labels, the boundary dashed, the approach's arrow, the name, lat/long ticks and a scale in metres.
+  contours with their labels, the boundary dashed, the approach and exit arrows, the name, lat/long ticks and a scale in metres.
 - **3D:** the admin's capture (below), captioned with the heading it looks down.
 - **Photos:** the field's north and best-approach photos with their dates.
 - **Profiles:** along the best approach and across it, as the web's `SlopeProfile.jsx` draws them, with the LiDAR's treetop line (§4).
@@ -261,9 +262,9 @@ The owner took the recommended answer to each (2026-10-26).
 |---|---|---|
 | R1 | How EZ/PZ knows who is a GA ARNG aviator (accounts are cleared by any `.mil` address, which does not say which unit) | A feature key `lz_surveys`, off by default (`entitlements.DEFAULT_OFF`), ticked by an admin, with a bulk tick in the admin dashboard; replaced by membership of a GA ARNG organization once organizations exist |
 | R2 | The sign-off | Recorded by the publishing admin: approver's name, rank, title and date, printed; the approver need not have an account, and the publishing admin may be the approver |
-| R3 | Which values "computed" covers | The measured ones only (grid, lat/long, elevation, size, axis, slope, obstacles); max A/C, best approach, surface, hazards and remarks stay the admin's, from the field (the best exit too, until the owner dropped it on 2026-10-27) |
+| R3 | Which values "computed" covers | The measured ones only (grid, lat/long, elevation, size, axis, slope, obstacles); max A/C, best approach and exit, surface, hazards and remarks stay the admin's, from the field |
 | R4 | Elevation | The touchdown point's height in the slope's DEM, not SRTM30 (§2) |
-| R5 | The approach corridor and the clearance | 30 m each side of the approach line, out to 1,000 m; print the angle that clears the tallest obstacle with no margin and the obstacle's height and distance, until doctrine gives a margin (AGENTS.md §13: do not invent separation values). **Decided again 2026-10-27**, after the old book showed the edge's angle unusable (§16): from the touchdown point along a lane 10 m each side of the track, out to 1,000 m, what stands 5 m or more (2 m built) and the ground where it rises; print the shallowest angle that clears it with no margin and where a descent from 100 ft AGL must begin to fly it, flag what stands over 100 ft past that, and let the editor type the angle over the LiDAR's, with a reason, printed as theirs. **And again later that day**: the 100 ft over the highest obstacle, not the ground (in the old book's timber an approach at 100 ft AGL was at or under the canopy on every LZ); then each way planned at 30° where what stands allows it, else at the shallowest clear angle, said to be steeper, the shallowest shown beside it, descending from each survey's own profile height above the highest obstacle (75-150 ft in the old book; 100 ft where it gives none); the editor's angle is typed in place of the plan; and the exit neither measured, shown nor kept |
+| R5 | The approach corridor and the clearance | 30 m each side of the approach line, out to 1,000 m; print the angle that clears the tallest obstacle with no margin and the obstacle's height and distance, until doctrine gives a margin (AGENTS.md §13: do not invent separation values). **Decided again 2026-10-27**, after the old book showed the edge's angle unusable (§16): from the touchdown point along a lane 10 m each side of the track, out to 1,000 m, what stands 5 m or more (2 m built) and the ground where it rises; print the shallowest angle that clears it with no margin and where a descent from 100 ft AGL must begin to fly it, flag what stands over 100 ft past that, and let the editor type the angle over the LiDAR's, with a reason, printed as theirs. **And again later that day**: the 100 ft over the highest obstacle, not the ground (in the old book's timber an approach at 100 ft AGL was at or under the canopy on every LZ); then each way planned at 30° where what stands allows it, else at the shallowest clear angle, said to be steeper, the shallowest shown beside it, descending from each survey's own profile height above the highest obstacle (75-150 ft in the old book; 100 ft where it gives none); the editor's angle is typed in place of the plan; and the exit's lane and angle neither measured nor shown (the best exit, the departure heading, stays the field's: R3) |
 | R6 | Backups | Back up `SURVEY_ASSETS_DIR` off the VM (photos cannot be measured again), and watch the disk |
 | R7 | The LZ/PZ panel's slope tile judges the steepest slope; the survey the 95th percentile | Keep them apart for now; bring the panel to the 95th percentile on the web first if wanted |
 | R8 | One book, or many (asked while L5 was built) | **Many**: a book may be for a team (an organization's, once they exist). A team's owner and admins make, edit and publish its books; its members with `lz_surveys` read them; a book for no team is read by everyone with the key. Site admins do everything (§7) |
@@ -280,12 +281,10 @@ What L1 had to decide that the plan did not, each with its reason. The code is `
   planning map's slope layer (`SlopeLayer`, raster and contours, at the person's own opacity), its base maps and the slope profile
   (`SlopeProfile`). A survey's LZ is then never one of the session's LZ/PZs, so the planning tools' Save, Ctrl/⌘ S, the Library and
   Mission Packs can never take it. Its diagram is still the web's schema-2 document, so it opens in the LZ/PZ tools as it is.
-- **The best approach** is the field's (R3) and typed in the form; the map draws it as an arrow flown into the target, and the saved
-  diagram carries it as its landing doghouse, with the flight data's landing heading, so the document says the same. **The best exit
-  is not kept** (the owner, 2026-10-27): the form has no field for it and the map no arrow; one a survey saved before still has is
-  let go of by the server (`fields.RETIRED`, never refused, so an open page or an older import bundle still saves) and the web
-  (`fullField`) alike, and the import reads the old book's only to end the value before it. A takeoff doghouse turned to it before
-  stays as it was: nothing of the survey reads it.
+- **Best approach and exit** are the field's (R3) and typed in the form; the map draws them as arrows (into the target along the
+  approach, out along the exit), and the saved diagram carries them as its landing and takeoff doghouses, with the flight data's
+  headings, so the document says the same. **Both headings stay** (the owner, 2026-10-27: the departure heading is needed): what
+  went that day is the exit's LiDAR angle (§16), never the best exit.
 - **The boundary** is found with the model at the target (`/api/analyze-field`, as Analyze does) or drawn a corner at a click; either
   becomes `analysis.detectedLZ`, the one measured.
 - **Measure works on the saved survey**: the editor saves first. Without `apply` the server answers the new snapshot and what it changes
@@ -464,9 +463,10 @@ snapshot's `obstacles` (`measure.py`), the page's `clearance` (`compile.py`, `fi
   since the angle is from the touchdown point (a 4's, from the edge, read 87-90° on every LZ of the old book): a survey measured before
   any of them is measured again before review or publishing, and its page meanwhile says it was measured by an earlier EZ/PZ rather than
   print an angle from the edge as one from the touchdown point. The approach's plan (below) is worked out from a 5's steps, so the plan
-  needed no measuring again. **The exit is neither measured, shown nor kept** (the owner, 2026-10-27): its lane is not read and a
-  snapshot keeps no best exit; a 5 measured before keeps its exit's lane, which nothing reads. Nor does the page print a best exit,
-  in its facts or on its plan, nor the editor have a field or an arrow for one (the owner, the same day; §12).
+  needed no measuring again. **The exit's angle is neither measured nor shown** (the owner, 2026-10-27): its lane is not read, a
+  snapshot keeps no best exit, and a survey whose best exit changes is not measured again for it; a 5 measured before keeps its
+  exit's lane, which nothing reads. **The best exit itself stays** (the owner, the same day: the departure heading is needed): the
+  field's, typed in the form, drawn on the editor's map and as the takeoff doghouse, and printed in the facts and on the plan.
 - **Read from USGS's own pieces**: the streamed `.pnts` keep neither a point's class nor its height above the ground, so the survey the
   3D view streams for the place is read as USGS publishes it (LAZ), every piece of the octree that meets what is measured, at every
   level, eight at a time, each kept beside the streamed pieces (`<key>/laz/`, never served, let go of with them when the cache is

@@ -538,7 +538,7 @@ describe("publishing", () => {
 describe("importing the old book", () => {
   const IMPORTED = {
     source: "LZ-SURVEYS-OCT-2023.pdf", page: 5, state: "done", reason: null, to_check: 3, checked: false,
-    notes: { unread: ["Slope"], blank: ["Surface Condition"], warnings: ["The book's grid and lat/long are 527 m apart: the target is at the grid. Check which is right."] },
+    notes: { unread: ["Best Exit"], blank: ["Surface Condition"], warnings: ["The book's grid and lat/long are 527 m apart: the target is at the grid. Check which is right."] },
     imported_by: "CW3 Admin", imported_at: "2026-10-27T01:00:00Z", checked_by: null, checked_at: null,
   };
 
@@ -631,7 +631,7 @@ describe("importing the old book", () => {
     await openDonovan(client);
     const panel = screen.getByRole("region", { name: "From the old book" });
     expect(within(panel).getByText(/Page 5 of LZ-SURVEYS-OCT-2023\.pdf, imported 2026-10-27 by CW3 Admin/)).toBeInTheDocument();
-    expect(within(panel).getByText("Not on the page: Slope.")).toBeInTheDocument();
+    expect(within(panel).getByText("Not on the page: Best Exit.")).toBeInTheDocument();
     expect(within(panel).getByText("Blank on the page: Surface Condition.")).toBeInTheDocument();
     expect(within(panel).getByText(/527 m apart/)).toBeInTheDocument();
     await act(async () => {
