@@ -96,7 +96,7 @@ const TopBar = ({
           </span>
         </>
       ) : (
-        <span className="shell-topbar__context">Personal workspace · saved items go to your Library</span>
+        <span className="shell-topbar__context">Personal workspace</span>
       )}
 
       <div className="shell-topbar__end">

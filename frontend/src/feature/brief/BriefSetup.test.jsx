@@ -213,7 +213,8 @@ describe("the Brief menu", () => {
     const onGenerate = vi.fn();
     render(<BriefMenu packName="OP DK" summary="5 LZ/PZs, 2 route sets" onGenerate={onGenerate} />);
     fireEvent.click(screen.getByRole("button", { name: /Brief/ }));
-    expect(screen.getByRole("menu")).toHaveTextContent("Built from everything in OP DK: 5 LZ/PZs, 2 route sets.");
+    expect(screen.getByRole("menu")).toHaveTextContent("OP DK: 5 LZ/PZs, 2 route sets");
+    expect(screen.getByRole("menu")).not.toHaveTextContent(/Not in a pack|Blanks print/);
     fireEvent.click(screen.getByRole("menuitem", { name: /Generate brief/ }));
     expect(onGenerate).toHaveBeenCalled();
   });

@@ -163,7 +163,7 @@ export const useLzSaves = ({ getDiagram, diagramTitle, markSaved, markDirty, rem
       <SaveDialog
         key={`${dialog.kind}-${dialog.diagramId}`}
         title={copy ? "Save as a new LZ/PZ" : "Save LZ/PZ"}
-        subtitle={copy ? "Saves a copy under a new name. What is open becomes the copy." : "Name this LZ/PZ so you can find it in your Library."}
+        subtitle={copy ? "Saves a copy under a new name. What is open becomes the copy." : undefined}
         initialName={copy ? nextFreeName(name, existing) : name}
         contents={lzContents(diagram)}
         existing={existing}

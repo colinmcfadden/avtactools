@@ -117,21 +117,21 @@ const SaveDialog = ({
             autoComplete="off"
             spellCheck={false}
             aria-invalid={Boolean(error)}
-            aria-describedby={`${fieldId}-hint`}
+            aria-describedby={error || clash ? `${fieldId}-hint` : undefined}
             onChange={(event) => {
               setName(event.target.value);
               setError(null);
             }}
           />
-          <div
-            id={`${fieldId}-hint`}
-            className={`ui-field__hint${error ? " ui-field__hint--error" : clash ? " ui-field__hint--warn" : ""}`}
-          >
-            {error ??
-              (clash
-                ? `You already have ${kindPhrase} with this name${clash.updatedAt ? `, last saved ${dateAtTime(clash.updatedAt)}` : ""}.`
-                : "Press Enter to save. You can rename it any time.")}
-          </div>
+          {(error || clash) && (
+            <div
+              id={`${fieldId}-hint`}
+              className={`ui-field__hint${error ? " ui-field__hint--error" : " ui-field__hint--warn"}`}
+            >
+              {error ??
+                `You already have ${kindPhrase} with this name${clash.updatedAt ? `, last saved ${dateAtTime(clash.updatedAt)}` : ""}.`}
+            </div>
+          )}
         </div>
         {clash && (
           <div role="radiogroup" aria-label="What to do with the name" style={{ display: "flex", flexDirection: "column", gap: 8, marginTop: 12 }}>
