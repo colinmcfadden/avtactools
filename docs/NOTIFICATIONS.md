@@ -2,7 +2,8 @@
 
 Status: **proposed, nothing built** (2026-10-28). The owner asked for notifications that are few and useful: a Mission Pack invitation
 and a pack finished, and "a couple more" that earn their place. This file proposes which ones, how they reach Android first and then the
-web, and what the server keeps. **§10 holds the questions only the owner can answer**; nothing is built until he has. Where this plan and
+web, and what the server keeps. **§10 holds the questions only the owner can answer**; nothing is built until he has. Answered so far:
+Android polls (§4.3, the owner, 2026-10-28). Where this plan and
 the code disagree once it is built, the code wins (AGENTS.md §16).
 
 ---
@@ -166,7 +167,10 @@ names or anything else; the notification's words come from us. It costs a reques
 The device registers its token with `POST /api/push/devices` (`{platform, token}`), tied to its session (`sid`), so signing a session out,
 here or from elsewhere, forgets its token. The polling worker stays for phones without Play services.
 
-### 4.3 Recommendation: A now, B later only if A proves too slow
+### 4.3 Decided: A now, B later only if A proves too slow
+
+**The owner's choice, 2026-10-28: start with polling.** FCM stays a later step (N4), weighed again once crews have used the poll.
+
 
 **Poll (A).** It needs no dependency, no Google, no Firebase project and no `applicationId`, and it holds to the app's choice to keep Play
 services out of everything but Google sign-in. What it gives up is speed, and the two notifications the owner named do not need speed: an
@@ -285,15 +289,14 @@ and `docs/HANDOFF.md` updated in the same commit.
 | **N1** | Android: core-network's calls and DTOs (held to the recordings), `NotificationWorker`, channels, posting and groups, the toast in front, tap routing, the permission ask, sign-out clearing; access approved from `/api/auth/me` | N0 |
 | **N2** | Android: *Notifications* in the account menu; *Changes kept* from the background drain | N1 |
 | **N3** | Web: `useNotifications`, the toasts and *While you were away*, tap routing, settings in the account menu | N0 |
-| later **N4** | Android: FCM's content-free wake (§4.2), `POST /api/push/devices`, if the owner chooses it | N1, the `applicationId` |
+| later **N4** | Android: FCM's content-free wake (§4.2), `POST /api/push/devices`, if the poll proves too slow (the owner chose polling first, 2026-10-28) | N1, the `applicationId` |
 | later **N5** | Web Push, if the owner chooses it | N3 |
 
 ---
 
 ## 10. Questions for the owner
 
-1. **Android delivery**: polling now (A, recommended, no new dependency) — or FCM (B: Firebase, Play services, a new dependency, and the
-   `applicationId` chosen first) — or both from the start?
+1. ~~**Android delivery**~~ **Answered, 2026-10-28: polling (A).** FCM is a later step (N4), if the poll proves too slow.
 2. **The poll's period** if A: every 15 minutes (the least WorkManager allows; one small request, 304 when nothing is new), or 30?
 3. **Web delivery**: in-app only (recommended), or Web Push too (`pywebpush` and a service worker)?
 4. **The list**: §2.1's six — invitations (pack, added, team), finished, handed to you, access approved, changes kept — and §2.2's exclusions?
