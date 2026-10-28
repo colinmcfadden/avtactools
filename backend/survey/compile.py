@@ -3,8 +3,7 @@ published revision, before anything is drawn. Pure: the route gathers the survey
 what is printed; ``figures`` and ``pages`` draw and lay it out.
 
 What is printed where the field survey and EZ/PZ both have a value is ``compare``'s ``printed`` (§2: the computed value, unless an
-admin chose the survey's). Judgements (best approach, max A/C, surface, hazards, remarks, PPR) are the field's (§11, R3); the best
-exit is kept with the survey (its form, the takeoff doghouse) and not printed (the owner, 2026-10-27).
+admin chose the survey's). Judgements (best approach and exit, max A/C, surface, hazards, remarks, PPR) are the field's (§11, R3).
 Nothing is made up for a value nobody has: it prints as a dash (AGENTS.md §14).
 """
 
@@ -580,6 +579,7 @@ def compile_page(source, *, book, page=None, version="", printed_on=None, opacit
     boundary = measure.boundary_of(diagram)
     target = measure.target_of(diagram)
     approach = _text(field.get("approachDeg"))
+    exit_ = _text(field.get("exitDeg"))
     who, number = split_ppr(field.get("ppr"))
     day, night = _one_line(field.get("maxAcDay")), _one_line(field.get("maxAcNight"))
     max_ac = " / ".join(t for t in ((f"{day} DAY" if day else ""), (f"{night} NIGHT" if night else "")) if t)
@@ -611,6 +611,7 @@ def compile_page(source, *, book, page=None, version="", printed_on=None, opacit
             "pprWho": who,
             "ppr": number or DASH,
             "approach": heading_words(approach) or DASH,
+            "exit": heading_words(exit_) or DASH,
             "axis": axis_words(_get(snapshot, "size", "axisDeg")) or DASH,
             "maxAc": max_ac.upper() or DASH,
             "elevation": elevation,
@@ -626,7 +627,9 @@ def compile_page(source, *, book, page=None, version="", printed_on=None, opacit
             "target": {"lat": target[0], "lon": target[1]} if target else None,
             "boundary": boundary,
             "approachDeg": measure.heading_of(approach),
+            "exitDeg": measure.heading_of(exit_),
             "approachWords": heading_words(approach),
+            "exitWords": heading_words(exit_),
             "contours": _get(snapshot, "terrain", "contours"),
             "overlay": _get(snapshot, "terrain", "overlay"),
             "overlayBounds": _get(snapshot, "terrain", "bounds"),
