@@ -603,8 +603,8 @@ server the capture's `pose` (`survey_routes._pose`) and the page's caption (`com
   kept at once once left the older to come back. The page prints the newest, captioned the way it looks, rounded as the editor rounds
   it (every heading on the page now rounds halves up), and with its survey's year, which says how old its trees are, in a tag short
   enough over the picture: "3D · LOOKING 090°T · LIDAR 2018" (a survey with no year by its name, cut at a word's length). The picture
-  carries no credit for its imagery or its points' colour (Cesium draws those over the canvas): whether the caption should is the
-  owner's to say.
+  carries no credit for its imagery or its points' colour (Cesium draws those over the canvas), and the caption names none either
+  (the owner's call, 2026-10-27).
 - **Checked by an independent review** (2026-10-27), which ran `captureFrame` against real Cesium 1.144 in headless Chrome through
   Playwright (already a dev dependency), on SwiftShader and on the Mac's GPU: the camera faces the approach, the frame is the one drawn
   after the resize, and the window's resolution and canvas are put back. So the frame's mechanics can be tried from an agent session
