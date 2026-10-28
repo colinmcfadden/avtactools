@@ -1,5 +1,6 @@
 import React, { useId, useRef, useState } from "react";
 import Dialog from "../ui/Dialog";
+import { BusyButton, Spinner } from "../ui/Spinner";
 import Icon from "../ui/Icon";
 
 /*
@@ -46,7 +47,7 @@ export const NewBookDialog = ({ teams, canMakeForNoTeam, onCreate, onCancel }) =
       footer={(
         <>
           <button type="button" className="ui-btn ui-btn--ghost ui-btn--38" onClick={onCancel} disabled={busy}>Cancel</button>
-          <button type="button" className="ui-btn ui-btn--primary ui-btn--38" onClick={submit} disabled={busy}>Make the book</button>
+          <BusyButton className="ui-btn ui-btn--primary ui-btn--38" busy={busy} onClick={submit}>Make the book</BusyButton>
         </>
       )}
     >
@@ -117,7 +118,7 @@ const BooksPage = ({ surveys, onOpen, onNew, isAdmin }) => {
           <button type="button" className="ui-btn ui-btn--30" onClick={() => surveys.refreshBooks()}>Try again</button>
         </div>
       )}
-      {books.status === "loading" && books.books.length === 0 && <p className="survey-muted" role="status">Loading the books…</p>}
+      {books.status === "loading" && books.books.length === 0 && <p className="survey-muted ui-loading" role="status"><Spinner size={16} />Loading the books…</p>}
       {books.status === "ready" && books.books.length === 0 && (
         <p className="survey-muted">{canMake ? "No survey books yet. New book makes the first." : "No survey books are open to you yet."}</p>
       )}

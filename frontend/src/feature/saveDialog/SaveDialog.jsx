@@ -1,6 +1,7 @@
 import React, { useEffect, useId, useMemo, useRef, useState } from "react";
 import Dialog from "../ui/Dialog";
 import Icon from "../ui/Icon";
+import { BusyButton } from "../ui/Spinner";
 import { dateAtTime } from "../ui/time";
 
 /*
@@ -92,10 +93,9 @@ const SaveDialog = ({
       footer={
         <>
           <button type="button" className="ui-btn ui-btn--ghost ui-btn--38" onClick={onCancel} disabled={busy}>Cancel</button>
-          <button type="button" className="ui-btn ui-btn--primary ui-btn--38" onClick={submit} disabled={busy}>
-            <Icon name="save" size={15} />
-            {busy ? "Saving" : primaryLabel}
-          </button>
+          <BusyButton className="ui-btn ui-btn--primary ui-btn--38" icon="save" iconSize={15} busy={busy} onClick={submit}>
+            {busy ? "Saving…" : primaryLabel}
+          </BusyButton>
         </>
       }
     >
