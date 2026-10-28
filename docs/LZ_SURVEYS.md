@@ -117,14 +117,15 @@ Every streamed point already carries its **height above ground** (`lidar/pieces.
 ground returns), and the pieces are cached on the server (`LIDAR_STREAM_CACHE_DIR`). From them, for the survey's LZ:
 
 - **The approach clearance profile** (replacing the field survey's hand-drawn box, "100 ft at 200 m"): along the best approach, from
-  the touchdown point, a lane 10 m each side of the track out to 1,000 m (§11, R5), the highest thing in the way in each 10 m along it
-  drawn over the track's ground, with the shallowest angle that clears everything in the way with no margin (no margin until doctrine
-  gives one) and what sets it; the approach planned at 30° where that clears it, else at the shallowest angle and said to be steeper,
-  flown until its descent along the ground at the survey's own height above the tallest thing in the lane, never up and down over
-  each tree, and where its descent begins (100 ft where it gives none; the owner's, 2026-10-27; §16). The editor may type the
-  approach's angle in place of the plan, with a reason: the page prints it as the editor's.
-  The exit's angle is neither measured nor shown (the owner, 2026-10-27); the best exit itself, the departure heading, stays the
-  field's (R3), typed in the form and printed in the facts and on the plan (§12, §16).
+  the touchdown point, a lane 10 m each side of the track out to 1,000 m (§11, R5), drawn close in as the old book's profile was
+  (from the touchdown point to a little past where the descent begins: the LZ at the left, the helicopter there and its path down an
+  arrow, the trees over the ground shaded green, the distance out and the height over the ground measured), with the shallowest angle
+  that clears everything in the way with no margin (no margin until doctrine gives one) and what sets it; the approach planned at 30°
+  where that clears it, else at the shallowest angle and said to be steeper, flown until its descent along the ground at the survey's
+  own height above the tallest thing in the lane, never up and down over each tree, and where its descent begins (100 ft where it
+  gives none; the owner's, 2026-10-27; §16). The editor may type the approach's angle in place of the plan, with a reason: the page
+  prints it as the editor's. The exit's angle is neither measured nor shown (the owner, 2026-10-27); the best exit itself, the
+  departure heading, stays the field's (R3), typed in the form and printed in the facts and on the plan (§12, §16).
 - **Obstacles in and round the LZ:** the tallest point inside the boundary and within 100 m of it, with bearing, distance and height;
   points standing more than 2 m inside the boundary counted and drawn, and trees found one by one where there are some
   (built as a local-maximum finder over the canopy's 1 m grid, §16; `filters.litree` was tried on Ellijay hardwood: AGENTS.md §13). This
@@ -543,19 +544,24 @@ snapshot's `obstacles` (`measure.py`), the page's `clearance` (`compile.py`, `fi
   longer: the plan is printed and the row is open again, whether or not the two then disagree, since the page no longer prints what the
   editor typed. A choice kept on the approach's obstacle, before its angle, is let go when the editor's next save sends it back.
 - **On the page**: the field's survey profile box becomes CLEARANCE · the survey's year · its name (the year first, before a long
-  name is cut), its figure the approach across the box's full width, flown from the left to the LZ at the right: its track's ground
-  (thicker over the LZ) from the touchdown point, the highest thing in the way in each 10 m (drawn only where something stands above
-  the track's ground, never ground rising to one side), the path at the angle planned to its descent (a dot) and the approach before
-  it, along the ground at the survey's height above the tallest in the lane (dashed), and what sets the LiDAR's shallowest angle (a
-  triangle); its words over it, three lines (APCH 360° · 30.0°, or APCH 180° · 41.0° · STEEPER THAN 30°; DESCEND FROM 100′ AHO AT 53
-  M; MIN 8.5°: 98′ TREE AT 200 M, MIN 0.0°: NOTHING IN THE WAY or EDITOR'S · LIDAR MIN 8.5°) and, where the survey covers part of the
-  lane, how much in its corner. Then the tallest in the LZ and within 100 m, and what the LiDAR cannot see. Something standing over 2
-  m in the LZ is a hazard line of its own. The profile along the best approach has its treetop line: the LiDAR's height above its own
-  ground laid on the ground the profile draws, so a DEM a little off the LiDAR's moves no tree; within the LZ's span only what stands
-  in the LZ. **The field's own profile is printed whenever there is no LiDAR angle along the approach** (no best approach, no ground
-  at the touchdown point, a lane from an earlier EZ/PZ), with a line saying why, as when an editor chooses it, with a reason
-  (`compare`'s `approach`: the field's "100 ft at 200 m" as its angle, 8.7°, against the LiDAR's; more than 5° apart is a
-  disagreement). The page's figure prints its words at 5 to 6 pt, and the box ends inside its border.
+  name is cut), its figure the approach close in, as the old book's survey profile drew it (the owner, 2026-10-27: not the whole
+  kilometre but "pretty immediate"): the LZ at the left and the approach coming in from the right, from the touchdown point out to
+  1.3 times the descent's distance, 10 m at a time, never under 60 m (200 m with no descent in the lane), as `figures.close_range`
+  says: its track's ground (thicker over the LZ), the trees standing over it shaded green up to what stands highest in each 10 m
+  (only where something stands above the track's ground, never ground rising to one side), the helicopter where the descent begins,
+  nose to the LZ, its path down to the touchdown point an arrow as the old profile's was, the approach before it along the ground at
+  the survey's height above the tallest in the lane (dashed), how far out the descent begins under it and how high over the ground
+  the approach is flown at its end, measured as the old profile measured its distance and height (105 M, 219′ AGL), and what sets the
+  LiDAR's shallowest angle (a triangle) where it falls in the box; its words over the sky at its upper left, three lines (APCH 360° ·
+  30.0°, or APCH 180° · 41.0° · STEEPER THAN 30°; DESCEND FROM 100′ AHO AT 53 M; MIN 8.5°: 98′ TREE AT 200 M, MIN 0.0°: NOTHING IN
+  THE WAY or EDITOR'S · LIDAR MIN 8.5°) and, where the survey covers part of the lane, how much in its corner. Then the tallest in
+  the LZ and within 100 m, and what the LiDAR cannot see. Something standing over 2 m in the LZ is a hazard line of its own. The
+  profile along the best approach has its treetop line: the LiDAR's height above its own ground laid on the ground the profile draws,
+  so a DEM a little off the LiDAR's moves no tree; within the LZ's span only what stands in the LZ. **The field's own profile is
+  printed whenever there is no LiDAR angle along the approach** (no best approach, no ground at the touchdown point, a lane from an
+  earlier EZ/PZ), with a line saying why, as when an editor chooses it, with a reason (`compare`'s `approach`: the field's "100 ft at
+  200 m" as its angle, 8.7°, against the LiDAR's; more than 5° apart is a disagreement). The page's figure prints its words at 5 to 6
+  pt, and the box ends inside its border.
 - **In the editor**: the measurements' *Standing on and round the LZ*: the approach's plan (the angle planned, said to be steeper where
   the trees make it so, or *Yours*), where its descent from the survey's height above the highest obstacle begins and how high above the
   ground that is, the LiDAR's shallowest angle and what sets it; the tallest in the LZ and round it, the points over 2 m, the trees.
