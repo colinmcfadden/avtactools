@@ -33,8 +33,7 @@ def test_lz_donovan_reads_as_the_book_has_it():
     field = page['field']
     assert (page['page'], page['hlzId'], page['name']) == (5, 'GA 034', 'LZ DONOVAN')
     assert (field['grid'], field['latLong']) == (DONOVAN['field']['grid'], DONOVAN['field']['latLong'])
-    assert (field['maxAcDay'], field['maxAcNight'], field['approachDeg']) == ('2', '2', '360')
-    assert 'exitDeg' not in field                                               # read to end the approach's value, not kept
+    assert (field['maxAcDay'], field['maxAcNight'], field['approachDeg'], field['exitDeg']) == ('2', '2', '360', '360')
     assert (field['elevationFt'], field['surface'], field['slope']) == ('1850', 'grass', '-10° roll (left side low)')
     assert field['ppr'] == '5th RTB Ops: 706-864-3327 x5233'                     # a raised "th" joins its "5"
     assert field['hazards'] == DONOVAN['field']['hazards']

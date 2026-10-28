@@ -212,12 +212,6 @@ describe("the survey's map with what the LiDAR found", () => {
     expect(screen.queryAllByTestId("marker").every((marker) => !/Tallest/.test(marker.textContent))).toBe(true);
   });
 
-  it("draws the best approach's arrow, and none for a best exit a survey saved before still has", () => {
-    render(<SurveyMap {...props} field={{ approachDeg: "360", exitDeg: "090" }} obstacles={null} />);
-    expect(screen.getByText("Best approach 360°")).toBeInTheDocument();
-    expect(screen.queryByText(/Best exit/)).toBeNull();
-  });
-
   it("offers no heights where nothing was measured", () => {
     render(<SurveyMap {...props} obstacles={{ status: "unavailable", words: "This server does not read the USGS LiDAR." }} />);
     expect(screen.queryByRole("checkbox", { name: "What stands (LiDAR)" })).toBeNull();

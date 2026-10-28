@@ -13,7 +13,7 @@ import { ImportNotes } from "./SurveyImport";
 
 /*
  * One LZ's survey, for the book's editors (docs/LZ_SURVEYS.md): the field survey's values in the old book's sections, the map in survey
- * mode (target, boundary, best approach, the slope map and contours), what EZ/PZ measured, field against computed, the
+ * mode (target, boundary, best approach and exit, the slope map and contours), what EZ/PZ measured, field against computed, the
  * photos, review and publishing, the printed page and every revision.
  */
 

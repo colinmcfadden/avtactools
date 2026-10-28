@@ -10,12 +10,12 @@ import SlopeOpacityControl from "../terrain/SlopeOpacityControl";
 import useSlopeOpacity from "../terrain/slopeOpacity";
 import { mgrsToLatLon } from "../../utils/mgrs";
 import { parseCoordinate } from "../../utils/coordParse";
-import { approachArrow, boundaryOf } from "./surveyDiagram";
+import { approachArrows, boundaryOf } from "./surveyDiagram";
 import { spotWords } from "./Obstacles";
 
 /*
- * The survey's map (docs/LZ_SURVEYS.md, the editor's survey mode): the LZ/PZ diagram's target and boundary, the best approach as
- * an arrow, and the slope map with its contour lines from the survey's own measurement, drawn by the planning map's layer
+ * The survey's map (docs/LZ_SURVEYS.md, the editor's survey mode): the LZ/PZ diagram's target and boundary, the best approach and
+ * exit as arrows, and the slope map with its contour lines from the survey's own measurement, drawn by the planning map's layer
  * (SlopeLayer) at the person's own opacity. A map of its own, not the planning map: a survey's LZ is never one of the session's
  * LZ/PZs, so it can never be saved to the Library or a Mission Pack by the planning tools' Save.
  *
@@ -77,7 +77,7 @@ const SurveyMap = ({ diagram, field, terrain, obstacles = null, onSetTarget, onS
     ? [["Tallest in the LZ", obstacles.inside], ["Tallest within 100 m", obstacles.around]].filter(([, spot]) => spot)
     : [];
   const boundary = boundaryOf(diagram);
-  const arrow = useMemo(() => approachArrow(target, field), [target, field]);
+  const arrows = useMemo(() => approachArrows(target, field), [target, field]);
   const style = getMapStyle(styleId);
 
   const click = (lat, lon) => {
@@ -205,12 +205,20 @@ const SurveyMap = ({ diagram, field, terrain, obstacles = null, onSetTarget, onS
             // Corners are drawn in order and never move, so a corner's place in the list is what it is.
             <CircleMarker key={i} center={corner} radius={4} pathOptions={{ color: "#38bdf8", fillOpacity: 1 }} />
           ))}
-          {arrow && (
+          {arrows.approach && (
             <>
-              <Polyline positions={arrow.line} pathOptions={{ color: "#22c55e", weight: 3 }}>
+              <Polyline positions={arrows.approach.line} pathOptions={{ color: "#22c55e", weight: 3 }}>
                 <Tooltip sticky>Best approach {field.approachDeg}°</Tooltip>
               </Polyline>
-              <Polyline positions={arrow.head} pathOptions={{ color: "#22c55e", weight: 3 }} />
+              <Polyline positions={arrows.approach.head} pathOptions={{ color: "#22c55e", weight: 3 }} />
+            </>
+          )}
+          {arrows.exit && (
+            <>
+              <Polyline positions={arrows.exit.line} pathOptions={{ color: "#f97316", weight: 3, dashArray: "8 5" }}>
+                <Tooltip sticky>Best exit {field.exitDeg}°</Tooltip>
+              </Polyline>
+              <Polyline positions={arrows.exit.head} pathOptions={{ color: "#f97316", weight: 3 }} />
             </>
           )}
           {target && (

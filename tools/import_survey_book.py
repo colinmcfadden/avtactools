@@ -9,12 +9,11 @@ Then, in EZ/PZ, open the book in LZ survey books and choose *Import*. Nothing he
 the standard library and poppler's ``pdftohtml`` is needed: no PDF library joins the backend.
 
 Each page of the old book is a form: the labelled values down its left column (Grid, Lat/Long, Max A/C, Best Approach and Exit,
-Elevation, Surface Condition, Slope, Maximum Weight, PPR, Hazards, Remarks, Warning; the best exit is read only to end the value
-before it, and not kept), the survey profile's box (an obstacle's height at a distance), the two photos down its right (north, then
-down the best approach) and its foot (Survey Date, Last Survey by). ``pdftohtml -xml`` gives every piece of text and every picture
-with its place on the page, so each line is rebuilt from the pieces on it ("OCT 202" and "3", "5" and a raised "th"), and each value
-is the text after its label up to the next label. What the page does not say is left blank and named in the bundle (``unread``), for
-the importing editor to look at: nothing is made up.
+Elevation, Surface Condition, Slope, Maximum Weight, PPR, Hazards, Remarks, Warning), the survey profile's box (an obstacle's height
+at a distance), the two photos down its right (north, then down the best approach) and its foot (Survey Date, Last Survey by).
+``pdftohtml -xml`` gives every piece of text and every picture with its place on the page, so each line is rebuilt from the pieces
+on it ("OCT 202" and "3", "5" and a raised "th"), and each value is the text after its label up to the next label. What the page
+does not say is left blank and named in the bundle (``unread``), for the importing editor to look at: nothing is made up.
 
 The bundle is a zip: ``manifest.json`` (format ``ezpz-survey-import``) and the photos as poppler took them out of the PDF.
 """
@@ -52,12 +51,9 @@ LABELS = (
     ("remarks", re.compile(r"^Remarks\s*:", re.I)),
     ("warning", re.compile(r"^Warning\s*:", re.I)),
 )
-# Labels read only so that they end the value before them, and not kept: the best exit, which the survey keeps no more (the owner,
-# 2026-10-27; backend/survey/fields.py's ``RETIRED``).
-NOT_KEPT = {"exitDeg"}
 LABEL_WORDS = {
     "grid": "Grid", "latLong": "Lat/Long", "maxAc": "Max A/C", "size": "Size", "approachDeg": "Best Approach",
-    "elevationFt": "Elevation", "surface": "Surface Condition", "slope": "Slope",
+    "exitDeg": "Best Exit", "elevationFt": "Elevation", "surface": "Surface Condition", "slope": "Slope",
     "maxWeight": "Maximum Weight", "ppr": "PPR", "hazards": "Hazards", "remarks": "Remarks", "warning": "Warning",
 }
 # Values a page may leave blank without anything being missed: the book has these blank on many pages.
@@ -221,8 +217,6 @@ def read_page(page, number):
     # ``unread``: a label the page does not have; ``blank``: one it has with nothing after it. Both are the importing editor's to look at.
     field, unread, blank, warnings = {}, [], [], []
     for key, _pattern in LABELS:
-        if key in NOT_KEPT:
-            continue
         if key not in values:
             if key not in MAY_BE_BLANK:
                 unread.append(LABEL_WORDS[key])
@@ -238,8 +232,9 @@ def read_page(page, number):
     elif max_ac:
         field["maxAcDay"] = max_ac
         warnings.append(f'Max A/C is "{max_ac}", not a number by day and night: kept as written.')
-    if field.get("approachDeg"):
-        field["approachDeg"] = re.sub(r"\s+", " ", field["approachDeg"].replace("°", "").replace("º", "")).strip()
+    for key in ("approachDeg", "exitDeg"):
+        if field.get(key):
+            field[key] = re.sub(r"\s+", " ", field[key].replace("°", "").replace("º", "")).strip()
     if field.get("elevationFt"):
         feet = _number(field["elevationFt"])
         if feet is not None:
