@@ -434,6 +434,40 @@ describe("stopping", () => {
     expect(client.edit(setHeading(120))).toBe("closed");
   });
 
+  it("still sends what waits when only the token was refreshed, since the session is the same", async () => {
+    const onLost = jest.fn();
+    const socket = await start(pack(), { onLost, getSession: () => "7:fam-1" });
+    await welcome(socket);
+    api.sendOps.mockRejectedValueOnce(fail(0));
+    client.edit(setHeading(100));
+    await settle();
+    client.stop();
+    token = "sam-token-refreshed";
+    api.sendOps.mockResolvedValue({ head_seq: 4, has_more: false, results: [{ client_op_id: "op-1", seq: 4, status: "applied", reason: null }],
+      events: [ev(4, setHeading(100), { actor: SAM, client_op_id: "op-1" })] });
+    clock.advance(30000);
+    await settle();
+    expect(api.sendOps).toHaveBeenCalledTimes(2);
+    expect(onLost).not.toHaveBeenCalled();
+  });
+
+  it("hands the live stream each new token, so its next check is made with one that has not lapsed", async () => {
+    let heard = null;
+    const onToken = jest.fn((listener) => {
+      heard = listener;
+      return () => { heard = null; };
+    });
+    const socket = await start(pack(), { onToken });
+    heard("before-welcome");
+    expect(socket.sent.filter((m) => m.type === "token")).toEqual([]);
+    await welcome(socket);
+    heard("fresh-token");
+    expect(socket.sent.filter((m) => m.type === "token")).toEqual([{ type: "token", token: "fresh-token" }]);
+    client.stop();
+    await settle();
+    expect(heard).toBeNull();
+  });
+
   // Signing out clears the token before the pack closes, so a client stopped then has none to send with.
   it("gives up at once what waits when the person has signed out, rather than send it with no token", async () => {
     const onLost = jest.fn();

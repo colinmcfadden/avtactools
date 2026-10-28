@@ -8,6 +8,8 @@
  * renderer.
  */
 
+import { getAccessToken, refreshAccessToken } from "../auth/session";
+
 const API_BASE_URL = process.env.REACT_APP_API_URL || "";
 
 /**
@@ -24,6 +26,22 @@ export const absoluteTilesetUrl = (url, { fromApi = true } = {}) => {
 };
 
 /**
+ * A refused tile tries once more with the token as it is now. A web session's
+ * token lasts 15 minutes and every derived Resource keeps the header it was
+ * made with, so a tile asked for later is sent with a lapsed one: it is given
+ * the current token, or, when it already had that, a refreshed one.
+ */
+export const retryWithFreshToken = async (resource, error) => {
+  if (error?.statusCode !== 401) return false;
+  const sent = resource.headers?.Authorization;
+  let token = getAccessToken();
+  if (!token || sent === `Bearer ${token}`) token = await refreshAccessToken().catch(() => null);
+  if (!token) return false;
+  resource.headers = { ...resource.headers, Authorization: `Bearer ${token}` };
+  return true;
+};
+
+/**
  * A Resource for `url`, carrying the bearer token when one is present.
  *
  * `requiresAuth: false` marks a tileset served as a static file rather than by
@@ -32,10 +50,12 @@ export const absoluteTilesetUrl = (url, { fromApi = true } = {}) => {
  */
 export const tilesetResource = (Cesium, url, { requiresAuth = true } = {}) => {
   const absolute = absoluteTilesetUrl(url, { fromApi: requiresAuth });
-  const token = requiresAuth ? localStorage.getItem("auth_token") : null;
+  const token = requiresAuth ? getAccessToken() : null;
   if (!token) return absolute;
   return new Cesium.Resource({
     url: absolute,
     headers: { Authorization: `Bearer ${token}` },
+    retryAttempts: 1,
+    retryCallback: retryWithFreshToken,
   });
 };
