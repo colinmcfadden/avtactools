@@ -480,29 +480,72 @@ def test_low_vegetation_is_brush_and_the_figure_draws_the_obstacle_s_rise(snapsh
 
     found = lidar(snapshot)
     found['obstacles']['inside'].update({'heightFt': 9.8})
-    found['obstacles']['approach']['clearance']['obstacle'].update({'heightFt': 49.2, 'riseFt': 114.0})   # on ground 65 ft up
+    obstacle = found['obstacles']['approach']['clearance']['obstacle']
+    obstacle.update({'heightFt': 49.2, 'riseFt': 114.0, 'fromTargetM': 95.0, 'distanceM': 95.0})   # on ground 65 ft up, 95 m out
     model = page.compile_page(source(found), book=BOOK)
     assert model['clearance']['inside'] == '10′ BRUSH AT 034° 36 M'
     spec = model['clearance']['approach']
-    assert spec['what'] == 'MIN 8.5°: 49′ TREE AT 200 M'
-    assert spec['obstacle'] == {'fromTargetM': 200.0, 'riseFt': 114.0, 'kind': 'vegetation'}
+    assert spec['what'] == 'MIN 8.5°: 49′ TREE AT 95 M'
+    assert spec['obstacle'] == {'fromTargetM': 95.0, 'riseFt': 114.0, 'kind': 'vegetation'}
     drawn = figures.clearance(model['clearance'])
+    # Close in, as the old book's survey profile: the LZ at the left, the approach in from the right, out to 160 m (1.3 times the
+    # descent's 122 m, 10 m at a time). Over it the ground (2,200 ft), the path up to 231 ft over it, and the level past it.
+    shown, left, right = 160.0, 4 + 30.0, 512 - 4 - 36.0
+    span = 231.2
+    floor = 2200.0 - span * 0.04
+
+    def sx(metres):
+        return left + metres / shown * (right - left)
+
+    def sy(height):
+        return 80 - (height - floor) / (span * 1.04) * (80 - 14)
+
     # The triangle's tip stands over the touchdown point's ground and the obstacle's rise (2314 ft), where the angle sees it.
-    values = [v for v in spec['groundFt'] + spec['topsFt'] + [spec['startFt']] if v is not None]
-    values += [h for _m, h in spec['path'] + spec['level']]
-    span = max(max(values) - min(values), 60.0)
-    floor = min(values) - span * 0.06
-    tip = float(re.search(r'<polygon points="[-0-9.]+,([-0-9.]+) ', drawn).group(1))
-    assert abs(tip - ((104 - 14) - (2314.0 - floor) / (span * 1.06) * ((104 - 14) - 50) - 6)) < 0.1
-    assert drawn.count('<circle') == 1 and drawn.count('r="2.4"') == 1               # the descent, and nothing flagged past it
-    # The LZ at the right end, on the touchdown point's ground, the approach drawn across the rest of the box: 1,000 m out at its left.
+    tips = [(float(x), float(y)) for x, y in re.findall(r'<polygon points="([-0-9.]+),([-0-9.]+) ', drawn)]
+    assert any(abs(x - sx(95.0)) < 0.1 and abs(y - (sy(2314.0) - 6)) < 0.1 for x, y in tips)
     lz_x, lz_y = (float(v) for v in re.search(r'<rect x="([-0-9.]+)" y="([-0-9.]+)"', drawn).groups())
-    assert abs(lz_y - ((104 - 14) - (2200.0 - floor) / (span * 1.06) * ((104 - 14) - 50) - 3)) < 0.1
-    assert lz_x == 512 - 4 - 30.0
+    assert (lz_x, round(lz_y, 1)) == (4.0, round(sy(2200.0) - 3, 1))
     ground = re.search(r'<polyline points="([^"]+)" fill="none" stroke="#[0-9a-f]+" stroke-width="1.6"', drawn).group(1).split()
-    reach = 512 - 2 * 4 - 30.0                                                     # the box less its margins and the LZ
-    assert abs(float(ground[0].split(',')[0]) - (4 + reach - 5 / 1000 * reach)) < 0.1         # the step 5 m out, at the LZ
-    assert abs(float(ground[-1].split(',')[0]) - (4 + reach - 995 / 1000 * reach)) < 0.1      # the step 995 m out, at the left
+    assert abs(float(ground[0].split(',')[0]) - left) < 0.1                                  # the touchdown point, by the LZ
+    assert abs(float(ground[-1].split(',')[0]) - sx(155.0)) < 0.1                           # the last step in the box, 155 m out
+    # The helicopter where the descent begins, nose to the LZ, and the old profile's distance and height: 122 m out, 231 ft AGL.
+    heli = re.search(r'<g transform="translate\(([-0-9.]+) ([-0-9.]+)\) scale\(-1.15 1.15\)"', drawn)
+    assert abs(float(heli.group(1)) - 14 * 1.15 - sx(231.2 * 0.3048 / TAN_30)) < 0.15
+    assert abs(float(heli.group(2)) + 8 * 1.15 - sy(2431.2)) < 0.15
+    assert '>122 M</text>' in drawn and '>231′</text>' in drawn and '>AGL</text>' in drawn
+    assert '<circle' not in drawn and '1 KM' not in drawn and 'LIDAR OVER' not in drawn
+    # Nothing past the box is drawn: the 98 ft tree 200 m out and the 131 ft one 600 m out are beyond it.
+    lines = ' '.join(re.findall(r'<polyline points="([^"]+)"', drawn)).split()
+    assert lines and all(float(point.split(',')[0]) <= right + 0.1 for point in lines)
+    assert figures.TREE_FILL not in drawn
+    stand = found['obstacles']['approach']['bins']
+    for k in (12, 13):                                                               # a 60 ft stand 120-140 m out
+        stand[k] = {'groundFt': 2200.0, 'topFt': 2260.0, 'tallestFt': 60.0}
+    drawn = figures.clearance(page.compile_page(source(found), book=BOOK)['clearance'])
+    shade = re.search(f'<polygon points="([^"]+)" fill="{figures.TREE_FILL}"/>', drawn).group(1).split()
+    assert [round(float(xy.split(',')[0]), 1) for xy in shade] == [round(sx(m), 1) for m in (125.0, 135.0, 135.0, 125.0)]
+    assert [round(float(xy.split(',')[1]), 1) for xy in shade] == [round(sy(h), 1) for h in (2260.0, 2260.0, 2200.0, 2200.0)]
+
+
+def test_the_clearance_box_reaches_a_little_past_the_descent(snapshot):
+    import re
+
+    for descent, length, shown in ((122.06, 1000.0, 160.0), (94.9, 1000.0, 130.0), (20.0, 1000.0, 60.0), (900.0, 1000.0, 1000.0),
+                                   (None, 1000.0, 200.0), (None, 150.0, 150.0)):
+        assert figures.close_range({'descentM': descent}, length) == shown, descent
+    # The tree that sets the LiDAR's angle, 200 m out, is past the box's 160 m: nothing is drawn past its end.
+    drawn = figures.clearance(page.compile_page(source(lidar(snapshot)), book=BOOK)['clearance'])
+    marks = ' '.join(re.findall(r'<polygon points="([^"]+)"', drawn)).split()
+    assert marks and all(float(xy.split(',')[0]) <= 512 - 4 - 36.0 + 7 for xy in marks)
+    # A descent past the lane: the path as far as the box goes, no helicopter and no measures.
+    found = lidar(snapshot)
+    choice = typed_over(found, 1.5)
+    drawn = figures.clearance(page.compile_page(source(found, overrides=choice), book=BOOK)['clearance'])
+    assert 'scale(-1.15' not in drawn and '>AGL</text>' not in drawn
+    assert not re.search(r'text-anchor="middle">[0-9,]+ M</text>', drawn)
+    assert 'DESCEND FROM 100′ AHO PAST 1,000 M' in drawn
+    x1, y1 = (float(v) for v in re.search(r'<line x1="([-0-9.]+)" y1="([-0-9.]+)"', drawn).groups())
+    assert abs(x1 - (512 - 4 - 36.0)) < 0.1                                           # the path cut at the box's end, 200 m out
 
 
 def test_the_page_s_3d_view_is_the_newest_capture_named_for_its_survey(snapshot):

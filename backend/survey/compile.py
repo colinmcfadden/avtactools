@@ -458,6 +458,7 @@ def _lane(lane, planned=None):
         "typed": False,
         "steep": False,
         "heightFt": None,
+        "aboveGroundFt": None,
         "obstacle": None,
         "descentM": None,
         "path": [],
@@ -485,7 +486,7 @@ def _lane(lane, planned=None):
         at = descent["fromTargetM"]
         out["descentM"] = at
         out["climb"] = f"DESCEND FROM {above} AT {profile.js_round(at):,} M"
-        over = planned["aboveGroundFt"]
+        over = out["aboveGroundFt"] = planned["aboveGroundFt"]
         out["path"] = [[0.0, out["startFt"]], [at, descent["groundFt"] + over]]
         out["level"] = [[at, descent["groundFt"] + over]] + [[(k + 0.5) * step, ground + over]
                                                               for k, ground in enumerate(out["groundFt"])
