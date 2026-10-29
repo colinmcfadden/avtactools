@@ -351,10 +351,17 @@ token carries `sid` and is refused the moment that session ends:
 | Database | Supabase Postgres, **Session-mode pooler** | — |
 
 - **Which backend is live is decided by `VITE_API_URL` in Vercel.**
-- **Vercel builds the web with Vite**: framework preset Vite, `npm run build`, output `dist`,
-  and every frontend variable named `VITE_*` in Production and Preview alike (they were
+- **Vercel builds the web with Vite, as `frontend/vercel.json` says** (the project's root
+  directory is `frontend`): framework `vite`, `npm ci`, `npm run build`, output `dist`, and
+  client-side paths answered with `/index.html` once the filesystem has none (Vite's preset adds
+  no such fallback, which CRA's did; `/cesium`, `/tiles`, `/icons`, `/img`, `/sounds`, `/assets`,
+  `/.well-known` and paths with a dot stay 404 when missing, so Cesium never gets the page for a
+  worker). The file overrides the project's settings, so a branch builds as its own file says:
+  `main` built Create React App from the project's settings until it had the file. Node is
+  `engines.node` in `frontend/package.json` (22.x; Vitest 5 needs 22.12 or later). Every
+  frontend variable is named `VITE_*`, in Production and Preview alike (they were
   `REACT_APP_*` before October 2026). A variable under its old name is simply not seen: the
-  build succeeds and the site has no API address.
+  build succeeds and the site has no API address. Nothing secret goes in `vercel.json`.
 - The container runs **one gunicorn worker with 8 threads** and a 180 s
   timeout. One worker because SAM holds about 1 GB resident and the rate
   limiter, QR store and route-share store are in-process, and so are the LZ survey
@@ -484,6 +491,7 @@ There is **no `backend/.env.example`** — it was removed in `55aef5d` although
 | `VITE_LIDAR_COLLECTION` | Downloaded LiDAR directory, added to that command. |
 
 Vite inlines these (`import.meta.env.VITE_*`) at **build** time — changing one in Vercel needs a redeploy. Only names that start `VITE_` reach the app.
+They are set in the Vercel project (Production, and Preview pointing at staging's API), never in `vercel.json`, which is in git.
 
 ---
 
