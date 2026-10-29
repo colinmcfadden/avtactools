@@ -302,7 +302,7 @@ and `docs/HANDOFF.md` updated in the same commit.
 
 | Step | What | Depends on |
 |---|---|---|
-| **N0** (built) | Backend: `notification` table, `notify.py`, the triggers of §3.2, the three routes, `notification_settings`, the sweep; OpenAPI (1.2.0), recorded responses, tests (one per trigger, the debounce and the reopen, withdrawal, the limits, another account's never seen) | — |
+| **N0** (built) | Backend: `notification` table, `notify.py`, the triggers of §3.2, the three routes, `notification_settings`, the sweep; OpenAPI (1.3.0), recorded responses, tests (one per trigger, the debounce and the reopen, withdrawal, the limits, another account's never seen) | — |
 | **N1** | Android: core-network's calls and DTOs (held to the recordings), `NotificationWorker`, channels, posting and groups, the toast in front, tap routing, the permission ask, sign-out clearing; access approved from `/api/auth/me` | N0 |
 | **N2** | Android: *Notifications* in the account menu; *Changes kept* from the background drain | N1 |
 | **N3** | Web: `useNotifications`, the toasts and *While you were away*, tap routing, settings in the account menu | N0 |
