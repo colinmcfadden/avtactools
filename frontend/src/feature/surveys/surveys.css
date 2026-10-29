@@ -149,3 +149,6 @@
 .survey-capture { position: relative; width: 100%; aspect-ratio: 1600 / 887; background: #05080d; border-radius: 6px; overflow: hidden; }
 .survey-capture__kept { margin: 0; display: flex; flex-direction: column; gap: 6px; align-items: flex-start; }
 .survey-capture__kept .survey-photo__thumb { width: 320px; height: 177px; object-fit: cover; }
+
+/* The book's PDF being printed on the server: its pages drawn, as a bar over the words. */
+.survey-print-progress { display: flex; flex-direction: column; gap: 6px; max-width: 420px; }

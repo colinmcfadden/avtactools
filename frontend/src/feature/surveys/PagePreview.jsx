@@ -1,5 +1,6 @@
 import React, { useEffect, useId, useRef, useState } from "react";
 import Icon from "../ui/Icon";
+import { BusyButton, Spinner } from "../ui/Spinner";
 
 /*
  * A survey's printed page (docs/LZ_SURVEYS.md §5) as the server lays it out: shown here in a frame that runs nothing, so it can be
@@ -89,19 +90,19 @@ const PagePreview = ({ title, load, loadPdf, fileName, autoLoad = false, stale =
       {note && <p className="survey-muted">{note}</p>}
       <div className="survey-page-bar">
         {!autoLoad && (
-          <button type="button" className="ui-btn ui-btn--34" onClick={draw} disabled={status === "loading"}>
-            <Icon name="eye" size={14} />
+          <BusyButton className="ui-btn ui-btn--34" icon="eye" onClick={draw} busy={status === "loading"}>
             {status === "loading" ? "Drawing the page…" : html ? "Draw it again" : "Show the page"}
-          </button>
+          </BusyButton>
         )}
-        <button type="button" className="ui-btn ui-btn--primary ui-btn--34" onClick={download} disabled={printing}>
-          <Icon name="download" size={14} />
+        <BusyButton className="ui-btn ui-btn--primary ui-btn--34" icon="download" onClick={download} busy={printing}>
           {printing ? "Printing…" : "Download PDF"}
-        </button>
+        </BusyButton>
       </div>
       {pdfError && <p className="survey-muted" role="status">{pdfError}</p>}
       {stale && html && <p className="survey-muted" role="status">Changed since it was drawn: draw it again to see the change.</p>}
-      {status === "loading" && autoLoad && <p className="survey-muted" role="status">Drawing the page…</p>}
+      {status === "loading" && autoLoad && (
+        <p className="survey-muted ui-loading" role="status"><Spinner size={16} />Drawing the page…</p>
+      )}
       {error && (
         <div className="survey-banner survey-banner--error" role="alert">
           <Icon name="alertTriangle" size={16} />

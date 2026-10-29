@@ -1,5 +1,6 @@
 import React, { useEffect, useId, useRef, useState } from "react";
 import Dialog from "../ui/Dialog";
+import { BusyButton } from "../ui/Spinner";
 import Icon from "../ui/Icon";
 
 /*
@@ -112,9 +113,9 @@ export const ImportDialog = ({ bookName, onImport, onCancel }) => {
       footer={(
         <>
           <button type="button" className="ui-btn ui-btn--ghost ui-btn--38" onClick={onCancel} disabled={busy}>Cancel</button>
-          <button type="button" className="ui-btn ui-btn--primary ui-btn--38" onClick={submit} disabled={busy}>
+          <BusyButton className="ui-btn ui-btn--primary ui-btn--38" busy={busy} onClick={submit}>
             {busy ? "Importing…" : "Import"}
-          </button>
+          </BusyButton>
         </>
       )}
     >

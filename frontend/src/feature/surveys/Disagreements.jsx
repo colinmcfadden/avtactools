@@ -1,5 +1,6 @@
 import React, { useId, useRef, useState } from "react";
 import Dialog from "../ui/Dialog";
+import { BusyButton } from "../ui/Spinner";
 
 /*
  * Field against computed (docs/LZ_SURVEYS.md §2): each measured quantity with the survey's value and EZ/PZ's, how far apart, and
@@ -66,7 +67,7 @@ export const ReasonDialog = ({ row, onConfirm, onCancel }) => {
       footer={(
         <>
           <button type="button" className="ui-btn ui-btn--ghost ui-btn--38" onClick={onCancel} disabled={busy}>Cancel</button>
-          <button type="button" className="ui-btn ui-btn--primary ui-btn--38" onClick={submit} disabled={busy}>Print the survey's</button>
+          <BusyButton className="ui-btn ui-btn--primary ui-btn--38" busy={busy} onClick={submit}>Print the survey's</BusyButton>
         </>
       )}
     >
@@ -146,7 +147,7 @@ export const AngleDialog = ({ row, plan = null, onConfirm, onCancel }) => {
       footer={(
         <>
           <button type="button" className="ui-btn ui-btn--ghost ui-btn--38" onClick={onCancel} disabled={busy}>Cancel</button>
-          <button type="button" className="ui-btn ui-btn--primary ui-btn--38" onClick={submit} disabled={busy}>Print this angle</button>
+          <BusyButton className="ui-btn ui-btn--primary ui-btn--38" busy={busy} onClick={submit}>Print this angle</BusyButton>
         </>
       )}
     >

@@ -457,6 +457,40 @@ select.ui-input { cursor: pointer; }
   box-shadow: 0 0 0 2px #16191f;
 }
 
+/* -- Busy ------------------------------------------------------------------------------------- */
+
+.ui-spinner {
+  box-sizing: border-box;
+  display: inline-block;
+  flex: none;
+  border: 2px solid currentColor;
+  border-right-color: transparent;
+  border-radius: 50%;
+  opacity: 0.9;
+  animation: ui-spin 0.7s linear infinite;
+}
+@keyframes ui-spin { to { transform: rotate(360deg); } }
+
+/* A busy button keeps its own colour (it is working, not unavailable) and cannot be pressed again. */
+.ui-btn.ui-btn--busy:disabled { cursor: progress; background: var(--surface-2); color: var(--ff-text-main); border-color: var(--hairline-strong); }
+.ui-btn--primary.ui-btn--busy:disabled { background: var(--primary-fill); color: #fff; border-color: rgba(124, 189, 224, 0.55); }
+.ui-btn--ghost.ui-btn--busy:disabled { background: transparent; color: #b4bcc6; border-color: transparent; }
+.ui-btn--danger.ui-btn--busy:disabled { background: #b94a44; color: #fff; border-color: var(--ff-danger); }
+.ui-btn--danger-soft.ui-btn--busy:disabled { background: rgba(214, 107, 100, 0.12); color: #f3b1ac; border-color: rgba(214, 107, 100, 0.5); }
+.ui-btn--pack.ui-btn--busy:disabled { background: rgba(168, 154, 230, 0.14); color: #dcd5fa; border-color: rgba(168, 154, 230, 0.5); }
+
+/* A spinner standing alone, where a panel's content is on its way. */
+.ui-loading { display: flex; align-items: center; justify-content: center; gap: 10px; padding: 24px 12px; color: var(--ff-text-muted); font-size: 12.5px; }
+
+/* Progress through work the server counts; it sweeps while nothing is counted yet. */
+.ui-progress { position: relative; height: 6px; overflow: hidden; border-radius: 3px; background: rgba(255, 255, 255, 0.08); }
+.ui-progress__fill { height: 100%; border-radius: 3px; background: var(--ff-accent); transition: width 0.3s ease; }
+.ui-progress--sweep .ui-progress__fill { position: absolute; width: 35%; animation: ui-sweep 1.3s ease-in-out infinite; }
+@keyframes ui-sweep { from { left: -35%; } to { left: 100%; } }
+
 @media (prefers-reduced-motion: reduce) {
   .ui-btn, .ui-switch::after { transition: none; }
+  .ui-progress--sweep .ui-progress__fill { animation-duration: 2.6s; }
+  /* Still turning, since it is the only sign the work goes on, but slowly. */
+  .ui-spinner { animation-duration: 1.6s; }
 }

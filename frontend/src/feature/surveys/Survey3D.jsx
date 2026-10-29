@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
 import Dialog, { ConfirmDialog } from "../ui/Dialog";
+import { BusyButton } from "../ui/Spinner";
 import Icon from "../ui/Icon";
 import { useToast } from "../ui/Toast";
 import Viewer3D from "../viewer3d/Viewer3D";
@@ -104,10 +105,9 @@ export const CaptureDialog = ({ target, approach, survey, onKeep, onClose }) => 
       footer={(
         <>
           <button type="button" className="ui-btn ui-btn--ghost ui-btn--38" onClick={onClose}>Cancel</button>
-          <button type="button" className="ui-btn ui-btn--primary ui-btn--38" onClick={capture} disabled={!ready || busy}>
-            <Icon name="image" size={14} />
+          <BusyButton className="ui-btn ui-btn--primary ui-btn--38" icon="image" onClick={capture} busy={busy} disabled={!ready}>
             {busy ? "Keeping…" : "Capture"}
-          </button>
+          </BusyButton>
         </>
       )}
     >

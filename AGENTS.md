@@ -158,7 +158,9 @@ avtactools/
 
 **Conventions.** Frontend features are self-contained folders with a
 `use<Feature>.js` hook owning the state; `App.js` composes them. Backend areas
-are Flask blueprints under `routes/`, each registered in `app.py`. Comments
+are Flask blueprints under `routes/`, each registered in `app.py`. A button that waits on the server (a measurement, a PDF, an upload)
+is a `BusyButton` (`feature/ui/Spinner.jsx`): a spinner where its icon was, its colour kept, `aria-busy`; work the server
+counts (a book's pages printed) is a `ProgressBar`. Comments
 explain *why*, not what — match the surrounding density.
 
 ---

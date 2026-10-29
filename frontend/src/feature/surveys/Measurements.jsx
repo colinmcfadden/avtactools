@@ -1,5 +1,6 @@
 import React, { useMemo } from "react";
 import Dialog from "../ui/Dialog";
+import { BusyButton } from "../ui/Spinner";
 import Icon from "../ui/Icon";
 import SlopeProfile from "../terrain/SlopeProfile";
 import { slopeProfileFor } from "../terrain/groundProfile";
@@ -78,10 +79,15 @@ const Measurements = ({
     <section className="survey-panel" aria-labelledby="survey-measured">
       <div className="survey-panel__head">
         <h3 id="survey-measured" className="survey-panel__title">Measured by EZ/PZ</h3>
-        <button type="button" className="ui-btn ui-btn--34 ui-btn--primary" disabled={!canMeasure || Boolean(busy)} onClick={onMeasure}>
-          <Icon name="refresh" size={14} />
+        <BusyButton
+          className="ui-btn ui-btn--34 ui-btn--primary"
+          icon="refresh"
+          busy={busy === "measuring" || busy === "applying"}
+          disabled={!canMeasure || Boolean(busy)}
+          onClick={onMeasure}
+        >
           {busy === "measuring" || busy === "applying" ? "Measuring…" : snapshot ? "Measure again" : "Measure"}
-        </button>
+        </BusyButton>
       </div>
       {!canMeasure && whyNot && <p className="survey-muted">{whyNot}</p>}
       {!snapshot ? (
@@ -162,9 +168,9 @@ export const MeasurePreview = ({ preview, busy, onApply, onCancel }) => {
       footer={(
         <>
           <button type="button" className="ui-btn ui-btn--ghost ui-btn--38" onClick={onCancel} disabled={busy}>Keep the current ones</button>
-          <button type="button" className="ui-btn ui-btn--primary ui-btn--38" onClick={onApply} disabled={busy}>
+          <BusyButton className="ui-btn ui-btn--primary ui-btn--38" busy={Boolean(busy)} onClick={onApply}>
             {busy ? "Keeping…" : "Use these measurements"}
-          </button>
+          </BusyButton>
         </>
       )}
     >

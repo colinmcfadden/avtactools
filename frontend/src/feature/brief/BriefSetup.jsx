@@ -2,6 +2,7 @@ import React, { useState } from "react";
 import { printBrief } from "./briefApi";
 import Dialog from "../ui/Dialog";
 import Icon from "../ui/Icon";
+import { BusyButton } from "../ui/Spinner";
 import FlowStep from "./FlowStep";
 import DetailsStep from "./DetailsStep";
 import ReviewStep from "./ReviewStep";
@@ -90,10 +91,9 @@ const BriefSetup = ({ brief, title, threatCount, onClose, onPresent }) => {
                   Present sandtable
                 </button>
               )}
-              <button type="button" className="ui-btn ui-btn--primary ui-btn--38" disabled={Boolean(printing?.busy)} onClick={download}>
-                <Icon name="download" size={14} />
+              <BusyButton className="ui-btn ui-btn--primary ui-btn--38" icon="download" busy={Boolean(printing?.busy)} onClick={download}>
                 {printing?.busy ? "Printing…" : "Download PDF"}
-              </button>
+              </BusyButton>
             </>
           )}
         </>
