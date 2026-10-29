@@ -46,7 +46,7 @@ These come from the owner. Do not work around them.
 | **Unclassified only. No CUI.** | Hosting is Vercel/a home server. Nothing here is an authorized boundary. |
 | **Threats may be saved and shared** (the owner, 2026-10-12; before that they were never persisted or synced). | Saved like local points and route sets, as a Library item of their own that can be opened and moved as wanted, and shared in mission packs, where every member can edit them. The window need not be kept out of screenshots and nothing expires them (both dropped in S5). **Not built yet** (`docs/ANDROID_SCREENS_PLAN.md`, *T — Threats saved and shared*: the web and the server first, then Android). Until it is, the web keeps them in React state and Android in its encrypted, no-backup device file, wiped at sign-out, and nothing sends them to the server but an explicit viewshed/KMZ/QR action, which the server does not retain. |
 | **Super-admin is untouchable.** | The account in `SUPER_ADMIN_EMAIL` is always an active admin and cannot be demoted, suspended or deleted. |
-| **Any `.mil` address clears the affiliation gate.** | `POST /api/auth/mil/request` + `/verify`. |
+| **Any `.mil` address clears the affiliation gate.** | `POST /api/auth/mil/request` + `/verify`. The address is the account's (the gate, and the invitations sent to it) only once its code is entered; until then it waits in `mil_pending_email` (§7). |
 | **Agents do not deploy.** | Never push to `main`, run `fly deploy`, or trigger production. Supply the commands; the owner runs them. |
 | **No new major dependencies without asking.** | Say what it buys and ask first. |
 | **Secrets stay server-side.** | Nothing secret in the React bundle. Any secret exposed in a chat or log gets rotated. |
@@ -294,12 +294,26 @@ keep true when touching them:
 **There is no migration framework.** `db.create_all()` creates tables;
 new columns on existing tables are added by guarded `ALTER TABLE` statements in
 `app.py`, and `schema_sync.sync_table_columns()` diffs `AircraftProfile`,
-`LoginEvent`, `AccountToken` and the four saved-record models against the live
-schema (`LoginEvent.client`, the refresh-token columns and the sync columns were
-added that way, each with a test against a pre-existing table).
+`LoginEvent`, `AccountToken`, the four saved-record models and `User` (after
+its ALTERs, so `access_approved` keeps their grandfathering default) against the
+live schema (`LoginEvent.client`, the refresh-token columns, the sync columns and
+`User.mil_pending_email` were added that way, each with a test against a
+pre-existing table).
 `schema_sync.ensure_unique_index` adds the `client_uuid` indexes the same way,
 because `create_all` never adds an index to an existing table. When you add a column, add it one of these
 ways — and quote `"user"`, which is reserved in Postgres.
+
+**A `.mil` address is trusted only once its code is entered.** `pack_support.addresses`
+trusts `User.mil_email` while `mil_verified_at` is set (so do `GET /api/invites` and
+accepting one by id; `mil_verified_at` alone also clears the gate, `affiliation_ok`), so
+only `mil_verify` writes it, from `mil_pending_email`, where `mil_request` puts the
+address asked for. A request leaves
+`mil_email` and `mil_verified_at` as they were: an account through the gate stays through.
+The request once wrote `mil_email` directly, which handed an account that had verified one
+address the invitations sent to any other it asked a code for; `app.py` moves what that
+left back to pending at every start (`keep_unconfirmed_mil_addresses_pending`, which relies
+on `mil_email` changing nowhere else). Anything new that reaches an account by email
+address goes through `addresses()`.
 
 JWTs carry an `sv` (session version) claim; a password reset bumps it, which
 revokes older tokens. **A sign-in lasts while the account is active and the device

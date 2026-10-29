@@ -36,7 +36,7 @@ from routes.lidar_routes import lidar_bp
 from routes.location_routes import location_bp
 from routes.weather_routes import weather_bp
 from routes.export_routes import export_bp
-from routes.auth import auth_bp
+from routes.auth import auth_bp, keep_unconfirmed_mil_addresses_pending
 from routes.lz_routes import lz_bp
 from routes.brief_routes import brief_bp
 from routes.saved_routes import saved_routes_bp
@@ -208,6 +208,18 @@ with app.app_context():
             db.session.commit()
         except Exception:
             db.session.rollback()  # column already exists
+    # user gained mil_pending_email (a .mil address asked for, not yet confirmed). After the ALTERs
+    # above, so access_approved is never added here with the model's DEFAULT FALSE.
+    sync_table_columns(db, User)
+    # Then the addresses the .mil flow once left in mil_email unconfirmed go back to pending,
+    # where an emailed invitation does not trust them (routes/auth.py).
+    try:
+        _moved = keep_unconfirmed_mil_addresses_pending()
+        if _moved:
+            app.logger.warning("auth: %d unconfirmed .mil address(es) moved back to pending", _moved)
+    except Exception:  # noqa: BLE001 — never block boot; the next start tries again
+        db.session.rollback()
+        app.logger.exception("auth: could not settle unconfirmed .mil addresses")
 
     # aircraft_profile is young enough that deployments (and dev databases from
     # a reloader that caught the model mid-change) can hold an older shape of
