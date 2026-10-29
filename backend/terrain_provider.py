@@ -63,6 +63,8 @@ class TerrainGrid:
     xres_m: float
     yres_m: float
     vertical_datum: str
+    # The files (or the service) the heights came from, by name: a survey names the DEM its elevation was read in.
+    names: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -186,6 +188,7 @@ def load_terrarium_bounds(bounds_latlon, zoom: int = 13) -> TerrainGrid | None:
         xres_m=ground_mpp,
         yres_m=ground_mpp,
         vertical_datum="source-dependent Terrarium DEM",
+        names=(f"Terrarium z{zoom}",),
     )
 
 
@@ -318,6 +321,7 @@ class LocalRasterCatalog:
 
         with ExitStack() as stack:
             sources = []
+            names = set()
             for entry in entries:
                 try:
                     dataset = stack.enter_context(rasterio.open(entry.path))
@@ -326,6 +330,7 @@ class LocalRasterCatalog:
                             WarpedVRT(dataset, crs=target_crs, resampling=Resampling.bilinear)
                         )
                     )
+                    names.add(os.path.basename(entry.path))
                 except (rasterio.errors.RasterioError, OSError, ValueError):
                     continue
             if not sources:
@@ -361,6 +366,7 @@ class LocalRasterCatalog:
             xres_m=abs(affine.a),
             yres_m=abs(affine.e),
             vertical_datum=datums.pop() if len(datums) == 1 else "mixed local source metadata",
+            names=tuple(sorted(names)),
         )
 
     def load_best(self, requested) -> TerrainGrid | None:

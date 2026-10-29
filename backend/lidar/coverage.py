@@ -23,6 +23,11 @@ from dataclasses import dataclass
 from pathlib import Path
 
 INDEX_URL = "https://usgs.entwine.io/boundaries/resources.geojson"
+
+# Entwine-indexed 3DEP on AWS Open Data. Each survey is its own index, and
+# which one to read is resolved per target here — most ground is covered
+# several times over by surveys of very different quality.
+EPT_BASE = "https://s3-us-west-2.amazonaws.com/usgs-lidar-public"
 CACHE_FILENAME = "usgs_ept_coverage.geojson"
 USER_AGENT = "avtactools-lidar/1.0"
 

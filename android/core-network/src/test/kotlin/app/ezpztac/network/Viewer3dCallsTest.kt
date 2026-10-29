@@ -13,6 +13,7 @@ import okhttp3.mockwebserver.RecordedRequest
 import org.junit.jupiter.api.Assertions.assertArrayEquals
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
+import org.junit.jupiter.api.Assertions.assertNotNull
 import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
@@ -22,7 +23,7 @@ import java.security.MessageDigest
 /** The 3D view's calls against the server's recorded answers: what is sent (coordinates only in a body), what is read, and what is refused unsent. */
 class Viewer3dCallsTest {
     private val here = LatLon(34.591552, -84.128225)
-    private val key = "074c940ed6ec1bf1"                    // the recorded tileset's
+    private val key = "029a9f7de3bb64d6"                    // the recorded tileset's
 
     private fun body(request: RecordedRequest): JsonObject = ApiClient.JSON.parseToJsonElement(request.body.readUtf8()).jsonObject
 
@@ -52,6 +53,28 @@ class Viewer3dCallsTest {
             assertEquals(true, missing.canBuild)
             assertEquals(LidarTargetDto(here.lat, here.lon, 500.0), missing.target)
             assertNull(missing.url)
+        }
+    }
+
+    @Test
+    fun `a lookup asks for a stream only when told, and reads the streamed survey and where to look`() = runBlocking<Unit> {
+        Rig().use { rig ->
+            rig.serve { Recorded.mock("lidar: resolve, streamed") }
+            val streamed = rig.client.lidarResolve(here, stream = true)
+            val request = rig.requestsTo("/api/lidar/resolve").single()
+            assertEquals(JsonPrimitive(true), body(request)["stream"])
+            noPlaceIn(request)
+            assertEquals(true, streamed.streamed)
+            val frame = streamed.frame!!
+            assertEquals(here.lat, frame.lat, 0.0)
+            assertEquals(here.lon, frame.lon, 0.0)
+            assertNotNull(frame.heightM)
+
+            rig.serve { Recorded.mock("lidar: resolve, streamed but not asked for") }
+            val asBefore = rig.client.lidarResolve(here)
+            assertFalse("stream" in body(rig.requestsTo("/api/lidar/resolve").last()))
+            assertNull(asBefore.streamed)
+            assertNull(asBefore.frame)
         }
     }
 
@@ -154,7 +177,7 @@ class Viewer3dCallsTest {
                                 "points/r0.pnts?x=1", "a b.pnts", "%2e%2e/auth")) {
                 assertThrows<IllegalArgumentException>(file) { rig.client.lidarTilesetFile(key, file) }
             }
-            for (bad in listOf("", "074C940ED6EC1BF1", "074c940ed6ec1bf", "../074c940ed6ec1b", "074c940ed6ec1bf1/x")) {
+            for (bad in listOf("", "029A9F7DE3BB64D6", "029a9f7de3bb64d", "../029a9f7de3bb64", "029a9f7de3bb64d6/x")) {
                 assertThrows<IllegalArgumentException>(bad) { rig.client.lidarTilesetFile(bad, "tileset.json") }
                 assertThrows<IllegalArgumentException>(bad) { rig.client.lidarBuildStatus(bad, watcher = null, keep = false) }
                 assertThrows<IllegalArgumentException>(bad) { rig.client.lidarRelease(bad, watcher = null) }

@@ -255,7 +255,8 @@ const FORGOTTEN = refused(404, { error: "No build is running for this location."
 const SERVICE_DOWN = refused(503, { error: "The build service is not reachable.", code: "builder_unavailable" });
 
 const STATE_FIELDS = ["state", "key", "url", "contextUrl", "target", "error", "stage", "position", "elapsedS", "buildFailed"];
-const snapshot = (result) => Object.fromEntries(STATE_FIELDS.map((field) => [field, result[field] ?? null]));
+const STREAM_FIELDS = [...STATE_FIELDS, "streamed", "frame"];
+const snapshot = (result, fields = STATE_FIELDS) => Object.fromEntries(fields.map((field) => [field, result[field] ?? null]));
 
 // Who waits is one random id per tab; the fixture names it.
 const WATCHER = "<watcher>";
@@ -273,7 +274,8 @@ const flush = async () => {
  * second at a time, which is how long after the last step it came), answers it, and records what the hook shows then. `keep` saves the LZ/PZ,
  * `retry` presses Retry, `close` closes the window. At the end, the request that would come next, if one comes within ten seconds.
  */
-const flowCase = async (name, steps, { keep = false, target = TARGET } = {}) => {
+const flowCase = async (name, steps, { keep = false, target = TARGET, stream = false } = {}) => {
+  const fields = stream ? STREAM_FIELDS : STATE_FIELDS;
   const waiting = [];
   const taking = (method) => (path, second) => {
     const request = { method, path };
@@ -291,9 +293,10 @@ const flowCase = async (name, steps, { keep = false, target = TARGET } = {}) => 
   });
 
   // renderHook and rerender are in act already; what the hook starts is settled by flush.
-  const { result, rerender, unmount } = renderHook((props) => useLidarTileset(props), { initialProps: { ...target, keep } });
+  const { result, rerender, unmount } = renderHook((props) => useLidarTileset(props),
+                                                  { initialProps: { ...target, keep, ...(stream ? { stream } : {}) } });
   await flush();
-  const log = [{ mounted: { keep }, then: snapshot(result.current) }];
+  const log = [{ mounted: { keep, ...(stream ? { stream } : {}) }, then: snapshot(result.current, fields) }];
 
   const nextRequest = async (limitMs) => {
     let afterMs = 0;
@@ -309,16 +312,16 @@ const flowCase = async (name, steps, { keep = false, target = TARGET } = {}) => 
 
   for (const step of steps) {
     if (step.keep !== undefined) {
-      rerender({ ...target, keep: step.keep });
+      rerender({ ...target, keep: step.keep, ...(stream ? { stream } : {}) });
       // eslint-disable-next-line no-await-in-loop
       await flush();
-      log.push({ saved: step.keep, then: snapshot(result.current) });
+      log.push({ saved: step.keep, then: snapshot(result.current, fields) });
     } else if (step.retry) {
       // eslint-disable-next-line no-await-in-loop
       await act(async () => { result.current.refresh(); });
       // eslint-disable-next-line no-await-in-loop
       await flush();
-      log.push({ retried: true, then: snapshot(result.current) });
+      log.push({ retried: true, then: snapshot(result.current, fields) });
     } else if (step.close) {
       const before = deletes.length;
       unmount();
@@ -336,14 +339,14 @@ const flowCase = async (name, steps, { keep = false, target = TARGET } = {}) => 
       else pending.resolve({ status: answer.status, data: answer.data });
       // eslint-disable-next-line no-await-in-loop
       await flush();
-      const then = snapshot(result.current);
+      const then = snapshot(result.current, fields);
       log.push({ request: pending.request, afterMs, answer, then, ...(then.error ? { errorFromServer: then.error === answer.data?.error } : {}) });
     }
   }
   const closed = steps.some((step) => step.close);
   const coming = closed ? null : await nextRequest(10000);
   if (!closed) unmount();
-  return { name, keep, target, steps: log, next: coming ? { request: coming.pending.request, afterMs: coming.afterMs } : null };
+  return { name, keep, ...(stream ? { stream } : {}), target, steps: log, next: coming ? { request: coming.pending.request, afterMs: coming.afterMs } : null };
 };
 
 const flowFixture = async () => {
@@ -417,6 +420,31 @@ const flowFixture = async () => {
   return { generatedBy: GENERATED_BY, constants: { pollMs: 3000 }, cases };
 };
 
+// The same lookup by a viewer that frames on the server's `frame`, so it asks for the place's survey streamed from USGS's octree
+// (docs/DATA_ADMIN_AND_PREBUILT_3D_PLAN.md, Part C): what it sends, and what it shows of a streamed answer and of each other.
+const STREAM_KEY = "fedcba9876543210";
+const STREAMED = (heightM = 371.2) => ok({
+  key: STREAM_KEY, available: true, streamed: true, url: `/lidar/tilesets/${STREAM_KEY}/tileset.json`, contextUrl: null,
+  frame: { ...TARGET, radius_m: 500, height_m: heightM },
+});
+const streamFixture = async () => {
+  const scenarios = [
+    ["streamed", [{ answer: STREAMED() }]],
+    ["streamed, the ground there unknown", [{ answer: STREAMED(null) }]],
+    ["streamed, then closed", [{ answer: STREAMED() }, { close: true }]],
+    ["built already, which wins", [{ answer: AVAILABLE(true) }]],
+    ["nothing to stream there, so it is built", [{ answer: NOT_BUILT(true) }, { answer: QUEUED(0) }, { answer: DONE() }]],
+    ["nothing to stream and nothing to build with", [{ answer: NOT_BUILT(false) }]],
+    ["the lookup fails, then streams", [{ answer: UNREACHABLE }, { retry: true }, { answer: STREAMED() }]],
+  ];
+  const cases = [];
+  for (const [name, steps, options] of scenarios) {
+    // eslint-disable-next-line no-await-in-loop
+    cases.push(await flowCase(name, steps, { ...options, stream: true }));
+  }
+  return { generatedBy: GENERATED_BY, constants: { pollMs: 3000 }, cases };
+};
+
 beforeEach(() => {
   vi.useFakeTimers();
   api.get.mockReset();
@@ -455,3 +483,4 @@ test("viewer3d/scene.json is how the web's view looks and moves, and how Cesium 
 test("viewer3d/compass.json is how the web's compass turns and tilts", () => settle("viewer3d/compass.json", compassFixture()));
 test("viewer3d/terrain.json is which terrain tile holds a place", () => settle("viewer3d/terrain.json", terrainFixture()));
 test("viewer3d/lidarFlow.json is how the web finds or builds a point cloud", async () => settle("viewer3d/lidarFlow.json", await flowFixture()));
+test("viewer3d/lidarFlowStream.json is how the web finds a streamed point cloud", async () => settle("viewer3d/lidarFlowStream.json", await streamFixture()));

@@ -32,7 +32,7 @@ from sqlalchemy.orm import Session
 
 from models import (
     MissionPack, MissionPackEvent, MissionPackInvite, MissionPackItem, MissionPackMember, MissionPackSeen,
-    SavedLZ, SavedPointSet, SavedRoute, Team, TeamMember, User, db,
+    SavedLZ, SavedPointSet, SavedRoute, SurveyBook, Team, TeamMember, User, db,
 )
 
 ROLES = ('owner', 'editor', 'viewer')
@@ -602,6 +602,9 @@ def delete_team(team, actor):
         append(pack, actor, {'type': 'pack.share', 'team_id': None},
                f'The team "{team.name}" was deleted, so its members no longer see this pack through it.')
     MissionPack.query.filter(MissionPack.team_id == team.id).update({'team_id': None}, synchronize_session=False)
+    # Its survey books are archived, not handed to everyone: a book with no team is read by everyone with lz_surveys.
+    SurveyBook.query.filter(SurveyBook.team_id == team.id, SurveyBook.archived_at.is_(None)).update(
+        {'archived_at': datetime.utcnow()}, synchronize_session=False)
     MissionPackInvite.query.filter_by(team_id=team.id).delete(synchronize_session=False)
     TeamMember.query.filter_by(team_id=team.id).delete(synchronize_session=False)
     db.session.delete(team)

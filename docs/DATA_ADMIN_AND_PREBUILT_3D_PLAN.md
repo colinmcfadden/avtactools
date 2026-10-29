@@ -3,7 +3,11 @@
 Status: proposed 2026-10-22, and reworked the same day around streaming 3D from USGS's own octree (Part C), which
 measured about fifty times faster than building. **Decided 2026-10-23:** the owner answered all 20 decisions on the
 decisions page, with no notes, so none is open (§9). Eighteen follow the recommendation; two do not: D1 (MapLibre GL JS
-for the admin map) and D13 (several AOs per organization). Nothing is built yet; Phase 0 is next.
+for the admin map) and D13 (several AOs per organization). **2026-10-26:** Phase 0 built (its own PR); Phase 1 next, with
+the owner's answers of that day: existing tilesets keep their old keys (no rename), the streamed `resolve` and its
+`frame` go only to a client that asks for them in the request (so an installed app that frames on the root sphere keeps
+the build flow), and tests build a tiny octree themselves, with a live AWS test behind an environment variable and no
+USGS data committed. **Phase 1 built for the backend, the web and Android the same day** (*Phase 1 as built*, below).
 
 The request, in the owner's words: an admin page with a CONUS map showing where the server holds terrain and LiDAR
 itself (not what comes from outside services); drag-and-drop uploads into the server's volumes; areas chosen on the
@@ -303,10 +307,53 @@ and USGS's copy has no colour of its own.
 - **Decided (D22):** colour every streamed piece at once by **height above ground**, using today's bands: surface, grass,
   brush, canopy, and above 15 m in orange. It is worked out from the piece's own ground points, as builds do
   (`filters.hag_nn`), and it is the obstruction reading the build's own code calls the more direct one for an LZ.
+- **Changed 2026-10-26 (the owner):** the bands came out orange over nearly every crown at Ellijay (north Georgia's
+  hardwoods stand over 15 m), so a streamed piece is now coloured as the place looks: the ground tan and brown, greens
+  darkening with height above ground, shaded by LiDAR intensity within the survey's range (`pieces.NATURAL_STOPS`,
+  `survey_intensity_range`). Height still decides the green, so how tall the obstructions stand still reads. Then a
+  background pass is to recolour cached pieces from imagery (*Photographic colour, in the background*, below: checked, not built).
 - **Photographic colour** is added only where an area is warmed (below). One imagery request per piece would about
   double a first view.
 - It comes from USGS NAIP (public domain, 0.6 m, CONUS), not Mapbox: storing Mapbox colour in data that is then sold
   is a terms question (licence language commonly bars data derived from tiles).
+
+### Photographic colour, in the background (the owner's request of 2026-10-26; built the same day on USGS's service)
+
+Each cached piece recoloured from NAIP off the request path, so a later view of the same ground is photographic and the first
+view never waits for it. **Checked 2026-10-26, before building; the source and the licence are the owner's to settle:**
+
+| Source | Access | Terms as published | Measured from the owner's Mac |
+|---|---|---|---|
+| **USGS The National Map, `USGSNAIPImagery` ImageServer** (`exportImage`) | Free, keyless, HTTPS; up to 4,000 × 4,000 px a request, any box in EPSG:3857 | Credited "USGS, USDA, The National Map: Orthoimagery"; its metadata's use and licence fields are empty; no published rate limits | A piece's box (195 m at 0.6 m, 325 px) 0.3–7 s, median about 0.9 s, about 23 KB of JPEG; a 782 m box 2.2 s, 360 KB. At Ellijay it served `m_3408431_ne_16_060_20231008`: 0.6 m, October 2023, leaf-on |
+| **AWS Open Data, `naip-visualization`** (3-band COG, JPEG q85) | **Requester Pays**: an AWS account, a key on the server (a secret), and billing | "Public Domain with Attribution" (cite "NAIP on AWS … registry.opendata.aws/naip"); 2010–2023 | Not tried (anonymous access is refused). Pennies: AWS egress is about $0.09 a GB, and a piece's window is tens of KB |
+| Microsoft Planetary Computer | Azure (West Europe), SAS token | Its catalogue calls the licence "proprietary" and links to USDA FSA's policies | Not tried; not recommended |
+
+**The licence.** NAIP is USDA FSA's. It has been public domain, and USGS publishes its 2012–2015 NAIP under the USA.gov public
+domain label. In 2018 FSA weighed licensing it commercially, and the program was said to stay public domain for imagery taken
+through 2019. USGS and AWS both serve 2020–2023 imagery openly (AWS as "Public Domain with Attribution"), and nothing found says a
+licence was adopted, but FSA's own current statement for post-2019 imagery was not found. **Using it in the app, with credit, looks
+clear; selling photographic colour (D23) is worth confirming with USDA's APFO (the office that runs NAIP) first.**
+
+**What one piece costs**: one image fetch for its box (above) and 40–60 ms of CPU to turn its quantized positions back into Web
+Mercator, sample the image bilinearly and write the piece again (measured on five cached pieces of 74–88 thousand points).
+A coarse piece needs no 0.6 m: its image would be sized to its own spacing (a 3 km piece at about 6 m).
+
+**The owner chose USGS's service** (2026-10-26; it held the newest imagery anyway: Georgia's is 2021–2023, nothing anywhere for 2024
+or 2025 yet). **Built** as below (`lidar/photo.py`), except that a failed fetch is tried again after 10 minutes, and pieces are taken in
+the order they were cached (coarse first, then the LZ's own) rather than nearest the LZ. **Measured** at Ellijay: a cold first view with
+the pass running was as fast as without it (first points 1.5 s, the LZ's square 11.4 s, against 1.4 s and 10.0 s); the pass made 164
+of the 168 pieces photographic in about 8.6 minutes (median 3.3 s an image, the slowest 47 s, 4 failures left in the palette until
+tried again).
+
+**The design**:
+- A queue and two worker threads of its own in the API, apart from gunicorn's 8 request threads, so a view never waits on it;
+  a piece is queued as it is first cached or served still in its palette, at most 5,000 waiting, and skipped when the cache has
+  let it go. Nothing is fetched while an analysis runs (`terrain_tiles.pauses_warming`).
+- The recoloured piece replaces the palette one atomically under the same name. **Caching**: a palette piece is served for an
+  hour (`max-age=3600`), a photographic one for the week, so a browser or the app picks the photograph up on a later view without
+  a new look or key. The mark is `<name>.photo` beside the piece, let go with it.
+- The imagery's own vintage (2023, leaf-on) is not the LiDAR's (2018): a tree cut since shows as ground colour on the canopy's
+  points and the reverse. Credited in the web's 3D view ("Point colour: USDA NAIP, from USGS The National Map"); Android's is to be.
 
 ### Warmed areas: what "prebuilt" becomes
 
@@ -508,7 +555,7 @@ owner runs every deploy and every Coolify change.
 
 | Phase | Builds | Owner steps |
 |---|---|---|
-| **0. Close the exposure** (small, on its own) | §2.1: tile files only, the list admin-only, HMAC for any new key. AGENTS.md §13 and §15. | Set `LIDAR_KEY_SECRET` (`openssl rand -hex 32`) on the API and the build service, then deploy both. |
+| **0. Close the exposure** (small, on its own). **Built 2026-10-26.** | §2.1: tile files only, the list admin-only, HMAC for any new key. AGENTS.md §13 and §15. Old tilesets keep their keys (the owner's call). | Set `LIDAR_KEY_SECRET` (`openssl rand -hex 32`) on the API and the build service, then deploy both. |
 | **1. Streamed 3D** | Part C's streaming: the tileset from USGS's index, pieces converted and cached, opaque names, quantized positions, height colour, the `frame` hint in the web's viewer. Builds stop for new views. Tests hold the conversion to PROJ with grids, the geoid guard, the class rules by survey year and the names. | Set `LIDAR_STREAM_CACHE_DIR` on a persistent, writable mount, then deploy. Open 3D somewhere new and time it; the page logs its first picture's time. |
 | **2. Terrain cache per tile** | §2.2 (the key per tile, a sweep for orphans), `warm_area`. | None. The first start after it rewarms levels 0–9 once (about 1 minute). |
 | **3. The coverage map** (read only) | §2.3 (the index written by rename, the scan in subfolders), §2.5, MapLibre GL JS vendored, `/admin/data` with its layers and numbers, `DATA_ADMIN`. | Mount `/data/lidar` (read only for now) into the API at the same path. Set `LIDAR_COLLECTION=/data/lidar` and `DATA_ADMIN=read` on the API. |
@@ -520,6 +567,35 @@ owner runs every deploy and every Coolify change.
 | **9. Launch** | Catalogue areas warmed, org onboarding, the user guide. | Pricing, the terms of sale, the stores' rules. |
 
 What the Android branch's 3D view needs when it is merged is in Part C, *For the Android 3D branch*.
+
+### Phase 1 as built (2026-10-26)
+
+**Built** (backend and web): `lidar/ept.py` (USGS's index read as 3D Tiles), `lidar/names.py` (opaque names), `lidar/pieces.py`
+(a LAZ piece as `.pnts`), `lidar/stream.py` (the streamer and its cache), `resolve`'s `stream` and `frame` (API 1.1.0, additive),
+the web asking for them and framing on `frame`, and builds on save skipped where a place streams. Tests build a small octree
+themselves; `EZPZ_LIVE_AWS=1` streams the Ellijay LZ from the real survey.
+
+**Not like the plan above**, on purpose:
+- **A piece's name is its address through a keyed permutation**, not a keyed hash with a table of the names handed out: equally
+  opaque without the secret, and the server reads the address back with nothing to keep or lose across restarts.
+- **Streamed only to a client that asks** (`stream: true`; the owner's call, 2026-10-26), so an installed app that frames on the
+  root sphere keeps the build flow rather than opening on the state.
+- **AWS reads are tried three times over pooled connections**: Cesium never asks again for a tile that failed, and pooling halved a
+  first view (a TLS handshake a piece).
+- `frame.height_m` is the 3D terrain's DEM where it reaches, else Terrarium plus the geoid, else null (the viewer then falls back
+  to the tileset's sphere rather than open on a height made up).
+
+**Measured** (the owner's Mac, home connection, cold cache, Ellijay test LZ, GA_Statewide_B3_2018): first points 1.4–2.9 s; the
+LZ's own 1 km square at every depth (168 pieces, 52 MB) in 10–13 s; the whole opening view at error 2 on a 1600 × 900 view (370
+pieces, 147 MB) in 18–21 s; a build of the same LZ 137 s. Warm, it all comes off the disk at once.
+
+**Left, in order:**
+1. ~~Android: send `stream`, frame on `frame` (`SceneSession`, *LZ*), held to `contracts/fixtures/viewer3d/lidarFlowStream.json`.~~
+   Built the same day (`feat/android-lidar-streaming`); a device run is the owner's.
+2. The owner: set `LIDAR_STREAM_CACHE_DIR` on staging, open 3D somewhere new and time it (the VM's link to AWS is unmeasured).
+3. Weigh the landscape's cost (147 MB for a wide view; §15 of AGENTS.md): a coarser error far off, Cesium's dynamic
+   screen-space error, or more API threads, before phones stream.
+4. Pieces held back while an analysis runs, as terrain tiles are (not done: AWS does the waiting).
 
 ---
 

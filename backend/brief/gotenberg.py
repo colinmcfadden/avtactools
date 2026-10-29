@@ -25,20 +25,32 @@ def url():
     return (os.environ.get('GOTENBERG_URL') or '').strip().rstrip('/')
 
 
-def print_pdf(html, header, footer, files, paper):
-    """The PDF Chromium prints from the page, or Unavailable / Failed."""
+# Top, bottom, left and right, in inches: the brief's, which leave room for Chromium's header and footer.
+BRIEF_MARGINS = ('0.62', '0.62', '0.5', '0.5')
+_TYPES = {'.png': 'image/png', '.svg': 'image/svg+xml'}
+
+
+def _content_type(name):
+    return _TYPES.get(os.path.splitext(name)[1].lower(), 'image/jpeg')
+
+
+def print_pdf(html, header, footer, files, paper, margins=BRIEF_MARGINS):
+    """The PDF Chromium prints from the page, or Unavailable / Failed. ``header`` and ``footer`` are Chromium's own (None for a page
+    that prints its own, as an LZ survey's does); a figure's type is told by its file's name."""
     base = url()
     if not base:
         raise Unavailable('GOTENBERG_URL is not set')
     width, height = paper
-    parts = [
-        ('files', ('index.html', html.encode('utf-8'), 'text/html')),
-        ('files', ('header.html', header.encode('utf-8'), 'text/html')),
-        ('files', ('footer.html', footer.encode('utf-8'), 'text/html')),
-    ] + [('files', (name, data, 'image/jpeg')) for name, data in files.items()]
+    parts = [('files', ('index.html', html.encode('utf-8'), 'text/html'))]
+    if header is not None:
+        parts.append(('files', ('header.html', header.encode('utf-8'), 'text/html')))
+    if footer is not None:
+        parts.append(('files', ('footer.html', footer.encode('utf-8'), 'text/html')))
+    parts += [('files', (name, data, _content_type(name))) for name, data in files.items()]
+    top, bottom, left, right = margins
     form = {
         'paperWidth': width, 'paperHeight': height,
-        'marginTop': '0.62', 'marginBottom': '0.62', 'marginLeft': '0.5', 'marginRight': '0.5',
+        'marginTop': top, 'marginBottom': bottom, 'marginLeft': left, 'marginRight': right,
         'printBackground': 'true', 'preferCssPageSize': 'false', 'skipNetworkIdleEvent': 'true',
     }
     try:

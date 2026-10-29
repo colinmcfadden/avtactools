@@ -106,14 +106,15 @@ reached on `admin.ezpztac.app` (the host check in `app.py` redirects `/` there).
 | **Aircraft profiles** | Airframe drives map icon, separation, LZ capacity, planning defaults | `feature/aircraft/` | `routes/aircraft_routes.py`, `aircraft_seed.py`, `amps_package.py` |
 | **Mission packs** | A shared container of LZs, sketched route sets and point sets a team plans one operation in. Members edit it through a server-ordered stream of id-addressed operations, every change is logged, and the owner can finish it (read-only for everyone). Teams, email invites, and name search limited to teammates. Edits reach everyone through a live stream (a separate service), or by polling where it is not running. Design and rules: `docs/MISSION_PACKS.md`. On Android the engine runs with the app, takes invitation links and has the workspace switcher and the Pack panel (§17, *Mission packs on Android*, *The workspace switcher*, *The Pack panel*); the other panels in a pack and the rest of its screens are next | `feature/missionPacks/` (the sync client `useMissionPack`; `packApi` for every route; invitation links; the editors kept in step with an open pack, `usePackLz` / `usePackRoutes` / `usePackPoints` on `usePackItemSync`: `docs/MISSION_PACKS.md` §5a; the screens in `feature/missionPacks/ui/`: the workspace switcher, the Pack panel with Items and History, New pack, Members, Teams, Add to pack, the finished banner and other people's pointers, joined to the app by `usePackWorkspace`) | `routes/pack_routes.py`, `routes/team_routes.py`, `pack_ops.py`, `pack_support.py`, `realtime/service.py` |
 | **Mission brief** *(B0 to B9 built; plan, the owner's decisions and what is next in `docs/MISSION_BRIEF.md`)* | The air movement and hasty multi-ship briefs from a pack or the session: a PDF and a live sandtable. So far the formats as data (`contracts/briefs/`, copied byte for byte into the web) and the pure core: `compileBrief` (everything a brief says, held to `contracts/fixtures/brief/compile.json`) and on-device light data (held to Skyfield, `light.json`). The server keeps briefs in the Library (`/api/briefs`, synced) and as pack items open to every member, and answers the weather at a planned time (`/api/weather?at=`). The web's Brief menu and three-step setup (`BriefSetup` over `useBrief`) for accounts with `mission_brief` (off for all but admins and ticked testers); a pack's session takes brief edits even when read-only, in batches of their own (`packSession.js`, `packs/session-brief.json`). The PDF: the client sends the compiled model to `POST /api/brief/pdf`, the server draws each figure (tiles stitched with Pillow, the plan as SVG from the model's `geometry`), lays the pages out as HTML (`brief/templates/`) and Gotenberg prints them; nothing is kept. **A brief never says a page number**: Chromium decides where a long step breaks, so the packet is said by section and the footer numbers the pages. The live sandtable (*Present live sandtable* in the Brief menu, *Present sandtable* at the review): the brief's steps walked on the live map, the planning frame put away (kept mounted) and nothing taking an edit, each step flown to and drawn from `geometry` by the PDF's own rules (`sandtableSteps.js`, held to `contracts/fixtures/brief/sandtable.json`; `SandtableLayer.jsx`), a step called *Step n of N*, never by a page. Strip charts in the PDF's appendix: each route cut by `compileBrief` into 5.5 × 21.5 cm strips (three a page, 1:100,000 or 1:250,000, topo unless asked), the 1 km MGRS grid added only when printing (`stripGrid.js`), and the server turning the map so the course is up (`figures.draw_strip`). On Android, tablets only (the rail's *Brief*): the setup's three steps, the review over the real PDF, Share and Save (`feature-brief` over core-data's `BriefSession`, §17 *The brief on a tablet*), and the live sandtable from the setup's *Present sandtable* (`SandtableFrame` over the tablet's map, core-brief's `SandtableSteps` held to `sandtable.json`, the fit to `sandtable-fit.json`; §17 *The sandtable on a tablet*) | `feature/brief/` | `routes/brief_routes.py`, `brief/` (`figures.py`, `pages.py`, `gotenberg.py`, `templates/`), `pack_routes._only_briefs`, `routes/weather_routes.py` |
-| **3D LZ view** *(in progress; on Android too, `docs/ANDROID_3D_PLAN.md`)* | LiDAR point cloud over DEM terrain and imagery, in Cesium. Opening it on an unbuilt LZ builds one automatically and shows progress. Visible routes draw at their planned MSL with curtains and labels (`docs/3D_PLANNING_GRAPHICS_PLAN.md`). A compass turns and tilts with the camera (heading in degrees true; click to face north) | `feature/viewer3d/` | `routes/lidar_routes.py`, `lidar_builder.py`, `terrain_tiles.py`, `backend/lidar/` (incl. `worker.py`), `tools/` |
+| **3D LZ view** *(in progress; on Android too, `docs/ANDROID_3D_PLAN.md`)* | LiDAR point cloud over DEM terrain and imagery, in Cesium. The web streams the place's whole USGS survey from its octree on AWS, a piece at a time, converted and cached by the API on first ask (`lidar/stream.py`; first points in about 2 s, the LZ at full density in about 12 s cold, against a 137 s build), and opens on `resolve`'s `frame`, on the web and Android alike; where nothing streams, opening it on an unbuilt LZ builds one automatically and shows progress. Visible routes draw at their planned MSL with curtains and labels (`docs/3D_PLANNING_GRAPHICS_PLAN.md`). A compass turns and tilts with the camera (heading in degrees true; click to face north) | `feature/viewer3d/` | `routes/lidar_routes.py`, `lidar_builder.py`, `terrain_tiles.py`, `backend/lidar/` (incl. `worker.py`, and `ept.py`, `names.py`, `pieces.py`, `stream.py` for streaming), `tools/` |
+| **LZ surveys** *(every step built; plan, the owner's answers and what is later in `docs/LZ_SURVEYS.md`)* | HLZ survey books, one page per LZ, web only. **Books are many**, each for a team or for no team (`survey/access.py`, §13 of the plan): site admins do everything; with `lz_surveys` (not launched: `DEFAULT_OFF`, ticked one by one or in bulk from the dashboard's users list), a team's owner and admins make and edit its books and their surveys, its members read their published pages, and everyone with the key reads a book for no team; a draft is its editors' alone. A survey is the field survey's values (the old book's sections, its photos), a target and boundary set on a map of its own, and **Measure** (`survey/measure.py`), shown before the survey takes it: the target's grid and lat/long, its elevation **in the DEM the slope is read in** (named, with its resolution and datum; never the SRTM30 point of `/api/analyze-field`), size and LZ axis from the boundary's smallest rotated rectangle, area by the web's own formula, the UH-60L fit as a note (never Max A/C), and the **95th percentile** inside the boundary of the nose-up, nose-down and cross slope at the field's best approach, judged against §13's limits with no wind, with the slope map, contours and profiles. Field against computed (`survey/compare.py`): where both exist the computed value is printed unless an editor overrides it with a reason. A measured draft is sent for review and **published** as REV n with a sign-off (the approver need not have an account) and a CHANGES line it suggests; the revision keeps all it was made from, and its **one-page PDF** (the owner's DONOVAN draft's layout: `survey/compile.py` the page as data, `figures.py`, `pages.py`, `templates/survey.html`) is printed once by Gotenberg and kept; the page is also served as HTML (`…/page`) for a preview where there is no Gotenberg. **What stands on and round the LZ is measured from the USGS LiDAR** (`survey/obstacles.py`, part of Measure): the survey the 3D view streams for the place, read as USGS publishes it (LAZ, kept beside the streamed pieces: `Streamer.laz`) over the LZ and 100 m round it and a lane 10 m each side of the best approach from the touchdown point out to 1,000 m (the exit's angle is neither measured nor shown, the owner's call of 2026-10-27; the best exit, the departure heading, stays the field's and is printed); **the shallowest angle from the touchdown point that clears everything in the lane with no margin** (what stands 5 m or more above its ground, 2 m for what is built, and the ground where it rises: brush, grass and a return's scatter set no angle), what sets it (the first angle, from the LZ's edge across 60 m, read 87-90° on every LZ of the old book); **the approach planned at 30° where what stands allows it, else at that shallowest angle, said to be steeper** (`survey/flightpath.py`, the owner's, 2026-10-27), **flown along the ground at the survey's own height above the tallest thing in the lane** (its profile height, 75-150 ft in the old book; 100 ft where it gives none; never up and down over each tree: the owner's, the same day) until **its descent, where the planned path meets it**, worked out from the lane's 10 m steps whenever asked, never kept (`approach_plan`, sent with the survey); the tallest in the LZ and within 100 m; what stands over 2 m in it and its trees; a picture of every height round it for the editor's map; a treetop line on the profile. A lone return (a bird) is not something standing, a wire's is; a survey from before about 2015 gives no numbers, only why. A reading is bounded (6 million returns, 60 s, its first failure). The page prints it in place of the field's survey profile, drawn close in as the old book's profile was (out to a little past the descent: the helicopter, its path down to the LZ an arrow, the trees, the distance out and the height over the ground), which an editor may choose instead, and **an editor may type the approach's angle in place of the plan, with a reason**, printed as theirs with the LiDAR's shallowest beside it (`compare`'s `approach`, the `typed` choice; `docs/LZ_SURVEYS.md` §16). **The page's 3D view is captured in the editor** (`feature/surveys/Survey3D.jsx`, `capture3d.js`): the planning 3D view (`Viewer3D`, with `view` and `capturable`) opened on the LZ looking down the best approach, one frame drawn at the page's 3D box's shape (1,600 × 887) with the detail to match, and kept as a `view_3d` PNG with its camera as that frame was drawn (`pose`: heading, pitch, distance, the LiDAR survey where the window streams it), a new capture in place of the last; the window closes while it captures, giving up the frame and the upload; the server has no GPU. A survey measured before its target, boundary or best approach changed is measured again before review or publishing (`measure.stale`). **The old book is imported** (`survey/importing.py`): `tools/import_survey_book.py` reads its PDF with poppler's `pdftohtml -xml` into a bundle on the owner's machine, *Import the old book* makes a draft per page with its photos, the target at the book's grid (a lat/long more than 50 m from it is flagged), and each draft is then measured on the server in the background, one at a time (SAM's boundary at the grid, then the snapshot), its state and the page's notes on its import record. **The whole book prints as one PDF** (`survey/book.py`, `templates/book.html`): its cover with a map of every LZ, its index, then every published page numbered in the book, printed in the background on request (anyone who reads the book may) and kept, by a fingerprint of what it holds, until a page in it changes. Archived, never deleted. | `feature/surveys/` (`useSurveys`; `SurveyBook` the window, `BooksPage`, `SurveyBookPage`, `SurveyEditor`, `SurveyReader`, `Publishing`, `PagePreview`, `SurveyImport`, `SurveyMap`, `Measurements`, `Obstacles`, `Disagreements`, `SurveyPhotos`) | `routes/survey_routes.py`, `survey/` (`access.py`, `assets.py`, `measure.py`, `compare.py`, `geometry.py`, `fields.py`, `compile.py`, `figures.py`, `pages.py`, `profile.py`, `changes.py`, `importing.py`, `book.py`, `obstacles.py`, `flightpath.py`, `templates/`), `lidar/stream.py`'s `laz`, `tools/import_survey_book.py` |
 
 Entitlement keys (`entitlements.FEATURES`): `lz_pz_tools`, `routes`,
 `msnx_import`, `threats`, `cloud_save`, `exports`, `aircraft_profiles`,
-`mission_packs`, `mission_brief`. A missing key means **enabled**, so new features default on,
+`mission_packs`, `mission_brief`, `lz_surveys`. A missing key means **enabled**, so new features default on,
 except a feature in `entitlements.DEFAULT_OFF` (not launched yet: today
-`mission_packs`, which ships with the menu redesign, and `mission_brief`, being built:
-`docs/MISSION_BRIEF.md`). Those are off for everyone
+`mission_packs`, which ships with the menu redesign, `mission_brief`, being built:
+`docs/MISSION_BRIEF.md`, and `lz_surveys`, the survey books' readers' key: `docs/LZ_SURVEYS.md` §7). Those are off for everyone
 but admins and the testers an admin ticks them for, and only a tick is ever stored,
 never an "off" (`features_from_form`), so launching it is removing it from
 `DEFAULT_OFF`: everyone then has it, people whose access an admin edited included.
@@ -134,6 +135,7 @@ avtactools/
 │  ├─ ths_export.py          Writes an AMPS .ths from the template (stdlib only, so fixtures can import it)
 │  ├─ pack_ops.py            What one mission-pack operation does (stdlib only; held to contracts/fixtures/packs)
 │  ├─ pack_support.py        Mission packs: roles, the per-pack change order, shapes, account release
+│  ├─ survey/                LZ surveys: the asset store, the measurement (snapshot) and its LiDAR obstacles, the approach's plan, field against computed
 │  ├─ lidar/                 Offline point-cloud pipeline — runs in its own Docker image (§12)
 │  ├─ tests/                 pytest
 │  ├─ Dockerfile, fly.toml   Production container and Fly config
@@ -148,7 +150,7 @@ avtactools/
 │  └─ scripts/copy-cesium.js prestart/predev/prebuild: copies Cesium's static build into public/
 ├─ android/                  Gradle project for the Android app (§17): pure-Kotlin core modules, Android libraries, the app
 ├─ contracts/                Golden fixtures the web, backend and native apps are all tested against (§17); briefs/: the mission brief's formats as data
-├─ tools/                    Operator CLIs for LiDAR (find_lidar.py, build_lz.py)
+├─ tools/                    Operator CLIs for LiDAR (find_lidar.py, build_lz.py); import_survey_book.py (the old HLZ survey book into a bundle)
 ├─ docs/                     USER_GUIDE.md; plans: INVITE_ONLY_LOGIN_PLAN.md, 3D_PLANNING_GRAPHICS_PLAN.md, NATIVE_APPS_PLAN.md, MISSION_PACKS.md, ANDROID_MISSION_PACKS_PLAN.md, DATA_ADMIN_AND_PREBUILT_3D_PLAN.md; HANDOFF.md (where the Android build stands, what is next); native-design/ (the menu redesign for Android and iOS, phone and tablet: screenshots, outlines, sources, tokens; read its README before native UI work)
 ├─ .github/workflows/        release.yaml (semantic-release); android.yaml, contracts.yaml (path-filtered tests)
 ├─ AUTHENTICATION.md         Auth design, Resend setup, security posture
@@ -157,7 +159,9 @@ avtactools/
 
 **Conventions.** Frontend features are self-contained folders with a
 `use<Feature>.js` hook owning the state; `App.jsx` composes them. Backend areas
-are Flask blueprints under `routes/`, each registered in `app.py`. Comments
+are Flask blueprints under `routes/`, each registered in `app.py`. A button that waits on the server (a measurement, a PDF, an upload)
+is a `BusyButton` (`feature/ui/Spinner.jsx`): a spinner where its icon was, its colour kept, `aria-busy`; work the server
+counts (a book's pages printed) is a `ProgressBar`. Comments
 explain *why*, not what — match the surrounding density.
 
 ---
@@ -195,7 +199,7 @@ the fields serves API 1.
 | Area | Routes |
 |---|---|
 | auth | `POST /api/auth/{login,register,google,verify-email,resend-verification,forgot-password,reset-password,mil/request,mil/verify}`, `GET /api/auth/me` |
-| auth, native apps | `POST /api/auth/refresh`, `POST /api/auth/logout`, `GET /api/auth/sessions`, `DELETE /api/auth/sessions/<id>`, `DELETE /api/auth/me` (account deletion) — design in `AUTHENTICATION.md` |
+| auth, sessions | `POST /api/auth/refresh` (a native app's token in the body; the web's in its `ezpz_refresh` cookie, with `X-EZPZ-Session: cookie`), `POST /api/auth/logout`, `GET /api/auth/sessions`, `DELETE /api/auth/sessions/<id>`, `DELETE /api/auth/me` (account deletion) — design in `AUTHENTICATION.md` |
 | terrain | `POST /api/analyze-field` (SAM), `POST /api/terrain-analysis` (slope), `POST /api/elevations` (planner/AMPS ground, Terrarium), `GET /api/terrain/heightmap/<level>/<x>/<y>`, `POST /api/terrain/heights` (3D ground + geoid, local DEMs) |
 | location | `POST /api/convert-grid` (MGRS → lat/lon), `POST /api/convert-to-mgrs` (no longer called by the SPA, which converts lat/lon → MGRS itself with `utils/mgrs.js`) |
 | weather | `GET /api/weather` (optional `at`, a planned time: the TAF period covering it, `kind: "forecast"`, or the METAR, `kind: "observation"`; without `at` unchanged), `POST /api/route-winds` |
@@ -206,9 +210,10 @@ the fields serves API 1.
 | aircraft | `/api/aircraft-profiles` CRUD, `/<id>/template`. A user's own profiles sync like saved records; the master list does not |
 | threats | `POST /api/threat-mask`, `POST /api/threats-ths`, `GET/POST /api/threats-kmz`, `POST /api/threats-kmz-link` |
 | route share | `POST /api/route-share`, public `GET /r/<token>`, `/r/<token>/route.<kind>` |
-| lidar | `POST /api/lidar/resolve` (reports `canBuild`), `POST /api/lidar/build`, `GET /api/lidar/build/<key>` (polling keeps it alive), `DELETE /api/lidar/build/<key>` (stop waiting), `GET /api/lidar/tilesets[/<key>[/<path>]]` — coordinates only ever in POST bodies; progress is read by opaque key. What the apps call of these and the two 3D terrain routes is in `contracts/openapi.yaml` (the 3D view's section), recorded with a real py3dtiles tileset (`contracts/fixtures/viewer3d/tileset`) |
+| lidar | `POST /api/lidar/resolve` (reports `canBuild`), `POST /api/lidar/build`, `GET /api/lidar/build/<key>` (polling keeps it alive), `DELETE /api/lidar/build/<key>` (stop waiting), `GET /api/lidar/tilesets[/<key>[/<path>]]` — coordinates only ever in POST bodies; progress is read by opaque key. The bare list is admins' only (403 `admin_required`), and a tileset's folder serves only tile files (`.json` but never `area.json`, `.pnts`, `.b3dm`, `.glb`, `.subtree`; nothing under a dot), anything else a JSON 404. `resolve` with `stream: true` answers a streamed survey (`streamed`, `frame`) where nothing is built and the server streams (`LIDAR_STREAM_CACHE_DIR`); its files (`tileset.json`, `<16 hex>.json`, `<16 hex>.pnts`) come from the same file route, 502 `upstream_unavailable` or 503 `geoid_unavailable` when they cannot be made. What the apps call of these and the two 3D terrain routes is in `contracts/openapi.yaml` (the 3D view's section), recorded with a real py3dtiles tileset (`contracts/fixtures/viewer3d/tileset`) |
 | mission packs | `/api/packs` (+ `/<uuid>`, `/finish`, `/reopen`, `/duplicate`, `/ops`, `/events`, `/seen`, `/items…`, `/members…`, `/invites…`) — `docs/MISSION_PACKS.md` §4. A batch of `/ops` all on `brief` items is taken from viewers and in a finished pack |
 | teams, invites, search | `/api/teams` (+ `/<id>`, `/members/<user_id>`, `/invites`), `/api/invites` (+ `/<id>/accept`, `/<id>/decline`, `/accept`), `GET /api/users/search?q=` (teammates only) |
+| LZ surveys | `GET/POST /api/survey-books`, `GET/PATCH /api/survey-books/<uuid>`, `POST …/archive`, `…/restore`, `…/import` (multipart `bundle`, 100 MB; the drafts are measured in the background), `GET/POST …/print` (how the book's PDF stands; POST prints it in the background), `GET …/pdf` (the book's PDF, 409 `not_printed` until it is printed as the book stands); `POST /api/surveys` (into a book), `GET/PATCH /api/surveys/<uuid>`, `POST …/archive`, `…/restore`, `…/measure` (`{apply}`; a heavy request), `…/submit`, `…/draft`, `…/publish` (a sign-off; prints the PDF where it can), `GET …/pdf[?rev=]` (503 `pdf_unavailable` without Gotenberg), `GET …/page[?rev=]` (the page as HTML, no Gotenberg needed), `POST …/assets` (multipart, 20 MB), `GET/PATCH/DELETE …/assets/<id>`, `POST …/import/checked` — `lz_surveys` or a site admin (403 `feature_disabled`), then what a person may do in each book (`survey/access.py`; a book or survey they cannot read is a 404, an editor's action a 403 `not_editor`), every save with `If-Match` (428 without, 409 `revision_conflict` with the server's copy), `Cache-Control: private` throughout. Web only: not in `contracts/openapi.yaml`, so the API version does not move (`docs/LZ_SURVEYS.md` §8) |
 | admin | `/admin/*` — session cookie, not JWT. `/admin/packs` and `/admin/teams` are read only and never show what a pack holds |
 | app config | `GET /api/config` — **public**, cached 60 s: `minAppVersion` per platform, `maintenance`, which optional `services` are up, and the Mapbox public token (`app_config.py`, `routes/config_routes.py`) |
 | health | `GET /` → JSON status (or redirect to `/admin/login` on the admin host) |
@@ -223,7 +228,22 @@ Regenerate this from the source of truth with `app.url_map` if it drifts.
 tokens, stored as SHA-256), `LoginEvent`, `AircraftProfile`, `SavedRoute`,
 `SavedPointSet`, `SavedLZ`, `SavedBrief` (a mission brief's document, `docs/MISSION_BRIEF.md` §3), and the mission-pack tables `Team`, `TeamMember`,
 `MissionPack`, `MissionPackMember`, `MissionPackInvite`, `MissionPackItem`,
-`MissionPackEvent`.
+`MissionPackEvent`, and the LZ survey tables `SurveyBook`, `LzSurvey`, `LzSurveyRevision`, `LzSurveyAsset`, `SurveyBookPrint` (a book's PDF, kept by the fingerprint of what it holds), `LzSurveyImport` (where an imported
+survey came from, its notes and how its measuring stands, kept apart so that state is written without moving the survey's revision).
+
+**LZ surveys are web only and never sync** (`docs/LZ_SURVEYS.md` §3). Books are many, each for a team or none (`survey_book.team_id`, with
+**no foreign key** on purpose: `pack_support.delete_team` archives a deleted team's books, and a book whose team is gone is no one's but the
+site admins', never everyone's). A survey belongs to one book and holds the field values as typed (text,
+`survey/fields.py`, the web's `surveyFields.js` held with it to `contracts/fixtures/surveys/donovan.json`), the admin's overrides
+(each stamped with who, when and the two values it was chosen on), an embedded schema-2 LZ/PZ diagram (its landing and takeoff
+doghouses are the best approach and exit) and the last snapshot taken in. Nothing is deleted: a survey is `archived_at`, a photo
+`removed_at` with its bytes kept, because a published revision (L5) may show it. A photo's bytes are in the asset store under
+their SHA-256 (`survey/assets.py`: `LocalAssetStore` under `SURVEY_ASSETS_DIR`, re-encoded by Pillow with **no metadata**, a phone's
+GPS position included), never in the database. A survey's `revision` is what If-Match names and also SQLAlchemy's version
+counter (`version_id_generator=False`): every write is `WHERE revision = <the one read>`, so a request that measures or prints for
+seconds cannot undo a save made meanwhile (StaleDataError, answered 409); set the next revision yourself (`_stamp`). A snapshot keeps
+the target, boundary and best approach it was measured for, and one the survey has moved on from (`measure.stale`) is measured again
+before review or publishing.
 
 **Mission packs are stored apart from the library** (`docs/MISSION_PACKS.md`). Items
 hold the library's JSON unchanged, but in their own table, so nothing about packs
@@ -272,10 +292,22 @@ because `create_all` never adds an index to an existing table. When you add a co
 ways — and quote `"user"`, which is reserved in Postgres.
 
 JWTs carry an `sv` (session version) claim; a password reset bumps it, which
-revokes older tokens. Tokens live 24 h in `localStorage` (`auth_token`). A native
-app's token also carries `sid` (its device session) and is refused the moment that
-session is signed out: `token_revocation.is_revoked` is the one check, used by
-`app.py` and the tests alike.
+revokes older tokens. **A sign-in lasts while the account is active and the device
+is used at least once in 30 days** (the owner, 2026-10-28, as ForeFlight's does): a
+device session (a refresh-token *family*, `refresh_tokens.py`) slides 30 days on
+each refresh and has no other limit (it was capped at 180 days). It ends at a
+password reset, a suspension or deletion, a sign-out (here or from another
+device's Sessions) and a spent refresh token coming back after 30 s. The native
+apps keep their refresh token in the device's store; **the web's is an HttpOnly
+cookie** (`refresh_cookie.py`: `ezpz_refresh`, Secure, SameSite=None, Partitioned,
+under `/api/auth`, asked for with `X-EZPZ-Session: cookie`, which is also the CSRF
+guard) and its access token lives in the page's memory, 15 minutes at a time
+(`frontend/src/feature/auth/session.js`; refreshes serialised across tabs with Web
+Locks, since every refresh spends the one cookie). A browser that will not keep the
+cookie (Safari while the API is on another site) keeps the sign-in's 24-hour token
+in `localStorage` (`auth_token`), as the web always did. Every session's access
+token carries `sid` and is refused the moment that session ends:
+`token_revocation.is_revoked` is the one check, used by `app.py` and the tests alike.
 
 ---
 
@@ -296,7 +328,8 @@ session is signed out: `token_revocation.is_revoked` is the one check, used by
 | **OpenTopoData** (SRTM30m) | Point elevation in field analysis | `terrain_routes.py` | keyless |
 | **aviationweather.gov** | METAR, winds aloft | `weather_routes.py` | keyless |
 | **FAA NOTAM search** | NOTAMs | `weather_routes.py` | keyless |
-| **USGS 3DEP LiDAR** | Point clouds | `backend/lidar/`, `tools/` | keyless (§12) |
+| **USGS 3DEP LiDAR** | Point clouds: built from, and streamed by the API from its octree on AWS (`lidar/stream.py`; the browser never talks to AWS) | `backend/lidar/`, `tools/` | keyless (§12) |
+| **USGS The National Map, NAIP** | Photographic colour for streamed pieces, fetched in the background (`USGSNAIPImagery` `exportImage`) | `backend/lidar/photo.py` | keyless; credit "USDA NAIP, from USGS The National Map" |
 | **USGS 1/3″ DEMs** | Local terrain | mounted at `TERRAIN_DATA_DIR` | downloaded |
 | **Ultralytics SAM** | LZ detection model | `sam_b.pt`, auto-downloaded on first load | — |
 | **GitHub Actions** | Semantic release | `.github/workflows/release.yaml` | `GITHUB_TOKEN` |
@@ -312,7 +345,7 @@ session is signed out: `token_revocation.is_revoked` is the one check, used by
 | Backend (self-hosted) | Coolify VM, `prod-ezpz-api.mcfadd.in` via Cloudflare Tunnel | Automatically on push, via Coolify's GitHub App |
 | Backend (staging) | Coolify VM, project EZPZ, environment `staging`, `dev-ezpz-api.mcfadd.in` via the same tunnel; its own Supabase project (free tier: pauses after 7 days unused, restore it from the dashboard) | Automatically on push to **`develop`**. Its own `JWT_SECRET_KEY`; shares the build service and `/data/{topo,tiles,cache}` with production. `CORS_ORIGINS` takes the Vercel previews by a regex (flask-cors treats an origin with `^`, `$`, `*` … as one); the variable is marked **literal** in Coolify and writes `[.]`, not `\.`, because otherwise Coolify mangles the `$` and the regex silently matches nothing. Vercel's *Preview* `VITE_API_URL` points at it, so PR previews never touch production data |
 | LiDAR build service | Coolify VM, beside the backend — **no public domain** | Automatically on push (separate Coolify app, base dir `/backend/lidar`) |
-| Gotenberg (the brief's PDF) | Coolify VM, beside the backend — **no public domain** | Not yet deployed. A Coolify app from the published image `gotenberg/gotenberg:8.21.1` (tried with it), started as `gotenberg --chromium-disable-javascript=true --chromium-allow-list=^file:///tmp/.* --chromium-deny-list=^(?!file:///tmp/).*` so a brief's text can make Chromium run nothing and fetch nothing; set `GOTENBERG_URL` (e.g. `http://<internal host>:3000`) on the API. About 1 GB of image; a 26-page brief prints in about half a second once its tiles are fetched. Without it the brief's Download PDF says it is not available |
+| Gotenberg (the brief's PDF) | Coolify VM, beside the backend — **no public domain** | Not yet deployed. A Coolify app from the published image `gotenberg/gotenberg:8.21.1` (tried with it), started as `gotenberg --chromium-disable-javascript=true --chromium-allow-list=^file:///tmp/.* --chromium-deny-list=^(?!file:///tmp/).* --api-timeout=140s` so a brief's text can make Chromium run nothing and fetch nothing, and a whole LZ survey book (§4) has the time it takes (the default ends a request at 30 s; the API waits 150 s); set `GOTENBERG_URL` (e.g. `http://<internal host>:3000`) on the API. About 1 GB of image; a 26-page brief prints in about half a second once its tiles are fetched. Without it the brief's Download PDF says it is not available |
 | Live service (mission packs) | Coolify VM, beside the backend; **needs a public hostname** through the Cloudflare Tunnel (WebSockets) | Not yet deployed. A separate Coolify app, base dir `/backend/realtime`, port 8091; set `DATABASE_URL` and `REALTIME_API_URL` on it and `REALTIME_PUBLIC_URL` on the API. Without it clients poll |
 | Admin | `admin.ezpztac.app` → the backend's `/admin` | with the backend |
 | Database | Supabase Postgres, **Session-mode pooler** | — |
@@ -324,7 +357,10 @@ session is signed out: `token_revocation.is_revoked` is the one check, used by
   build succeeds and the site has no API address.
 - The container runs **one gunicorn worker with 8 threads** and a 180 s
   timeout. One worker because SAM holds about 1 GB resident and the rate
-  limiter, QR store and route-share store are in-process — do not add workers
+  limiter, QR store and route-share store are in-process, and so are the LZ survey
+  import's measurer (`survey/importing.py`) and book printer (`survey/book.py`): a
+  second worker would measure the same surveys, or print the same book, again after its
+  `resume` — do not add workers
   or machines without moving them to Redis. Threads so terrain tiles and
   point-cloud files load side by side; SAM runs one analysis at a time behind
   `_sam_lock` (its predictor keeps state between calls). Anything else
@@ -360,6 +396,7 @@ the owner's workstation against the north Georgia DEMs (73 × 1/3″, 30–35°N
 | E | Build the point cloud on save | **Done** — `viewer3d/useBuildOnSave.js` | Saving an LZ asks for a kept build in the background. The build service runs builds someone is watching first, so this never delays the 3D window. LZs loaded already saved are not built. |
 | F | Build from the downloaded collection | **Owner config** — set `LIDAR_COLLECTION=/data/lidar` on the VM's build service | Skips reading the survey from AWS. Not measured since the imagery fix below made builds 5× faster; expect a further cut. |
 | G | Coarser point-cloud streaming (`maximumScreenSpaceError` 2 → 4) | **Not done** | Trades the fidelity the 3D view exists for. |
+| H | Stream USGS's own octree instead of building (plan Part C, D20) | **Done for the web** — `lidar/stream.py`, `resolve`'s `stream` | Measured 2026-10-26 from the owner's Mac, cold cache, at the Ellijay test LZ: first points 1.4–2.9 s; every piece over the 1 km square at every depth (168, 52 MB) in 10–13 s; the whole opening view at error 2 on a 1600 × 900 view (370 pieces, 147 MB, the landscape included) in 18–21 s; warm, all of it off the disk at once. A build of the same LZ: 137 s. Not measured: the VM's link to AWS, and the tunnel to a viewer. |
 
 Also: point colour from Mapbox level 18 instead of 20 (§13) took a 500 m build
 from 707 s to 137 s.
@@ -397,7 +434,7 @@ which costs one warm-up (~1 min) and the first view of each area again.
 |---|---|
 | `JWT_SECRET_KEY` | **Required — set it on every deployment.** Signs JWTs. Startup refuses a missing or <32-char value in production — whenever `FLY_APP_NAME`, `TRUSTED_PROXY` or `APP_ENV=production` is set (`security_config.is_production`). Only a bare local run falls back to the public string `dev-secret-change-me`; there is deliberately no override to allow that fallback in production. |
 | `DATABASE_URL` | Postgres URL (Supabase pooler). Unset → SQLite `backend/ezpz.db`. `postgres://` is rewritten. |
-| `CORS_ORIGINS` | Comma-separated allowed origins. **Plural** — `CORS_ORIGIN` is silently ignored. Default `http://localhost:3000`. |
+| `CORS_ORIGINS` | Comma-separated allowed origins. **Plural** — `CORS_ORIGIN` is silently ignored. Default `http://localhost:3000`. Under `/api/auth/*` they are answered with credentials (the web's refresh cookie; `*` never is, `cors_config.py`), so list only the site and its own previews: a pattern must be anchored to this project's preview names, never all of `*.vercel.app`. |
 | `GOOGLE_CLIENT_ID` | Google OAuth client; same value as the frontend's. |
 | `GOOGLE_CLIENT_IDS` | Comma-separated extra Google client IDs the server accepts as an ID token's audience: the Android and iOS apps each have their own. Combined with `GOOGLE_CLIENT_ID`. A native sign-in fails with `invalid_google_token` until its client ID is here. |
 | `RESEND_API_KEY`, `EMAIL_FROM` | Email. Production (same test as `JWT_SECRET_KEY`) refuses to start without them, or with Resend's test sender. A bare local run needs neither. |
@@ -417,10 +454,15 @@ which costs one warm-up (~1 min) and the first view of each area again.
 | `LIDAR_TILES_DIR` | Tileset store the API serves. Default `/data/tiles`. |
 | `LIDAR_BUILDER_URL` | The build service, e.g. `http://<internal host>:8090`. Unset → no on-demand builds. |
 | `LIDAR_BUILDER_TOKEN` | Shared secret with the build service. |
+| `LIDAR_KEY_SECRET` | **Required on every deployment, and the same on the API, staging's API and the build service** (they share `/data/tiles`). New tileset keys are an HMAC under it (`lidar/catalog.key_for`). Both refuse to start without one of 32 characters or more wherever `JWT_SECRET_KEY` is required, or `LIDAR_BUILDER_TOKEN` is set (`catalog.key_secret`); a bare local run uses a public development value. `openssl rand -hex 32`. |
 | `LIDAR_CACHE_DIR` | Where the USGS coverage index is cached. |
+| `LIDAR_STREAM_CACHE_DIR` | Streams 3D from USGS's octree (plan Part C) when set: where the survey indexes and converted pieces are cached, and the LZ surveys' obstacles read USGS's own pieces from (kept beside them, `laz/`; without it a survey says this server reads no LiDAR). A persistent, writable mount in production (e.g. `/data/cache/lidar`); safe to delete. Unset: no streaming, and the 3D view builds as before. The coverage index (8 MB) is downloaded into it on first use. |
+| `LIDAR_STREAM_CACHE_MAX_GB` | The pieces' cap (default 200): past it the pieces used longest ago are let go. |
+| `LIDAR_STREAM_PHOTO` | `off` turns off the background pass that recolours cached pieces from USGS's NAIP service (`lidar/photo.py`); on by default wherever streaming is. |
 | `MIN_APP_VERSION_ANDROID`, `MIN_APP_VERSION_IOS` | Oldest supported native app version, `X.Y.Z`, served by `/api/config`; the app shows "Update required" below it. Unset = no minimum. A malformed value is ignored and logged, never served. |
 | `MAINTENANCE_MESSAGE` | Non-empty turns maintenance on in `/api/config` and is the notice the apps show (500 chars max). |
 | `REALTIME_PUBLIC_URL` | Where clients open the mission packs' live stream (`ws://` or `wss://`), handed out as every pack's `live_url`. Unset: clients poll. The service's own settings are at the top of `backend/realtime/service.py`. |
+| `SURVEY_ASSETS_DIR` | Where the LZ surveys' photos, their pages' PDFs and their books' PDFs are kept, by SHA-256 (`survey/assets.py`). **A persistent mount, backed up off the VM** (a photo cannot be taken again; `docs/LZ_SURVEYS.md` §11 R6), and **one directory per deployment**: `/data/surveys/prod` and `/data/surveys/staging`, since their databases are separate. Unset: the system's temp directory, lost on redeploy, and production logs a warning at startup. |
 | `GOTENBERG_URL` | The internal Gotenberg that prints a brief's PDF (§9). Unset: `POST /api/brief/pdf` answers 503 `pdf_unavailable`. Never public: the API is its only caller. |
 | `MAPBOX_PUBLIC_TOKEN` | The Mapbox token `/api/config` hands the native apps, so it can rotate without an app release. Must start `pk.`; anything else is dropped. Default: the token in `export_service.py`. |
 
@@ -725,16 +767,51 @@ KMZ masks are vector polygons because ForeFlight won't render raster overlays.
 - A downloaded directory can hold **several surveys in different CRSs**
   (Albers vs UTM 17N). Tiles carry their own CRS; never assume the first
   speaks for all.
-- Tilesets are addressed by an opaque hash key so URLs don't reveal locations,
-  but **found by coverage**: each has an `area.json` manifest and `resolve`
-  returns the nearest one whose area contains the target.
+- Tilesets are addressed by an opaque key so URLs don't reveal locations,
+  but **found by coverage**: each has an `area.json` manifest (never served)
+  and `resolve` returns the nearest one whose area contains the target. The key
+  is an HMAC of the rounded target under `LIDAR_KEY_SECRET`: an unkeyed hash of
+  it could be hashed back into its place by trying every rounded place in a
+  region. Tilesets from before the HMAC keep their old names (the owner's call,
+  2026-10-26: no rename); since lookups go by coverage, both kinds are found.
 - Pipeline: PDAL crops, classifies, colours from Mapbox imagery, reprojects to
   ECEF → py3dtiles writes `.pnts`. It runs in the `backend/lidar` Docker image
   (`docker build -t avtac-lidar:dev backend/lidar`), whose default command is
   the build service. `lidar/build.py` is the single build path; the service
   (`lidar/worker.py`), the CLI (`python -m lidar`) and `tools/build_lz.py` all
   go through it.
-- **Builds happen on first view, or in the background when an LZ is saved.**
+- **Streamed instead, where the server streams** (`lidar/stream.py`, plan Part C): `resolve` with `stream: true`
+  answers the place's survey (`coverage`'s choice) as one tileset written from USGS's own Entwine index
+  (`lidar/ept.py`: four levels a file, the next joined as external tilesets, regions from each cube with
+  the geoid added, error the cube's width over its span, `ADD`), and each piece a viewer asks for is
+  fetched from AWS, converted (`lidar/pieces.py`: noise dropped, the build's class rules by survey year,
+  coloured as the place looks, the geoid read at its centre, `POSITION_QUANTIZED`)
+  and cached. Names in URLs are opaque (`lidar/names.py`): a survey's key is an HMAC of its name, a
+  piece's name its octree address through a keyed 64-bit permutation, so the server reads it back without
+  keeping a table. A built tileset still wins (photographic colour). Only a client that frames on
+  `frame` may ask: the tileset is a state, and its own sphere opens on the state. Every AWS read is
+  tried three times over one pooled session (Cesium never asks again for a tile that failed); without
+  the geoid grids nothing is served (503), as builds refuse.
+- **A streamed point is coloured as the place looks** (`pieces.NATURAL_STOPS`, the owner's request of 2026-10-26): the ground
+  tan and brown, what stands on it greens that darken with its height above the piece's nearest ground return (a piece with no
+  ground: what its class says of its height), shaded by its LiDAR intensity within the survey's range, which is taken once from
+  the survey's root piece (a sample across the whole survey) and kept (`stats.json` beside it), so pieces side by side are shaded
+  alike. The build's bands came out orange over nearly every crown, since north Georgia's hardwoods stand over their 15 m. USGS's
+  copies carry no colour (GA_Statewide_B3_2018's schema has intensity and classification, no RGB). **A new look is a new survey
+  key** (`pieces.LOOK`, part of `names.survey_key`): browsers and the app keep a piece a week under its URL, so the old colours
+  would otherwise stay. Measured with it, cold at Ellijay: first points 1.3–3.0 s, the LZ's square 11–14 s, the whole view 18 s;
+  a piece converts in 25–33 ms, as before.
+- **Then each cached piece is made photographic in the background** (`lidar/photo.py`, the owner's choice of 2026-10-26: USGS's
+  free NAIP image service): its own queue and two worker threads, apart from gunicorn's 8, fetch NAIP over the piece's box
+  (`USGSNAIPImagery` `exportImage`, 0.6 m, or half the piece's spacing for a coarse one) and rewrite only its colour bytes, then
+  mark it (`<name>.photo`). A view never waits for it; nothing is fetched while an analysis runs; a failed fetch keeps the palette
+  and is offered again when next served, after 10 minutes. A palette piece is served `max-age=3600`, a photographic one the week,
+  so a browser or the app picks the photograph up on a later view. Credited in the web's view ("Point colour: USDA NAIP, from USGS
+  The National Map"). Measured at Ellijay: the first view as fast as without it; the LZ's 168 pieces photographic in about 8.6
+  minutes (median 3.3 s an image, 40–60 ms of CPU a piece). NAIP's licence for imagery after 2019 is unconfirmed: confirm with USDA's
+  APFO before selling photographic colour (the plan, *Photographic colour, in the background*).
+- **Builds happen on first view, or in the background when an LZ is saved**, where nothing streams. The
+  web asks `resolve` before a build on save and builds nothing where the place streams.
   The service builds one at a time from a bounded queue — builds someone is
   watching first (polled in the last 15 s), then the rest oldest first — stages each under `.staging-<key>` and moves it into place
   only when complete. It prefers the downloaded collection when that covers
@@ -1035,9 +1112,18 @@ KMZ masks are vector polygons because ForeFlight won't render raster overlays.
   comment above `TILE_SAMPLES` means that too). The ground is drawn stretched by 65/64 about each tile's middle, up to 0.77% of a tile's width off at its edges
   (about 8 m at level 14 in north Georgia, more on coarser tiles), and two tiles' shared edge is read 1.5% of a tile apart. The web draws it so, and Android
   will draw what Cesium draws, to match; the fix is the server's and changes every cached tile (owner to decide).
-- **A tileset's key can be turned back into its place** (`lidar/catalog.key_for`): it is the first 16 hex digits of an unsalted SHA-256 of the target rounded to 4
-  decimals, so whoever has a key (it is in URLs and the server's logs) can find the place to about 11 m by trying every rounded place in a region. A keyed hash
-  (HMAC with a server secret) would close it, at the cost of every stored tileset's name (owner to decide, server first).
+- **A tileset built before the keyed names can still be turned back into its place**: its key is the first 16 hex digits of an unsalted SHA-256 of the target
+  rounded to 4 decimals, so whoever has one (it is in URLs and the server's logs) can find the place to about 11 m by trying every rounded place in a region. New keys
+  are an HMAC under `LIDAR_KEY_SECRET` (§13); the old tilesets were left under their names (the owner's call, 2026-10-26), and streaming (plan Part C) makes no new
+  per-LZ ones.
+- **Android streams too, untried on a device**: the whole survey's octree through `TileSelector` within the heap's point budget, and the
+  first view's network cost below on a phone's link. Its reading of the streamed files is held by the readers' own tests, not a device run.
+- **A streamed view fetches the landscape at full detail**: at error 2 every piece in the frustum is refined as far as its distance
+  allows, so a wide first view at the Ellijay LZ was 370 pieces, 147 MB, where the LZ's own square is 52 MB. Heavy for a phone on a
+  cellular link, and each piece holds one of the API's 8 threads for the half second AWS takes. Measure on the VM, then weigh a coarser
+  error for the landscape, Cesium's dynamic screen-space error, or more threads (I/O-bound).
+- Streamed pieces are not held back while an analysis runs, as terrain tiles are (`requestPriority`); AWS does the waiting, and a piece's
+  conversion is about 13 ms.
 - The web shows a failed build's `error` text (`useLidarTileset.js`), which can hold a tool's output with the place's coordinates in it; Android does not (§17,
   *The 3D view*).
 - **The web's 3D view shows Cesium's default sky, sun and atmosphere, and fog on far ground** (`Viewer3D.jsx` turns none of `CesiumWidget`'s defaults off): a
@@ -1075,13 +1161,11 @@ KMZ masks are vector polygons because ForeFlight won't render raster overlays.
   clients compile once at the opening's offset to learn where and when to ask (the web's `bare`), so the places' times carry that offset. The
   brief itself is then compiled at the departure's (the light data's). Web first.
 - The Mapbox token is hardcoded in three places.
-- **Any signed-in user can find every place a 3D view was built.** `GET /api/lidar/tilesets` lists every tileset key,
-  and the file route serves each tileset's `area.json` (latitude, longitude, radius). A key is also an unkeyed SHA-256
-  of the rounded coordinates (`catalog.key_for`), so trying every cell of CONUS turns it back into its place. Neither
-  client calls the list. Phase 0 of `docs/DATA_ADMIN_AND_PREBUILT_3D_PLAN.md` fixes it: tile files only, the list for
-  admins, keys by HMAC.
-- Sessions are bearer tokens in `localStorage` with no server-side revocation;
-  see `AUTHENTICATION.md` for the path to HttpOnly cookies.
+- **The web's cookie session needs the API on the web's own site to work in Safari**: Safari keeps no third-party cookie,
+  Partitioned or not, so while the web is `ezpztac.app` and the API `prod-ezpz-api.mcfadd.in` a Safari browser falls back to
+  the 24-hour token in `localStorage` and signs in daily (Chrome, Edge and Firefox keep the cookie). The owner's step: serve the
+  API at `api.ezpztac.app` through the Cloudflare Tunnel (as `admin.ezpztac.app` is), point Vercel's `VITE_API_URL` at it and
+  add nothing else; `AUTHENTICATION.md`, *Hosting the cookie*. Vercel's previews (`*.vercel.app`) stay cross-site.
 - In-process stores block horizontal scaling (§9).
 - `App.jsx` is large; new features should keep their state in a feature hook.
 
@@ -1096,7 +1180,7 @@ KMZ masks are vector polygons because ForeFlight won't render raster overlays.
 - If a section here disagrees with the code, the code wins — fix this file.
 - Deeper detail belongs in the focused docs it links to: `AUTHENTICATION.md`,
   `backend/TERRAIN_DATA.md`, `backend/lidar/SERVER_SETUP.md`, `docs/USER_GUIDE.md`,
-  `docs/NATIVE_APPS_PLAN.md`, `docs/MISSION_PACKS.md`, `docs/ANDROID_MISSION_PACKS_PLAN.md`, `docs/ANDROID_SCREENS_PLAN.md`, `docs/ANDROID_3D_PLAN.md` (the 3D view on Android), `docs/MISSION_BRIEF.md` (the mission brief: B0 to B9 done), `docs/native-design/README.md`, `docs/DATA_ADMIN_AND_PREBUILT_3D_PLAN.md` (3D streamed from USGS's octree, the admin's data map, uploads, warmed areas, organizations; decided 2026-10-23, not built yet), `android/README.md`, `contracts/README.md`. `docs/HANDOFF.md` is the
+  `docs/NATIVE_APPS_PLAN.md`, `docs/MISSION_PACKS.md`, `docs/ANDROID_MISSION_PACKS_PLAN.md`, `docs/ANDROID_SCREENS_PLAN.md`, `docs/ANDROID_3D_PLAN.md` (the 3D view on Android), `docs/MISSION_BRIEF.md` (the mission brief: B0 to B9 done), `docs/native-design/README.md`, `docs/DATA_ADMIN_AND_PREBUILT_3D_PLAN.md` (3D streamed from USGS's octree, the admin's data map, uploads, warmed areas, organizations; decided 2026-10-23, not built yet), `docs/LZ_SURVEYS.md` (LZ surveys and the HLZ survey books: editors make, sign off and print them, readers open them, web only; every step built), `android/README.md`, `contracts/README.md`. `docs/HANDOFF.md` is the
   "where things stand, what is next" note for whoever picks the Android work up; refresh it with each commit that moves either.
 
 ---
@@ -1285,13 +1369,13 @@ client is built around not losing one:
   `RateLimitedException`, `ApiException`.
 - **The stored session is read once per process** (`restore`; after that it returns the state as it is). The shell and a background
   sync both ask, in either order or at once, and a second read would put back what the first found over what has happened since: a
-  session the server or the 14-day rule ended, a refresh's newer user. What it read is set only if nothing else set the state while it
+  session the server ended, a refresh's newer user. What it read is set only if nothing else set the state while it
   read (a compare-and-set; everything else writes the store first). It takes no lock: a launch must not wait behind a refresh a sync
   has in flight, which can take 20 s on a poor signal.
 - **A session the server ended leaves a note in its place** (`SessionStore.end`, `EndedSession`, with the server's `code`): the
   file holds the session or the note, never both, so ending one is one atomic rename. A sync WorkManager runs with the app closed
   may be what finds the session ended, and that process is gone by the time anyone opens the app: the note is how the launch still
-  says why ("Your session expired", or the 14 days) instead of showing a plain sign-in. A call that finds no session reads it too,
+  says why ("Your session expired") instead of showing a plain sign-in. A call that finds no session reads it too,
   so calls refused together do not turn "ended" into "not signed in". Signing in or out removes it.
 
 **The sync engine** (`core-sync`; rules in the plan's "Sync and conflicts", server side in `backend/sync_support.py`):
@@ -1351,13 +1435,12 @@ client is built around not losing one:
   name, so the kind needed no migration; a device that synced before it has its cursor past the briefs it holds on the server (none before B8 makes them here). The
   screens are B8; the weather at a planned time (`weather: at …`) is typed with them.
 - Built since: WorkManager scheduling (`SyncScheduler`: a sync on demand and every 6 hours; not yet seen on a device),
-  conflict choices in the Diagrams, Routes and Points sections (`ConflictPanel`), and the 14-day "sign in again" rule
-  (`OfflineGrace`).
+  conflict choices in the Diagrams, Routes and Points sections (`ConflictPanel`). **There is no offline limit**: a device
+  offline any length of time stays signed in, as ForeFlight's does (the owner, 2026-10-28; `OfflineGrace` signed one out after 14
+  days without the server, and went). The server ends a session unused for 30 days, which the device hears at its next call.
 - **A scheduled sync can run in a process WorkManager started, with no activity and so no shell** (`EngineSyncRunner`). Only `AppViewModel` used to
   read the stored session, so such a sync found nobody signed in and did nothing. In a process nobody has read it in (`AuthState.Unknown`) the
-  runner now does what the shell does at launch: `restore`, then the 14-day rule (`OfflineGrace`) before any call, because a refresh would stamp
-  the session as confirmed and the person would never be asked to sign in again. A process already launched is left alone (the rule is applied
-  at launch, never to someone in the middle of their work). It syncs only when the device's plans are the signed-in account's
+  runner now does what the shell does at launch: `restore`. A process already launched is left alone. It syncs only when the device's plans are the signed-in account's
   (`Ownership.Yours`): another account's stay unsent, and an unclaimed device is the shell's to claim.
 - **Mission packs run with the app** (`app/packs/`: `PackRuntime` over the engine and `PackWorkspace`, `NetworkWatcher`; `AppViewModel`,
   `EngineSyncRunner`). They run only for a signed-in account past the gate, with `mission_packs` on, whose plans the device holds (`packGateFor`),
@@ -1417,8 +1500,9 @@ client is built around not losing one:
   config is public and confirms no session). Nothing waits for a launch's look (the owner's call: the first launch after a raise sends until
   its config answers). With no config to show the update screen (no signal), planning opens and a banner says why nothing is sent, with
   *Update* (`Gate.Ready.tooOld`, from the minimum last heard); **maintenance is a banner, never a block**, because planning is
-  local; no config at launch (no signal) blocks nothing; a device that has not heard from the server for **14 days** (`OfflineGrace`) must
-  sign in again, and its plans stay; **the plans on a device belong to one account** (`AccountScope`): a different person signing in is
+  local; no config at launch (no signal) blocks nothing; **no time offline signs a device out** (the owner, 2026-10-28:
+  a 14-day rule locked a crew at a FARP out of planning with no way to sign in where it was); the server's 30-day window ends a session
+  left unused, at the next contact, and the plans stay; **the plans on a device belong to one account** (`AccountScope`): a different person signing in is
   shown nothing of them, nothing is uploaded under their account, and they choose between clearing them (told how many changes never
   reached the server) and signing out. The plan did not say this, and it matters: without it a second user on a shared device would see
   and sync the first user's LZs.
@@ -2652,7 +2736,13 @@ client is built around not losing one:
     app take). The toasts are drawn above the foot, not over the point size, and sideways (wider than tall) the foot stops short of the controls at the top end.
   - **The build flow is the web's `useLidarTileset`, held to `contracts/fixtures/viewer3d/lidarFlow.json` scenario by scenario** (`LidarBuildsFixtureTest`: every answer
     the server can give, the poll every 3 s, five failed polls, two resubmits after a 404 or `cancelled`, and JavaScript's truthiness, so an empty `url` or `stage` is
-    none: `orNull`). The requests each scenario makes are compared too, so a `watcher` or a `keep=1` left out fails.
+    none: `orNull`). The requests each scenario makes are compared too, so a `watcher` or a `keep=1` left out fails. **It asks for the place streamed**
+    (`stream = true` from `Viewer3DViewModel`; docs/DATA_ADMIN_AND_PREBUILT_3D_PLAN.md, Part C), held to `lidarFlowStream.json` the same way, what is
+    shown of a streamed answer (`LidarLookup.streamed`, `frame`) included; a streamed survey's scene opens, and *LZ* flies, on `frame`
+    (`lzSphere`, the web's: a sphere of its radius at its ground height in the scene's frame, the core's own sphere where it has no height),
+    never on the root's sphere, which is a state. A save asks `resolve` with `stream` before a build, and builds nothing where the place streams.
+    A streamed survey's points are credited at the scene's foot under Mapbox's ("Point colour: USDA NAIP, from USGS The National Map",
+    `Viewer3DWords.NAIP_CREDIT`), as the web's view credits them: the server lays NAIP on them in the background (backend `lidar/photo.py`).
   - **One watcher per install, and what it waited on is kept** (`LidarWaitingPreferences`: `android-` and 24 URL-safe characters, made once; the keys being waited on,
     16 hex each). A lookup let go of (the view closed, its scope cancelled, *Retry*) releases its build at once; the next launch releases what the last one was
     waiting on before its first lookup asks (waiting at most 3 s), as the web's `releaseAbandonedBuilds` does at a page's load. A saved LZ/PZ's build is `keep`,

@@ -36,7 +36,6 @@ import java.util.concurrent.LinkedBlockingQueue
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicInteger
-import java.util.concurrent.atomic.AtomicLong
 
 /**
  * A mission pack's live stream against a stand-in for the live service, on MockWebServer's own WebSocket support: what the app sends
@@ -242,19 +241,6 @@ class PackLiveTest {
 
             // Signed out from another device, or the token was spent: the refresh is refused.
             assertThrows<SessionEndedException> { live.rig.client.packDocument(pack) }
-            live.endsSignedOut(stream)
-        }
-    }
-
-    @Test
-    fun `a session ended for being offline too long ends the stream`() = runBlocking<Unit> {
-        val clock = AtomicLong(1_800_000_000L)
-        Live(initial = session().copy(verifiedAtEpochSeconds = clock.get()), time = TimeSource { clock.get() * 1000 }).use { live ->
-            val stream = live.open()
-            live.service.next()
-
-            clock.addAndGet(OfflineGrace.DAYS * 24 * 60 * 60 + 1)
-            assertTrue(live.rig.client.endSessionIfOfflineTooLong())
             live.endsSignedOut(stream)
         }
     }

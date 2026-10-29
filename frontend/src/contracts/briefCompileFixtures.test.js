@@ -6,7 +6,7 @@ import { readFixture } from "./readFixture";
 
 // contracts/fixtures/brief/compile.json: what compileBrief makes of a plan, a format and the person's answers. The
 // web is the reference (docs/MISSION_BRIEF.md §2.3); Android's core-brief is held to every case. Regenerate with
-//   cd frontend && UPDATE_CONTRACTS=1 CI=true npx react-scripts test --watchAll=false src/contracts/briefCompile
+//   cd frontend && UPDATE_CONTRACTS=1 npx vitest run src/contracts/briefCompile
 // and review the diff. The cases are in briefCases.js.
 
 const FIXTURE = "brief/compile.json";

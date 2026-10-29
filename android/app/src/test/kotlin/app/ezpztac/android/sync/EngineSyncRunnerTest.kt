@@ -70,12 +70,9 @@ class EngineSyncRunnerTest {
     private class FakeAuth(
         private val stored: AuthState,
         initial: AuthState = AuthState.Unknown,
-        /** Whether the stored session is past the 14 days without the server ([app.ezpztac.network.OfflineGrace]). */
-        private val offlineTooLong: Boolean = false,
     ) : AuthBackend {
         override val state = MutableStateFlow(initial)
         var restores = 0
-        var graceChecks = 0
 
         /** As [ApiClient.restore]: the store is read once, and after that the state is what it is. */
         override suspend fun restore(): AuthState {
@@ -83,13 +80,6 @@ class EngineSyncRunnerTest {
             restores++
             state.value = stored
             return stored
-        }
-
-        override suspend fun endSessionIfOfflineTooLong(): Boolean {
-            graceChecks++
-            if (!offlineTooLong || state.value !is AuthState.SignedIn) return false
-            state.value = AuthState.SignedOut(SignedOutReason.SESSION_ENDED, "offline_too_long")
-            return true
         }
 
         override suspend fun refreshUser(): ApiUser = error("not the runner's to ask")
@@ -379,23 +369,9 @@ class EngineSyncRunnerTest {
         assertEquals(SyncOutcome.Done, r.runner.runOnce())
 
         assertEquals(1, r.auth.restores)
-        assertEquals(1, r.auth.graceChecks)                                       // and asked about the 14 days, as the shell does at launch
         assertEquals(listOf("LZ CROW", "LZ HAWK"), r.server.live(RecordKind.LZ).map { it.name }.sorted())      // what was made here went up
         assertEquals(listOf("LZ CROW", "LZ HAWK"), r.device.records(RecordKind.LZ).map { it.name }.sorted())   // and what was made elsewhere came down
         assertEquals(0, r.device.pending())
-    }
-
-    @Test
-    fun `a process the app did not start, with the session past the 14 days, ends it and asks nothing of the server`() = runTest {
-        val r = rig(FakeAuth(stored = AuthState.SignedIn(user(1)), offlineTooLong = true), owner = 1)
-
-        assertEquals(SyncOutcome.Done, r.runner.runOnce())                       // the person has to sign in: trying again cannot help
-
-        // A refresh would have stamped the session as confirmed, and the person would never have been asked to sign in again.
-        assertEquals(emptyList<String>(), r.server.log)
-        assertEquals(AuthState.SignedOut(SignedOutReason.SESSION_ENDED, "offline_too_long"), r.auth.state.value)
-        assertEquals(emptyList<Int>(), r.accounts.asked)
-        assertEquals(1, r.device.pending())                                      // the change waits for them
     }
 
     @Test
@@ -441,20 +417,17 @@ class EngineSyncRunnerTest {
         assertEquals(SyncOutcome.Done, r.runner.runOnce())
 
         assertEquals(0, r.auth.restores)
-        assertEquals(0, r.auth.graceChecks)
         assertEquals(ended, r.auth.state.value)
         assertEquals(emptyList<String>(), r.server.log)
     }
 
     @Test
     fun `in the app's own process, signed in already, it syncs without reading the store or signing anyone out`() = runTest {
-        // The 14 days are the shell's to apply, at launch: a sync must not sign out someone who is in the middle of using the app.
-        val r = rig(FakeAuth(stored = AuthState.SignedOut(SignedOutReason.NOT_SIGNED_IN), initial = AuthState.SignedIn(user(1)), offlineTooLong = true), owner = 1)
+        val r = rig(FakeAuth(stored = AuthState.SignedOut(SignedOutReason.NOT_SIGNED_IN), initial = AuthState.SignedIn(user(1))), owner = 1)
 
         assertEquals(SyncOutcome.Done, r.runner.runOnce())
 
         assertEquals(0, r.auth.restores)
-        assertEquals(0, r.auth.graceChecks)
         assertEquals(AuthState.SignedIn(user(1)), r.auth.state.value)
         assertEquals(0, r.device.pending())
     }

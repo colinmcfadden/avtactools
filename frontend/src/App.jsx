@@ -77,6 +77,7 @@ import WorkspaceSwitcher from "./feature/missionPacks/ui/WorkspaceSwitcher";
 import { FinishedBanner } from "./feature/missionPacks/ui/PackDialogs";
 import { lzDiagramFromItem, packDiagramId } from "./feature/missionPacks/packLz";
 import { packLocalRef } from "./feature/missionPacks/packRef";
+import SurveyBook from "./feature/surveys/SurveyBook";
 
 const resolveStateUpdate = (nextValue, currentValue) =>
   typeof nextValue === "function" ? nextValue(currentValue) : nextValue;
@@ -478,6 +479,8 @@ function App() {
     // Default off (entitlements.DEFAULT_OFF): only an explicit "on" shows Mission Packs.
     mission_packs: Boolean(uf && uf.mission_packs === true),
     mission_brief: Boolean(uf && uf.mission_brief === true),
+    // The LZ survey books' key: readers and the team editors (site admins always have it).
+    lz_surveys: Boolean(uf && uf.lz_surveys === true),
   };
   const { history, isLoadingHistory, historyError, fetchHistory, saveMap, loadMap, updateMap, deleteMap } =
     useSavedMaps();
@@ -652,6 +655,9 @@ function App() {
     onOpenLibrary: () => openLibrary("lz"),
   });
   const inPack = Boolean(packs.open);
+
+  // --- The LZ survey book (docs/LZ_SURVEYS.md): admins only, a window of its own over the planning frame -------------
+  const [surveysOpen, setSurveysOpen] = useState(false);
 
   // --- The mission brief (docs/MISSION_BRIEF.md): from the open pack, else from this session ----------------------
   const [briefOpen, setBriefOpen] = useState(false);
@@ -1419,6 +1425,7 @@ function App() {
         <TopBar
           user={user}
           isAdmin={Boolean(user?.is_admin)}
+          onOpenSurveys={user?.is_admin || feat.lz_surveys ? () => setSurveysOpen(true) : undefined}
           onSignOut={logout}
           onOpenLibrary={() => openLibrary("lz")}
           briefSlot={feat.mission_brief ? (
@@ -2021,6 +2028,9 @@ function App() {
           // Already in a pack, the switcher is a click away in the top bar and the sentence would not fit.
           onOpenPacks={feat.mission_packs && !inPack ? openWorkspaceSwitcher : undefined}
         />
+      )}
+      {surveysOpen && (user?.is_admin || feat.lz_surveys) && (
+        <SurveyBook isAdmin={Boolean(user?.is_admin)} onClose={() => setSurveysOpen(false)} />
       )}
       {briefOpen && feat.mission_brief && (
         <BriefSetup

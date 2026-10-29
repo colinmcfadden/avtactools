@@ -1,5 +1,4 @@
 from flask import Flask, redirect, request
-from flask_cors import CORS
 from flask_jwt_extended import JWTManager
 from dotenv import load_dotenv
 from datetime import timedelta
@@ -13,12 +12,16 @@ except ImportError:
     __version__ = "0.0.0-dev"
 
 from database_url import database_uri, is_postgres
-from models import AccountToken, AircraftProfile, LoginEvent, SavedBrief, SavedLZ, SavedPointSet, SavedRoute, User, db
+from models import (
+    AccountToken, AircraftProfile, LoginEvent, LzSurveyRevision, SavedBrief, SavedLZ, SavedPointSet, SavedRoute, SurveyBook, User,
+    db,
+)
 from affiliation_gate import enforce_affiliation_gate
 from token_revocation import is_revoked
 from aircraft_seed import seed_aircraft_profiles
 from schema_sync import ensure_unique_index, sync_table_columns
 from security_config import (
+    is_production,
     resolve_jwt_secret,
     session_cookie_secure,
     validate_email_configuration,
@@ -26,6 +29,7 @@ from security_config import (
 
 # Import your Blueprints
 import lidar_builder
+from lidar import catalog as lidar_catalog
 import terrain_tiles
 from routes.terrain_routes import terrain_bp
 from routes.lidar_routes import lidar_bp
@@ -45,23 +49,11 @@ from routes.config_routes import config_bp
 from routes.sync_routes import sync_bp
 from routes.pack_routes import pack_bp
 from routes.team_routes import team_bp
-from client_header import CLIENT_HEADER
+from routes.survey_routes import survey_bp
+from cors_config import configure_cors, cors_origins
 
 app = Flask(__name__)
-cors_origins = [
-    origin.strip()
-    for origin in os.environ.get(
-        'CORS_ORIGINS', 'http://localhost:3000'
-    ).split(',')
-    if origin.strip()
-]
-CORS(
-    app,
-    resources={r'/api/*': {'origins': cors_origins}},
-    # The native apps (and, later, the web) identify themselves with X-EZPZ-Client.
-    allow_headers=['Authorization', 'Content-Type', CLIENT_HEADER],
-    methods=['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-)
+configure_cors(app, cors_origins(os.environ))
 
 basedir = os.path.abspath(os.path.dirname(__file__))
 
@@ -88,9 +80,13 @@ if is_postgres(database_url):
     }
 app.config['JWT_SECRET_KEY'] = resolve_jwt_secret(os.environ)
 validate_email_configuration(os.environ)
-# A one-day session balances an operational planning workflow with reasonable
-# exposure if a bearer token is lost. Password resets revoke older tokens via
-# the per-account session-version claim below.
+# Tileset keys are an HMAC under this; a deployment without it would name new
+# tilesets with a public secret, which hashes back into places.
+lidar_catalog.key_secret(os.environ)
+# An access token lives a day at most: a native app's, and a web sign-in's, which a browser that will not
+# keep the refresh cookie holds as the web always has. A web refresh mints 15-minute ones (routes/auth.py).
+# Any token tied to a device session (`sid`) is refused the moment that session ends, and a password reset
+# revokes older tokens through the per-account session-version claim.
 app.config['JWT_ACCESS_TOKEN_EXPIRES'] = timedelta(hours=24)
 
 # Server-side session for the admin dashboard (separate from the SPA's JWT).
@@ -139,6 +135,7 @@ app.register_blueprint(config_bp)
 app.register_blueprint(sync_bp)
 app.register_blueprint(pack_bp)
 app.register_blueprint(team_bp)
+app.register_blueprint(survey_bp)
 
 # Compute the coarse terrain tiles ahead of the first 3D view, in the
 # background; see terrain_tiles. A no-op without TERRAIN_DATA_DIR. Under
@@ -154,6 +151,10 @@ if not (__name__ == "__main__" and os.environ.get("WERKZEUG_RUN_MAIN") != "true"
     if os.environ.get("TERRAIN_DATA_DIR") and not terrain_tiles.geoid_grids_available():
         app.logger.warning("3D: geoid grids unavailable, so terrain will sit ~30 m off the "
                            "LiDAR. Set PROJ_NETWORK=ON or install the grids (projsync).")
+    # A survey's photos cannot be taken again; in the temp directory they would go with the next redeploy.
+    if is_production(os.environ) and not os.environ.get("SURVEY_ASSETS_DIR"):
+        app.logger.warning("LZ surveys: SURVEY_ASSETS_DIR is not set, so photos are kept in a temporary "
+                           "directory and lost on redeploy. Point it at a persistent, backed-up mount.")
 
 @app.route('/')
 def health_check():
@@ -216,6 +217,12 @@ with app.app_context():
     sync_table_columns(db, LoginEvent)
     # account_token gained the refresh-token columns (family, client, session_version).
     sync_table_columns(db, AccountToken)
+    # lz_survey_revision gained `page` (what a published page said of itself) after step L1 made the table.
+    sync_table_columns(db, LzSurveyRevision)
+    # survey_book gained a uuid, a team and archiving when one book became many (step L5).
+    sync_table_columns(db, SurveyBook)
+    if not ensure_unique_index(db, SurveyBook, ('uuid',), 'ux_survey_book_uuid'):
+        app.logger.warning("surveys: could not add the uuid index on survey_book")
     # Saved records (and a user's own aircraft profiles) gained the sync columns (client_uuid, revision, deleted_at,
     # change_seq, last_idem_key). The unique index that stops a retried create
     # duplicating has to be added by hand: create_all never alters an existing table.

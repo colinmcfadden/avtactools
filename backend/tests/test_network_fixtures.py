@@ -1022,6 +1022,31 @@ class NetworkFixtureTests(NativeAuthCase):
             self.rec("terrain: heights, too many", self.client.post("/api/terrain/heights", headers=head,
                                                                    json={"points": [here] * (terrain_tiles.MAX_POINTS + 1)}))
             self.rec("terrain: heights, not points", self.client.post("/api/terrain/heights", headers=head, json={"points": [{"lat": "x"}]}))
+
+            # Streamed from USGS's octree (plan Part C), for a client that asks: a survey the tests make (test_lidar_stream.FakeSurvey,
+            # round Ellijay) in place of AWS, the ground under the place from the DEM above. The pieces' bytes are not recorded: their
+            # floats are a maths library's, which differ in the last digit between machines.
+            from lidar import names, stream
+            from test_lidar_stream import BASE, FakeSurvey
+            survey = FakeSurvey()
+            cache = Path(tempfile.mkdtemp(prefix="stream-"))
+            self.addCleanup(shutil.rmtree, cache, True)
+            secret = catalog.key_secret()
+            streamer = stream.Streamer(cache, fetch=survey.fetch, geoid=lambda lons, lats: [-30.35] * len(lons),
+                                       index=survey.index(), base=BASE, secret=secret)
+            survey_key = names.survey_key(survey.name, secret=secret)
+            with patch.object(stream, "streamer", return_value=streamer):
+                self.rec("lidar: resolve, streamed", self.client.post("/api/lidar/resolve", headers=head, json={**here, "stream": True}))
+                self.rec("lidar: resolve, streamed but not asked for", self.client.post("/api/lidar/resolve", headers=head, json=here))
+                self.rec("lidar: a streamed survey's root", self.client.get(f"/api/lidar/tilesets/{survey_key}/tileset.json", headers=head),
+                         "Cache-Control")
+                self.rec("lidar: a streamed file never handed out",
+                         self.client.get(f"/api/lidar/tilesets/{survey_key}/0123456789abcdef.pnts", headers=head))
+                broken = stream.Streamer(Path(tempfile.mkdtemp(prefix="stream-", dir=cache)), fetch=survey.fetch,
+                                         geoid=lambda lons, lats: [0.0] * len(lons), index=survey.index(), base=BASE, secret=secret)
+                with patch.object(stream, "streamer", return_value=broken):
+                    self.rec("lidar: a streamed survey without geoid grids",
+                             self.client.get(f"/api/lidar/tilesets/{survey_key}/tileset.json", headers=head))
     def briefs(self):
         """Mission briefs (docs/MISSION_BRIEF.md §3): in the library, synced like an LZ, and a brief item in a finished pack, which is open
         to every member. After everything but the 3D view, so that nothing it makes moves an id or a sequence number recorded above."""

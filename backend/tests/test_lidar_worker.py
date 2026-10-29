@@ -507,3 +507,18 @@ class BuildOrderTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class StartupTests(unittest.TestCase):
+    def test_a_deployed_service_refuses_to_start_without_the_key_secret(self):
+        """It names tilesets as the API does; with the public fallback a key
+        could be hashed back into its place."""
+        from unittest.mock import patch
+        from lidar import worker
+        with patch.dict("os.environ", {"LIDAR_BUILDER_TOKEN": "t"}, clear=True), \
+                patch.object(worker, "Builder") as builder, \
+                patch.object(worker, "ThreadingHTTPServer") as server:
+            with self.assertRaises(RuntimeError):
+                worker.main()
+        builder.assert_not_called()
+        server.assert_not_called()

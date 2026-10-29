@@ -74,7 +74,7 @@ internal object Viewer3DModule {
 
     @Provides
     fun scenes(files: TilesetFiles, heights: TerrainHeights, imagery: ImageryTiles, budgets: SceneBudgets): SceneMaker =
-        SceneMaker { target, core, ring, parent, pointSize ->
-            SceneSession(target, core, ring, SceneSources(files, heights, imagery, BitmapDecoder), budgets, parent, pointSize)
+        SceneMaker { target, core, ring, lz, parent, pointSize ->
+            SceneSession(target, core, ring, SceneSources(files, heights, imagery, BitmapDecoder), budgets, parent, pointSize, lzFrame = lz)
         }
 }

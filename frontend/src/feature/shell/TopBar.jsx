@@ -41,6 +41,8 @@ const TopBar = ({
   briefSlot = null,
   user,
   isAdmin = false,
+  // The LZ survey book: admins only (docs/LZ_SURVEYS.md).
+  onOpenSurveys,
   onSignOut,
   onOpenMenu,
 }) => {
@@ -150,6 +152,9 @@ const TopBar = ({
               onClose={account.close}
               onSelect={() => window.open(`${(import.meta.env.VITE_API_URL || "").replace(/\/api\/?$/, "")}/admin`, "_blank", "noopener")}
             />
+          )}
+          {onOpenSurveys && (
+            <MenuItem icon={<Icon name="hexagon" size={15} />} title="LZ survey books" onClose={account.close} onSelect={onOpenSurveys} />
           )}
           <MenuItem icon={<Icon name="logOut" size={15} />} title="Sign out" onClose={account.close} onSelect={onSignOut} />
         </Menu>

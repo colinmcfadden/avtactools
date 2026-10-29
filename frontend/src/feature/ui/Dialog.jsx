@@ -1,6 +1,7 @@
 import React, { useEffect, useId, useRef } from "react";
 import { createPortal } from "react-dom";
 import Icon from "./Icon";
+import { Spinner } from "./Spinner";
 import "./ui.css";
 
 /*
@@ -44,9 +45,11 @@ const Dialog = ({
   }, []);
 
   const onKeyDown = (event) => {
-    if (event.key === "Escape" && dismissible) {
+    if (event.key === "Escape") {
+      // Never past this dialog, whether or not it closes: React carries a key from a dialog over another (a 3D capture over the survey
+      // book) up to the one under it, which would close in its place.
       event.stopPropagation();
-      onClose?.();
+      if (dismissible) onClose?.();
       return;
     }
     if (event.key !== "Tab") return;
@@ -161,8 +164,15 @@ export const ConfirmDialog = ({
               {secondary.label}
             </button>
           )}
-          <button ref={confirmRef} type="button" className={`ui-btn ui-btn--${confirmTone} ui-btn--38`} onClick={onConfirm} disabled={busy}>
-            {confirmIcon && <Icon name={confirmIcon} size={15} />}
+          <button
+            ref={confirmRef}
+            type="button"
+            className={`ui-btn ui-btn--${confirmTone} ui-btn--38${busy ? " ui-btn--busy" : ""}`}
+            onClick={onConfirm}
+            disabled={busy}
+            aria-busy={busy ? "true" : undefined}
+          >
+            {busy ? <Spinner size={15} /> : confirmIcon && <Icon name={confirmIcon} size={15} />}
             {confirmLabel}
           </button>
         </>

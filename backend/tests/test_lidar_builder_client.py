@@ -64,7 +64,9 @@ class OlderServiceTests(unittest.TestCase):
         self.addCleanup(self.server.shutdown)
         host, port = self.server.server_address
         env = patch.dict(os.environ, {"LIDAR_BUILDER_URL": f"http://{host}:{port}",
-                                      "LIDAR_BUILDER_TOKEN": TOKEN})
+                                      "LIDAR_BUILDER_TOKEN": TOKEN,
+                                      # A service with a token is a deployed one.
+                                      "LIDAR_KEY_SECRET": "k" * 32})
         env.start()
         self.addCleanup(env.stop)
 
@@ -85,7 +87,9 @@ class CurrentServiceTests(unittest.TestCase):
         self.addCleanup(self.server.shutdown)
         host, port = self.server.server_address
         env = patch.dict(os.environ, {"LIDAR_BUILDER_URL": f"http://{host}:{port}",
-                                      "LIDAR_BUILDER_TOKEN": TOKEN})
+                                      "LIDAR_BUILDER_TOKEN": TOKEN,
+                                      # A service with a token is a deployed one.
+                                      "LIDAR_KEY_SECRET": "k" * 32})
         env.start()
         self.addCleanup(env.stop)
 

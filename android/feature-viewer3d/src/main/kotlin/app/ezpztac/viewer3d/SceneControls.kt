@@ -215,16 +215,32 @@ internal fun BoxScope.SceneOverContent(
 @Composable
 private fun SceneFoot(session: SceneSession, pointSize: Int, onPointSize: (Int) -> Unit) {
     val status by session.status.collectAsStateWithLifecycle()
-    SceneFootContent(status, pointSize, onPointSize, credit = session.hasImagery)
+    SceneFootContent(status, pointSize, onPointSize, credit = session.hasImagery, colourCredit = session.streamed)
 }
 
-/** Along the scene's foot while it is drawn: the point size, and under it the imagery's [credit] when there is imagery. */
+/**
+ * Along the scene's foot while it is drawn: the point size, and under it the imagery's [credit] when there is imagery, and NAIP's for a
+ * streamed survey's points ([colourCredit]), whose colour the server lays on from it.
+ */
 @Composable
-internal fun SceneFootContent(status: SceneStatus, pointSize: Int, onPointSize: (Int) -> Unit, credit: Boolean = false) {
+internal fun SceneFootContent(
+    status: SceneStatus,
+    pointSize: Int,
+    onPointSize: (Int) -> Unit,
+    credit: Boolean = false,
+    colourCredit: Boolean = false,
+) {
     if (status != SceneStatus.Drawing) return
     Column {
         PointSizeControl(pointSize, onPointSize)
         if (credit) MapboxCredit()
+        if (colourCredit) {
+            Text(
+                Viewer3DWords.NAIP_CREDIT, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(horizontal = Tokens.Spacing.sm.dp)
+                    .background(CONTROL_GROUND, RoundedCornerShape(50)).padding(horizontal = 8.dp, vertical = 2.dp),
+            )
+        }
     }
 }
 
