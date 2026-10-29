@@ -125,9 +125,8 @@ class NotificationCheck @Inject constructor(
 
     private suspend fun look(): SyncOutcome {
         if (auth.state.value is AuthState.Unknown) {
-            // WorkManager can start the process for this alone, as for a sync: do what the shell does at a launch, the 14-day rule first.
+            // WorkManager can start the process for this alone, as for a sync: do what the shell does at a launch.
             auth.restore()
-            if (auth.endSessionIfOfflineTooLong()) return SyncOutcome.Done.also { clear() }
         }
         val state = auth.state.value
         if (state is AuthState.SignedOut) return SyncOutcome.Done.also { clear() }

@@ -40,7 +40,6 @@ class NotificationCheckTest {
             if (state.value == AuthState.Unknown) state.value = stored
             return state.value
         }
-        override suspend fun endSessionIfOfflineTooLong() = false
         override suspend fun refreshUser(): ApiUser {
             calls += "refreshUser"
             val user = refreshed ?: throw NetworkException("no signal", null, requestMayHaveBeenSent = false)
