@@ -18,6 +18,7 @@ from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm.attributes import flag_modified
 
+import notify
 import pack_ops
 import pack_support as packs
 import sync_support as sync
@@ -333,6 +334,7 @@ def delete_pack(pack_uuid):
     # A tombstone, so a device that asks learns it was deleted; everything in it is gone.
     for model in packs.PACK_CONTENT:
         model.query.filter_by(pack_id=pack.id).delete(synchronize_session=False)
+    notify.withdraw(pack_uuid=pack.uuid)
     pack.name, pack.description, pack.team_id = '', '', None
     pack.deleted_at = packs.now()
     packs.announce_deleted(pack.uuid)
@@ -355,6 +357,8 @@ def finish_pack(pack_uuid):
         pack.status, pack.finished_at, pack.finished_by = 'finished', packs.now(), me.id
         packs.append(pack, me, {'type': 'pack.finish'},
                      f'{packs.actor_name(me)} finished the pack. It is read-only for everyone.')
+        for user_id in notify.people_in(pack):
+            notify.add(user_id, 'pack_finished', pack=pack, actor=me, delay=notify.FINISH_DELAY)
         db.session.commit()
     return _reply(_full(pack, me.id))
 
@@ -373,6 +377,8 @@ def reopen_pack(pack_uuid):
     if pack.status == 'finished':
         pack.status, pack.finished_at, pack.finished_by = 'active', None, None
         packs.append(pack, me, {'type': 'pack.reopen'}, f'{packs.actor_name(me)} reopened the pack.')
+        # A finish not yet sent is never sent; one sent is no longer so, and every device takes it down.
+        notify.withdraw(pack_uuid=pack.uuid, types=('pack_finished',))
         db.session.commit()
     return _reply(_full(pack, me.id))
 
@@ -853,6 +859,7 @@ def add_member(pack_uuid):
     db.session.add(MissionPackMember(pack_id=pack.id, user_id=target.id, role=role, added_by=me.id))
     packs.append(pack, me, {'type': 'member.add', 'user_id': target.id, 'name': target.name, 'role': role},
                  f'{packs.actor_name(me)} added {target.name} as {"an editor" if role == "editor" else "a viewer"}.')
+    notify.add(target.id, 'pack_added', pack=pack, actor=me, role=role)
     db.session.commit()
     try:
         send_pack_added_email(target, me.name, pack.name)
@@ -893,6 +900,7 @@ def change_member(pack_uuid, user_id):
         member.role, pack.owner_id = 'owner', user_id
         packs.append(pack, me, {'type': 'pack.transfer', 'user_id': user_id, 'name': name},
                      f'{who} made {name} the owner of the pack.')
+        notify.add(user_id, 'pack_owner', pack=pack, actor=me)
     else:
         member.role = role
         packs.append(pack, me, {'type': 'member.role', 'user_id': user_id, 'name': name, 'role': role},
@@ -929,6 +937,12 @@ def remove_member(pack_uuid, user_id):
 
 
 # -- Invites --------------------------------------------------------------------
+
+def _notify_invitee(pack, invite, inviter):
+    """Tell whoever has an account at the invitation's address. One with none finds it in the switcher once signed up."""
+    for account in notify.accounts_at(invite.email):
+        notify.add(account.id, 'pack_invite', pack=pack, actor=inviter, invite=invite, role=invite.role)
+
 
 def _send_pack_invite(pack, invite, raw_token, inviter):
     has_account = User.query.filter(func.lower(User.email) == invite.email).first() is not None
@@ -987,6 +1001,7 @@ def invite_to_pack(pack_uuid):
     invite.expires_at = packs.now() + packs.INVITE_LIFETIME
     packs.append(pack, me, {'type': 'invite.create', 'email': email, 'role': role},
                  f'{packs.actor_name(me)} invited {email} as {"an editor" if role == "editor" else "a viewer"}.')
+    _notify_invitee(pack, invite, me)
     db.session.commit()
     sent = _send_pack_invite(pack, invite, raw, me)
     return _reply({'invite': packs.invite_body(invite), 'email_sent': sent}, status)
@@ -1013,6 +1028,7 @@ def resend_pack_invite(pack_uuid, invite_id):
         return limited
     raw, invite.token_hash = packs.new_token()
     invite.expires_at = packs.now() + packs.INVITE_LIFETIME
+    _notify_invitee(pack, invite, me)
     db.session.commit()
     sent = _send_pack_invite(pack, invite, raw, me)
     return _reply({'invite': packs.invite_body(invite), 'email_sent': sent})
@@ -1033,6 +1049,7 @@ def revoke_pack_invite(pack_uuid, invite_id):
     if invite is None:
         return _error('Not found', 404, 'invite_not_found')
     invite.status = 'revoked'
+    notify.withdraw(invite_ids=[invite.id])
     packs.append(pack, me, {'type': 'invite.revoke', 'email': invite.email},
                  f"{packs.actor_name(me)} withdrew {invite.email}'s invitation.")
     db.session.commit()

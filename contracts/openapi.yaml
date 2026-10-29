@@ -1,7 +1,7 @@
 openapi: 3.0.3
 info:
   title: EZ/PZ API (the parts the native apps call)
-  version: 1.1.0
+  version: 1.2.0
   description: |
     The contract between the Flask API and the web and native clients. It holds
     the routes the apps call, one at a time as each arrives; a route missing from
@@ -2828,6 +2828,121 @@ paths:
         "410":
           $ref: "#/components/responses/PackError"
 
+  /api/notifications:
+    get:
+      operationId: listNotifications
+      summary: What the caller's devices should show, and which groups they want
+      description: |
+        The caller's notifications of the last 30 days that are still so, newest first: an invitation
+        still waiting for them, a pack they are still in (still finished, still theirs), under the names
+        the pack and the team have now. A pack's finish is listed two minutes after it, and not at all if
+        the pack was reopened meanwhile. There is no cursor: a device keeps the ids it has shown, shows
+        those it has not (unless `seen`, or their group is off in `settings`) and takes down any it shows
+        that is seen or no longer listed. A notification names people, packs and teams only, never what a
+        pack holds: it is meant for a lock screen (docs/NOTIFICATIONS.md §6).
+
+        A person without Mission Packs is answered an empty list. Poll with the last `ETag` in
+        `If-None-Match`: nothing new is a 304 with no body.
+      security:
+        - bearer: []
+      parameters:
+        - name: If-None-Match
+          in: header
+          required: false
+          schema: { type: string }
+          description: The `ETag` of the last answer.
+      responses:
+        "200":
+          description: The notifications and the settings.
+          headers:
+            ETag:
+              description: Of this answer; changes whenever anything in it does.
+              schema: { type: string, example: '"5f2b9c0e1d7a4c3b8e6f0a2d4c6b8e10"' }
+            Cache-Control:
+              schema: { type: string, example: "private, no-store" }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/NotificationFeed" }
+        "304":
+          description: Nothing changed since the answer whose `ETag` was sent.
+
+  /api/notifications/seen:
+    post:
+      operationId: markNotificationsSeen
+      summary: Seen on this device, so taken down on every other
+      description: |
+        The caller has seen (or acted on) these. Ids that are not the caller's are passed over; seeing one
+        twice changes nothing.
+      security:
+        - bearer: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [ids]
+              properties:
+                ids:
+                  type: array
+                  maxItems: 200
+                  items: { type: integer }
+      responses:
+        "200":
+          description: The ids asked about that are the caller's, all now seen.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [ids]
+                properties:
+                  ids:
+                    type: array
+                    items: { type: integer }
+        "400":
+          description: "`invalid_ids`: not a list of at most 200 integers."
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SimpleError" }
+
+  /api/notifications/settings:
+    put:
+      operationId: changeNotificationSettings
+      summary: Turn groups of notifications on or off, on every device
+      description: |
+        Any of the groups, each `true` or `false`; those not sent keep what they were. A group this server
+        does not know is passed over: the answer says what holds. An off group's notifications are still
+        listed (an invitation still waits in the switcher) and no device shows them.
+      security:
+        - bearer: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                invitations: { type: boolean }
+                pack_finished: { type: boolean }
+                pack_owner: { type: boolean }
+      responses:
+        "200":
+          description: The settings as they now are.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [settings]
+                properties:
+                  settings: { $ref: "#/components/schemas/NotificationSettings" }
+        "400":
+          description: "`invalid_settings`: a group sent as something other than true or false."
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SimpleError" }
+
 components:
   parameters:
     ClientHeader:
@@ -3184,7 +3299,7 @@ components:
         error: { type: string }
         code:
           type: string
-          description: "`invalid_client_uuid`, `invalid_if_match`, `invalid_cursor`, `revision_conflict`; for briefs `missing_fields`, `invalid_name`, `invalid_data`; for the weather `invalid_at`"
+          description: "`invalid_client_uuid`, `invalid_if_match`, `invalid_cursor`, `revision_conflict`; for briefs `missing_fields`, `invalid_name`, `invalid_data`; for the weather `invalid_at`; for notifications `invalid_ids`, `invalid_settings`"
 
     Error:
       type: object
@@ -4244,6 +4359,84 @@ components:
               email: { type: string }
               role: { type: string, enum: [owner, admin, member] }
               joined_at: { type: string }
+
+    NotificationFeed:
+      type: object
+      additionalProperties: false
+      required: [notifications, settings]
+      properties:
+        notifications:
+          type: array
+          items: { $ref: "#/components/schemas/Notification" }
+        settings: { $ref: "#/components/schemas/NotificationSettings" }
+
+    NotificationSettings:
+      type: object
+      additionalProperties: false
+      required: [invitations, pack_finished, pack_owner]
+      description: Each group on or off for the caller, on every device. On unless the person turned it off.
+      properties:
+        invitations: { type: boolean, description: "`pack_invite`, `pack_added`, `team_invite`." }
+        pack_finished: { type: boolean }
+        pack_owner: { type: boolean }
+
+    Notification:
+      type: object
+      additionalProperties: false
+      required: [id, type, group, key, pack, team, actor, invite_id, role, created_at, updated_at, seen, quiet]
+      description: |
+        One thing that happened to the caller. The client makes the words from `type` and the names here;
+        a `type` (or a `group`) it does not know is passed over, so new ones can be added within the major.
+      properties:
+        id: { type: integer }
+        type:
+          type: string
+          description: |
+            `pack_invite` (invited to a pack: `pack`, `actor`, `invite_id`, `role`), `pack_added` (added to a
+            pack by name: `pack`, `actor`, `role`), `team_invite` (invited to a team:
+            `team`, `actor`, `invite_id`, `role`), `pack_finished` (`pack`, `actor`), `pack_owner` (a pack
+            handed to the caller: `pack`, and `actor` unless it came to them from a deleted account).
+        group: { type: string, description: "Which of `settings` it falls under." }
+        key:
+          type: string
+          description: |
+            One thing, one key (`pack_invite:34`, `pack_finished:<uuid>`): a notification with the key of
+            one shown replaces it.
+        pack:
+          type: object
+          nullable: true
+          additionalProperties: false
+          required: [uuid, name]
+          properties:
+            uuid: { type: string }
+            name: { type: string, description: Its name now. }
+        team:
+          type: object
+          nullable: true
+          additionalProperties: false
+          required: [id, name]
+          properties:
+            id: { type: integer }
+            name: { type: string, description: Its name now. }
+        actor:
+          type: object
+          nullable: true
+          additionalProperties: false
+          required: [name]
+          description: Who did it, by the name they had then.
+          properties:
+            name: { type: string }
+        invite_id:
+          type: integer
+          nullable: true
+          description: An invitation's, to accept or decline it (`/api/invites/{invite_id}/accept`). Never its link's token.
+        role: { type: string, nullable: true, description: "The role the invitation offers, or for `pack_added` the one the caller was given." }
+        created_at: { type: string }
+        updated_at: { type: string, description: "Moves when an invitation is sent again; shown again without an alert." }
+        seen: { type: boolean, description: "Seen on one of the caller's devices: shown on none." }
+        quiet:
+          type: boolean
+          description: Past ten in an hour for the caller, so shown without a sound or a banner.
 
     UserBrief:
       type: object

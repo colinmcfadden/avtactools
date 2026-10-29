@@ -10,6 +10,7 @@ from flask import Blueprint, request
 from flask_jwt_extended import get_jwt_identity, jwt_required
 from sqlalchemy import func, or_, select
 
+import notify
 import pack_support as packs
 from email_service import send_team_invite_email
 from entitlements import account_active, require_feature
@@ -216,6 +217,9 @@ def invite_to_team(team_id):
     invite = MissionPackInvite(team_id=team.id, email=email, token_hash=hashed, invited_by=me.id, role=invite_role,
                                status='pending', expires_at=packs.now() + packs.INVITE_LIFETIME)
     db.session.add(invite)
+    if email:                                         # a link invitation names nobody, so it tells nobody
+        for account in notify.accounts_at(email):
+            notify.add(account.id, 'team_invite', actor=me, invite=invite, role=invite_role)
     db.session.commit()
     body = {'invite': packs.invite_body(invite)}
     if email:
@@ -239,6 +243,7 @@ def revoke_team_invite(team_id, invite_id):
     if invite is None:
         return _error('Not found', 404, 'invite_not_found')
     invite.status = 'revoked'
+    notify.withdraw(invite_ids=[invite.id])
     db.session.commit()
     return _reply({'invite': packs.invite_body(invite)})
 
@@ -325,6 +330,7 @@ def _accept(invite, me, token_hash=None):
             db.session.add(TeamMember(team_id=team.id, user_id=me.id, role=invite.role))
         joined_team = team
     invite.status, invite.accepted_at, invite.accepted_by = 'accepted', packs.now(), me.id
+    notify.withdraw(invite_ids=[invite.id])
     db.session.commit()
     return _reply({
         'invite': packs.invite_body(invite),
@@ -362,6 +368,7 @@ def decline_invite(invite_id):
     if invite.status != 'pending':
         return _error('That invitation has already been answered or withdrawn.', 410, 'invite_gone')
     invite.status = 'declined'
+    notify.withdraw(invite_ids=[invite.id])
     db.session.commit()
     return _reply({'invite': packs.invite_body(invite)})
 

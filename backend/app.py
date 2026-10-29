@@ -51,6 +51,7 @@ from routes.sync_routes import sync_bp
 from routes.pack_routes import pack_bp
 from routes.team_routes import team_bp
 from routes.survey_routes import survey_bp
+from routes.notification_routes import notification_bp
 from client_header import CLIENT_HEADER
 
 app = Flask(__name__)
@@ -150,6 +151,7 @@ app.register_blueprint(sync_bp)
 app.register_blueprint(pack_bp)
 app.register_blueprint(team_bp)
 app.register_blueprint(survey_bp)
+app.register_blueprint(notification_bp)
 
 # Compute the coarse terrain tiles ahead of the first 3D view, in the
 # background; see terrain_tiles. A no-op without TERRAIN_DATA_DIR. Under
@@ -227,6 +229,8 @@ with app.app_context():
     # tables above do, diff the model against the live schema and add whatever
     # is absent.
     sync_table_columns(db, AircraftProfile)
+    # user gained `notification_settings` (docs/NOTIFICATIONS.md §5); the ALTERs above came before schema_sync.
+    sync_table_columns(db, User)
     # login_event gained `client` (the X-EZPZ-Client app version) after launch.
     sync_table_columns(db, LoginEvent)
     # account_token gained the refresh-token columns (family, client, session_version).
