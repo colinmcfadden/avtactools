@@ -24,6 +24,16 @@ import app.ezpztac.android.OpenRouteSetPreferences
 import app.ezpztac.android.PointSetViewPreferences
 import app.ezpztac.android.WeatherFileCache
 import app.ezpztac.android.export.AssetMissionTemplate
+import app.ezpztac.android.notifications.ApiNotificationApi
+import app.ezpztac.android.notifications.AppNotifications
+import app.ezpztac.android.notifications.NotificationApi
+import app.ezpztac.android.notifications.NotificationBook
+import app.ezpztac.android.notifications.NotificationPreferences
+import app.ezpztac.android.notifications.NotificationScheduler
+import app.ezpztac.android.notifications.NotificationShell
+import app.ezpztac.android.notifications.Notifier
+import app.ezpztac.android.notifications.SystemNotifier
+import app.ezpztac.android.notifications.WorkManagerNotificationScheduler
 import app.ezpztac.android.export.AssetThsTemplate
 import app.ezpztac.android.export.ExportCleaner
 import app.ezpztac.android.export.ShareExport
@@ -337,4 +347,19 @@ interface AppBindings {
 
     @Binds
     fun slopeOpacityMemory(impl: MapPreferences): SlopeOpacityMemory
+
+    @Binds
+    fun notificationShell(impl: AppNotifications): NotificationShell
+
+    @Binds
+    fun notificationScheduler(impl: WorkManagerNotificationScheduler): NotificationScheduler
+
+    @Binds
+    fun notificationBook(impl: NotificationPreferences): NotificationBook
+
+    @Binds
+    fun notifier(impl: SystemNotifier): Notifier
+
+    @Binds
+    fun notificationApi(impl: ApiNotificationApi): NotificationApi
 }

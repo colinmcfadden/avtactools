@@ -4,6 +4,9 @@ import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import app.ezpztac.android.export.ExportCleaner
+import app.ezpztac.android.notifications.NotificationShell
+import app.ezpztac.android.notifications.NotificationTap
+import app.ezpztac.android.notifications.NotificationToast
 import app.ezpztac.android.packs.MISSION_PACKS
 import app.ezpztac.android.packs.PackInvites
 import app.ezpztac.android.packs.PackRuntime
@@ -44,6 +47,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.distinctUntilChangedBy
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
@@ -74,6 +78,7 @@ class AppViewModel @Inject constructor(
     private val minimumVersion: MinimumVersion,
     private val saved: SavedStateHandle,
     @Named("appVersion") private val version: String,
+    private val notifications: NotificationShell,
 ) : ViewModel() {
     private val config = MutableStateFlow<AppConfig?>(null)
     private val link = MutableStateFlow<AuthRoute?>(null)
@@ -103,6 +108,14 @@ class AppViewModel @Inject constructor(
 
     // A look at the server's config under way: one at a time, or the launch's and the first coming to the front's would both ask.
     private var configLook: Job? = null
+
+    private val tap = MutableStateFlow<NotificationTap?>(null)
+
+    /** A notification tapped for the account signed in, and shown on this device, until the frame has done what it says (§7 of docs/NOTIFICATIONS.md). */
+    val notificationTap: StateFlow<NotificationTap?> = tap.asStateFlow()
+
+    /** What a notification says while the frame is in front and listening: a toast instead of the system's. */
+    val notificationToasts: Flow<NotificationToast> = notifications.toasts
 
     /**
      * Whether this app may send anything now: this version is not below the server's minimum as last heard (the owner's decision: nothing is sent
@@ -179,6 +192,7 @@ class AppViewModel @Inject constructor(
     /** The app has come to the front: an open pack is followed again, with whatever could not get through tried now, and the server's config is looked at. */
     fun appStarted() {
         lookAtConfig()                                                    // the server may have raised its minimum, or begun maintenance, meanwhile
+        notifications.foreground(true)                                    // looked at now: in front, what is new is a toast
         packs.foreground(true)
         packs.wake()
     }
@@ -192,6 +206,7 @@ class AppViewModel @Inject constructor(
     fun appStopped() {
         // At once, not after the writes: a quick return to the front (a turn of the phone) must not find packs sent to the back after it.
         packs.foreground(false)
+        notifications.foreground(false)
         // Not this screen's to cut short: for an activity that is finishing (Back, swiped from recents) this view model is cleared at once,
         // and a write cancelled half way, having cancelled the session's own delayed one, would leave the change in memory only.
         viewModelScope.launch(start = CoroutineStart.UNDISPATCHED) {
@@ -220,6 +235,8 @@ class AppViewModel @Inject constructor(
         if (auth !is AuthState.SignedIn) {
             if (auth is AuthState.SignedOut) {
                 invitation.forget()                                              // what became of a link names a pack: it does not stay for the next person
+                tap.value = null                                                 // nor does a notification tapped for this account
+                quietly { notifications.signedOut() }                            // nor anything posted for it, or what this device kept of its notifications
                 // First, before anything here waits: a file another app handed over and nobody has answered (held in memory), and the points brought in for this
                 // session only. An import still under way asks for these before it lands ([IncomingFiles.generation]), so none of it reaches the next person.
                 incoming.clear()
@@ -237,6 +254,7 @@ class AppViewModel @Inject constructor(
             }
             return
         }
+        notifications.signedIn()                                          // at the gate too: it is how the person hears their access was approved
         if (!auth.user.accessOk) return                                   // held at the gate: nothing of this account is touched yet
         val owner = accounts.ownership(auth.user.id)
         if (owner == Ownership.Unclaimed) {
@@ -329,6 +347,45 @@ class AppViewModel @Inject constructor(
         link.value = null
     }
 
+    /**
+     * A notification the app was opened from: acted on only for the account it was posted for, once whoever is signed in is known, and only as this device
+     * showed it ([NotificationShell.tapped]: what it opens is what was shown, not what the intent says). The frame acts on it at once; marking it seen on
+     * every device goes apart, and not while this version may send nothing. Access approved asks the server again, which lifts the gate.
+     */
+    fun onNotification(tapped: NotificationTap?) {
+        tapped ?: return
+        viewModelScope.launch {
+            val user = (backend.state.first { it !is AuthState.Unknown } as? AuthState.SignedIn)?.user ?: return@launch
+            val shown = notifications.tapped(tapped, user.id) ?: return@launch
+            if (shown.type == NotificationTap.ACCESS_APPROVED) return@launch refreshUserQuietly()
+            tap.value = shown
+            if (!holdsBack(version, minimumVersion.remembered.value, minimumVersion.rememberedApi.value)) notifications.seen(user.id, shown.id)
+        }
+    }
+
+    /** A toast's action: a tap on what the toast said (it was shown on this device, and is marked seen now that it was read). */
+    fun openFromToast(tapped: NotificationTap) = onNotification(tapped)
+
+    /** The frame has done what the tap said. */
+    fun notificationHandled() {
+        tap.value = null
+    }
+
+    /** Whether to offer the system's permission dialog: not where it is given, nor after it has been asked for twice (the system shows no more). */
+    fun offersNotifications(): Boolean = !notifications.hasPermission() && notifications.asks() < MAX_ASKS
+
+    /** Whether the switcher's line offers it to [user]: as [offersNotifications], unless they said *Not now* to it. */
+    fun switcherOffersNotifications(user: Int): Boolean = offersNotifications() && !notifications.saidNotNow(user)
+
+    /** The system's dialog is being shown. */
+    fun askedForNotifications() = notifications.noteAsked()
+
+    /** *Not now* to the switcher's offer, for [user]: the account menu still has it (docs/NOTIFICATIONS.md §4.5). */
+    fun notNowToNotifications(user: Int) = notifications.notNow(user)
+
+    /** The person allowed notifications: what waits is looked at now. */
+    fun notificationsAllowed() = notifications.foreground(true)
+
     fun signOut() {
         viewModelScope.launch { backend.logout() }
     }
@@ -341,6 +398,9 @@ class AppViewModel @Inject constructor(
     private companion object {
         // The invitation link waiting to be accepted, in the saved state (the web's sessionStorage key).
         const val INVITE_TOKEN = "ezpz.packInvite"
+
+        // The system shows its dialog twice at most; after a second refusal only its own settings can turn notifications on.
+        const val MAX_ASKS = 2
     }
 }
 

@@ -121,6 +121,8 @@ import app.ezpztac.missionpacks.PackStatus
 import app.ezpztac.model.LatLon
 import app.ezpztac.model.UnitDraft
 import app.ezpztac.network.ApiUser
+import app.ezpztac.android.notifications.NotificationTap
+import app.ezpztac.android.notifications.NotificationToast
 import app.ezpztac.packs.FinishedBand
 import app.ezpztac.packs.FinishedBanner
 import app.ezpztac.packs.AddToPackHost
@@ -140,6 +142,7 @@ import app.ezpztac.packs.PackPanelHost
 import app.ezpztac.packs.PackPanelViewModel
 import app.ezpztac.packs.PackWords
 import app.ezpztac.packs.SwitcherContent
+import app.ezpztac.packs.SwitcherNotify
 import app.ezpztac.packs.SwitcherSheet
 import app.ezpztac.packs.WorkspaceViewModel
 import app.ezpztac.packs.actionsOf
@@ -183,7 +186,9 @@ import app.ezpztac.workspace.rememberFileImport
 import kotlin.math.roundToInt
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.emptyFlow
 import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
@@ -226,6 +231,14 @@ fun MapHome(
     tooOld: Boolean = false,
     /** The server serves only API majors older than this build's: nothing is sent until it is updated ([Gate.Ready.serverBehind]). */
     serverBehind: Boolean = false,
+    /** A notification tapped (or a toast's action pressed) for this account, until it is done (docs/NOTIFICATIONS.md §7). */
+    notificationTap: NotificationTap? = null,
+    onNotificationHandled: () -> Unit = {},
+    /** What a notification says while the frame is in front: a toast, whose action [onNotificationAction] acts on as a tap. */
+    notificationToasts: Flow<NotificationToast> = emptyFlow(),
+    onNotificationAction: (NotificationTap) -> Unit = {},
+    /** The switcher's offer to turn notifications on, while it is made. */
+    switcherNotify: SwitcherNotify? = null,
     viewModel: MapViewModel = hiltViewModel(),
     home: HomeViewModel = hiltViewModel(),
     display: DisplayViewModel = hiltViewModel(),
@@ -304,6 +317,8 @@ fun MapHome(
     // How tall whatever floats above the readout is now (a drawing toolbar, the held object's bar), in pixels: the toasts go above it.
     var floating by remember { mutableIntStateOf(0) }
     var switcherOpen by rememberSaveable { mutableStateOf(false) }
+    // The tablet's switcher, a popup at the rail's tile, asked to open from outside it (an invitation's notification tapped): once, then let go.
+    var switcherAsked by remember { mutableStateOf(false) }
     // A pack picked in the switcher shows its panel, raised, once it is open (at once if it is the one open); one opened otherwise (at launch, from an
     // invitation link) shows its panel where it was. The bookkeeping is done before the sheet moves: a raise cut short by a finger leaves nothing stale.
     var raiseFor by remember { mutableStateOf<String?>(null) }
@@ -418,7 +433,36 @@ fun MapHome(
             CopyRules.LibraryAfter.LET_GO -> libraryAfter = null
         }
     }
-    if (switcherOpen && !tablet && packsHere) SwitcherSheet(workspace, onDismiss = { switcherOpen = false }, onPick = pickedPack, onNewPack = newPack::start, onTeams = teams::open)
+    if (switcherOpen && !tablet && packsHere) {
+        SwitcherSheet(workspace, onDismiss = { switcherOpen = false }, onPick = pickedPack, onNewPack = newPack::start, onTeams = teams::open, notify = switcherNotify)
+    }
+    // A notification tapped (docs/NOTIFICATIONS.md §7): an invitation opens the switcher, where it is answered; a pack added, finished or handed over opens, with its
+    // panel. It waits while packs do not run here yet (the device's plans being worked out at launch); one for another account does nothing.
+    LaunchedEffect(notificationTap, packsHere, tablet) {
+        val tapped = notificationTap ?: return@LaunchedEffect
+        // Another account's, or about packs the account no longer has (an administrator turned them off): nothing to open.
+        if (tapped.user != user.id || !user.hasFeature("mission_packs")) return@LaunchedEffect onNotificationHandled()
+        if (!packsHere) return@LaunchedEffect
+        when {
+            tapped.invitation -> if (tablet) switcherAsked = true else switcherOpen = true
+            tapped.opensPack -> tapped.pack?.let { uuid ->
+                pickedPack(uuid)
+                workspace.refresh()
+                workspace.switchTo(uuid)
+            }
+        }
+        onNotificationHandled()
+    }
+    // In front, a notification is the frame's toast, seen as it is said; its action is the tap's.
+    LaunchedEffect(notificationToasts) {
+        notificationToasts.collect { toast ->
+            launch {
+                val action = toast.tap?.let { if (it.invitation) "View" else if (it.opensPack) "Open" else null }
+                val answer = snackbars.showSnackbar(toast.text, actionLabel = action, withDismissAction = true, duration = SnackbarDuration.Long)
+                if (answer == SnackbarResult.ActionPerformed) toast.tap?.let(onNotificationAction)
+            }
+        }
+    }
     var packShownFor by rememberSaveable { mutableStateOf<String?>(null) }
     LaunchedEffect(openPack?.uuid) {
         val uuid = openPack?.uuid
@@ -837,6 +881,7 @@ fun MapHome(
                                 // Only a tile that opens the switcher says it changes the workspace.
                                 label = pack?.name ?: "Personal", description = if (packsHere) PackWords.railDescription(pack) else "Workspace: Personal", pack = pack != null,
                                 finished = pack?.finished == true,
+                                openNow = switcherAsked, onOpened = { switcherAsked = false },
                                 menu = if (packsHere) {
                                     { dismiss ->
                                         val switcher by workspace.switcher.collectAsStateWithLifecycle()
@@ -844,7 +889,7 @@ fun MapHome(
                                         DropdownMenu(
                                             expanded = true, onDismissRequest = dismiss, shape = MaterialTheme.shapes.large,
                                             containerColor = MaterialTheme.colorScheme.surfaceContainerLow, modifier = Modifier.width(SWITCHER_WIDTH),
-                                        ) { SwitcherContent(switcher, actionsOf(workspace, dismiss, pickedPack, newPack::start, teams::open)) }
+                                        ) { SwitcherContent(switcher, actionsOf(workspace, dismiss, pickedPack, newPack::start, teams::open, switcherNotify)) }
                                     }
                                 } else {
                                     null

@@ -1,6 +1,9 @@
 package app.ezpztac.android
 
 import androidx.lifecycle.SavedStateHandle
+import app.ezpztac.android.notifications.NotificationShell
+import app.ezpztac.android.notifications.NotificationTap
+import app.ezpztac.android.notifications.NotificationToast
 import app.ezpztac.android.packs.PackInvites
 import app.ezpztac.android.packs.PackRuntime
 import app.ezpztac.auth.AuthRoute
@@ -44,6 +47,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.TestScope
@@ -227,6 +231,30 @@ class AppViewModelTest {
         }
     }
 
+    /** What the shell asked of notifications, in order; [shown] what this device showed each account, by id; the permission and its asks. */
+    private class FakeNotifications : NotificationShell {
+        val log = mutableListOf<String>()
+        val shown = mutableMapOf<Int, Map<Long, NotificationTap>>()
+        var allowed = false
+        var asked = 0
+        val putAway = mutableSetOf<Int>()
+        override val toasts = MutableSharedFlow<NotificationToast>()
+        override fun signedIn() { log += "signed in" }
+        override suspend fun signedOut() { log += "signed out" }
+        override fun foreground(front: Boolean) { log += "front $front" }
+        override fun tapped(tap: NotificationTap, user: Int): NotificationTap? = when {
+            tap.user != user -> null
+            tap.type == NotificationTap.ACCESS_APPROVED -> tap
+            else -> shown[user]?.get(tap.id)
+        }
+        override suspend fun seen(user: Int, id: Long) { log += "seen $id as $user" }
+        override fun hasPermission() = allowed
+        override fun asks() = asked
+        override fun noteAsked() { asked++ }
+        override fun saidNotNow(user: Int) = user in putAway
+        override fun notNow(user: Int) { putAway += user }
+    }
+
     /** The oldest version the server last said it supports, as the device remembers it. */
     private class KeptMinimum(kept: String? = null, keptApi: List<Int>? = null) : MinimumVersion {
         override val remembered = MutableStateFlow(kept)
@@ -249,6 +277,7 @@ class AppViewModelTest {
         val tilesCleared: () -> Int,
         /** How often the brief's waiting change was written, and how many pack stops had been asked for each time. */
         val briefFlushes: List<Int>,
+        val notifications: FakeNotifications,
     ) {
         /** Another shell over the same process (the activity finished and opened again, or recreated), with [saved] as the state it comes back with. */
         fun newShell(saved: SavedStateHandle = SavedStateHandle()): AppViewModel = makeShell(saved)
@@ -285,10 +314,11 @@ class AppViewModelTest {
         val packs = RecordingPacks().apply(setUpPacks)
         val invites = FakeInvites()
         val kept = KeptMinimum(minimum)
+        val notifications = FakeNotifications()
         val shell = { saved: SavedStateHandle ->
             AppViewModel(
                 backend, accounts, scheduler, session, routeSession, weather, threats, { cleared++ }, { tilesCleared++ }, incoming, sessionPoints, tokens, packs,
-                { briefFlushes += packs.log.count { it == "disable" } }, invites, kept, saved, version,
+                { briefFlushes += packs.log.count { it == "disable" } }, invites, kept, saved, version, notifications,
             )
         }
         val saved = SavedStateHandle()
@@ -296,8 +326,94 @@ class AppViewModelTest {
         advanceUntilIdle()
         return Rig(
             backend, accounts, scheduler, model, tokens, repository, session, routes, routeSession, weather, weatherCache, threats, threatVault, clock,
-            incoming, packs, store, invites, kept, sessionPoints, saved, shell, { cleared }, { tilesCleared }, briefFlushes,
+            incoming, packs, store, invites, kept, sessionPoints, saved, shell, { cleared }, { tilesCleared }, briefFlushes, notifications,
         )
+    }
+
+    // -- Notifications (docs/NOTIFICATIONS.md) ---------------------------------------------------------
+
+    @Test
+    fun `an account signed in has its notifications looked at, at the gate too, and a sign-out takes them away`() = runTest(dispatcher) {
+        val r = rig(owner = 1, stored = AuthState.SignedIn(user(accessOk = false)))
+        assertEquals(listOf("signed in"), r.notifications.log)                            // held at the gate: how they hear they were let in
+        r.model.signOut()
+        advanceUntilIdle()
+        assertEquals(listOf("signed in", "signed out"), r.notifications.log)
+    }
+
+    @Test
+    fun `in front they are looked at at once, and out of sight they are posted`() = runTest(dispatcher) {
+        val r = rig(owner = 1)
+        r.model.appStarted()
+        r.model.appStopped()
+        advanceUntilIdle()
+        assertEquals(listOf("signed in", "front true", "front false"), r.notifications.log)
+    }
+
+    @Test
+    fun `a tap is acted on only for the account signed in, as this device showed it, and marked seen apart`() = runTest(dispatcher) {
+        val r = rig(owner = 1)
+        val shown = NotificationTap(5, "pack_finished", user = 1, pack = "p-1")
+        r.notifications.shown[1] = mapOf(5L to shown)
+        r.model.onNotification(NotificationTap(6, "pack_invite", user = 1))             // never shown here: made up, or another install's
+        advanceUntilIdle()
+        assertNull(r.model.notificationTap.value)
+        r.model.onNotification(NotificationTap(5, "pack_invite", user = 2))             // another account's
+        advanceUntilIdle()
+        assertNull(r.model.notificationTap.value)
+        r.model.onNotification(NotificationTap(5, "pack_owner", user = 1, pack = "someone-elses"))   // what it opens is what was shown, not what the intent says
+        advanceUntilIdle()
+        assertEquals(shown, r.model.notificationTap.value)
+        assertTrue("seen 5 as 1" in r.notifications.log)
+        r.model.notificationHandled()
+        assertNull(r.model.notificationTap.value)
+    }
+
+    @Test
+    fun `while this version may send nothing a tap still opens what it says, and is not marked seen`() = runTest(dispatcher) {
+        val r = rig(owner = 1, minimum = "9.0.0")
+        r.notifications.shown[1] = mapOf(5L to NotificationTap(5, "pack_invite", user = 1))
+        r.model.onNotification(NotificationTap(5, "pack_invite", user = 1))
+        advanceUntilIdle()
+        assertNotNull(r.model.notificationTap.value)
+        assertTrue(r.notifications.log.none { it.startsWith("seen") })
+    }
+
+    @Test
+    fun `a tap on access approved asks the server again, which lifts the gate`() = runTest(dispatcher) {
+        val r = rig(owner = 1, stored = AuthState.SignedIn(user(accessOk = false)))
+        r.backend.refreshed = Result.success(user(accessOk = true))
+        r.model.onNotification(NotificationTap(0, NotificationTap.ACCESS_APPROVED, user = 1))
+        advanceUntilIdle()
+        assertTrue(r.model.gate.value is Gate.Ready)
+        assertNull(r.model.notificationTap.value)                                        // nothing for the frame to do: the app opening is the answer
+    }
+
+    @Test
+    fun `a sign-out lets go of a tap not yet acted on`() = runTest(dispatcher) {
+        val r = rig(owner = 1)
+        r.notifications.shown[1] = mapOf(5L to NotificationTap(5, "pack_invite", user = 1))
+        r.model.onNotification(NotificationTap(5, "pack_invite", user = 1))
+        advanceUntilIdle()
+        r.model.signOut()
+        advanceUntilIdle()
+        assertNull(r.model.notificationTap.value)
+    }
+
+    @Test
+    fun `the permission is offered until given, asked twice or put away in the switcher`() = runTest(dispatcher) {
+        val r = rig(owner = 1)
+        assertTrue(r.model.offersNotifications() && r.model.switcherOffersNotifications(1))
+        r.model.notNowToNotifications(1)
+        assertTrue(r.model.offersNotifications())                                       // the gate's offer is not the switcher's
+        assertEquals(false, r.model.switcherOffersNotifications(1))
+        assertTrue(r.model.switcherOffersNotifications(2))                               // Not now is one account's
+        r.model.askedForNotifications()
+        r.model.askedForNotifications()
+        assertEquals(false, r.model.offersNotifications())                               // the system shows its dialog twice at most
+        r.notifications.asked = 0
+        r.notifications.allowed = true
+        assertEquals(false, r.model.offersNotifications())
     }
 
     // -- Launch ------------------------------------------------------------------------------------

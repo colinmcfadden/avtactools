@@ -5,6 +5,10 @@
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
 
+    <!-- Notifications (docs/NOTIFICATIONS.md): invitations, a pack finished or handed over, access approved. Asked for on Android 13 and later where the person
+         sees what they get for it (the gate's waiting screen, the switcher), never at launch. -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+
     <!-- The device's own position, for the GPS dot and "locate me". It is read from the platform's GPS and never leaves the device. -->
     <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
     <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
