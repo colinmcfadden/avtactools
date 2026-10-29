@@ -1,6 +1,6 @@
 # Notifications — plan
 
-Status: **decided; N0, the server, built** (2026-10-28). Android (N1) is next. The owner asked for notifications that are few and useful: a Mission Pack invitation
+Status: **decided; N0 (the server) and N1 (Android) built** (2026-10-28). N2 (Android's settings, *Changes kept*) and N3 (the web) are next. The owner asked for notifications that are few and useful: a Mission Pack invitation
 and a pack finished, and "a couple more" that earn their place. This file proposes which ones, how they reach Android first and then the
 web, and what the server keeps. **§10 holds the owner's answers** (2026-10-28): Android polls every 15 minutes, the web is in-app only, the
 list stands as §2 has it, and the names always show on a lock screen. Only a new-device sign-in email (question 6) is still open. Where this plan and
@@ -205,8 +205,10 @@ if crews find the poll too slow.
 - **Only for the account whose plans are on the device**, signed in, not below the server's minimum version, as the sync runner checks
   (`EngineSyncRunner`); **a sign-out cancels every posted notification and forgets the ids**, as it wipes the threat picture.
 - **Access approved**: while the account is gated the worker asks `GET /api/auth/me` instead (the only route a gated account reaches) and
-  posts once when `access_ok` turns true on a device that saw it false.
-- **In the front, a toast, not a system notification**: the frame's toasts (`ToastHost`) say it, with its action, and it is marked seen.
+  posts once when `access_ok` turns true on a device that saw it false, unless the person cleared the gate with their own `.mil` code
+  (`affiliation_verified`), which is not news to them.
+- **In the front, a toast, not a system notification**: the frame's toasts (`ToastHost`) say it, with its action. It is not marked seen on the person's other
+  devices (a dialog can be over the toasts); pressing its action is a tap, which marks it.
 - **Channels**, one per setting group (§2.1), so the system's own per-channel switch works too: *Invitations* (high importance),
   *Finished packs*, *Packs handed to you*, *Account* (access approved), *Changes kept* (default importance).
 - **Lock screen**: `VISIBILITY_PUBLIC`, **the names always shown** (the owner, 2026-10-28), even on a phone set to hide sensitive
@@ -303,7 +305,7 @@ and `docs/HANDOFF.md` updated in the same commit.
 | Step | What | Depends on |
 |---|---|---|
 | **N0** (built) | Backend: `notification` table, `notify.py`, the triggers of §3.2, the three routes, `notification_settings`, the sweep; OpenAPI (1.3.0), recorded responses, tests (one per trigger, the debounce and the reopen, withdrawal, the limits, another account's never seen) | — |
-| **N1** | Android: core-network's calls and DTOs (held to the recordings), `NotificationWorker`, channels, posting and groups, the toast in front, tap routing, the permission ask, sign-out clearing; access approved from `/api/auth/me` | N0 |
+| **N1** (built) | Android: core-network's calls and DTOs (held to the recordings), `NotificationWorker`, channels, posting and groups, the toast in front, tap routing, the permission ask, sign-out clearing; access approved from `/api/auth/me` | N0 |
 | **N2** | Android: *Notifications* in the account menu; *Changes kept* from the background drain | N1 |
 | **N3** | Web: `useNotifications`, the toasts and *While you were away*, tap routing, settings in the account menu | N0 |
 | later **N4** | Android: FCM's content-free wake (§4.2), `POST /api/push/devices`, if the poll proves too slow (the owner chose polling first, 2026-10-28) | N1, the `applicationId` |

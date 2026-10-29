@@ -16,6 +16,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -32,6 +33,8 @@ import app.ezpztac.auth.AffiliationHost
 import app.ezpztac.auth.AuthHost
 import app.ezpztac.auth.AuthRoute
 import app.ezpztac.auth.GoogleSignInProvider
+import app.ezpztac.android.notifications.rememberNotificationOffer
+import app.ezpztac.packs.SwitcherNotify
 import app.ezpztac.designsystem.Banner
 import app.ezpztac.designsystem.BannerKind
 import app.ezpztac.designsystem.PrimaryButton
@@ -50,6 +53,7 @@ fun AppRoot(viewModel: AppViewModel = hiltViewModel()) {
     val link by viewModel.pendingLink.collectAsStateWithLifecycle()
     val invite by viewModel.inviteState.collectAsStateWithLifecycle()
     val inviteAttempt by viewModel.inviteAttempt.collectAsStateWithLifecycle()
+    val notificationTap by viewModel.notificationTap.collectAsStateWithLifecycle()
     val context = LocalContext.current
     // Nothing runs while the app is out of sight, so what changed meanwhile (the server's config, a pack's edits) is looked at as it comes back.
     LifecycleEventEffect(Lifecycle.Event.ON_START) { viewModel.appStarted() }
@@ -77,14 +81,27 @@ fun AppRoot(viewModel: AppViewModel = hiltViewModel()) {
         else -> when (current) {
             Gate.Starting -> StartingScreen()
             is Gate.SignedOut -> AuthHost(google = google, notice = signedOutNotice(current.reason, current.code), diagnostics = DEBUG_SERVER)
-            is Gate.NeedsAffiliation -> AffiliationHost(
-                signedInAs = current.user.email, pendingMilEmail = current.user.milEmail, onSignOut = viewModel::signOut,
-            )
+            is Gate.NeedsAffiliation -> {
+                // Waiting for an administrator, the person can be told when they are let in (docs/NOTIFICATIONS.md §4.5).
+                val offer = rememberNotificationOffer(viewModel::offersNotifications, viewModel::askedForNotifications, viewModel::notificationsAllowed)
+                AffiliationHost(
+                    signedInAs = current.user.email, pendingMilEmail = current.user.milEmail, onSignOut = viewModel::signOut,
+                    onNotifyMe = offer.turnOn.takeIf { offer.offered },
+                )
+            }
             is Gate.DataBelongsToSomeoneElse -> DataConflictScreen(
                 email = current.user.email, unsyncedChanges = current.unsyncedChanges,
                 onClear = viewModel::clearOtherAccountsPlans, onSignOut = viewModel::signOut,
             )
-            is Gate.Ready -> MapHome(
+            is Gate.Ready -> {
+                // The switcher's offer of notifications, for this account: *Not now* puts it away for them (the account menu keeps the way to it).
+                val offer = key(current.user.id) {
+                    rememberNotificationOffer(
+                        { viewModel.switcherOffersNotifications(current.user.id) }, viewModel::askedForNotifications, viewModel::notificationsAllowed,
+                        onNotNow = { viewModel.notNowToNotifications(current.user.id) },
+                    )
+                }
+                MapHome(
                 user = current.user,
                 version = BuildConfig.VERSION_NAME, build = BuildConfig.VERSION_CODE,
                 maintenance = current.maintenance, onSignOut = viewModel::signOut,
@@ -93,7 +110,11 @@ fun AppRoot(viewModel: AppViewModel = hiltViewModel()) {
                 // Known too old with no config to show the update screen (no signal): planning opens, nothing is sent, and the sheet says why.
                 tooOld = current.tooOld,
                 serverBehind = current.serverBehind,
-            )
+                notificationTap = notificationTap, onNotificationHandled = viewModel::notificationHandled,
+                notificationToasts = viewModel.notificationToasts, onNotificationAction = viewModel::openFromToast,
+                switcherNotify = offer.takeIf { it.offered }?.let { SwitcherNotify(it.turnOn, it.notNow) },
+                )
+            }
             is Gate.UpdateRequired -> UpdateRequiredScreen(current.minimum)
         }
     }

@@ -42,7 +42,8 @@ import app.ezpztac.designsystem.Tokens
 /**
  * The `.mil` gate. [signedInAs] is the account's address, shown so the person knows which account is waiting; [pendingMilEmail] is an
  * address already sent a code. Signing out is offered because someone who cannot clear the gate (an admin can approve them instead)
- * must be able to leave.
+ * must be able to leave. [onNotifyMe], when given, offers the system's notification permission (Android 13 and later), so a person waiting for an
+ * administrator hears when they are let in (docs/NOTIFICATIONS.md §4.5): here, where they see what they get for it, never at launch.
  */
 @Composable
 fun AffiliationHost(
@@ -50,6 +51,7 @@ fun AffiliationHost(
     pendingMilEmail: String?,
     onSignOut: () -> Unit,
     modifier: Modifier = Modifier,
+    onNotifyMe: (() -> Unit)? = null,
     viewModel: AffiliationViewModel = hiltViewModel(),
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
@@ -57,6 +59,7 @@ fun AffiliationHost(
     AffiliationContent(
         state = state, signedInAs = signedInAs, onSendCode = viewModel::sendCode, onVerify = viewModel::verify, onResend = viewModel::resend,
         onDifferentAddress = viewModel::useDifferentAddress, onDismissError = viewModel::dismissError, onSignOut = onSignOut, modifier = modifier,
+        onNotifyMe = onNotifyMe,
     )
 }
 
@@ -71,6 +74,7 @@ fun AffiliationContent(
     onDismissError: () -> Unit,
     onSignOut: () -> Unit,
     modifier: Modifier = Modifier,
+    onNotifyMe: (() -> Unit)? = null,
 ) {
     Surface(modifier = modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
         Box(Modifier.fillMaxSize().safeDrawingPadding().imePadding(), contentAlignment = Alignment.TopCenter) {
@@ -85,6 +89,10 @@ fun AffiliationContent(
                     style = MaterialTheme.typography.bodyLarge,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
+                // Before a code is on its way: someone who has one clears the gate themselves, and is not waiting for an administrator.
+                if (state.step == AffiliationStep.Email) {
+                    onNotifyMe?.let { Banner("Waiting for an administrator? We'll tell you when your access is approved.", BannerKind.Info, actionLabel = "Notify me", onAction = it) }
+                }
                 state.error?.let { Banner(it, BannerKind.Error, actionLabel = "Dismiss", onAction = onDismissError) }
                 state.notice?.let { Banner(it, BannerKind.Info) }
                 when (state.step) {

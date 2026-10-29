@@ -12,6 +12,7 @@ import androidx.compose.runtime.getValue
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.lifecycleScope
 import app.ezpztac.android.incoming.IncomingIntake
+import app.ezpztac.android.notifications.NotificationTaps
 import app.ezpztac.designsystem.EzpzTheme
 import app.ezpztac.designsystem.ThemeMode
 import dagger.hilt.android.AndroidEntryPoint
@@ -33,6 +34,7 @@ class MainActivity : ComponentActivity() {
         // A link from an email opens the app on its screen; rotation and recreation do not replay it. Nor does a file: it is read once, when it arrives.
         if (savedInstanceState == null && isNews(intent)) {
             shell.onLink(intent?.dataString)
+            shell.onNotification(NotificationTaps.parse(intent))
             receiveFiles(intent)
         }
         setContent {
@@ -48,6 +50,7 @@ class MainActivity : ComponentActivity() {
         super.onNewIntent(intent)
         if (!isNews(intent)) return
         shell.onLink(intent.dataString)
+        shell.onNotification(NotificationTaps.parse(intent))
         receiveFiles(intent)
     }
 
