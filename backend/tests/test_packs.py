@@ -1521,6 +1521,28 @@ class InviteTests(PackCase):
         self.ok(self.invite('sam.pilot.mil@army.mil'), 201)
         self.assertEqual(len(self.ok(self.call(self.sam, 'get', '/api/invites'))['invites']), 1)
 
+    def test_a_mil_address_asked_for_and_never_confirmed_reaches_nothing(self):
+        codes = {}
+        mailer = patch('routes.auth.send_mil_verification_email',
+                       side_effect=lambda address, code, _name: codes.__setitem__(address, code) or True)
+        mailer.start()
+        self.addCleanup(mailer.stop)
+        # Sam proves one .mil address, then asks a code for someone else's and never enters it.
+        self.ok(self.call(self.sam, 'post', '/api/auth/mil/request', json={'email': 'sam.pilot.mil@army.mil'}), 202)
+        self.ok(self.call(self.sam, 'post', '/api/auth/mil/verify', json={'code': codes['sam.pilot.mil@army.mil']}))
+        self.ok(self.call(self.sam, 'post', '/api/auth/mil/request', json={'email': 'victim.mil@army.mil'}), 202)
+
+        self.ok(self.invite('victim.mil@army.mil'), 201)
+        [invite] = self.db_rows(MissionPackInvite)
+        self.assertEqual(self.ok(self.call(self.sam, 'get', '/api/invites'))['invites'], [])
+        self.assertEqual(self.call(self.sam, 'post', f'/api/invites/{invite.id}/accept').status_code, 404)
+        self.assertEqual(self.call(self.sam, 'post', f'/api/invites/{invite.id}/decline').status_code, 404)
+        self.assertEqual(self.db_rows(MissionPackInvite, id=invite.id)[0].status, 'pending')
+        # The address Sam did prove still reaches Sam.
+        self.ok(self.invite('sam.pilot.mil@army.mil'), 201)
+        [waiting] = self.ok(self.call(self.sam, 'get', '/api/invites'))['invites']
+        self.assertEqual(waiting['email'], 'sam.pilot.mil@army.mil')
+
     def test_the_link_works_whatever_address_the_person_signed_in_with(self):
         self.ok(self.invite('sam.work@example.com'), 201)
         token = self.mail[-1][1][3]

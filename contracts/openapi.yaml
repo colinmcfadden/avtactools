@@ -264,9 +264,12 @@ paths:
       operationId: milRequest
       summary: Email a code to a .mil address, to clear the affiliation gate
       description: |
-        Any `.mil` address clears the gate. The code lives 30 minutes. A `.mil` address clears one
-        account only (409 if it is already verified elsewhere). This route and `/mil/verify` are
-        reachable by a signed-in account that has not cleared the gate.
+        Any `.mil` address clears the gate. The code lives 30 minutes, and a new request spends the
+        last one. Until its code is entered the address only waits: the account is not trusted with
+        it (an emailed invitation does not reach it there), and an account already cleared stays
+        cleared with the address it confirmed. A `.mil` address clears one account only (409 if it is
+        already verified elsewhere). This route and `/mil/verify` are reachable by a signed-in account
+        that has not cleared the gate.
       security:
         - bearer: []
       requestBody:
@@ -296,6 +299,10 @@ paths:
     post:
       operationId: milVerify
       summary: Confirm the emailed code
+      description: |
+        The code proves the address it was sent to, the one asked for last, which becomes the
+        account's `mil_email`. 409 if another account has verified that address meanwhile, or signs
+        in with it and has proven it.
       security:
         - bearer: []
       requestBody:
@@ -3252,7 +3259,7 @@ components:
           type: object
           description: Entitlements. A missing key means enabled.
           additionalProperties: { type: boolean }
-        mil_email: { type: string, nullable: true }
+        mil_email: { type: string, nullable: true, description: "The `.mil` address the account confirmed, else the one waiting for its code." }
         affiliation_verified: { type: boolean }
         access_ok: { type: boolean, description: Whether the `.mil` / approval gate is cleared. }
 

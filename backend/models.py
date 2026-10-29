@@ -30,8 +30,12 @@ class User(db.Model):
     # a .mil address (mil_verified_at set), or an admin approves them manually
     # (access_approved). New users default to unapproved; the ALTER grandfathers
     # everyone who existed before the gate was introduced. See entitlements.py.
+    # mil_email is only ever an address a code confirmed, because an emailed
+    # invitation trusts it (pack_support.addresses); one asked for and not yet
+    # confirmed waits in mil_pending_email (routes/auth.py, mil_request/mil_verify).
     mil_email = db.Column(db.String(120), nullable=True)
     mil_verified_at = db.Column(db.DateTime, nullable=True)
+    mil_pending_email = db.Column(db.String(120), nullable=True)
     access_approved = db.Column(db.Boolean, nullable=False, default=False)
 
     # This creates a relationship so you can easily get all LZs for a user (e.g., user.saved_lzs)

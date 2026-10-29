@@ -209,6 +209,40 @@ every day. Now:
 - Existing web sign-ins are 24-hour tokens with no session; each signs in once more
   when it lapses, and from then on stays signed in.
 
+## The .mil affiliation gate
+
+A signed-in account reaches only `/api/auth/*` until it clears the gate
+(`backend/affiliation_gate.py`): an admin approves it, or it proves a `.mil`
+inbox. `POST /api/auth/mil/request` emails an 8-character code (30 minutes; a
+new request spends the last one) and `POST /api/auth/mil/verify` takes it.
+
+- **An address asked for only waits** (`user.mil_pending_email`). `mil_email` is
+  only ever an address a code confirmed, because it is trusted: an emailed
+  mission-pack or team invitation reaches the account at its sign-in address and
+  at its confirmed `.mil` one (`pack_support.addresses`), so it can see and accept
+  invitations sent there. The request once wrote `mil_email` and kept
+  `mil_verified_at`, so an account that had verified one address could ask a
+  code for anyone else's, never enter it, and be handed their invitations.
+- **The code proves the address it was sent to**, the one pending; entering it
+  moves that address to `mil_email` and clears the pending one.
+- **Asking for a new code never closes the gate** on an account already through
+  it: `mil_verified_at` stays, and so does the address it confirmed, until the new
+  address's code is entered.
+- **One address, one account.** A request is refused (409) when another account
+  has verified the address. Entering the code is also refused when another account
+  signs in with it and has proven it (a confirmed email link, or Google). That is
+  asked only once the code has proven the caller holds the inbox: asked at the
+  request, it would tell anyone signed in which `.mil` addresses have an account.
+  A sign-up never confirmed counts for nothing, so it cannot keep an address from
+  its owner.
+- **Rows the old flow left are put right at startup**
+  (`keep_unconfirmed_mil_addresses_pending`, from `app.py`): an address never
+  verified, and one asked for after the account last verified (a `mil_verify`
+  code not spent by a verification), move from `mil_email` to pending. Which
+  address such an account had verified was never kept, so neither is trusted
+  until a code is entered again; the account stays through the gate. It is safe on
+  every start and logs how many it moved.
+
 ## Current security posture and next steps
 
 The current bearer-token design is compatible with the existing Vercel/Fly

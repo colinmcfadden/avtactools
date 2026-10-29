@@ -18,7 +18,7 @@ if str(BACKEND_DIR) not in sys.path:
     sys.path.insert(0, str(BACKEND_DIR))
 
 from aircraft_seed import seed_aircraft_profiles  # noqa: E402
-from models import AccountToken, AircraftProfile, LoginEvent, SavedLZ, SavedPointSet, SavedRoute, db  # noqa: E402
+from models import AccountToken, AircraftProfile, LoginEvent, SavedLZ, SavedPointSet, SavedRoute, User, db  # noqa: E402
 from schema_sync import ensure_unique_index, sync_table_columns  # noqa: E402
 
 
@@ -394,3 +394,55 @@ class SavedRecordSyncColumnsTests(unittest.TestCase):
         db.session.commit()
         self.assertFalse(ensure_unique_index(db, model, ("user_id", "client_uuid"), f"ux_{table}_user_client_uuid"))
         self.assertEqual(model.query.count(), 2)            # still usable afterwards
+
+
+# "user" before mil_pending_email: what every deployment holds, the ALTERs in app.py having added the rest.
+LEGACY_USER = """
+CREATE TABLE "user" (
+    id INTEGER NOT NULL PRIMARY KEY,
+    google_id VARCHAR(100) UNIQUE,
+    email VARCHAR(120) NOT NULL UNIQUE,
+    name VARCHAR(120) NOT NULL,
+    picture VARCHAR(500),
+    created_at DATETIME,
+    role VARCHAR(20) NOT NULL DEFAULT 'user',
+    is_active BOOLEAN NOT NULL DEFAULT TRUE,
+    features JSON,
+    mil_email VARCHAR(120),
+    mil_verified_at TIMESTAMP,
+    access_approved BOOLEAN NOT NULL DEFAULT TRUE
+)
+"""
+
+
+class UserPendingMilColumnTests(unittest.TestCase):
+    """The user table gained mil_pending_email: added to the one production has, nothing else touched."""
+
+    def setUp(self):
+        self.app = Flask(__name__)
+        self.app.config.update(
+            SQLALCHEMY_DATABASE_URI="sqlite:///:memory:",
+            SQLALCHEMY_TRACK_MODIFICATIONS=False,
+        )
+        db.init_app(self.app)
+        self.ctx = self.app.app_context()
+        self.ctx.push()
+        db.session.execute(text(LEGACY_USER))
+        db.session.execute(text(
+            'INSERT INTO "user" (id, email, name, mil_email, mil_verified_at) '
+            "VALUES (7, 'pilot@example.com', 'Pilot', 'pilot@army.mil', '2026-09-01 12:00:00')"
+        ))
+        db.session.commit()
+
+    def tearDown(self):
+        db.session.remove()
+        self.ctx.pop()
+
+    def test_adds_only_the_pending_column_and_keeps_existing_accounts(self):
+        self.assertEqual(["mil_pending_email"], sync_table_columns(db, User))
+        user = db.session.get(User, 7)
+        self.assertEqual(("pilot@army.mil", None, True), (user.mil_email, user.mil_pending_email, user.access_approved))
+
+    def test_is_idempotent(self):
+        sync_table_columns(db, User)
+        self.assertEqual([], sync_table_columns(db, User))
