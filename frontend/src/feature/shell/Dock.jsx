@@ -214,7 +214,7 @@ export const PanelHead = ({ title, subtitle, onCollapse, children }) => (
       {subtitle && <div className="shell-dock__subtitle">{subtitle}</div>}
     </div>
     {onCollapse && (
-      <button type="button" className="ui-btn ui-btn--ghost ui-btn--30 ui-btn--square shell-dock__collapse" aria-label="Collapse panel" onClick={onCollapse}>
+      <button type="button" className="ui-btn ui-btn--30 ui-btn--square shell-dock__collapse" aria-label="Collapse panel" onClick={onCollapse}>
         <Icon name="chevronRight" size={15} />
       </button>
     )}

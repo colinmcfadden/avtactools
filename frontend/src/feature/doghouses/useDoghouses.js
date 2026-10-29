@@ -59,7 +59,7 @@ export const createDefaultDoghouses = (target, namespace) => {
 /**
  * Optional controlled-state shape:
  *   { doghouses: Doghouse[], setDoghouses: React.Dispatch<React.SetStateAction<Doghouse[]>>, diagramId }
- * `diagramId` names whose doghouses they are (App.js: the diagram on the map).
+ * `diagramId` names whose doghouses they are (App.jsx: the diagram on the map).
  */
 export const useDoghouses = (targetLocation, setFlightData, options = {}) => {
   const [internalDoghouses, setInternalDoghouses] = useState([]);

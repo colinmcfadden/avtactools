@@ -48,8 +48,8 @@ describe("Compass3D", () => {
         pitch,
         positionWC: { x: 0 },
         getPickRay: () => ({}),
-        flyTo: jest.fn(),
-        flyToBoundingSphere: jest.fn(),
+        flyTo: vi.fn(),
+        flyToBoundingSphere: vi.fn(),
       },
       scene: {
         canvas: { clientWidth: 800, clientHeight: 600 },

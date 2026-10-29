@@ -6,12 +6,12 @@ import TopBar from "../shell/TopBar";
 const { readFixture } = require("../../contracts/readFixture");
 
 // Leaflet draws nothing in jsdom; the map's own logic is surveyDiagram's, tested beside it.
-jest.mock("./SurveyMap", () => ({ onSetTarget, onSetBoundary }) => (
+vi.mock("./SurveyMap", () => ({ default: ({ onSetTarget, onSetBoundary }) => (
   <div data-testid="survey-map">
     <button type="button" onClick={() => onSetTarget(34.596, -84.1278)}>map: target</button>
     <button type="button" onClick={() => onSetBoundary([[34.5965, -84.1283], [34.5965, -84.1273], [34.5955, -84.1273]])}>map: boundary</button>
   </div>
-));
+) }));
 
 const DONOVAN = readFixture("surveys/donovan.json");
 
@@ -64,38 +64,38 @@ const ROW = { uuid: "s-1", hlz_id: "GA 034", name: "LZ DONOVAN", status: "draft"
 const PAGE = "<!doctype html><html><body><div class=\"sheet\">LZ DONOVAN page</div></body></html>";
 
 const fakeClient = (overrides = {}) => ({
-  listBooks: jest.fn(async () => ({ books: [BOOK], teams: [{ id: 3, name: "B CO 1-171 AVN" }], can_make_for_no_team: true })),
-  getBook: jest.fn(async () => ({ book: BOOK, surveys: [ROW] })),
-  createBook: jest.fn(async ({ name, teamId }) => ({ ...BOOK, uuid: "b-2", name, team: teamId ? { id: teamId, name: "B CO 1-171 AVN" } : null })),
-  archiveBook: jest.fn(),
-  restoreBook: jest.fn(),
-  submitSurvey: jest.fn(async (uuid, revision) => survey({ status: "in_review", revision: revision + 1 })),
-  backToDraft: jest.fn(async (uuid, revision) => survey({ status: "draft", revision: revision + 1 })),
-  publishSurvey: jest.fn(async (uuid, revision) => ({
+  listBooks: vi.fn(async () => ({ books: [BOOK], teams: [{ id: 3, name: "B CO 1-171 AVN" }], can_make_for_no_team: true })),
+  getBook: vi.fn(async () => ({ book: BOOK, surveys: [ROW] })),
+  createBook: vi.fn(async ({ name, teamId }) => ({ ...BOOK, uuid: "b-2", name, team: teamId ? { id: teamId, name: "B CO 1-171 AVN" } : null })),
+  archiveBook: vi.fn(),
+  restoreBook: vi.fn(),
+  submitSurvey: vi.fn(async (uuid, revision) => survey({ status: "in_review", revision: revision + 1 })),
+  backToDraft: vi.fn(async (uuid, revision) => survey({ status: "draft", revision: revision + 1 })),
+  publishSurvey: vi.fn(async (uuid, revision) => ({
     survey: survey({ status: "published", revision: revision + 1, published_revision: 1 }),
     revision: { number: 1, published_at: "2026-10-27T12:00:00Z", changes: "New format.", signoff: { name: "J. Doe" } },
   })),
-  fetchPage: jest.fn(async () => PAGE),
-  fetchPdf: jest.fn(async () => new Blob(["%PDF"], { type: "application/pdf" })),
-  getSurvey: jest.fn(async () => survey()),
-  createSurvey: jest.fn(async ({ name, hlzId }) => survey({ uuid: "s-2", name, hlz_id: hlzId, field: {}, snapshot: null, comparisons: [], revision: 1 })),
-  saveSurvey: jest.fn(async (uuid, revision, body) => survey({ ...body, revision: revision + 1 })),
-  measureSurvey: jest.fn(),
-  archiveSurvey: jest.fn(async () => survey({ archived: true, revision: 5 })),
-  restoreSurvey: jest.fn(),
-  updateBook: jest.fn(),
-  uploadAsset: jest.fn(),
-  updateAsset: jest.fn(),
-  removeAsset: jest.fn(),
-  importBook: jest.fn(),
-  markImportChecked: jest.fn(),
-  bookPrint: jest.fn(async () => ({ state: "empty", pages: 0, done_pages: 0, available: true })),
-  printBook: jest.fn(),
-  fetchBookPdf: jest.fn(),
+  fetchPage: vi.fn(async () => PAGE),
+  fetchPdf: vi.fn(async () => new Blob(["%PDF"], { type: "application/pdf" })),
+  getSurvey: vi.fn(async () => survey()),
+  createSurvey: vi.fn(async ({ name, hlzId }) => survey({ uuid: "s-2", name, hlz_id: hlzId, field: {}, snapshot: null, comparisons: [], revision: 1 })),
+  saveSurvey: vi.fn(async (uuid, revision, body) => survey({ ...body, revision: revision + 1 })),
+  measureSurvey: vi.fn(),
+  archiveSurvey: vi.fn(async () => survey({ archived: true, revision: 5 })),
+  restoreSurvey: vi.fn(),
+  updateBook: vi.fn(),
+  uploadAsset: vi.fn(),
+  updateAsset: vi.fn(),
+  removeAsset: vi.fn(),
+  importBook: vi.fn(),
+  markImportChecked: vi.fn(),
+  bookPrint: vi.fn(async () => ({ state: "empty", pages: 0, done_pages: 0, available: true })),
+  printBook: vi.fn(),
+  fetchBookPdf: vi.fn(),
   ...overrides,
 });
 
-const renderBook = async (client = fakeClient(), onClose = jest.fn(), props = {}) => {
+const renderBook = async (client = fakeClient(), onClose = vi.fn(), props = {}) => {
   render(<SurveyBook client={client} onClose={onClose} {...props} />);
   const book = await screen.findByRole("button", { name: "AASF 1 HLZ SURVEY BOOK" });
   await act(async () => {
@@ -115,16 +115,16 @@ const openDonovan = async (client) => {
 };
 
 beforeEach(() => {
-  jest.spyOn(window, "alert").mockImplementation(() => {});
-  jest.spyOn(window, "confirm").mockImplementation(() => true);
-  jest.spyOn(window, "prompt").mockImplementation(() => null);
+  vi.spyOn(window, "alert").mockImplementation(() => {});
+  vi.spyOn(window, "confirm").mockImplementation(() => true);
+  vi.spyOn(window, "prompt").mockImplementation(() => null);
 });
 
 afterEach(() => {
   expect(window.alert).not.toHaveBeenCalled();
   expect(window.confirm).not.toHaveBeenCalled();
   expect(window.prompt).not.toHaveBeenCalled();
-  jest.restoreAllMocks();
+  vi.restoreAllMocks();
 });
 
 describe("the survey book", () => {
@@ -141,7 +141,7 @@ describe("the survey book", () => {
 
   it("says a survey never measured is not measured, not that it has nothing to look at", async () => {
     const client = fakeClient({
-      getBook: jest.fn(async () => ({
+      getBook: vi.fn(async () => ({
         book: BOOK,
         surveys: [
           { ...ROW, disagreements: 0, surveyed_on: "", grid: "", measured_at: null },
@@ -269,7 +269,7 @@ describe("the survey editor", () => {
   it("types the approach's angle over the LiDAR's, with a reason, from field against computed", async () => {
     const approach = { key: "approach", label: "Approach angle", field: "8.7° (100 ft at 200 m)", computed: "8.5° (LiDAR: 98 ft tree 200 m out)",
       apart: "0.2° apart", disagrees: false, open: false, override: null, overrideStands: false, printed: "computed" };
-    const client = fakeClient({ getSurvey: jest.fn(async () => survey({ comparisons: [...COMPARISONS, approach] })) });
+    const client = fakeClient({ getSurvey: vi.fn(async () => survey({ comparisons: [...COMPARISONS, approach] })) });
     await openDonovan(client);
     const row = screen.getByRole("rowheader", { name: "Approach angle" }).closest("tr");
     expect(within(row).queryByRole("button", { name: "Accept computed" })).toBeNull();     // nothing to settle: they agree
@@ -298,7 +298,7 @@ describe("the survey editor", () => {
       apart: "0.2° apart", disagrees: false, open: false, override: null, overrideStands: false, printed: "computed" };
     const measured = survey({ snapshot: { ...survey().snapshot, obstacles }, comparisons: [...COMPARISONS, approach],
       approach_plan: plan(100) });
-    await openDonovan(fakeClient({ getSurvey: jest.fn(async () => measured) }));
+    await openDonovan(fakeClient({ getSurvey: vi.fn(async () => measured) }));
     const panel = screen.getByRole("group", { name: "Standing on and round the LZ · LiDAR GA_Statewide_B3_2018" });
     expect(within(panel).getByRole("row", { name: /Approach 360°/ })).toHaveTextContent("30.0°From 100 ft AHO: 53 m out");
     expect(within(panel).queryByRole("row", { name: /Exit/ })).toBeNull();                 // measured by an earlier EZ/PZ, not shown
@@ -315,7 +315,7 @@ describe("the survey editor", () => {
     const lapsed = { key: "approach", label: "Approach angle", field: "", computed: "9.0° (LiDAR: 98 ft tree 200 m out)", apart: null,
       disagrees: false, open: true, overrideStands: false, printed: "computed",
       override: { choice: "typed", value: 12, reason: "Cut in 2024", by: "CW3 Admin", field: "", computed: "8.5° (LiDAR: 98 ft tree 200 m out)" } };
-    await openDonovan(fakeClient({ getSurvey: jest.fn(async () => survey({ comparisons: [...COMPARISONS, lapsed] })) }));
+    await openDonovan(fakeClient({ getSurvey: vi.fn(async () => survey({ comparisons: [...COMPARISONS, lapsed] })) }));
     const row = screen.getByRole("rowheader", { name: "Approach angle" }).closest("tr");
     expect(within(row).getByText("Decided on other values: look again")).toBeInTheDocument();
     expect(within(row).getByRole("button", { name: "Accept computed" })).toBeInTheDocument();
@@ -326,7 +326,7 @@ describe("the survey editor", () => {
   it("says when someone else saved first, and keeps what was typed", async () => {
     const theirs = survey({ revision: 5, updated_by: "SFC Other", field: { ...DONOVAN.field, hazards: "Wires" } });
     const client = fakeClient({
-      saveSurvey: jest.fn(async () => { throw Object.assign(new Error("409"), { response: { status: 409, data: { code: "revision_conflict", server: theirs } } }); }),
+      saveSurvey: vi.fn(async () => { throw Object.assign(new Error("409"), { response: { status: 409, data: { code: "revision_conflict", server: theirs } } }); }),
     });
     await openDonovan(client);
     fireEvent.change(screen.getByLabelText("Surface"), { target: { value: "Gravel" } });
@@ -355,7 +355,7 @@ describe("the account menu", () => {
   const openAccount = () => fireEvent.click(screen.getByRole("button", { name: /Account:/ }));
 
   it("offers the survey books to whoever the app gives the way in to (an admin, or LZ surveys ticked)", () => {
-    const onOpenSurveys = jest.fn();
+    const onOpenSurveys = vi.fn();
     render(<TopBar user={{ name: "Pilot", email: "p@example.mil" }} onOpenSurveys={onOpenSurveys} />);
     openAccount();
     fireEvent.click(screen.getByRole("menuitem", { name: /LZ survey books/ }));
@@ -372,12 +372,12 @@ describe("the account menu", () => {
 describe("the books", () => {
   it("lists the books with who they are for and what this person may do in each", async () => {
     const client = fakeClient({
-      listBooks: jest.fn(async () => ({
+      listBooks: vi.fn(async () => ({
         books: [BOOK, { ...BOOK, uuid: "b-9", name: "B CO HLZ BOOK", team: { id: 3, name: "B CO 1-171 AVN" }, can_edit: false, published_count: 7 }],
         teams: [], can_make_for_no_team: false,
       })),
     });
-    render(<SurveyBook client={client} onClose={jest.fn()} />);
+    render(<SurveyBook client={client} onClose={vi.fn()} />);
     const row = (await screen.findByRole("button", { name: "B CO HLZ BOOK" })).closest("tr");
     expect(within(row).getByText("B CO 1-171 AVN")).toBeInTheDocument();
     expect(within(row).getByText("Read")).toBeInTheDocument();
@@ -387,7 +387,7 @@ describe("the books", () => {
 
   it("makes a book for a team and opens it", async () => {
     const client = fakeClient();
-    render(<SurveyBook client={client} onClose={jest.fn()} isAdmin />);
+    render(<SurveyBook client={client} onClose={vi.fn()} isAdmin />);
     fireEvent.click(await screen.findByRole("button", { name: "New book" }));
     const dialog = screen.getByRole("dialog", { name: "New survey book" });
     fireEvent.change(within(dialog).getByLabelText("Name"), { target: { value: "b co hlz book" } });
@@ -406,9 +406,9 @@ describe("a reader", () => {
   const PUBLISHED = { uuid: "s-1", hlz_id: "GA 034", name: "LZ DONOVAN", status: "published", published_revision: 2, published_at: "2026-10-27T12:00:00Z", signoff: { rank: "CW4", name: "J. Doe", title: "SIP", date: "27 OCT 2026" }, changes: "Surface regraded." };
 
   const readerClient = () => fakeClient({
-    listBooks: jest.fn(async () => ({ books: [READER_BOOK], teams: [], can_make_for_no_team: false })),
-    getBook: jest.fn(async () => ({ book: READER_BOOK, surveys: [PUBLISHED] })),
-    getSurvey: jest.fn(async () => ({ ...PUBLISHED, book: { uuid: "b-1", name: BOOK.name }, revisions: [
+    listBooks: vi.fn(async () => ({ books: [READER_BOOK], teams: [], can_make_for_no_team: false })),
+    getBook: vi.fn(async () => ({ book: READER_BOOK, surveys: [PUBLISHED] })),
+    getSurvey: vi.fn(async () => ({ ...PUBLISHED, book: { uuid: "b-1", name: BOOK.name }, revisions: [
       { number: 1, published_at: "2026-10-01T12:00:00Z", published_by: "CW3 Admin", signoff: { name: "J. Doe" }, changes: "New format." },
       { number: 2, published_at: "2026-10-27T12:00:00Z", published_by: "CW3 Admin", signoff: PUBLISHED.signoff, changes: "Surface regraded." },
     ] })),
@@ -438,7 +438,7 @@ describe("a reader", () => {
   it("never shows a page asked for before another revision was chosen", async () => {
     const pending = {};
     const client = readerClient();
-    client.fetchPage = jest.fn((uuid, { rev }) => new Promise((resolve) => { pending[rev] = resolve; }));
+    client.fetchPage = vi.fn((uuid, { rev }) => new Promise((resolve) => { pending[rev] = resolve; }));
     await renderBook(client);
     await act(async () => {
       fireEvent.click(screen.getByRole("button", { name: "LZ DONOVAN" }));
@@ -461,8 +461,8 @@ describe("a reader", () => {
   it("is shown when the book last published, not when its drafts last changed", async () => {
     const client = readerClient();
     const { revision: _r, updated_at: _u, updated_by: _b, page_order: _o, survey_count: _c, ...readerBook } = READER_BOOK;
-    client.listBooks = jest.fn(async () => ({ books: [{ ...readerBook, published_at: "2026-10-27T12:00:00Z" }], teams: [], can_make_for_no_team: false }));
-    render(<SurveyBook client={client} onClose={jest.fn()} />);
+    client.listBooks = vi.fn(async () => ({ books: [{ ...readerBook, published_at: "2026-10-27T12:00:00Z" }], teams: [], can_make_for_no_team: false }));
+    render(<SurveyBook client={client} onClose={vi.fn()} />);
     const row = (await screen.findByRole("button", { name: "AASF 1 HLZ SURVEY BOOK" })).closest("tr");
     expect(within(row).getByText("2026-10-27")).toBeInTheDocument();
   });
@@ -499,7 +499,7 @@ describe("publishing", () => {
 
   it("holds a survey measured before it changed back from review and publishing, and says why", async () => {
     const stale = ["The best approach changed after it was measured: measured at 090°, now 270°."];
-    await openDonovan(fakeClient({ getSurvey: jest.fn(async () => survey({ stale })) }));
+    await openDonovan(fakeClient({ getSurvey: vi.fn(async () => survey({ stale })) }));
     expect(screen.getByRole("button", { name: "Send for review" })).toBeDisabled();
     expect(screen.getByText(`Measure the LZ again first. ${stale[0]}`)).toBeInTheDocument();
     expect(screen.getByText(/Measured before the survey changed: measure it again/)).toBeInTheDocument();
@@ -507,13 +507,13 @@ describe("publishing", () => {
 
   it("does not publish a survey under review that was measured before it changed", async () => {
     const stale = ["The target moved after it was measured."];
-    await openDonovan(fakeClient({ getSurvey: jest.fn(async () => survey({ status: "in_review", stale })) }));
+    await openDonovan(fakeClient({ getSurvey: vi.fn(async () => survey({ status: "in_review", stale })) }));
     expect(screen.getByRole("button", { name: "Publish…" })).toBeDisabled();
     expect(screen.getByText(`Measure the LZ again first. ${stale[0]}`)).toBeInTheDocument();
   });
 
   it("does not send an unmeasured draft for review, and says why", async () => {
-    await openDonovan(fakeClient({ getSurvey: jest.fn(async () => survey({ snapshot: null, comparisons: [] })) }));
+    await openDonovan(fakeClient({ getSurvey: vi.fn(async () => survey({ snapshot: null, comparisons: [] })) }));
     expect(screen.getByRole("button", { name: "Send for review" })).toBeDisabled();
     expect(screen.getByText("Measure the LZ first.")).toBeInTheDocument();
   });
@@ -522,7 +522,7 @@ describe("publishing", () => {
     const pdfUnavailable = Object.assign(new Error("503"), {
       response: { status: 503, data: new Blob([JSON.stringify({ code: "pdf_unavailable" })], { type: "application/json" }) },
     });
-    const client = fakeClient({ fetchPdf: jest.fn(async () => { throw pdfUnavailable; }) });
+    const client = fakeClient({ fetchPdf: vi.fn(async () => { throw pdfUnavailable; }) });
     await openDonovan(client);
     await act(async () => {
       fireEvent.click(screen.getByRole("button", { name: "Show the page" }));
@@ -544,7 +544,7 @@ describe("importing the old book", () => {
 
   it("sends the importer's bundle to the book and says what it made", async () => {
     const client = fakeClient({
-      importBook: jest.fn(async () => ({
+      importBook: vi.fn(async () => ({
         source: "LZ-SURVEYS-OCT-2023.pdf",
         created: [{ uuid: "s-2" }, { uuid: "s-3" }],
         skipped: [{ page: 5, hlz_id: "GA 034", name: "LZ DONOVAN", reason: "GA 034 is in the book already: left as it is." }],
@@ -579,9 +579,9 @@ describe("importing the old book", () => {
   it("lists two warnings that read alike, each once", async () => {
     const twice = { ...IMPORTED, notes: { unread: [], blank: [], warnings: ["A photo could not be read (bad) and was left out.",
       "A photo could not be read (bad) and was left out."] } };
-    const errors = jest.spyOn(console, "error").mockImplementation(() => {});
+    const errors = vi.spyOn(console, "error").mockImplementation(() => {});
     try {
-      await openDonovan(fakeClient({ getSurvey: jest.fn(async () => survey({ imported: twice })) }));
+      await openDonovan(fakeClient({ getSurvey: vi.fn(async () => survey({ imported: twice })) }));
       const panel = screen.getByRole("region", { name: "From the old book" });
       expect(within(panel).getAllByText("A photo could not be read (bad) and was left out.")).toHaveLength(2);
       expect(errors.mock.calls.some((call) => String(call[0]).includes("same key"))).toBe(false);
@@ -594,7 +594,7 @@ describe("importing the old book", () => {
     const refused = Object.assign(new Error("400"), {
       response: { status: 400, data: { code: "invalid_bundle", error: "That is not a bundle from tools/import_survey_book.py: it is not a zip." } },
     });
-    const client = fakeClient({ importBook: jest.fn(async () => { throw refused; }) });
+    const client = fakeClient({ importBook: vi.fn(async () => { throw refused; }) });
     await renderBook(client);
     fireEvent.click(screen.getByRole("button", { name: "Import the old book" }));
     const dialog = screen.getByRole("dialog", { name: "Import the old book" });
@@ -611,7 +611,7 @@ describe("importing the old book", () => {
       { ...ROW, uuid: "s-2", name: "LZ BIG STAMP", measured_at: null, disagreements: 0, imported: { ...IMPORTED, state: "no_boundary", to_check: 0 } },
       { ...ROW, uuid: "s-3", name: "LZ CAVENDER", disagreements: 0, imported: { ...IMPORTED, to_check: 2 } },
     ];
-    await renderBook(fakeClient({ getBook: jest.fn(async () => ({ book: BOOK, surveys: rows })) }));
+    await renderBook(fakeClient({ getBook: vi.fn(async () => ({ book: BOOK, surveys: rows })) }));
     const cell = (name) => screen.getByRole("button", { name }).closest("tr");
     expect(within(cell("LZ DONOVAN")).getByText("Waiting to be measured")).toBeInTheDocument();
     expect(within(cell("LZ DONOVAN")).getByText("1 import note to check")).toBeInTheDocument();
@@ -623,8 +623,8 @@ describe("importing the old book", () => {
 
   it("shows a survey's notes from the old book in its editor, until they are checked", async () => {
     const client = fakeClient({
-      getSurvey: jest.fn(async () => survey({ imported: IMPORTED })),
-      markImportChecked: jest.fn(async () => survey({
+      getSurvey: vi.fn(async () => survey({ imported: IMPORTED })),
+      markImportChecked: vi.fn(async () => survey({
         revision: 9, imported: { ...IMPORTED, to_check: 0, checked: true, checked_by: "CW3 Admin", checked_at: "2026-10-27T02:00:00Z" },
       })),
     });
@@ -657,9 +657,9 @@ describe("the book's PDF", () => {
   it("is printed when asked, said while it prints, and downloaded once printed", async () => {
     const answers = [{ state: "none", pages: 2, done_pages: 0, available: true }];
     const client = fakeClient({
-      bookPrint: jest.fn(async () => answers[answers.length - 1]),
-      printBook: jest.fn(async () => ({ state: "printing", pages: 2, done_pages: 0, available: true })),
-      fetchBookPdf: jest.fn(async () => new Blob(["%PDF"], { type: "application/pdf" })),
+      bookPrint: vi.fn(async () => answers[answers.length - 1]),
+      printBook: vi.fn(async () => ({ state: "printing", pages: 2, done_pages: 0, available: true })),
+      fetchBookPdf: vi.fn(async () => new Blob(["%PDF"], { type: "application/pdf" })),
     });
     await renderBook(client);
     const panel = await screen.findByRole("region", { name: "The book's PDF" });
@@ -673,9 +673,9 @@ describe("the book's PDF", () => {
       fireEvent.click(screen.getByRole("button", { name: "Refresh the list" }));
     });
     expect(within(panel).getByText(/2 pages with its cover and index · 3.2 MB · printed 2026-10-27/)).toBeInTheDocument();
-    const created = jest.fn(() => "blob:book");
-    Object.assign(URL, { createObjectURL: created, revokeObjectURL: jest.fn() });
-    const clicked = jest.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(() => {});   // jsdom does not navigate
+    const created = vi.fn(() => "blob:book");
+    Object.assign(URL, { createObjectURL: created, revokeObjectURL: vi.fn() });
+    const clicked = vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(() => {});   // jsdom does not navigate
     await act(async () => {
       fireEvent.click(within(panel).getByRole("button", { name: "Download the book" }));
     });
@@ -686,8 +686,8 @@ describe("the book's PDF", () => {
 
   it("says why it could not be printed, and offers to try again", async () => {
     const client = fakeClient({
-      bookPrint: jest.fn(async () => ({ state: "failed", pages: 2, done_pages: 0, error: "The printer could not print the book. Try again in a moment.", available: true })),
-      printBook: jest.fn(async () => { throw Object.assign(new Error("503"), { response: { status: 503, data: { code: "pdf_unavailable" } } }); }),
+      bookPrint: vi.fn(async () => ({ state: "failed", pages: 2, done_pages: 0, error: "The printer could not print the book. Try again in a moment.", available: true })),
+      printBook: vi.fn(async () => { throw Object.assign(new Error("503"), { response: { status: 503, data: { code: "pdf_unavailable" } } }); }),
     });
     await renderBook(client);
     const panel = await screen.findByRole("region", { name: "The book's PDF" });
@@ -699,7 +699,7 @@ describe("the book's PDF", () => {
   });
 
   it("says when the server prints no PDFs", async () => {
-    await renderBook(fakeClient({ bookPrint: jest.fn(async () => ({ state: "none", pages: 1, done_pages: 0, available: false })) }));
+    await renderBook(fakeClient({ bookPrint: vi.fn(async () => ({ state: "none", pages: 1, done_pages: 0, available: false })) }));
     const panel = await screen.findByRole("region", { name: "The book's PDF" });
     expect(within(panel).getByText(/not printed on this server yet/)).toBeInTheDocument();
     expect(within(panel).queryByRole("button")).toBeNull();
@@ -707,14 +707,14 @@ describe("the book's PDF", () => {
 
   it("lets a reader download the book once printed", async () => {
     const client = fakeClient({
-      getBook: jest.fn(async () => ({ book: { ...BOOK, can_edit: false }, surveys: [{ ...ROW, status: "published", published_revision: 1 }] })),
-      bookPrint: jest.fn(async () => READY),
-      fetchBookPdf: jest.fn(async () => new Blob(["%PDF"], { type: "application/pdf" })),
+      getBook: vi.fn(async () => ({ book: { ...BOOK, can_edit: false }, surveys: [{ ...ROW, status: "published", published_revision: 1 }] })),
+      bookPrint: vi.fn(async () => READY),
+      fetchBookPdf: vi.fn(async () => new Blob(["%PDF"], { type: "application/pdf" })),
     });
     await renderBook(client);
     const panel = await screen.findByRole("region", { name: "The book's PDF" });
-    Object.assign(URL, { createObjectURL: jest.fn(() => "blob:book"), revokeObjectURL: jest.fn() });
-    const clicked = jest.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(() => {});
+    Object.assign(URL, { createObjectURL: vi.fn(() => "blob:book"), revokeObjectURL: vi.fn() });
+    const clicked = vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(() => {});
     await act(async () => {
       fireEvent.click(within(panel).getByRole("button", { name: "Download the book" }));
     });
@@ -723,7 +723,7 @@ describe("the book's PDF", () => {
   });
 
   it("says why how the PDF stands could not be read", async () => {
-    await renderBook(fakeClient({ bookPrint: jest.fn(async () => { throw new Error("offline"); }) }));
+    await renderBook(fakeClient({ bookPrint: vi.fn(async () => { throw new Error("offline"); }) }));
     const panel = await screen.findByRole("region", { name: "The book's PDF" });
     expect(within(panel).getByText("No connection to the server. Try again when you have one.")).toBeInTheDocument();
   });

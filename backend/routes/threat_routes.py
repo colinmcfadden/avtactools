@@ -24,6 +24,7 @@ from flask import Blueprint, current_app, request, jsonify, send_file, url_for
 from flask_jwt_extended import jwt_required, verify_jwt_in_request
 
 import terrain_tiles
+from mask_rings import mask_rings
 from ths_export import build_ths_bytes
 from terrain_provider import load_terrarium_radius
 from threat_download_store import ThreatDownloadStore
@@ -239,16 +240,9 @@ def _viewshed_rings(vis, meta, H, W, min_area_px=8, epsilon_px=1.5):
     contour detection, so the mask travels as vector shapes that render in
     ForeFlight/ATAK/Aero App (unlike a raster image overlay).
     """
-    contours, _ = cv2.findContours(vis.astype(np.uint8), cv2.RETR_EXTERNAL,
-                                   cv2.CHAIN_APPROX_SIMPLE)
     rings = []
-    for c in contours:
-        if cv2.contourArea(c) < min_area_px:
-            continue
-        approx = cv2.approxPolyDP(c, epsilon_px, True)
-        if len(approx) < 3:
-            continue
-        pts = [_pixel_to_lonlat(float(p[0][1]), float(p[0][0]), meta, H, W) for p in approx]
+    for ring in mask_rings(vis, min_area_px, epsilon_px):
+        pts = [_pixel_to_lonlat(float(row), float(col), meta, H, W) for col, row in ring]
         pts.append(pts[0])  # close the ring
         rings.append(pts)
     return rings

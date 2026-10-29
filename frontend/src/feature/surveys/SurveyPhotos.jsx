@@ -1,5 +1,6 @@
 import React, { useEffect, useId, useRef, useState } from "react";
 import { ConfirmDialog } from "../ui/Dialog";
+import { BusyButton } from "../ui/Spinner";
 import Icon from "../ui/Icon";
 import { useToast } from "../ui/Toast";
 import { fetchAsset, surveyFailure } from "./surveyApi";
@@ -106,10 +107,9 @@ const SurveyPhotos = ({ assets = [], onUpload, onUpdate, onRemove, defaultTakenO
           <select className="ui-input ui-input--36 survey-select" aria-label="Kind of photo to upload" value={kind} onChange={(event) => setKind(event.target.value)}>
             {PHOTO_KINDS.map((k) => <option key={k.id} value={k.id}>{k.label}</option>)}
           </select>
-          <button type="button" className="ui-btn ui-btn--34" disabled={uploading} onClick={() => fileInput.current?.click()}>
-            <Icon name="upload" size={14} />
+          <BusyButton className="ui-btn ui-btn--34" icon="upload" busy={uploading} onClick={() => fileInput.current?.click()}>
             {uploading ? "Uploading…" : "Upload"}
-          </button>
+          </BusyButton>
           <input
             ref={fileInput}
             type="file"

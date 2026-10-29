@@ -6,22 +6,22 @@ const MISSION_SET = { key: "file-1", kind: "mission", fileName: "GOAT SUCKER.msn
 const deps = (overrides = {}) => ({
   withThreats: true,
   threatCount: 2,
-  exportMission: jest.fn().mockResolvedValue(undefined),
-  exportSketches: jest.fn().mockResolvedValue({ airframe: "UH-60L", exact: true, warning: null }),
-  exportThreats: jest.fn().mockResolvedValue(undefined),
-  toast: jest.fn(),
+  exportMission: vi.fn().mockResolvedValue(undefined),
+  exportSketches: vi.fn().mockResolvedValue({ airframe: "UH-60L", exact: true, warning: null }),
+  exportThreats: vi.fn().mockResolvedValue(undefined),
+  toast: vi.fn(),
   ...overrides,
 });
 
 describe("exporting a route set", () => {
   let alertSpy;
   beforeEach(() => {
-    alertSpy = jest.spyOn(window, "alert").mockImplementation(() => {});
+    alertSpy = vi.spyOn(window, "alert").mockImplementation(() => {});
   });
   afterEach(() => alertSpy.mockRestore());
 
   it("makes no .ths when the sketches' .msnx could not be made, and says so in a toast", async () => {
-    const d = deps({ exportSketches: jest.fn().mockRejectedValue(new Error("template missing")) });
+    const d = deps({ exportSketches: vi.fn().mockRejectedValue(new Error("template missing")) });
     await expect(exportRouteSetFiles(SKETCH_SET, d)).resolves.toBe(false);
     expect(d.exportThreats).not.toHaveBeenCalled();
     expect(d.toast).toHaveBeenCalledWith({ tone: "error", message: "The mission file could not be made: template missing" });
@@ -29,7 +29,7 @@ describe("exporting a route set", () => {
   });
 
   it("makes no .ths when a mission's .msnx could not be made", async () => {
-    const d = deps({ exportMission: jest.fn().mockRejectedValue(new Error("zip failed")) });
+    const d = deps({ exportMission: vi.fn().mockRejectedValue(new Error("zip failed")) });
     await expect(exportRouteSetFiles(MISSION_SET, d)).resolves.toBe(false);
     expect(d.exportMission).toHaveBeenCalledWith("file-1");
     expect(d.exportThreats).not.toHaveBeenCalled();
@@ -50,7 +50,7 @@ describe("exporting a route set", () => {
 
   it("passes on the airframe warning as a toast, and still adds the threats", async () => {
     const warning = "This mission will open in AMPS as a UH-60L, not a CH-47F.";
-    const d = deps({ exportSketches: jest.fn().mockResolvedValue({ airframe: "UH-60L", exact: false, warning }) });
+    const d = deps({ exportSketches: vi.fn().mockResolvedValue({ airframe: "UH-60L", exact: false, warning }) });
     await exportRouteSetFiles(SKETCH_SET, d);
     expect(d.toast).toHaveBeenCalledWith(expect.objectContaining({ tone: "warn", message: warning }));
     expect(d.exportThreats).toHaveBeenCalled();
@@ -58,7 +58,7 @@ describe("exporting a route set", () => {
   });
 
   it("says when the mission exported but the threats did not", async () => {
-    const d = deps({ exportThreats: jest.fn().mockRejectedValue(new Error("server down")) });
+    const d = deps({ exportThreats: vi.fn().mockRejectedValue(new Error("server down")) });
     await expect(exportRouteSetFiles(SKETCH_SET, d)).resolves.toBe(true);
     expect(d.toast).toHaveBeenCalledWith({ tone: "warn", message: "The mission exported, but the threats (.ths) could not be: server down" });
   });

@@ -1,6 +1,7 @@
 import React, { useEffect, useId, useRef } from "react";
 import { createPortal } from "react-dom";
 import Icon from "./Icon";
+import { Spinner } from "./Spinner";
 import "./ui.css";
 
 /*
@@ -163,8 +164,15 @@ export const ConfirmDialog = ({
               {secondary.label}
             </button>
           )}
-          <button ref={confirmRef} type="button" className={`ui-btn ui-btn--${confirmTone} ui-btn--38`} onClick={onConfirm} disabled={busy}>
-            {confirmIcon && <Icon name={confirmIcon} size={15} />}
+          <button
+            ref={confirmRef}
+            type="button"
+            className={`ui-btn ui-btn--${confirmTone} ui-btn--38${busy ? " ui-btn--busy" : ""}`}
+            onClick={onConfirm}
+            disabled={busy}
+            aria-busy={busy ? "true" : undefined}
+          >
+            {busy ? <Spinner size={15} /> : confirmIcon && <Icon name={confirmIcon} size={15} />}
             {confirmLabel}
           </button>
         </>

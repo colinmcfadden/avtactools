@@ -32,7 +32,7 @@ body, html, .App {
 
 /* --- Controls Container (The Sidebar) --- */
 .controls-container {
-  /* This class likely wraps the <Controls /> component in your App.js */
+  /* This class likely wraps the <Controls /> component in your App.jsx */
   height: 100vh;
   background-color: var(--ff-bg-dark);
   padding: 0;
@@ -920,7 +920,7 @@ body.export-mode-active .leaflet-control-container {
         overflow-y: auto;
     }
 
-    /* Class added by App.js state */
+    /* Class added by App.jsx state */
     .sidebar.mobile-open {
         left: 0;
     }
@@ -1174,7 +1174,7 @@ html,
    selector's higher specificity beats the base .sidebar width/min-width without
    an inline-vs-cascade fight; the explicit min-width also lets the flex item
    shrink past its default 320px content minimum. Keep 76px in sync with
-   SIDEBAR_RAIL in App.js. */
+   SIDEBAR_RAIL in App.jsx. */
 .sidebar.sidebar-compact {
   width: 76px;
   min-width: 76px;
@@ -1518,6 +1518,21 @@ input:checked + .slider:before {
   background: var(--surface-3);
   box-shadow: none;
   transform: translateY(-1px);
+}
+
+/* A tool the LZ/PZ is not ready for (not analysed yet, or a read-only pack) looks off, so what comes first is plain. */
+.ff-tool-btn:disabled,
+.ff-tool-btn:disabled:hover {
+  border-color: var(--ff-border) !important;
+  background: var(--surface-1);
+  opacity: 0.38;
+  cursor: not-allowed;
+  transform: none;
+}
+
+.ff-tool-btn:disabled img,
+.ff-tool-btn:disabled svg {
+  filter: grayscale(1);
 }
 
 .ff-tool-btn .btn-label {
@@ -1874,6 +1889,38 @@ input:checked + .slider:before {
   letter-spacing: 0.04em;
   text-align: center;
   color: var(--ff-text-main);
+}
+
+/* The grid copies itself when clicked: a button that reads as the menu's title until it is pointed at. */
+.ctx-title--copy {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  margin: 0 0 2px;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: transparent;
+  cursor: pointer;
+  transition: background 120ms ease, border-color 120ms ease;
+}
+
+.ctx-title--copy svg {
+  flex: none;
+  color: var(--ff-text-muted);
+}
+
+.ctx-title--copy:hover,
+.ctx-title--copy:focus-visible {
+  border-color: var(--hairline-strong);
+  background: var(--surface-3);
+  outline: none;
+}
+
+.ctx-title--copy:hover svg,
+.ctx-title--copy:focus-visible svg {
+  color: var(--ff-accent-hover);
 }
 
 .ctx-label {

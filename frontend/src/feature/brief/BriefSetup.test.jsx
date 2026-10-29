@@ -5,13 +5,13 @@ import BriefMenu from "./BriefMenu";
 import { useBrief } from "./useBrief";
 import * as briefApi from "./briefApi";
 
-jest.mock("./briefApi", () => ({
-  listBriefs: jest.fn(),
-  getBrief: jest.fn(),
-  createBrief: jest.fn(),
-  updateBrief: jest.fn(),
-  weatherAt: jest.fn(),
-  printBrief: jest.fn(),
+vi.mock("./briefApi", () => ({
+  listBriefs: vi.fn(),
+  getBrief: vi.fn(),
+  createBrief: vi.fn(),
+  updateBrief: vi.fn(),
+  weatherAt: vi.fn(),
+  printBrief: vi.fn(),
 }));
 
 const fixture = require("../../../../contracts/fixtures/brief/compile.json");
@@ -29,7 +29,7 @@ const Harness = ({ onClose = () => {} }) => {
 };
 
 beforeEach(() => {
-  jest.useFakeTimers();
+  vi.useFakeTimers();
   localStorage.clear();
   lastDoc = null;
   Object.values(briefApi).forEach((fn) => fn?.mockReset?.());
@@ -37,7 +37,7 @@ beforeEach(() => {
   briefApi.createBrief.mockResolvedValue({ id: 3 });
   briefApi.updateBrief.mockResolvedValue({ id: 3 });
 });
-afterEach(() => jest.useRealTimers());
+afterEach(() => vi.useRealTimers());
 
 
 describe("brief setup, step 1", () => {
@@ -167,8 +167,8 @@ describe("brief setup, step 3", () => {
   });
 
   it("prints the brief the review shows, and says why when it cannot", async () => {
-    window.URL.createObjectURL = jest.fn(() => "blob:brief");
-    window.URL.revokeObjectURL = jest.fn();
+    window.URL.createObjectURL = vi.fn(() => "blob:brief");
+    window.URL.revokeObjectURL = vi.fn();
     briefApi.printBrief.mockResolvedValueOnce(new Blob(["%PDF"], { type: "application/pdf" }));
     render(<Harness />);
     fireEvent.click(screen.getByRole("button", { name: /Review/ }));
@@ -196,7 +196,7 @@ describe("brief setup, step 3", () => {
 
 describe("saving", () => {
   it("writes what waits when the setup closes", async () => {
-    const onClose = jest.fn();
+    const onClose = vi.fn();
     render(<Harness onClose={onClose} />);
     fireEvent.change(screen.getByRole("combobox", { name: "Role of LZ DECOY" }), { target: { value: "HA" } });
     expect(briefApi.createBrief).not.toHaveBeenCalled();
@@ -210,10 +210,11 @@ describe("saving", () => {
 
 describe("the Brief menu", () => {
   it("says what the brief is built from and opens the setup", () => {
-    const onGenerate = jest.fn();
+    const onGenerate = vi.fn();
     render(<BriefMenu packName="OP DK" summary="5 LZ/PZs, 2 route sets" onGenerate={onGenerate} />);
     fireEvent.click(screen.getByRole("button", { name: /Brief/ }));
-    expect(screen.getByRole("menu")).toHaveTextContent("Built from everything in OP DK: 5 LZ/PZs, 2 route sets.");
+    expect(screen.getByRole("menu")).toHaveTextContent("OP DK: 5 LZ/PZs, 2 route sets");
+    expect(screen.getByRole("menu")).not.toHaveTextContent(/Not in a pack|Blanks print/);
     fireEvent.click(screen.getByRole("menuitem", { name: /Generate brief/ }));
     expect(onGenerate).toHaveBeenCalled();
   });

@@ -44,6 +44,8 @@ import ThreatDialog from "./feature/threats/ThreatDialog";
 import ThreatExportModal from "./feature/threats/ThreatExportModal";
 import UnitBuilder from "./feature/unit/UnitBuilder";
 import { useLzWorkspace } from "./feature/lzWorkspace/useLzWorkspace";
+import { withLzMeasure } from "./feature/lzMeasure/lzMeasure";
+import CopyGridTitle from "./components/CopyGridTitle";
 import Lz3DWindow from "./feature/viewer3d/Lz3DWindow";
 import { releaseAbandonedBuilds } from "./feature/viewer3d/useLidarTileset";
 import { useBuildOnSave } from "./feature/viewer3d/useBuildOnSave";
@@ -326,6 +328,11 @@ function App() {
   );
 
   const activeGraphics = activeDiagram?.graphics ?? EMPTY_LZ_GRAPHICS;
+  // The LZ's measurement line, turned or moved on the map, is saved with the diagram like any graphic.
+  const setLzMeasure = useCallback(
+    (line) => setActiveGraphicCollection("measurements", (measurements) => withLzMeasure(measurements, line)),
+    [setActiveGraphicCollection],
+  );
   const { goAround, addGoAround, updateGoAround, deleteGoAround } =
     useGoAround(targetLocation, {
       goAround: activeGraphics.goArounds ?? [],
@@ -1525,6 +1532,8 @@ function App() {
           targetLocation={targetLocation}
           mapData={mapData}
           detectedLZ={detectedLZ}
+          lzMeasurements={activeGraphics.measurements}
+          onLzMeasureChange={mapEdit(setLzMeasure)}
           assets={helicopters}
           updateAsset={mapEdit(updateHelicopter)}
           deleteAsset={mapEdit(deleteHelicopter)}
@@ -1762,7 +1771,7 @@ function App() {
         >
           {contextMenu.type === "map" ? (
             <>
-              <div className="ctx-title">{clickedGrid}</div>
+              <CopyGridTitle grid={clickedGrid} onCopied={() => setContextMenu(null)} />
               <button
                 className="ctx-btn ctx-btn--success"
                 onClick={handleSetAsTarget}
@@ -1779,7 +1788,7 @@ function App() {
           ) : contextMenu.type === "lz" ? (
             // --- THE LZ CONTEXT MENU ---
             <>
-              <div className="ctx-title">{clickedGrid}</div>
+              <CopyGridTitle grid={clickedGrid} onCopied={() => setContextMenu(null)} />
               <button
                 className="ctx-btn ctx-btn--success"
                 onClick={handleSetAsTarget}

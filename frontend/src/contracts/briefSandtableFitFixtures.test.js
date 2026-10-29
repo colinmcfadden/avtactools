@@ -11,7 +11,7 @@ import { readFixture } from "./readFixture";
 //    { paddingTopLeft, paddingBottomRight, maxZoom: 17 })`, on a map with MapView.jsx's `zoomSnap` 0.1), the reference for Android's SandtableCamera, which
 //    works the same out itself for MapLibre (whose zoom is Leaflet's less one). Leaflet's own code answers, not a copy of its arithmetic.
 // Regenerate with
-//   cd frontend && UPDATE_CONTRACTS=1 CI=true npx react-scripts test --watchAll=false src/contracts/briefSandtableFit
+//   cd frontend && UPDATE_CONTRACTS=1 npx vitest run src/contracts/briefSandtableFit
 // and review the diff.
 
 const FIXTURE = "brief/sandtable-fit.json";

@@ -7,13 +7,13 @@ import { useBrief } from "./useBrief";
 import { scriptText } from "./compile";
 import * as briefApi from "./briefApi";
 
-jest.mock("./briefApi", () => ({
-  listBriefs: jest.fn(),
-  getBrief: jest.fn(),
-  createBrief: jest.fn(),
-  updateBrief: jest.fn(),
-  weatherAt: jest.fn(),
-  printBrief: jest.fn(),
+vi.mock("./briefApi", () => ({
+  listBriefs: vi.fn(),
+  getBrief: vi.fn(),
+  createBrief: vi.fn(),
+  updateBrief: vi.fn(),
+  weatherAt: vi.fn(),
+  printBrief: vi.fn(),
 }));
 
 const fixture = require("../../../../contracts/fixtures/brief/compile.json");
@@ -52,10 +52,10 @@ const position = () => document.querySelector(".sandtable-bar__position").textCo
 const key = (k, extra = {}) => fireEvent.keyDown(document.body, { key: k, ...extra });
 
 beforeEach(() => {
-  jest.useFakeTimers();
+  vi.useFakeTimers();
   latest = null;
 });
-afterEach(() => jest.useRealTimers());
+afterEach(() => vi.useRealTimers());
 
 describe("the live sandtable", () => {
   it("begins at the first step, with what is briefed, who briefs it and the script", () => {
@@ -148,7 +148,7 @@ describe("the live sandtable", () => {
   });
 
   it("keeps every key from the rest of the app while it runs, and the browser's save page too", () => {
-    const heard = jest.fn();
+    const heard = vi.fn();
     window.addEventListener("keydown", heard);
     document.addEventListener("keydown", heard);
     try {
@@ -168,7 +168,7 @@ describe("the live sandtable", () => {
   });
 
   it("leaves a field's keys alone", () => {
-    const heard = jest.fn();
+    const heard = vi.fn();
     window.addEventListener("keydown", heard);
     try {
       begin();
@@ -195,11 +195,11 @@ describe("the live sandtable", () => {
     begin();
     expect(document.activeElement).toBe(screen.getByRole("button", { name: "Next step" }));
     fireEvent.click(screen.getByRole("button", { name: /End brief/ }));
-    act(() => jest.runOnlyPendingTimers());
+    act(() => vi.runOnlyPendingTimers());
     expect(screen.queryByRole("region", { name: "Step" })).toBeNull();
     expect(document.activeElement).toBe(screen.getByRole("button", { name: "Present" }));
 
-    const heard = jest.fn();
+    const heard = vi.fn();
     window.addEventListener("keydown", heard);
     key("ArrowRight");
     expect(heard).toHaveBeenCalledTimes(1);
@@ -263,7 +263,7 @@ describe("the live sandtable", () => {
       act(() => latest.start());
       item.remove();
       fireEvent.click(screen.getByRole("button", { name: /End brief/ }));
-      act(() => jest.runOnlyPendingTimers());
+      act(() => vi.runOnlyPendingTimers());
       expect(document.activeElement).toBe(briefButton);
     } finally {
       briefButton.remove();
@@ -290,7 +290,7 @@ describe("the live sandtable", () => {
 
 describe("the ways into the sandtable", () => {
   it("is offered in the Brief menu", () => {
-    const onPresent = jest.fn();
+    const onPresent = vi.fn();
     render(<BriefMenu packName="OP DK" summary="5 LZ/PZs" onGenerate={() => {}} onPresent={onPresent} />);
     fireEvent.click(screen.getByRole("button", { name: /Brief/ }));
     fireEvent.click(screen.getByRole("menuitem", { name: /Present live sandtable/ }));
@@ -310,7 +310,7 @@ describe("the ways into the sandtable", () => {
     const fixturePlan = fixture.cases[0].plan;
     const diagrams = fixturePlan.lzs.map((lz) => ({ ...lz.diagram, id: lz.id }));
     const routeSets = fixturePlan.routeSets.map((set) => ({ key: set.id, routes: set.data.routes }));
-    const onPresent = jest.fn();
+    const onPresent = vi.fn();
     const Setup = () => {
       const brief = useBrief({ enabled: true, active: true, user: { id: 7, name: "Colin M." }, session: { name: "", diagrams, routeSets } });
       return <BriefSetup brief={brief} title="this session" threatCount={0} onClose={() => {}} onPresent={onPresent} />;

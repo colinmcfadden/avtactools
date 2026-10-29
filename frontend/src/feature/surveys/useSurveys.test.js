@@ -26,30 +26,30 @@ const conflict = (server) => Object.assign(new Error("409"), { response: { statu
 const BOOK = { uuid: "b-1", name: "HLZ SURVEY BOOK", revision: 1, page_order: ["s-1"], can_edit: true };
 
 const fakeClient = (overrides = {}) => ({
-  listBooks: jest.fn(async () => ({ books: [BOOK], teams: [{ id: 3, name: "B CO" }], can_make_for_no_team: true })),
-  getBook: jest.fn(async () => ({ book: BOOK, surveys: [{ uuid: "s-1", name: DONOVAN.name }] })),
-  createBook: jest.fn(async ({ name }) => ({ ...BOOK, uuid: "b-2", name })),
-  submitSurvey: jest.fn(async (uuid, revision) => surveyAt(revision + 1, { status: "in_review" })),
-  backToDraft: jest.fn(async (uuid, revision) => surveyAt(revision + 1, { status: "draft" })),
-  publishSurvey: jest.fn(async (uuid, revision) => ({ survey: surveyAt(revision + 1, { status: "published" }), revision: { number: 1 } })),
-  fetchPage: jest.fn(async () => "<html></html>"),
-  fetchPdf: jest.fn(async () => new Blob(["%PDF"])),
-  getSurvey: jest.fn(async () => surveyAt(1)),
-  createSurvey: jest.fn(async ({ name, hlzId }) => surveyAt(1, { name, hlz_id: hlzId, field: {} })),
-  saveSurvey: jest.fn(async (uuid, revision, body) => surveyAt(revision + 1, { ...body, field: body.field })),
-  measureSurvey: jest.fn(async (uuid, { apply }) => ({
+  listBooks: vi.fn(async () => ({ books: [BOOK], teams: [{ id: 3, name: "B CO" }], can_make_for_no_team: true })),
+  getBook: vi.fn(async () => ({ book: BOOK, surveys: [{ uuid: "s-1", name: DONOVAN.name }] })),
+  createBook: vi.fn(async ({ name }) => ({ ...BOOK, uuid: "b-2", name })),
+  submitSurvey: vi.fn(async (uuid, revision) => surveyAt(revision + 1, { status: "in_review" })),
+  backToDraft: vi.fn(async (uuid, revision) => surveyAt(revision + 1, { status: "draft" })),
+  publishSurvey: vi.fn(async (uuid, revision) => ({ survey: surveyAt(revision + 1, { status: "published" }), revision: { number: 1 } })),
+  fetchPage: vi.fn(async () => "<html></html>"),
+  fetchPdf: vi.fn(async () => new Blob(["%PDF"])),
+  getSurvey: vi.fn(async () => surveyAt(1)),
+  createSurvey: vi.fn(async ({ name, hlzId }) => surveyAt(1, { name, hlz_id: hlzId, field: {} })),
+  saveSurvey: vi.fn(async (uuid, revision, body) => surveyAt(revision + 1, { ...body, field: body.field })),
+  measureSurvey: vi.fn(async (uuid, { apply }) => ({
     applied: apply,
     snapshot: { grid: "16S GD 63415 31994" },
     changes: [{ label: "Grid", before: null, after: "16S GD 63415 31994" }],
     survey: apply ? surveyAt(3, { snapshot: { grid: "16S GD 63415 31994" } }) : null,
   })),
-  archiveSurvey: jest.fn(async () => surveyAt(2, { archived: true })),
-  restoreSurvey: jest.fn(async () => surveyAt(3, { archived: false })),
-  updateBook: jest.fn(async (revision, patch) => ({ name: patch.name, revision: revision + 1, page_order: [] })),
-  uploadAsset: jest.fn(async () => ({ id: 7, kind: "photo_north", url: "/surveys/s-1/assets/7" })),
-  updateAsset: jest.fn(async (uuid, id, meta) => ({ id, kind: "photo_north", ...meta })),
-  removeAsset: jest.fn(async () => ({ removed: 7 })),
-  bookPrint: jest.fn(async () => ({ state: "empty", pages: 0, available: true })),
+  archiveSurvey: vi.fn(async () => surveyAt(2, { archived: true })),
+  restoreSurvey: vi.fn(async () => surveyAt(3, { archived: false })),
+  updateBook: vi.fn(async (revision, patch) => ({ name: patch.name, revision: revision + 1, page_order: [] })),
+  uploadAsset: vi.fn(async () => ({ id: 7, kind: "photo_north", url: "/surveys/s-1/assets/7" })),
+  updateAsset: vi.fn(async (uuid, id, meta) => ({ id, kind: "photo_north", ...meta })),
+  removeAsset: vi.fn(async () => ({ removed: 7 })),
+  bookPrint: vi.fn(async () => ({ state: "empty", pages: 0, available: true })),
   ...overrides,
 });
 
@@ -86,7 +86,7 @@ describe("useSurveys", () => {
   });
 
   it("says why the books could not be loaded, in its own words", async () => {
-    const client = fakeClient({ listBooks: jest.fn(async () => { throw Object.assign(new Error("x"), { response: { status: 403, data: { code: "feature_disabled" } } }); }) });
+    const client = fakeClient({ listBooks: vi.fn(async () => { throw Object.assign(new Error("x"), { response: { status: 403, data: { code: "feature_disabled" } } }); }) });
     const { result } = renderHook(() => useSurveys({ client }));
     await act(async () => {
       await result.current.refreshBooks();
@@ -95,7 +95,7 @@ describe("useSurveys", () => {
   });
 
   it("says why a survey would not open, and opens nothing", async () => {
-    const client = fakeClient({ getSurvey: jest.fn(async () => { throw Object.assign(new Error("x"), { response: { status: 404, data: { code: "not_found" } } }); }) });
+    const client = fakeClient({ getSurvey: vi.fn(async () => { throw Object.assign(new Error("x"), { response: { status: 404, data: { code: "not_found" } } }); }) });
     const { result } = renderHook(() => useSurveys({ client }));
     let failure;
     await act(async () => {
@@ -106,7 +106,7 @@ describe("useSurveys", () => {
   });
 
   it("opens a published survey for a reader on its page, not in the editor", async () => {
-    const client = fakeClient({ getSurvey: jest.fn(async () => ({ uuid: "s-1", name: "LZ DONOVAN", status: "published", published_revision: 2, revisions: [] })) });
+    const client = fakeClient({ getSurvey: vi.fn(async () => ({ uuid: "s-1", name: "LZ DONOVAN", status: "published", published_revision: 2, revisions: [] })) });
     const { result } = renderHook(() => useSurveys({ client }));
     await act(async () => {
       await result.current.openSurvey("s-1");
@@ -133,7 +133,7 @@ describe("useSurveys", () => {
   });
 
   it("says a refused publish in words", async () => {
-    const client = fakeClient({ publishSurvey: jest.fn(async () => { throw Object.assign(new Error("x"), { response: { status: 409, data: { code: "invalid_status" } } }); }) });
+    const client = fakeClient({ publishSurvey: vi.fn(async () => { throw Object.assign(new Error("x"), { response: { status: 409, data: { code: "invalid_status" } } }); }) });
     const { result } = await opened(client);
     await expect(act(async () => {
       await result.current.publish({ signoff: { name: "J", date: "x" } });
@@ -162,7 +162,7 @@ describe("useSurveys", () => {
     const theirs = surveyAt(2, { field: { ...DONOVAN.field, hazards: "Wires on the north edge" }, updated_by: "SFC Other" });
     let calls = 0;
     const client = fakeClient({
-      saveSurvey: jest.fn(async (uuid, revision, body) => {
+      saveSurvey: vi.fn(async (uuid, revision, body) => {
         calls += 1;
         if (calls === 1) throw conflict(theirs);
         return surveyAt(revision + 1, body);
@@ -187,7 +187,7 @@ describe("useSurveys", () => {
 
   it("can load theirs instead", async () => {
     const theirs = surveyAt(2, { field: { ...DONOVAN.field, hazards: "Wires" } });
-    const client = fakeClient({ saveSurvey: jest.fn(async () => { throw conflict(theirs); }) });
+    const client = fakeClient({ saveSurvey: vi.fn(async () => { throw conflict(theirs); }) });
     const { result } = await opened(client);
     act(() => result.current.setField("surface", "Gravel"));
     await act(async () => {
@@ -218,7 +218,7 @@ describe("useSurveys", () => {
   });
 
   it("does not measure when the save before it fails", async () => {
-    const client = fakeClient({ saveSurvey: jest.fn(async () => { throw Object.assign(new Error("x"), { response: { status: 500, data: {} } }); }) });
+    const client = fakeClient({ saveSurvey: vi.fn(async () => { throw Object.assign(new Error("x"), { response: { status: 500, data: {} } }); }) });
     const { result } = await opened(client);
     act(() => result.current.setField("approachDeg", "045"));
     await act(async () => {
@@ -267,9 +267,9 @@ describe("useSurveys", () => {
   it("takes the draft a photo makes of a published survey, but only on the revision it held", async () => {
     const published = surveyAt(4, { status: "published" });
     const client = fakeClient({
-      getSurvey: jest.fn(async () => published),
-      uploadAsset: jest.fn(async () => ({ id: 8, kind: "photo_other", survey: { status: "draft", revision: 5, was: 4 } })),
-      updateAsset: jest.fn(async (uuid, id, meta) => ({ id, kind: "photo_other", ...meta, survey: { status: "draft", revision: 7, was: 6 } })),
+      getSurvey: vi.fn(async () => published),
+      uploadAsset: vi.fn(async () => ({ id: 8, kind: "photo_other", survey: { status: "draft", revision: 5, was: 4 } })),
+      updateAsset: vi.fn(async (uuid, id, meta) => ({ id, kind: "photo_other", ...meta, survey: { status: "draft", revision: 7, was: 6 } })),
     });
     const { result } = await opened(client);
     await act(async () => {
@@ -288,7 +288,7 @@ describe("useSurveys", () => {
   it("lets go of a survey that answers once another was asked for", async () => {
     let first;
     const client = fakeClient({
-      getSurvey: jest.fn((uuid) => (uuid === "s-1" ? new Promise((resolve) => { first = resolve; }) : Promise.resolve(surveyAt(1, { uuid: "s-2", name: "LZ OTHER" })))),
+      getSurvey: vi.fn((uuid) => (uuid === "s-1" ? new Promise((resolve) => { first = resolve; }) : Promise.resolve(surveyAt(1, { uuid: "s-2", name: "LZ OTHER" })))),
     });
     const { result } = renderHook(() => useSurveys({ client }));
     let slow;
@@ -305,7 +305,7 @@ describe("useSurveys", () => {
   });
 
   it("is not left opening when the survey being opened is closed", async () => {
-    const client = fakeClient({ getSurvey: jest.fn(() => new Promise(() => {})) });
+    const client = fakeClient({ getSurvey: vi.fn(() => new Promise(() => {})) });
     const { result } = renderHook(() => useSurveys({ client }));
     act(() => {
       result.current.openSurvey("s-1");
@@ -321,8 +321,8 @@ describe("useSurveys", () => {
     let answer;
     const other = { ...BOOK, uuid: "b-2", name: "OTHER BOOK" };
     const client = fakeClient({
-      archiveBook: jest.fn(() => new Promise((resolve) => { answer = resolve; })),
-      getBook: jest.fn(async (uuid) => ({ book: uuid === "b-2" ? other : BOOK, surveys: [] })),
+      archiveBook: vi.fn(() => new Promise((resolve) => { answer = resolve; })),
+      getBook: vi.fn(async (uuid) => ({ book: uuid === "b-2" ? other : BOOK, surveys: [] })),
     });
     const { result } = renderHook(() => useSurveys({ client }));
     await act(async () => {
@@ -342,7 +342,7 @@ describe("useSurveys", () => {
   });
 
   it("closes the book it archived while it is still the one open", async () => {
-    const client = fakeClient({ archiveBook: jest.fn(async () => ({ ...BOOK, archived: true })) });
+    const client = fakeClient({ archiveBook: vi.fn(async () => ({ ...BOOK, archived: true })) });
     const { result } = renderHook(() => useSurveys({ client }));
     await act(async () => {
       await result.current.openBook("b-1");
@@ -355,7 +355,7 @@ describe("useSurveys", () => {
 
   it("imports the old book into the open book, then reads the book again", async () => {
     const answer = { created: [{ uuid: "s-2" }], skipped: [], source: "book.pdf" };
-    const client = fakeClient({ importBook: jest.fn(async () => answer) });
+    const client = fakeClient({ importBook: vi.fn(async () => answer) });
     const { result } = renderHook(() => useSurveys({ client }));
     await act(async () => {
       await result.current.openBook("b-1");
@@ -371,11 +371,11 @@ describe("useSurveys", () => {
   });
 
   it("reads the book again while the server measures imported surveys, and stops when they are measured", async () => {
-    jest.useFakeTimers();
+    vi.useFakeTimers();
     try {
       const measuring = { surveys: [{ uuid: "s-1", name: DONOVAN.name, imported: { state: "queued" } }] };
       const measured = { surveys: [{ uuid: "s-1", name: DONOVAN.name, imported: { state: "done" } }] };
-      const client = fakeClient({ getBook: jest.fn(async () => ({ book: BOOK, ...measuring })) });
+      const client = fakeClient({ getBook: vi.fn(async () => ({ book: BOOK, ...measuring })) });
       const { result } = renderHook(() => useSurveys({ client }));
       await act(async () => {
         await result.current.openBook("b-1");
@@ -383,31 +383,31 @@ describe("useSurveys", () => {
       expect(client.getBook).toHaveBeenCalledTimes(1);
       client.getBook.mockImplementation(async () => ({ book: BOOK, ...measured }));
       await act(async () => {
-        jest.advanceTimersByTime(IMPORT_POLL_MS);
+        vi.advanceTimersByTime(IMPORT_POLL_MS);
       });
       expect(client.getBook).toHaveBeenCalledTimes(2);
       await act(async () => {
-        jest.advanceTimersByTime(IMPORT_POLL_MS * 3);
+        vi.advanceTimersByTime(IMPORT_POLL_MS * 3);
       });
       expect(client.getBook).toHaveBeenCalledTimes(2);                          // measured: no more reading
     } finally {
-      jest.useRealTimers();
+      vi.useRealTimers();
     }
   });
 
   it("follows the open survey while its import is measured, keeping what was typed meanwhile", async () => {
-    jest.useFakeTimers();
+    vi.useFakeTimers();
     try {
       const queued = surveyAt(1, { imported: { state: "queued" } });
       const boundary = { ...queued.diagram, status: "analyzed", analysis: { detectedLZ: [[34.6, -84.13], [34.6, -84.12], [34.59, -84.12]] } };
       const measured = surveyAt(3, { diagram: boundary, snapshot: { grid: "16S GD 63415 31995" }, updated_by: "EZ/PZ (import)",
         imported: { state: "done" } });
-      const client = fakeClient({ getSurvey: jest.fn(async () => queued) });
+      const client = fakeClient({ getSurvey: vi.fn(async () => queued) });
       const { result } = await opened(client);
       act(() => result.current.setField("ppr", "Typed while it was measured"));
       client.getSurvey.mockImplementation(async () => measured);
       await act(async () => {
-        jest.advanceTimersByTime(IMPORT_POLL_MS);
+        vi.advanceTimersByTime(IMPORT_POLL_MS);
       });
       expect(result.current.survey.revision).toBe(3);                          // the next save is on the measuring's revision
       expect(result.current.draft.diagram).toEqual(boundary);
@@ -415,31 +415,31 @@ describe("useSurveys", () => {
       expect(result.current.dirty).toBe(true);
       const reads = client.getSurvey.mock.calls.length;
       await act(async () => {
-        jest.advanceTimersByTime(IMPORT_POLL_MS * 3);
+        vi.advanceTimersByTime(IMPORT_POLL_MS * 3);
       });
       expect(client.getSurvey).toHaveBeenCalledTimes(reads);                    // measured: no more reading
     } finally {
-      jest.useRealTimers();
+      vi.useRealTimers();
     }
   });
 
   it("leaves the draft alone when the measuring and this person changed the same part", async () => {
-    jest.useFakeTimers();
+    vi.useFakeTimers();
     try {
       const queued = surveyAt(1, { imported: { state: "queued" } });
-      const client = fakeClient({ getSurvey: jest.fn(async () => queued) });
+      const client = fakeClient({ getSurvey: vi.fn(async () => queued) });
       const { result } = await opened(client);
       const drawn = { ...queued.diagram, analysis: { customLZ: [[1, 2], [3, 4], [5, 6]] } };
       act(() => result.current.setDiagram(drawn));
       client.getSurvey.mockImplementation(async () => surveyAt(2, { diagram: { ...queued.diagram, analysis: { detectedLZ: [[7, 8]] } },
         imported: { state: "measuring" } }));
       await act(async () => {
-        jest.advanceTimersByTime(IMPORT_POLL_MS);
+        vi.advanceTimersByTime(IMPORT_POLL_MS);
       });
       expect(result.current.survey.revision).toBe(1);                          // the next save meets theirs, and says so
       expect(result.current.draft.diagram).toEqual(drawn);
     } finally {
-      jest.useRealTimers();
+      vi.useRealTimers();
     }
   });
 
@@ -455,8 +455,8 @@ describe("useSurveys", () => {
 
   it("marks the import's notes checked without taking the rest of the answer as its copy", async () => {
     const client = fakeClient({
-      getSurvey: jest.fn(async () => surveyAt(1, { imported: { state: "done", checked: false, to_check: 2 } })),
-      markImportChecked: jest.fn(async () => surveyAt(5, { name: "SOMEONE ELSE'S", imported: { state: "done", checked: true, to_check: 0 } })),
+      getSurvey: vi.fn(async () => surveyAt(1, { imported: { state: "done", checked: false, to_check: 2 } })),
+      markImportChecked: vi.fn(async () => surveyAt(5, { name: "SOMEONE ELSE'S", imported: { state: "done", checked: true, to_check: 0 } })),
     });
     const { result } = await opened(client);
     await act(async () => {
@@ -468,12 +468,12 @@ describe("useSurveys", () => {
   });
 
   it("asks how the book's PDF stands as the book opens, and again only while the server prints it", async () => {
-    jest.useFakeTimers();
+    vi.useFakeTimers();
     try {
       const answers = [{ state: "none", pages: 1, available: true }];
       const client = fakeClient({
-        bookPrint: jest.fn(async () => answers[answers.length - 1]),
-        printBook: jest.fn(async () => ({ state: "printing", pages: 1, done_pages: 0, available: true })),
+        bookPrint: vi.fn(async () => answers[answers.length - 1]),
+        printBook: vi.fn(async () => ({ state: "printing", pages: 1, done_pages: 0, available: true })),
       });
       const { result } = renderHook(() => useSurveys({ client }));
       await act(async () => {
@@ -483,7 +483,7 @@ describe("useSurveys", () => {
       expect(result.current.bookPrint.print.state).toBe("none");
       const asked = client.bookPrint.mock.calls.length;
       await act(async () => {
-        jest.advanceTimersByTime(PRINT_POLL_MS * 2);
+        vi.advanceTimersByTime(PRINT_POLL_MS * 2);
       });
       expect(client.bookPrint.mock.calls.length).toBe(asked);                     // not printing: nobody asks
       await act(async () => {
@@ -492,22 +492,22 @@ describe("useSurveys", () => {
       expect(result.current.bookPrint.print.state).toBe("printing");
       answers.push({ state: "ready", pages: 1, size_bytes: 10, printed_at: "2026-10-27T00:00:00Z", available: true });
       await act(async () => {
-        jest.advanceTimersByTime(PRINT_POLL_MS);
+        vi.advanceTimersByTime(PRINT_POLL_MS);
       });
       expect(result.current.bookPrint.print.state).toBe("ready");
       const after = client.bookPrint.mock.calls.length;
       await act(async () => {
-        jest.advanceTimersByTime(PRINT_POLL_MS * 3);
+        vi.advanceTimersByTime(PRINT_POLL_MS * 3);
       });
       expect(client.bookPrint.mock.calls.length).toBe(after);
     } finally {
-      jest.useRealTimers();
+      vi.useRealTimers();
     }
   });
 
   it("does not let a look at the PDF asked before Print undo it", async () => {
     let answerEarlier;
-    const client = fakeClient({ printBook: jest.fn(async () => ({ state: "printing", pages: 1, done_pages: 0, available: true })) });
+    const client = fakeClient({ printBook: vi.fn(async () => ({ state: "printing", pages: 1, done_pages: 0, available: true })) });
     const { result } = renderHook(() => useSurveys({ client }));
     await act(async () => {
       await result.current.openBook("b-1");
@@ -528,10 +528,10 @@ describe("useSurveys", () => {
   });
 
   it("stops asking about the PDF of a book that has gone, and says so", async () => {
-    jest.useFakeTimers();
+    vi.useFakeTimers();
     try {
       const client = fakeClient({
-        bookPrint: jest.fn(async () => ({ state: "printing", pages: 1, done_pages: 0, available: true })),
+        bookPrint: vi.fn(async () => ({ state: "printing", pages: 1, done_pages: 0, available: true })),
       });
       const { result } = renderHook(() => useSurveys({ client }));
       await act(async () => {
@@ -539,17 +539,17 @@ describe("useSurveys", () => {
       });
       client.bookPrint.mockImplementation(async () => { throw Object.assign(new Error("404"), { response: { status: 404, data: { code: "not_found" } } }); });
       await act(async () => {
-        jest.advanceTimersByTime(PRINT_POLL_MS);
+        vi.advanceTimersByTime(PRINT_POLL_MS);
       });
       expect(result.current.bookPrint.status).toBe("gone");
       expect(result.current.bookPrint.error).toBe("That is no longer there, or you cannot open it.");
       const asked = client.bookPrint.mock.calls.length;
       await act(async () => {
-        jest.advanceTimersByTime(PRINT_POLL_MS * 5);
+        vi.advanceTimersByTime(PRINT_POLL_MS * 5);
       });
       expect(client.bookPrint.mock.calls.length).toBe(asked);
     } finally {
-      jest.useRealTimers();
+      vi.useRealTimers();
     }
   });
 
@@ -569,8 +569,8 @@ describe("useSurveys", () => {
   it("keeps a 3D capture with its camera, in place of the last", async () => {
     const pose = { headingDeg: 90, pitchDeg: -20, rangeM: 550, survey: { name: "GA_Statewide_B3_2018", year: 2018 } };
     const client = fakeClient({
-      getSurvey: jest.fn(async () => surveyAt(1, { assets: [{ id: 2, kind: "view_3d" }, { id: 3, kind: "photo_north" }] })),
-      uploadAsset: jest.fn(async () => ({ id: 7, kind: "view_3d", pose, survey: { status: "draft", revision: 1, was: 1 } })),
+      getSurvey: vi.fn(async () => surveyAt(1, { assets: [{ id: 2, kind: "view_3d" }, { id: 3, kind: "photo_north" }] })),
+      uploadAsset: vi.fn(async () => ({ id: 7, kind: "view_3d", pose, survey: { status: "draft", revision: 1, was: 1 } })),
     });
     const { result } = await opened(client);
     const blob = new Blob(["png"], { type: "image/png" });

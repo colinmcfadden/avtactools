@@ -160,8 +160,8 @@ sync is held to these files:
 
 ```powershell
 cd frontend
-$env:UPDATE_CONTRACTS="1"; $env:CI="true"; npx react-scripts test --watchAll=false src/contracts/pack
-Remove-Item Env:UPDATE_CONTRACTS; npx react-scripts test --watchAll=false src/contracts/pack src/feature/missionPacks
+$env:UPDATE_CONTRACTS="1"; npx vitest run src/contracts/pack
+Remove-Item Env:UPDATE_CONTRACTS; npx vitest run src/contracts/pack src/feature/missionPacks
 ```
 
 ### The `network/` fixtures
@@ -216,7 +216,7 @@ python contracts/scripts/mgrs_fixtures.py check    # exact regeneration check, ~
 
 # Everything the web app is the reference for
 cd frontend
-$env:UPDATE_CONTRACTS="1"; $env:CI="true"; npx react-scripts test --watchAll=false src/contracts
+$env:UPDATE_CONTRACTS="1"; npx vitest run src/contracts
 ```
 
 Without `UPDATE_CONTRACTS`, the web suite *fails* if the committed fixture differs

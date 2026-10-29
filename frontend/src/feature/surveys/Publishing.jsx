@@ -1,5 +1,6 @@
 import React, { useId, useRef, useState } from "react";
 import Dialog from "../ui/Dialog";
+import { BusyButton } from "../ui/Spinner";
 import Icon from "../ui/Icon";
 
 /*
@@ -53,9 +54,9 @@ export const PublishDialog = ({ survey, onPublish, onCancel }) => {
       footer={(
         <>
           <button type="button" className="ui-btn ui-btn--ghost ui-btn--38" onClick={onCancel} disabled={busy}>Cancel</button>
-          <button type="button" className="ui-btn ui-btn--primary ui-btn--38" onClick={submit} disabled={busy}>
+          <BusyButton className="ui-btn ui-btn--primary ui-btn--38" busy={busy} onClick={submit}>
             {busy ? "Publishing…" : `Publish REV ${survey.next_revision}`}
-          </button>
+          </BusyButton>
         </>
       )}
     >
@@ -117,11 +118,10 @@ export const ReviewPanel = ({ survey, dirty, busy, onSubmit, onBackToDraft, onAs
             {published ? ` Readers see REV ${published} until the next is published.` : " Nothing is published yet."}
           </p>
           <div className="survey-page-bar">
-            <button type="button" className="ui-btn ui-btn--primary ui-btn--34" onClick={onSubmit} disabled={Boolean(why) || Boolean(busy)}
-              aria-describedby={why ? `${headingId}-why` : undefined}>
-              <Icon name="send" size={14} />
+            <BusyButton className="ui-btn ui-btn--primary ui-btn--34" icon="send" onClick={onSubmit} busy={busy === "submitting"}
+              disabled={Boolean(why) || Boolean(busy)} aria-describedby={why ? `${headingId}-why` : undefined}>
               {busy === "submitting" ? "Sending…" : dirty ? "Save and send for review" : "Send for review"}
-            </button>
+            </BusyButton>
           </div>
           {why && <p id={`${headingId}-why`} className="survey-muted">{why}</p>}
         </>

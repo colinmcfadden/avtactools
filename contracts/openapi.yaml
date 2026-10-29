@@ -61,10 +61,13 @@ paths:
       summary: Sign in with email and password
       description: |
         A native app (`X-EZPZ-Client` platform `android` or `ios`) also receives a
-        `refresh_token`, which keeps it signed in for days with no signal. The web
-        app does not: its exposure is unchanged.
+        `refresh_token`, which keeps it signed in while the account is active and the
+        device is used at least once in 30 days. The web, when it sends
+        `X-EZPZ-Session: cookie`, receives its refresh token only as an HttpOnly cookie
+        (`ezpz_refresh`, under `/api/auth`), never in the body.
       parameters:
         - $ref: "#/components/parameters/ClientHeader"
+        - $ref: "#/components/parameters/SessionHeader"
       requestBody:
         required: true
         content:
@@ -93,9 +96,11 @@ paths:
       summary: Sign in with a Google ID token
       description: |
         The token's audience must be one of the server's `GOOGLE_CLIENT_IDS` (the
-        web, Android and iOS clients each have their own).
+        web, Android and iOS clients each have their own). Refresh tokens are given
+        as for `/api/auth/login`.
       parameters:
         - $ref: "#/components/parameters/ClientHeader"
+        - $ref: "#/components/parameters/SessionHeader"
       requestBody:
         required: true
         content:
@@ -329,18 +334,30 @@ paths:
         The refresh token is spent: use the new one. If a response is lost, repeating
         the same request within 30 seconds is safe and is answered again. After that, a
         spent token coming back signs the device out (`refresh_reuse_detected`): it
-        looks like a copy. A password reset, a suspension, a sign-out from another
-        device, and 180 days since sign-in all end the session; the answer is 401 and
-        the app must ask the user to sign in.
+        looks like a copy. A password reset, a suspension or deletion of the account,
+        a sign-out from another device, and 30 days without a refresh all end the
+        session; the answer is 401 (403 `account_unavailable` for a suspension) and the
+        app must ask the user to sign in. There is no other limit: a session in use has
+        no end. (A server before API 1.2 also ended one 180 days after sign-in,
+        `refresh_expired`.)
+
+        A native app sends `refresh_token` in the body and is answered with the next
+        one. The web sends no body token but `X-EZPZ-Session: cookie` and its
+        `ezpz_refresh` cookie, and is answered with a 15-minute access token and the
+        next refresh token as the cookie. Without the header the cookie is not read, which
+        is what keeps a page on another site from spending it. A token is refreshed only
+        the way it was issued. With the header and no cookie the answer is 401
+        `refresh_cookie_missing`: this browser does not keep the cookie.
+      parameters:
+        - $ref: "#/components/parameters/SessionHeader"
       requestBody:
-        required: true
+        required: false
         content:
           application/json:
             schema:
               type: object
-              required: [refresh_token]
               properties:
-                refresh_token: { type: string }
+                refresh_token: { type: string, description: A native app's token. The web sends none. }
       responses:
         "200":
           description: A new access token and the next refresh token.
@@ -357,6 +374,7 @@ paths:
     post:
       operationId: logout
       summary: End this device's session
+      description: A web session's `ezpz_refresh` cookie, when it is sent, is cleared too.
       security:
         - bearer: []
       responses:
@@ -2945,6 +2963,18 @@ paths:
 
 components:
   parameters:
+    SessionHeader:
+      name: X-EZPZ-Session
+      in: header
+      required: false
+      description: |
+        `cookie`: the web asks for (on sign-in) or uses (on refresh) a session whose
+        refresh token is an HttpOnly, Secure, SameSite=None, Partitioned cookie under
+        `/api/auth`. A custom header, so a page on another site cannot send it without a
+        CORS preflight, which only `CORS_ORIGINS` pass. Ignored for a native app.
+      schema:
+        type: string
+        enum: [cookie]
     ClientHeader:
       name: X-EZPZ-Client
       in: header
@@ -3312,7 +3342,9 @@ components:
           type: string
           description: |
             Stable codes include `invalid_credentials`, `invalid_refresh_token`,
-            `refresh_reuse_detected`, `refresh_expired`, `account_unavailable`,
+            `refresh_reuse_detected`, `refresh_cookie_missing` (the web asked for a cookie
+            session and sent no cookie), `refresh_expired` (no longer sent: an older
+            server's 180-day limit), `account_unavailable`,
             `reauthentication_required`, `confirmation_required`, `session_not_found`,
             `super_admin_protected`, `rate_limited`, `affiliation_required`, `invalid_token`
             (an emailed link that is invalid, spent or expired), `invalid_code` (a `.mil` code).
@@ -3365,7 +3397,13 @@ components:
           description: Native clients only. Spent on use; the response to `/refresh` carries the next one.
         refresh_expires_in:
           type: integer
-          description: Seconds a refresh token lives (30 days); each refresh extends it, up to 180 days from sign-in.
+          description: Seconds a refresh token lives (30 days); each refresh extends it, with no other limit.
+        expires_in:
+          type: integer
+          description: Web cookie sessions only. Seconds the access token lives (a day from a sign-in, 15 minutes from a refresh).
+        session:
+          type: string
+          description: "Web cookie sessions only: `cookie`, the refresh token was set as the `ezpz_refresh` cookie."
         user:
           $ref: "#/components/schemas/User"
 

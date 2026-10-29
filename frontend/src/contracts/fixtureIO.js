@@ -4,7 +4,7 @@
 // web code produces. After an intended change to a formula, regenerate and review
 // the diff (the native test suites will then fail until they follow):
 //
-//   cd frontend && UPDATE_CONTRACTS=1 CI=true npx react-scripts test --watchAll=false src/contracts
+//   cd frontend && UPDATE_CONTRACTS=1 npx vitest run src/contracts
 const fs = require("fs");
 const path = require("path");
 

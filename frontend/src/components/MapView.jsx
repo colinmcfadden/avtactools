@@ -11,6 +11,9 @@ import {
 import LZDimensions from "./LZDimensions";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
+import markerIcon2x from "leaflet/dist/images/marker-icon-2x.png";
+import markerIcon from "leaflet/dist/images/marker-icon.png";
+import markerShadow from "leaflet/dist/images/marker-shadow.png";
 import { useMapEvents, Polyline } from "react-leaflet";
 import PZMarker from "../feature/pzMarker/PZMarker";
 import UnitMarker from "../feature/unit/UnitMarker";
@@ -36,9 +39,9 @@ import SandtableLayer from "../feature/brief/SandtableLayer";
 // Fix for default Leaflet marker icons in React
 delete L.Icon.Default.prototype._getIconUrl;
 L.Icon.Default.mergeOptions({
-  iconRetinaUrl: require("leaflet/dist/images/marker-icon-2x.png"),
-  iconUrl: require("leaflet/dist/images/marker-icon.png"),
-  shadowUrl: require("leaflet/dist/images/marker-shadow.png"),
+  iconRetinaUrl: markerIcon2x,
+  iconUrl: markerIcon,
+  shadowUrl: markerShadow,
 });
 
 // Custom Icons
@@ -160,6 +163,8 @@ const MapView = ({
   targetLocation,
   mapData,
   detectedLZ,
+  lzMeasurements,
+  onLzMeasureChange,
   assets,
   aircraftProfiles,
   activeAircraftProfile,
@@ -384,6 +389,8 @@ const MapView = ({
           <LZDimensions
             key={`lz-dimensions-${activeDiagramId ?? "none"}`}
             detectedLZ={detectedLZ}
+            measurements={lzMeasurements}
+            onChange={onLzMeasureChange}
           />
         )}
 

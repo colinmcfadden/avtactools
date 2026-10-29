@@ -20,11 +20,11 @@ const useHarness = (initial = [SET]) => {
   return { pointSets, setPointSets, pack, points, gone, refusals };
 };
 
-const settleTimers = () => act(() => { jest.advanceTimersByTime(1000); });
+const settleTimers = () => act(() => { vi.advanceTimersByTime(1000); });
 const packSet = (result) => result.current.pointSets.find((s) => s.id === LOCAL_ID);
 
-beforeEach(() => jest.useFakeTimers());
-afterEach(() => jest.useRealTimers());
+beforeEach(() => vi.useFakeTimers());
+afterEach(() => vi.useRealTimers());
 
 describe("usePackPoints", () => {
   it("shows a pack's set beside this person's own, and keeps its colour and visibility to them", () => {

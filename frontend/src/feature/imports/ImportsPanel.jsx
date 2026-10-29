@@ -62,7 +62,7 @@ const ImportsPanel = ({
 
         {total === 0 && (
           <div className="shell-empty" style={{ marginTop: 14 }}>
-            Nothing imported yet. AMPS mission files, local point sets and threat files you bring in are listed here.
+            Nothing imported yet.
           </div>
         )}
 

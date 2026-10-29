@@ -13,12 +13,12 @@ const PACK = {
 const setup = () => {
   const sockets = [];
   const api = {
-    getPack: jest.fn().mockResolvedValue(PACK),
-    getEvents: jest.fn().mockResolvedValue({ events: [], has_more: false, cursor: 3, head_seq: 3 }),
-    sendOps: jest.fn(() => new Promise(() => {})),
+    getPack: vi.fn().mockResolvedValue(PACK),
+    getEvents: vi.fn().mockResolvedValue({ events: [], has_more: false, cursor: 3, head_seq: 3 }),
+    sendOps: vi.fn(() => new Promise(() => {})),
   };
   const openSocket = (url) => {
-    const socket = { url, sent: [], close: jest.fn(), send(text) { this.sent.push(JSON.parse(text)); } };
+    const socket = { url, sent: [], close: vi.fn(), send(text) { this.sent.push(JSON.parse(text)); } };
     sockets.push(socket);
     return socket;
   };
@@ -50,8 +50,8 @@ describe("useMissionPack", () => {
   it("still sends the edits waiting when the pack is closed, and says which it would not take", async () => {
     const { api, openSocket } = setup();
     const answers = [];
-    api.sendOps = jest.fn(() => new Promise((resolve, reject) => answers.push({ resolve, reject })));
-    const onLost = jest.fn();
+    api.sendOps = vi.fn(() => new Promise((resolve, reject) => answers.push({ resolve, reject })));
+    const onLost = vi.fn();
     const { result, rerender } = renderHook(({ uuid }) => useMissionPack(uuid, 2, { api, openSocket, onLost }), { initialProps: { uuid: "p-1" } });
     await waitFor(() => expect(result.current.items).toHaveLength(1));
     act(() => {

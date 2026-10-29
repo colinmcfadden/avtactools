@@ -3,12 +3,12 @@ import { useBrief } from "./useBrief";
 import { planFromPack, planFromSession, planSummary } from "./briefPlan";
 import * as briefApi from "./briefApi";
 
-jest.mock("./briefApi", () => ({
-  listBriefs: jest.fn(),
-  getBrief: jest.fn(),
-  createBrief: jest.fn(),
-  updateBrief: jest.fn(),
-  weatherAt: jest.fn(),
+vi.mock("./briefApi", () => ({
+  listBriefs: vi.fn(),
+  getBrief: vi.fn(),
+  createBrief: vi.fn(),
+  updateBrief: vi.fn(),
+  weatherAt: vi.fn(),
 }));
 
 const fixture = require("../../../../contracts/fixtures/brief/compile.json");
@@ -20,7 +20,7 @@ const ROUTE_SETS = OP_DK.routeSets.map((set) => ({ key: set.id, routes: set.data
 const USER = { id: 7, name: "Colin M." };
 
 beforeEach(() => {
-  jest.useFakeTimers();
+  vi.useFakeTimers();
   localStorage.clear();
   Object.values(briefApi).forEach((fn) => fn?.mockReset?.());
   briefApi.weatherAt.mockResolvedValue(null);
@@ -28,7 +28,7 @@ beforeEach(() => {
   briefApi.updateBrief.mockResolvedValue({ id: 41 });
 });
 afterEach(() => {
-  jest.useRealTimers();
+  vi.useRealTimers();
 });
 
 describe("what a brief is built from", () => {
@@ -70,7 +70,7 @@ describe("useBrief outside a pack", () => {
     act(() => result.current.setDoc((d) => ({ ...d, answers: { "1.b": { value: "Moderate" } } })));
     act(() => result.current.setDoc((d) => ({ ...d, answers: { ...d.answers, "2.b": { value: "500-1" } } })));
     expect(briefApi.createBrief).not.toHaveBeenCalled();
-    await act(async () => { jest.advanceTimersByTime(800); });
+    await act(async () => { vi.advanceTimersByTime(800); });
     expect(briefApi.createBrief).toHaveBeenCalledTimes(1);
     const { clientUuid, data } = briefApi.createBrief.mock.calls[0][0];
     expect(clientUuid).toBeTruthy();
@@ -78,7 +78,7 @@ describe("useBrief outside a pack", () => {
     expect(JSON.parse(localStorage.getItem("ezpz.brief.7"))).toEqual({ id: 41, clientUuid });
 
     act(() => result.current.setDoc((d) => ({ ...d, answers: { ...d.answers, "3.a": { value: "Insert" } } })));
-    await act(async () => { jest.advanceTimersByTime(800); });
+    await act(async () => { vi.advanceTimersByTime(800); });
     expect(briefApi.updateBrief).toHaveBeenCalledWith(41, expect.objectContaining({ data: expect.objectContaining({ answers: expect.objectContaining({ "3.a": { value: "Insert" } }) }) }));
     expect(briefApi.createBrief).toHaveBeenCalledTimes(1);
     expect(result.current.saveState).toBe("saved");
@@ -163,7 +163,7 @@ describe("useBrief outside a pack", () => {
 describe("useBrief in a pack", () => {
   const items = OP_DK.lzs.map((lz) => ({ uuid: lz.id, kind: "lz", name: lz.diagram.name, data: lz.diagram }))
     .concat(OP_DK.routeSets.map((set) => ({ uuid: set.id, kind: "route", name: set.name, data: set.data })));
-  const render = (packItems, edit = jest.fn(() => null), readOnly = false) => {
+  const render = (packItems, edit = vi.fn(() => null), readOnly = false) => {
     const { result } = renderHook(() => useBrief({
       enabled: true, active: true, user: USER, pack: { name: "OP DK", items: packItems, edit, readOnly },
     }));

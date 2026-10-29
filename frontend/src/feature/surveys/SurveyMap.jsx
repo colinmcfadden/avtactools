@@ -3,6 +3,7 @@ import { CircleMarker, ImageOverlay, MapContainer, Polygon, Polyline, TileLayer,
 import "leaflet/dist/leaflet.css";
 import api from "../auth/api";
 import Icon from "../ui/Icon";
+import { BusyButton } from "../ui/Spinner";
 import { useToast } from "../ui/Toast";
 import { MAP_STYLES, getMapStyle } from "../mapStyles/mapStyles";
 import SlopeLayer from "../terrain/SlopeLayer";
@@ -159,10 +160,9 @@ const SurveyMap = ({ diagram, field, terrain, obstacles = null, onSetTarget, onS
             <Icon name="crosshair" size={14} />
             Click to place target
           </button>
-          <button type="button" className="ui-btn ui-btn--34" disabled={!target || finding} onClick={findBoundary}>
-            <Icon name="search" size={14} />
+          <BusyButton className="ui-btn ui-btn--34" icon="search" busy={finding} disabled={!target} onClick={findBoundary}>
             {finding ? "Finding…" : "Find boundary"}
-          </button>
+          </BusyButton>
           {mode === "boundary" ? (
             <>
               <button type="button" className="ui-btn ui-btn--34 ui-btn--primary" onClick={finishBoundary}>

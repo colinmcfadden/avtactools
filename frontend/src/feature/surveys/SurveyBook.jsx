@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState } from "react";
 import Dialog, { ConfirmDialog } from "../ui/Dialog";
+import { BusyButton } from "../ui/Spinner";
 import Icon from "../ui/Icon";
 import { useToast } from "../ui/Toast";
 import useSurveys from "./useSurveys";
@@ -92,14 +93,13 @@ const SurveyBook = ({ onClose, client, isAdmin = false }) => {
           Book
         </button>
         {survey.archived ? (
-          <button type="button" className="ui-btn ui-btn--38" disabled={Boolean(busy)} onClick={() => surveys.setArchived(false)}>Restore</button>
+          <BusyButton className="ui-btn ui-btn--38" busy={busy === "archiving"} disabled={Boolean(busy)} onClick={() => surveys.setArchived(false)}>Restore</BusyButton>
         ) : (
-          <button type="button" className="ui-btn ui-btn--ghost ui-btn--38" disabled={Boolean(busy)} onClick={() => setArchiving("survey")}>Archive</button>
+          <BusyButton className="ui-btn ui-btn--ghost ui-btn--38" busy={busy === "archiving"} disabled={Boolean(busy)} onClick={() => setArchiving("survey")}>Archive</BusyButton>
         )}
-        <button type="button" className="ui-btn ui-btn--primary ui-btn--38" disabled={!dirty || Boolean(busy) || survey.archived} onClick={save}>
-          <Icon name="save" size={14} />
+        <BusyButton className="ui-btn ui-btn--primary ui-btn--38" icon="save" busy={busy === "saving"} disabled={!dirty || Boolean(busy) || survey.archived} onClick={save}>
           {busy === "saving" ? "Saving…" : "Save"}
-        </button>
+        </BusyButton>
       </>
     );
   } else if (reading) {
