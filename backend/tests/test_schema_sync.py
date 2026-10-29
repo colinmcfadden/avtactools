@@ -18,7 +18,7 @@ if str(BACKEND_DIR) not in sys.path:
     sys.path.insert(0, str(BACKEND_DIR))
 
 from aircraft_seed import seed_aircraft_profiles  # noqa: E402
-from models import AccountToken, AircraftProfile, LoginEvent, SavedLZ, SavedPointSet, SavedRoute, db  # noqa: E402
+from models import AccountToken, AircraftProfile, LoginEvent, SavedLZ, SavedPointSet, SavedRoute, User, db  # noqa: E402
 from schema_sync import ensure_unique_index, sync_table_columns  # noqa: E402
 
 
@@ -248,6 +248,58 @@ class LoginEventClientColumnTests(unittest.TestCase):
     def test_is_idempotent(self):
         sync_table_columns(db, LoginEvent)
         self.assertEqual([], sync_table_columns(db, LoginEvent))
+
+
+# "user" as production holds it once app.py's ALTERs have run, before notification settings (docs/NOTIFICATIONS.md §5).
+LEGACY_USER = """
+CREATE TABLE "user" (
+    id INTEGER NOT NULL PRIMARY KEY,
+    google_id VARCHAR(100) UNIQUE,
+    email VARCHAR(120) NOT NULL UNIQUE,
+    name VARCHAR(120) NOT NULL,
+    picture VARCHAR(500),
+    created_at DATETIME,
+    role VARCHAR(20) NOT NULL DEFAULT 'user',
+    is_active BOOLEAN NOT NULL DEFAULT TRUE,
+    features JSON,
+    mil_email VARCHAR(120),
+    mil_verified_at DATETIME,
+    access_approved BOOLEAN NOT NULL DEFAULT TRUE
+)
+"""
+
+
+class UserNotificationSettingsColumnTests(unittest.TestCase):
+    """The user table predates notification settings: the column is added, and nothing else about anyone changes."""
+
+    def setUp(self):
+        self.app = Flask(__name__)
+        self.app.config.update(SQLALCHEMY_DATABASE_URI="sqlite:///:memory:", SQLALCHEMY_TRACK_MODIFICATIONS=False)
+        db.init_app(self.app)
+        self.ctx = self.app.app_context()
+        self.ctx.push()
+        db.session.execute(text(LEGACY_USER))
+        db.session.execute(text(
+            "INSERT INTO \"user\" (email, name, role, is_active, access_approved) VALUES ('pilot@example.com', 'Pilot', 'user', 1, 1)"
+        ))
+        db.session.commit()
+
+    def tearDown(self):
+        db.session.remove()
+        self.ctx.pop()
+
+    def test_adds_only_the_settings_and_keeps_everyone_as_they_were(self):
+        self.assertEqual(["notification_settings"], sync_table_columns(db, User))
+        user = User.query.one()
+        self.assertIsNone(user.notification_settings)
+        self.assertTrue(user.access_approved)
+        user.notification_settings = {"pack_finished": False}
+        db.session.commit()
+        self.assertEqual({"pack_finished": False}, User.query.one().notification_settings)
+
+    def test_is_idempotent(self):
+        sync_table_columns(db, User)
+        self.assertEqual([], sync_table_columns(db, User))
 
 
 # account_token before refresh tokens added family, client and session_version.

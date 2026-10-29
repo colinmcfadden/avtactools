@@ -34,6 +34,10 @@ class User(db.Model):
     mil_verified_at = db.Column(db.DateTime, nullable=True)
     access_approved = db.Column(db.Boolean, nullable=False, default=False)
 
+    # Which notifications the person wants ({group: bool}; a missing key is on), on every device
+    # (docs/NOTIFICATIONS.md §5). Added to an existing table by schema_sync in app.py.
+    notification_settings = db.Column(db.JSON, nullable=True)
+
     # This creates a relationship so you can easily get all LZs for a user (e.g., user.saved_lzs)
     saved_lzs = db.relationship('SavedLZ', backref='author', lazy=True)
     saved_routes = db.relationship('SavedRoute', backref='author', lazy=True)
@@ -554,6 +558,36 @@ class MissionPackEvent(db.Model):
         # A retried batch is recognised rather than applied twice.
         db.UniqueConstraint('pack_id', 'client_op_id', name='ux_mission_pack_event_client_op'),
     )
+
+
+# -- Notifications --------------------------------------------------------------
+
+
+class Notification(db.Model):
+    """Something that happened to one person, for their devices to say: the outbox they poll (docs/NOTIFICATIONS.md).
+
+    Written by notify.py in the same transaction as the change that causes it, so a change that rolls back notifies
+    nobody. It keeps ids (``pack_uuid``, ``invite_id``, which a pack deleted or an invitation answered withdraws by)
+    and in ``fields`` who did it and a role, never anything from a pack's items or a pack's or team's name, which the
+    feed reads as they are: a notification shows on a lock screen. Rows go after 30 days (routes/notification_routes).
+    """
+
+    __tablename__ = 'notification'
+
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('user.id', ondelete='CASCADE'), nullable=False, index=True)
+    type = db.Column(db.String(20), nullable=False)  # pack_invite | pack_added | team_invite | pack_finished | pack_owner
+    collapse_key = db.Column(db.String(80), nullable=False)
+    pack_uuid = db.Column(db.String(36), nullable=True, index=True)
+    # No foreign key: a deleted team's invitations go with it (pack_support.delete_team), and the row is withdrawn first.
+    invite_id = db.Column(db.Integer, nullable=True, index=True)
+    fields = db.Column(db.JSON, nullable=False)
+    quiet = db.Column(db.Boolean, nullable=False, default=False)  # past the hour's alerts: listed, not sounded
+    created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False, index=True)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+    deliver_after = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+    withdrawn_at = db.Column(db.DateTime, nullable=True)
+    seen_at = db.Column(db.DateTime, nullable=True)
 
 
 # -- LZ surveys ----------------------------------------------------------------

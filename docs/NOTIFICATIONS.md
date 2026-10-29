@@ -1,6 +1,6 @@
 # Notifications — plan
 
-Status: **decided, nothing built** (2026-10-28). The owner asked for notifications that are few and useful: a Mission Pack invitation
+Status: **decided; N0, the server, built** (2026-10-28). Android (N1) is next. The owner asked for notifications that are few and useful: a Mission Pack invitation
 and a pack finished, and "a couple more" that earn their place. This file proposes which ones, how they reach Android first and then the
 web, and what the server keeps. **§10 holds the owner's answers** (2026-10-28): Android polls every 15 minutes, the web is in-app only, the
 list stands as §2 has it, and the names always show on a lock screen. Only a new-device sign-in email (question 6) is still open. Where this plan and
@@ -58,14 +58,18 @@ Access approved (5) has no setting: it happens once in an account's life, to som
 ### 2.3 Collapse, debounce and limits
 
 - **A finish waits two minutes** before it is sent (`deliver_after`), and **a reopen inside that time cancels it**. After it has gone,
-  a reopen sends nothing (§2.2). Finishing again later sends a new one.
-- **One pack, one finish**: a finish replaces an earlier one for the same pack that was never seen (`collapse_key = pack_finished:<pack>`).
-- **One invitation, one alert**: a resend (`resend_pack_invite`) updates the notification it already made and does not alert again unless
-  the last alert is more than a day old. A withdrawn or answered invitation **withdraws its notification** on every device (§3.3).
+  a reopen sends nothing (§2.2), and takes the finish down on every device, since it is no longer so. Finishing again later sends a new one.
+- **One pack, one finish**: a finish replaces an earlier one for the same pack (`collapse_key = pack_finished:<pack>`).
+- **One invitation, one alert**: a resend (`resend_pack_invite`, or inviting the same address again) updates the notification it already
+  made, seen or not, and does not alert again unless the last alert is more than a day old. A withdrawn or answered invitation **withdraws its
+  notification** on every device (§3.3). Anything else under the same key is news again (added back after leaving, a pack handed back): the
+  earlier one is withdrawn and a new one alerts.
+- **An invitation to what the person is already in** (added by name, or joined the team by its link, before answering) is no longer listed.
 - **Several at once are one group**: on Android, notifications that arrive in one poll are posted as a group with a summary (*3 invitations*),
   alerting once; on the web, one toast says them all.
-- **At most 10 alerts an hour for one person**; past that they are delivered quietly (listed, no sound or banner). The senders are already
-  limited (`pack_invite:user`, 30 an hour).
+- **At most 10 alerts an hour for one person**; past that they are delivered quietly (listed, no sound or banner). What counts is what
+  alerted: delivered, not quiet, and not withdrawn before it was (a finish reopened in time never alerted). The senders are already limited
+  (`pack_invite:user`, 30 an hour).
 - **Nothing for the person who did it**: the owner who finishes is not told the pack is finished.
 - **Pack notifications need `mission_packs`**: until it leaves `entitlements.DEFAULT_OFF`, only admins and ticked testers get 1, 1a, 2, 3, 4
   and 6, as only they can open a pack.
@@ -92,14 +96,19 @@ nobody:
 | `id` | |
 | `user_id` | Who it is for. Deleted with the account (both deletion paths). |
 | `type` | `pack_invite`, `pack_added`, `team_invite`, `pack_finished`, `pack_owner` |
-| `fields` | JSON: the ids and the words a client needs: `{pack: {uuid, name}, team: {id, name}, actor: {name}, invite_id, role}`. Names only; never an item, a place or a grid (§6). |
+| `fields` | JSON: `{actor: {name}, role}`, who did it as they were named then, and a role. The pack's and the team's names are read when the feed is asked for, so none outlives a pack or team deleted. Never an item, a place, a grid or a token (§6). |
 | `collapse_key` | §2.3 |
-| `created_at`, `deliver_after` | A row is delivered once `deliver_after` has passed |
-| `withdrawn_at` | A reopen, an answered or revoked invitation, a pack deleted |
+| `pack_uuid`, `invite_id` | Kept apart from `fields`, so a pack deleted or an invitation answered can withdraw what it made |
+| `quiet` | Past ten in the person's hour (§2.3) |
+| `created_at`, `updated_at`, `deliver_after` | A row is delivered once `deliver_after` has passed; `updated_at` moves when an invitation is sent again the same day |
+| `withdrawn_at` | A reopen, an answered or revoked invitation, a pack deleted, a team's invitations deleted with it |
 | `seen_at` | Set by any device once the person has seen or acted on it; every other device then takes it down |
 
-Rows older than 30 days are deleted by a sweep run with the feed. There is no migration framework: the table is new, so `db.create_all()`
-makes it (AGENTS.md §7).
+**What is listed is only what is still so** (`notification_routes._still_so`), whatever was withdrawn: an invitation still waiting, unexpired and
+addressed to them; a pack still there with them in it, still finished, still theirs; under the names the pack and the team have now. So a person
+removed from a pack, a pack unshared from their team or handed on again, an invitation expired, all leave the list with nothing written, and a
+code path that forgets to withdraw cannot leave a false notification. Rows older than 30 days are deleted by a sweep run with the feed (at most
+once an hour, whoever polls). There is no migration framework: the table is new, so `db.create_all()` makes it (AGENTS.md §7).
 
 Access approved (5) needs **no row**: the gated person can reach only `/api/auth/*` (`affiliation_gate.py`), and `GET /api/auth/me` already
 says `access_ok`. The device that saw the gate notices it lift (§4.4, §7.2). Changes kept (6) is the device's own.
@@ -109,16 +118,17 @@ says `access_ok`. The device that saw the gate notices it lift (§4.4, §7.2). C
 | Notification | Where | Notes |
 |---|---|---|
 | Pack invitation | `pack_routes.invite_to_pack`, `resend_pack_invite` | Only for an address that is an account's. One with no account gets the email alone and finds the invitation in the switcher once in. |
-| Withdrawn | `revoke_pack_invite`, `team_routes.revoke_team_invite`, `_accept`, `decline_invite` | `withdrawn_at` on the invitation's notification |
+| Withdrawn | `revoke_pack_invite`, `team_routes.revoke_team_invite`, `_accept`, `decline_invite`, `pack_support.delete_team` | `withdrawn_at` on the invitation's notification |
 | Added | `pack_routes.add_member` | |
 | Team invitation | `team_routes.invite_to_team` (with an email) | A link invitation (no email) names nobody and makes none |
-| Finished | `pack_routes.finish_pack` | Every member (`packs.member_bodies`, team members included) but the actor; `deliver_after` two minutes |
-| Reopened | `pack_routes.reopen_pack` | Withdraws undelivered finishes; makes nothing |
-| Handed over | `pack_routes.change_member` to `owner` | |
-| Pack deleted | `pack_routes.delete_pack`, `pack_support.delete_team`'s packs | Withdraws everything about it |
+| Finished | `pack_routes.finish_pack` | Everyone in the pack (`notify.people_in`: its members and its team's) but the actor; `deliver_after` two minutes |
+| Reopened | `pack_routes.reopen_pack` | Withdraws the pack's finishes: one not yet sent is never sent, one sent is taken down; makes nothing |
+| Handed over | `pack_routes.change_member` to `owner`; `pack_support._hand_on` (an account deleted: its heir is told, with no actor) | |
+| Pack deleted | `pack_routes.delete_pack`, `pack_support._purge_pack` (an account deleted with nobody else in its pack) | Withdraws everything about it |
+| Account deleted | `pack_support.release_account` (both deletion paths) | Its own notifications go (`notify.forget_account`) |
 
-Each is a call to one helper (`notify.add(user, type, fields, collapse_key=…, delay=…)`) in a new module, `backend/notify.py`, beside
-`email_service.py`, so the routes stay as they read.
+Each is a call to one helper (`notify.add(user_id, type, pack=…, team=…, actor=…, invite=…, role=…, delay=…)`) in `backend/notify.py`,
+beside `email_service.py`, so the routes stay as they read. It names models only, so `pack_support` calls it too.
 
 ### 3.3 Routes (described in `contracts/openapi.yaml`)
 
@@ -126,9 +136,15 @@ All need a bearer JWT and the affiliation gate; none needs `mission_packs` (a pe
 
 | Route | Does |
 |---|---|
-| `GET /api/notifications` | The caller's deliverable, unwithdrawn notifications of the last 30 days, newest first, each with `seen`, and the caller's settings (§5). Answers an `ETag`; `If-None-Match` with nothing new is a 304, so a poll that finds nothing costs a few hundred bytes. `Cache-Control: private` (AGENTS.md §14). |
+| `GET /api/notifications` | The caller's deliverable, unwithdrawn notifications of the last 30 days, newest first, each with `seen`, and the caller's settings (§5). Answers an `ETag` of the body; `If-None-Match` with nothing new is a 304, so a poll that finds nothing costs a few hundred bytes. Compared weakly, since Cloudflare hands a compressed body's tag on as `W/"…"`. `Cache-Control: private` (AGENTS.md §14). |
 | `POST /api/notifications/seen` | `{ids}`: seen, on every device |
 | `PUT /api/notifications/settings` | `{type: bool, …}`: §5 |
+
+Each notification is flat: `id`, `type`, `group` (its setting), `key` (its collapse key, which an Android notification can be tagged with),
+`pack` and `team` (`{uuid, name}`, `{id, name}`, as they are now), `actor` (`{name}`, as it was then), `invite_id`, `role` (the invitation's,
+or the one a person was added with), `created_at`, `updated_at`, `seen` and `quiet`. Neither `type` nor `group` is an enum in the spec: a
+client passes over one it does not know, so a new kind is additive. A setting this server does not know is passed over by the `PUT` (the
+answer says what holds), so a newer client can send one to an older server.
 
 **No cursor.** The list is short (a few a week), so a device asks for all of it and keeps which ids it has shown. A cursor by `id` would
 miss a finish whose two minutes end after a later row was read (the reason `sync_support` uses a counter under a lock, not an id); with no
@@ -286,7 +302,7 @@ and `docs/HANDOFF.md` updated in the same commit.
 
 | Step | What | Depends on |
 |---|---|---|
-| **N0** | Backend: `notification` table, `notify.py`, the triggers of §3.2, the three routes, `notification_settings`, the sweep; OpenAPI (1.2.0), recorded responses, tests (one per trigger, the debounce and the reopen, withdrawal, the limits, another account's never seen) | — |
+| **N0** (built) | Backend: `notification` table, `notify.py`, the triggers of §3.2, the three routes, `notification_settings`, the sweep; OpenAPI (1.3.0), recorded responses, tests (one per trigger, the debounce and the reopen, withdrawal, the limits, another account's never seen) | — |
 | **N1** | Android: core-network's calls and DTOs (held to the recordings), `NotificationWorker`, channels, posting and groups, the toast in front, tap routing, the permission ask, sign-out clearing; access approved from `/api/auth/me` | N0 |
 | **N2** | Android: *Notifications* in the account menu; *Changes kept* from the background drain | N1 |
 | **N3** | Web: `useNotifications`, the toasts and *While you were away*, tap routing, settings in the account menu | N0 |

@@ -30,6 +30,7 @@ from datetime import datetime, timedelta
 from sqlalchemy import case, event, func, select, text, update
 from sqlalchemy.orm import Session
 
+import notify
 from models import (
     MissionPack, MissionPackEvent, MissionPackInvite, MissionPackItem, MissionPackMember, MissionPackSeen,
     SavedLZ, SavedPointSet, SavedRoute, SurveyBook, Team, TeamMember, User, db,
@@ -495,6 +496,7 @@ def invite_body(invite):
 def _purge_pack(pack):
     """Delete a pack and everything in it, rows and all. Only when nobody else is in it."""
     announce_deleted(pack.uuid)
+    notify.withdraw(pack_uuid=pack.uuid)
     for model in PACK_CONTENT:
         model.query.filter_by(pack_id=pack.id).delete(synchronize_session=False)
     db.session.delete(pack)
@@ -532,6 +534,7 @@ def _hand_on(pack, user_id):
     heir_name = names([heir.user_id]).get(heir.user_id, '')
     append(pack, None, {'type': 'pack.transfer', 'user_id': heir.user_id, 'name': heir_name},
            f"{heir_name} owns the pack now: its owner's account was deleted.")
+    notify.add(heir.user_id, 'pack_owner', pack=pack)
     return False
 
 
@@ -554,6 +557,7 @@ def release_account(user_id):
         _purge_pack(pack)
 
     MissionPackSeen.query.filter_by(user_id=user_id).delete(synchronize_session=False)
+    notify.forget_account(user_id)
     leaving = names([user_id]).get(user_id, '')
     for membership in MissionPackMember.query.filter_by(user_id=user_id).all():
         pack = db.session.get(MissionPack, membership.pack_id)
@@ -605,6 +609,7 @@ def delete_team(team, actor):
     # Its survey books are archived, not handed to everyone: a book with no team is read by everyone with lz_surveys.
     SurveyBook.query.filter(SurveyBook.team_id == team.id, SurveyBook.archived_at.is_(None)).update(
         {'archived_at': datetime.utcnow()}, synchronize_session=False)
+    notify.withdraw(invite_ids=[row.id for row in db.session.query(MissionPackInvite.id).filter_by(team_id=team.id)])
     MissionPackInvite.query.filter_by(team_id=team.id).delete(synchronize_session=False)
     TeamMember.query.filter_by(team_id=team.id).delete(synchronize_session=False)
     db.session.delete(team)

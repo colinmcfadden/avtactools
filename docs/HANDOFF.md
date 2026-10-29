@@ -484,6 +484,11 @@ plan's) is dark.
 0. **Two devices in one pack again**, after the settings audit: what only a device run shows is the live stream end to end, a drag and its pointer on the real map, and
    the clock form and the unit builder with someone else's change arriving while they are open. Then the owner's calls in AGENTS.md §15 (an aircraft's own airframe
    on other devices, two clocks, the web's partial values and forms, which want the web first).
+0a. **Notifications** (`docs/NOTIFICATIONS.md`, decided 2026-10-28): N0, the server's outbox and its three routes, is built and recorded
+   (`contracts/fixtures/network/responses.json`), and core-network has the feed's types (`NotificationDto.kt`). N1 is next: the calls, a
+   `NotificationWorker` polling every 15 minutes for the account whose plans are on the device, one channel per group, the names shown on the
+   lock screen (`VISIBILITY_PUBLIC`, the owner's call), the toast while the app is in front, tap routing (an invitation opens the switcher, never
+   its link), access approved from `/api/auth/me`, and asking for `POST_NOTIFICATIONS` on the gate's waiting screen or the switcher, never at launch.
 1. **The screens**, S1–S9, P1, P2a–P2e, P3a–P3c and P4a–P4c done and reviewed, the fixes in (`docs/ANDROID_SCREENS_PLAN.md`, each step's *Reviewed*): the
    owner tries the app on a device now (the owner's order, 2026-10-12: no device testing before S7–S9 and P1–P4), then *T*
    (threats saved and shared: web and server first) beside S7, now that the mission-pack engine is built (A1–A15: `docs/ANDROID_MISSION_PACKS_PLAN.md`; what each piece holds is in
