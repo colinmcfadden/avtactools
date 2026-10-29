@@ -88,3 +88,20 @@ describe("tilesetResource", () => {
       .toBe(`${API_BASE}/lidar/tilesets/abc/tileset.json`);
   });
 });
+
+describe("retryWithFreshToken", () => {
+  beforeEach(() => localStorage.clear());
+
+  test("a tile sent with a lapsed token goes again with the current one", async () => {
+    const { retryWithFreshToken } = load(API_BASE);
+    localStorage.setItem("auth_token", "current");
+    const resource = { headers: { Authorization: "Bearer lapsed" } };
+    await expect(retryWithFreshToken(resource, { statusCode: 401 })).resolves.toBe(true);
+    expect(resource.headers.Authorization).toBe("Bearer current");
+  });
+
+  test("only a refused token is retried", async () => {
+    const { retryWithFreshToken } = load(API_BASE);
+    await expect(retryWithFreshToken({ headers: {} }, { statusCode: 404 })).resolves.toBe(false);
+  });
+});

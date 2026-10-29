@@ -89,20 +89,33 @@ identified by `X-EZPZ-Client: android/1.4.0 (212)` (`backend/client_header.py`).
   `GOOGLE_CLIENT_ID` (the web's) and the comma-separated `GOOGLE_CLIENT_IDS` are
   all accepted. The audience passed to google-auth is always a non-empty list:
   `None` would skip the check, and an empty list rejects everything.
-- **Refresh tokens, native only.** A crew at a FARP cannot sign in every 24 hours,
-  so an android or ios client is also given a refresh token (`POST
-  /api/auth/refresh`). The web is not: its token sits in `localStorage` where any
-  script can read it, and a 30-day token there would be a worse trade than the
-  24-hour one.
+- **Refresh tokens.** A crew at a FARP cannot sign in every 24 hours, so an
+  android or ios client is also given a refresh token (`POST /api/auth/refresh`),
+  kept in the device's encrypted store. The web has one too, but only as a cookie
+  no script can read (*The web's lasting sign-in*, below).
   - Stored as SHA-256 hashes, like every account token (`AccountToken`, purpose
     `refresh`). Each use spends the token and returns the next; the chain is one
     signed-in device (a *family*).
-  - Alive 30 days from each refresh, ending 180 days after sign-in.
+  - **A sign-in lasts while the account is active**, as ForeFlight's does: a family
+    lives 30 days from each refresh and has no other limit. (It used to end 180
+    days after sign-in, `refresh_expired`; the owner dropped that on 2026-10-28.)
+    A device unused for 30 days signs in again.
   - A spent token presented again within 30 seconds is read as a lost response (the
     phone was in a dead zone) and answered again. After that it is read as a copy:
     the whole family is revoked (`refresh_reuse_detected`).
-  - A password reset, an admin suspension, and a revoke all end it.
-- **Revocation is immediate.** A native access token carries its family as `sid`,
+  - What ends one: a password reset (the `sv` claim), an admin suspension, deleting
+    the account, signing it out (`POST /api/auth/logout`, or another device's
+    `DELETE /api/auth/sessions/<id>`), 30 days unused, and a reused token after the
+    grace period. Each takes effect at once (below).
+- **No offline limit on Android**, as ForeFlight has none (the owner, 2026-10-28).
+  A device stays signed in however long it is without signal; its plans are on the
+  device. It used to sign out after 14 days without the server (`OfflineGrace`),
+  which locked a crew out of planning with no way to sign in where it was. When the
+  device next reaches the server, a session unused for 30 days, suspended, reset or
+  signed out elsewhere is refused and the person signs in again. The cost: an
+  account suspended while a device is offline keeps working on that device, with
+  what is already on it, until the device reaches the server.
+- **Revocation is immediate.** A session's access token carries its family as `sid`,
   and every request checks the family still has a live token
   (`token_revocation.is_revoked`). So `POST /api/auth/logout` and `DELETE
   /api/auth/sessions/<id>` (a lost phone, revoked from a tablet) take effect at
@@ -122,18 +135,89 @@ The contract for these routes is `contracts/openapi.yaml`, and
 `backend/tests/test_openapi_contract.py` and `test_native_sessions.py` hold the
 responses to it. Changes are additive: an installed app cannot be updated.
 
+## The web's lasting sign-in
+
+The web used to keep one 24-hour access token in `localStorage` and sign in again
+every day. Now:
+
+- **The refresh token is an HttpOnly cookie.** A web sign-in that sends
+  `X-EZPZ-Session: cookie` (`POST /api/auth/login` or `/google`) starts a family
+  (client `web`) and sets `ezpz_refresh`: `HttpOnly; Secure; SameSite=None;
+  Partitioned; Path=/api/auth; Max-Age=2592000` (`backend/refresh_cookie.py`). The
+  body never carries it. A sign-in without the header (an older bundle, a script)
+  is answered as it always was.
+- **The access token lives in the page's memory**, 15 minutes at a time
+  (`frontend/src/feature/auth/session.js`). A reload, or a new tab, starts with
+  none and asks `POST /api/auth/refresh` with the header and the cookie; the answer
+  is a new access token and the next cookie. The page refreshes two minutes before
+  a token lapses, and a 401 is answered by one refresh and the request sent again.
+  `ezpz.session` in `localStorage` says a cookie session exists (no secret) and
+  carries a sign-out to the other tabs.
+- **One refresh at a time across tabs** (Web Locks, `navigator.locks`). Every
+  refresh spends the one cookie the browser holds; two tabs refreshing at once
+  could leave the browser holding the token that lost, which, used after the grace
+  period, would read as a copy and end the session.
+- **The custom header is the CSRF guard.** The cookie is `SameSite=None`, because
+  the web and the API are on different sites, so the browser would send it with a
+  request from any page. A form cannot add a header, and a page's script cannot
+  send one cross-origin without a CORS preflight, which the API answers only for
+  `CORS_ORIGINS`. Without the header the cookie is not read at all. A web token is
+  refreshed only by its cookie and a native one only in a body.
+- **Credentials only under `/api/auth`** (`backend/cors_config.py`): those routes
+  answer `Access-Control-Allow-Credentials: true` to the listed origins and never
+  to `*`; every other route is unchanged and the cookie is never sent to one.
+  Because credentials are answered, the list must be exact: a preview pattern must
+  match this project's preview names only (anchored, as staging's is), never every
+  `*.vercel.app` page.
+- **Partitioned** (CHIPS) keeps the cookie for the site the app was opened on: a
+  browser that blocks third-party cookies (Chrome's setting) may still keep it, and
+  another site, another Vercel preview included (`vercel.app` is a public suffix),
+  is never sent it.
+- **Signing out** revokes the family and clears the cookie (`POST /api/auth/logout`
+  with credentials). A new sign-in revokes the family of the cookie it replaces.
+  Web sessions are listed in Sessions as `web` and can be signed out from a phone.
+- **Asked for only of a server that offers it.** Before a sign-in the page reads
+  the public `/api/config` once, and asks for a cookie session only from API 1.2
+  on: an older server answers no request made with credentials, so a web deployed
+  ahead of its server would otherwise have every sign-in refused by the browser.
+  Either may go live first.
+- **A refresh that met no answer is asked again at once**, and the page's own
+  retries come every 10 seconds: a request that reached the server spent the
+  cookie the browser still holds, and the server forgives that one for 30 seconds.
+- **A browser that will not keep the cookie** is found out by one refresh right
+  after signing in (`401 refresh_cookie_missing`). It keeps the sign-in's 24-hour
+  access token in `localStorage` (`auth_token`), as the web always did, now with a
+  `sid`, so signing out ends it on the server too. That is Safari today (below).
+
+### Hosting the cookie (owner steps)
+
+- **Safari needs the API on the web's site.** Safari keeps no third-party cookie,
+  Partitioned or not. While the web is `ezpztac.app` and the API
+  `prod-ezpz-api.mcfadd.in`, the cookie is third-party: Chrome, Edge and Firefox
+  keep it, Safari (every iPad) falls back to the daily sign-in. Serving the API at
+  **`api.ezpztac.app`** makes the cookie first-party everywhere: add the hostname to
+  the Cloudflare Tunnel (as `admin.ezpztac.app` already reaches the backend), point
+  Vercel's Production `REACT_APP_API_URL` at `https://api.ezpztac.app/api`, and keep
+  `CORS_ORIGINS=https://ezpztac.app`. Nothing in the code changes. Staging can do the
+  same (`dev-api.ezpztac.app`); Vercel's previews (`*.vercel.app`) stay cross-site.
+- **Cloudflare must not cache `/api/auth/*`** and must pass `Set-Cookie` through;
+  it does both by default for a `POST`. Nothing else is needed at the edge.
+- **HTTPS end to end of the browser's view.** The cookie is `Secure`. Behind the
+  tunnel the browser sees HTTPS, which is what counts. Locally, Chrome and Firefox
+  keep a Secure cookie from `http://localhost`/`127.0.0.1`; a browser that does not
+  falls back to the stored token, which is what local development did anyway.
+- Existing web sign-ins are 24-hour tokens with no session; each signs in once more
+  when it lapses, and from then on stays signed in.
+
 ## Current security posture and next steps
 
 The current bearer-token design is compatible with the existing Vercel/Fly
 split and invalidates account sessions after a password reset. It is still a
 prototype posture. Before handling CUI or other sensitive operational data:
 
-- Add server-side logout/session revocation **for the web**. The native apps have
-  it (above); on the web, logout still only removes the browser's token, and a
-  copied token remains valid until its 24-hour expiry.
-- Put the frontend and API on sibling custom domains and migrate sessions from
-  browser local storage to short-lived Secure, HttpOnly cookies with CSRF
-  protection and refresh-token rotation.
+- Put the frontend and API on sibling custom domains (`api.ezpztac.app`, above),
+  so Safari keeps the web's refresh cookie too and no browser falls back to a
+  token in `localStorage`. Then the cookie could be `SameSite=Lax`.
 - Replace the single-process authentication limiter with a Redis-backed or
   edge-enforced distributed limiter before adding workers or Fly machines.
 - Move the QR KMZ handoff store to Redis before adding workers or Fly machines.

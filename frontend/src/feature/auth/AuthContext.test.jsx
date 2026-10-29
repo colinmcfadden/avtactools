@@ -2,6 +2,7 @@ import React from "react";
 import { act, render, screen, waitFor } from "@testing-library/react";
 import { AuthProvider, useAuth } from "./AuthContext";
 import api from "./api";
+import { forgetToken, refreshSession } from "./session";
 
 jest.mock("./api", () => ({
   __esModule: true,
@@ -9,6 +10,11 @@ jest.mock("./api", () => ({
     get: jest.fn(),
     post: jest.fn(),
   },
+}));
+
+jest.mock("./session", () => ({
+  ...jest.requireActual("./session"),
+  refreshSession: jest.fn(),
 }));
 
 const AuthProbe = () => {
@@ -69,5 +75,62 @@ describe("AuthProvider tab synchronization", () => {
     expect(screen.getByTestId("notice")).toHaveTextContent(
       "signed out in another browser tab",
     );
+  });
+});
+
+describe("AuthProvider with a cookie session", () => {
+  beforeEach(() => {
+    localStorage.clear();
+    jest.clearAllMocks();
+  });
+
+  afterEach(() => forgetToken());
+
+  const renderProbe = () => render(
+    <AuthProvider>
+      <AuthProbe />
+    </AuthProvider>,
+  );
+
+  test("a reload is signed in by the cookie alone, with nothing kept in localStorage", async () => {
+    localStorage.setItem("ezpz.session", "cookie");
+    refreshSession.mockResolvedValue({ access_token: "a.b.c", user: { id: 3, email: "crew@example.com" } });
+    renderProbe();
+    await waitFor(() => expect(screen.getByTestId("email")).toHaveTextContent("crew@example.com"));
+    expect(refreshSession).toHaveBeenCalledTimes(1);
+    expect(api.get).not.toHaveBeenCalled();
+    expect(localStorage.getItem("auth_token")).toBeNull();
+  });
+
+  test("a session the server ended is said so, and forgotten", async () => {
+    localStorage.setItem("ezpz.session", "cookie");
+    refreshSession.mockResolvedValue(null);
+    renderProbe();
+    await waitFor(() => expect(screen.getByTestId("loading")).toHaveTextContent("false"));
+    expect(screen.getByTestId("email")).toHaveTextContent("signed-out");
+    expect(screen.getByTestId("notice")).toHaveTextContent("Your session ended");
+    expect(localStorage.getItem("ezpz.session")).toBeNull();
+  });
+
+  test("a server that cannot be reached ends nothing: a reload later finds the session", async () => {
+    localStorage.setItem("ezpz.session", "cookie");
+    refreshSession.mockRejectedValue(new Error("Network Error"));
+    renderProbe();
+    await waitFor(() => expect(screen.getByTestId("loading")).toHaveTextContent("false"));
+    expect(screen.getByTestId("notice")).toHaveTextContent("Could not reach the server");
+    expect(localStorage.getItem("ezpz.session")).toBe("cookie");
+  });
+
+  test("a sign-out in another tab signs this one out", async () => {
+    localStorage.setItem("ezpz.session", "cookie");
+    refreshSession.mockResolvedValue({ access_token: "a.b.c", user: { id: 3, email: "crew@example.com" } });
+    renderProbe();
+    await waitFor(() => expect(screen.getByTestId("email")).toHaveTextContent("crew@example.com"));
+    act(() => {
+      localStorage.removeItem("ezpz.session");
+      window.dispatchEvent(new StorageEvent("storage", { key: "ezpz.session", newValue: null, storageArea: window.localStorage }));
+    });
+    expect(screen.getByTestId("email")).toHaveTextContent("signed-out");
+    expect(screen.getByTestId("notice")).toHaveTextContent("signed out in another browser tab");
   });
 });

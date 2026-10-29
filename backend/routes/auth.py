@@ -14,6 +14,7 @@ from sqlalchemy.exc import IntegrityError
 from werkzeug.security import check_password_hash, generate_password_hash
 
 import pack_support
+import refresh_cookie
 import refresh_tokens
 from auth_rate_limit import check_rate_limits
 from client_header import client_from_request
@@ -139,8 +140,9 @@ def _rate_limit(scope, email=None):
         'resend': ((10, 3600), (3, 3600)),
         'forgot': ((10, 3600), (5, 3600)),
         'google': ((30, 600), None),
-        # Behind a unit's shared NAT many devices share an address, so this is generous.
-        'refresh': ((120, 600), None),
+        # Behind a unit's shared NAT many devices share an address, and every open web tab refreshes
+        # about every 13 minutes, so this is generous.
+        'refresh': ((300, 600), None),
         'delete_account': ((5, 3600), None),
         'reset': ((20, 3600), None),
         'mil_request': ((10, 3600), None),
@@ -266,7 +268,50 @@ def _auth_success(user, method='password'):
     except Exception:  # noqa: BLE001 — history is best-effort, never blocks login
         db.session.rollback()
 
-    return _token_response(user, refresh_tokens.native_client_label(request))
+    native_label = refresh_tokens.native_client_label(request)
+    if native_label is None and refresh_cookie.requested(request):
+        return _web_session_response(user)
+    return _token_response(user, native_label)
+
+
+# A web access token minted by a refresh lives this long. It is kept in the page's memory only, and
+# the page refreshes it before it lapses; a sign-in's lives the usual 24 hours, because a browser that
+# will not keep the cookie (see refresh_cookie) keeps that token instead, as the web always has.
+WEB_ACCESS_LIFETIME = timedelta(minutes=15)
+
+
+def _web_session_response(user, family=None, refresh_token=None):
+    """A web sign-in or refresh: an access token tied to the browser's session, the refresh token as a cookie.
+
+    A sign-in (``family`` unset) starts the session, and ends the one whose cookie it replaces: the
+    browser can hold one cookie, so the older family could never be refreshed again and would only
+    linger in the account's list of devices.
+    """
+    credential = user.local_credential
+    session_version = credential.session_version if credential else 0
+    lifetime = WEB_ACCESS_LIFETIME
+    if family is None:
+        replaced = refresh_tokens.find(refresh_cookie.presented(request))
+        if refresh_cookie.is_web_family(replaced):
+            refresh_tokens.revoke_family(replaced.family)
+        refresh_token, family = refresh_tokens.issue_family(
+            user.id, session_version, refresh_cookie.WEB_CLIENT
+        )
+        db.session.commit()
+        lifetime = current_app.config['JWT_ACCESS_TOKEN_EXPIRES']
+    access_token = create_access_token(
+        identity=str(user.id),
+        additional_claims={"sv": session_version, "sid": family},
+        expires_delta=lifetime,
+    )
+    response = jsonify({
+        "status": "success",
+        "access_token": access_token,
+        "expires_in": int(lifetime.total_seconds()),
+        "session": refresh_cookie.SESSION_HEADER_VALUE,
+        "user": _serialize_user(user),
+    })
+    return refresh_cookie.set_on(response, refresh_token, refresh_tokens.REFRESH_LIFETIME)
 
 
 def _token_response(user, native_label, family=None, refresh_token=None):
@@ -627,45 +672,64 @@ def google_auth():
 def refresh():
     """Swap a refresh token for a new access token and the next refresh token.
 
-    Native apps only (they are the only clients issued one). The presented token
-    is spent: using it again is read as a lost response for 30 seconds and as a
-    copy after that, which signs the device out (see refresh_tokens).
+    A native app sends its token in the body and is answered with the next one in
+    the body. The web sends none: with ``X-EZPZ-Session: cookie`` it is read from
+    the HttpOnly cookie, and the next one goes back as the cookie (refresh_cookie).
+    The presented token is spent: using it again is read as a lost response for 30
+    seconds and as a copy after that, which signs the device out (see refresh_tokens).
     """
     limited = _rate_limit('refresh')
     if limited:
         return limited
 
+    body_token = _payload().get('refresh_token')
+    by_cookie = body_token is None and refresh_cookie.requested(request)
+
+    def refused(message, status, code):
+        response, status = _error(message, status, code)
+        # A cookie that will never work again is not sent again.
+        return (refresh_cookie.clear_on(response) if by_cookie else response), status
+
+    if by_cookie and refresh_cookie.presented(request) is None:
+        # Said apart from an expired session: the web asks once after signing in, to learn whether
+        # this browser keeps the cookie at all.
+        return _error("This browser did not send its session.", 401, "refresh_cookie_missing")
+
     now = _now()
-    found = refresh_tokens.find(_payload().get('refresh_token'), now)
-    if found is None:
-        return _error("This session has expired. Sign in again.", 401, "invalid_refresh_token")
+    found = refresh_tokens.find(refresh_cookie.presented(request) if by_cookie else body_token, now)
+    # A token is refreshed only the way its family was issued, so a web family's never leaves its cookie.
+    if found is None or refresh_cookie.is_web_family(found) != by_cookie:
+        return refused("This session has expired. Sign in again.", 401, "invalid_refresh_token")
 
     user = found.user
     credential = user.local_credential
     if not account_active(user) or (credential is not None and credential.status == 'suspended'):
         refresh_tokens.revoke_family(found.family, now)
         db.session.commit()
-        return _error("This account is not available.", 403, "account_unavailable")
+        return refused("This account is not available.", 403, "account_unavailable")
     # A password reset bumps the session version, which ends every device session.
     if found.session_version != (credential.session_version if credential else 0):
         refresh_tokens.revoke_family(found.family, now)
         db.session.commit()
-        return _error("This session has expired. Sign in again.", 401, "invalid_refresh_token")
+        return refused("This session has expired. Sign in again.", 401, "invalid_refresh_token")
 
     new_token, failure = refresh_tokens.rotate(found, now)
     db.session.commit()
     if failure:
-        return _error("This session has expired. Sign in again.", 401, failure)
+        return refused("This session has expired. Sign in again.", 401, failure)
+    if by_cookie:
+        return _web_session_response(user, family=found.family, refresh_token=new_token)
     return _token_response(user, found.client, family=found.family, refresh_token=new_token)
 
 
 @auth_bp.route('/api/auth/logout', methods=['POST'])
 @jwt_required()
 def logout():
-    """End this device's session. The access token stops working at once."""
+    """End this device's session. The access token stops working at once, and a web session's cookie goes."""
     refresh_tokens.revoke_family(get_jwt().get('sid'))
     db.session.commit()
-    return jsonify({"status": "success"})
+    response = jsonify({"status": "success"})
+    return refresh_cookie.clear_on(response) if refresh_cookie.presented(request) else response
 
 
 @auth_bp.route('/api/auth/sessions', methods=['GET'])
