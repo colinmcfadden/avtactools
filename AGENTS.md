@@ -728,7 +728,11 @@ while the app runs on Android (`rememberSaveable`); how the person likes the car
 earth curvature and refraction, one mask per altitude band. The DEM is
 smoothed and the observer height taken over a 3×3 footprint, because a single
 ~60 m pixel beside a low antenna otherwise casts a false quadrant-wide shadow.
-KMZ masks are vector polygons because ForeFlight won't render raster overlays.
+KMZ masks are vector polygons because ForeFlight won't render raster overlays,
+and every ring must be simple (`mask_rings.py`): ForeFlight spins for ever on a
+threat whose mask has a ring that crosses or touches itself, while Google Earth
+draws it (found 2026-10-28; traced outlines pinch at one-pixel necks and
+simplifying can fold them, so rings are split and re-checked).
 
 **LiDAR (3D view).** Source is USGS 3DEP. The same survey is published two ways:
 
