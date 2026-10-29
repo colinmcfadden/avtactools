@@ -4,7 +4,7 @@ import { BusyButton, ProgressBar, Spinner } from "./Spinner";
 
 describe("a button that waits on the server", () => {
   it("shows its icon and can be pressed while idle", () => {
-    const onClick = jest.fn();
+    const onClick = vi.fn();
     const { container } = render(<BusyButton className="ui-btn ui-btn--primary" icon="download" onClick={onClick}>Download PDF</BusyButton>);
     const button = screen.getByRole("button", { name: "Download PDF" });
     expect(button).toBeEnabled();
@@ -16,7 +16,7 @@ describe("a button that waits on the server", () => {
   });
 
   it("turns a spinner where its icon was, says it is busy and cannot be pressed again", () => {
-    const onClick = jest.fn();
+    const onClick = vi.fn();
     const { container } = render(<BusyButton className="ui-btn ui-btn--primary" icon="download" busy onClick={onClick}>Printing…</BusyButton>);
     const button = screen.getByRole("button", { name: "Printing…" });
     expect(button).toBeDisabled();

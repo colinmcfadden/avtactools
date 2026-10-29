@@ -1,14 +1,14 @@
 import api, { isPublicAuthRequest } from "./api";
 import { cookieSessionsOffered, getAccessToken, refreshAccessToken } from "./session";
 
-jest.mock("./session", () => ({
-  ...jest.requireActual("./session"),
-  refreshAccessToken: jest.fn(),
-  getAccessToken: jest.fn(() => null),
+vi.mock("./session", async (importOriginal) => ({
+  ...(await importOriginal()),
+  refreshAccessToken: vi.fn(),
+  getAccessToken: vi.fn(() => null),
   // CRA resets these before each test (resetMocks): left so, they answer undefined, which sends no token
   // and asks for no cookie session, and nothing reaches a real server.
-  cookieSessionsOffered: jest.fn(),
-  freshAccessToken: jest.fn(),
+  cookieSessionsOffered: vi.fn(),
+  freshAccessToken: vi.fn(),
 }));
 
 const unauthorizedAdapter = (config) =>
@@ -17,12 +17,12 @@ const unauthorizedAdapter = (config) =>
 describe("auth API unauthorized handling", () => {
   beforeEach(() => {
     localStorage.clear();
-    jest.useFakeTimers();
+    vi.useFakeTimers();
   });
 
   afterEach(() => {
-    jest.runOnlyPendingTimers();
-    jest.useRealTimers();
+    vi.runOnlyPendingTimers();
+    vi.useRealTimers();
   });
 
   test("recognizes public authentication requests", () => {
@@ -32,7 +32,7 @@ describe("auth API unauthorized handling", () => {
   });
 
   test("keeps public auth failures inline but expires protected state without a stored token", async () => {
-    const onExpired = jest.fn();
+    const onExpired = vi.fn();
     window.addEventListener("auth-expired", onExpired);
 
     await expect(
@@ -59,7 +59,7 @@ describe("a cookie session's lapsed token", () => {
   beforeEach(() => {
     localStorage.clear();
     localStorage.setItem("ezpz.session", "cookie");
-    jest.clearAllMocks();
+    vi.clearAllMocks();
     getAccessToken.mockReturnValue("old");
   });
 
@@ -81,7 +81,7 @@ describe("a cookie session's lapsed token", () => {
 
   test("a session the refresh finds ended signs the page out", async () => {
     refreshAccessToken.mockResolvedValue(null);
-    const onExpired = jest.fn();
+    const onExpired = vi.fn();
     window.addEventListener("auth-expired", onExpired);
     await expect(api.get("/lz", { adapter: sentWith("old") })).rejects.toBeTruthy();
     expect(onExpired).toHaveBeenCalledTimes(1);
@@ -91,7 +91,7 @@ describe("a cookie session's lapsed token", () => {
 
   test("a refresh that cannot reach the server ends nothing", async () => {
     refreshAccessToken.mockRejectedValue(new Error("Network Error"));
-    const onExpired = jest.fn();
+    const onExpired = vi.fn();
     window.addEventListener("auth-expired", onExpired);
     await expect(api.get("/lz", { adapter: sentWith("old") })).rejects.toBeTruthy();
     expect(refreshAccessToken).toHaveBeenCalledTimes(1);

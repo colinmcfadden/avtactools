@@ -11,6 +11,11 @@ on:
     paths:
       - "contracts/**"
       - "frontend/src/contracts/**"
+      # What runs the web side: the test runner, its setup, and the packages it installs.
+      - "frontend/package.json"
+      - "frontend/package-lock.json"
+      - "frontend/vite.config.mts"
+      - "frontend/src/setupTests.js"
       - "frontend/src/utils/**"
       - "frontend/src/feature/aircraft/**"
       # Every web file a fixture pins, and what it imports: the mission packs' rules, sentences and session
@@ -35,6 +40,11 @@ on:
     paths:
       - "contracts/**"
       - "frontend/src/contracts/**"
+      # What runs the web side: the test runner, its setup, and the packages it installs.
+      - "frontend/package.json"
+      - "frontend/package-lock.json"
+      - "frontend/vite.config.mts"
+      - "frontend/src/setupTests.js"
       - "frontend/src/utils/**"
       - "frontend/src/feature/aircraft/**"
       # Every web file a fixture pins, and what it imports: the mission packs' rules, sentences and session
@@ -80,9 +90,7 @@ jobs:
           cache-dependency-path: frontend/package-lock.json
       - run: npm ci --no-audit --no-fund
       - name: Contract tests
-        run: npx react-scripts test --watchAll=false src/contracts
-        env:
-          CI: "true"
+        run: npx vitest run src/contracts
 
   pygeodesy:
     name: PyGeodesy agrees with the MGRS fixtures

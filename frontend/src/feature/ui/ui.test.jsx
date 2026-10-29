@@ -8,7 +8,7 @@ import { ToastProvider, useToast } from "./Toast";
 
 describe("Dialog", () => {
   it("is a labelled modal that takes focus, keeps it inside, closes on Esc and gives it back", () => {
-    const onClose = jest.fn();
+    const onClose = vi.fn();
     const Opener = () => {
       const [open, setOpen] = useState(false);
       return (
@@ -43,8 +43,8 @@ describe("Dialog", () => {
 
   it("keeps Escape to itself when it will not close, so the dialog under it does not close instead", () => {
     // The review's: Escape while a 3D capture was being kept closed the survey book under it.
-    const outer = jest.fn();
-    const inner = jest.fn();
+    const outer = vi.fn();
+    const inner = vi.fn();
     render(
       <Dialog title="Survey book" onClose={outer}>
         <Dialog title="3D view for the page" onClose={inner} dismissible={false}>
@@ -67,7 +67,7 @@ describe("SaveDialog", () => {
   const existing = [{ name: "LZ HAWK (SHOPE)", updatedAt: "2026-08-25T21:34:00" }, { name: "LZ HAWK (SHOPE) 2" }];
 
   it("saves the name on Enter, and refuses an empty one in words", async () => {
-    const onSave = jest.fn().mockResolvedValue();
+    const onSave = vi.fn().mockResolvedValue();
     render(<SaveDialog title="Save LZ/PZ" initialName="LZ/PZ 1" existing={existing} kindPhrase="an LZ/PZ" onSave={onSave} onCancel={() => {}}
       contents={[{ text: "Boundary and slope analysis" }, { icon: "info", text: "Threats and routes are not included." }]} />);
     const field = screen.getByLabelText("Name");
@@ -83,7 +83,7 @@ describe("SaveDialog", () => {
   });
 
   it("offers to keep both or replace when the name is taken", async () => {
-    const onSave = jest.fn().mockResolvedValue();
+    const onSave = vi.fn().mockResolvedValue();
     render(<SaveDialog title="Save LZ/PZ" initialName="lz hawk (shope)" existing={existing} kindPhrase="an LZ/PZ" onSave={onSave} onCancel={() => {}} />);
     expect(screen.getByText("Name is already used.")).toBeInTheDocument();
     expect(screen.getByText(/You already have an LZ\/PZ with this name, last saved Aug 25 at/)).toBeInTheDocument();
@@ -95,7 +95,7 @@ describe("SaveDialog", () => {
   });
 
   it("says when it could not save and lets the person try again", async () => {
-    const onSave = jest.fn().mockRejectedValueOnce(new Error("Network Error"));
+    const onSave = vi.fn().mockRejectedValueOnce(new Error("Network Error"));
     render(<SaveDialog title="Save routes" initialName="RED" onSave={onSave} onCancel={() => {}} />);
     fireEvent.click(screen.getByRole("button", { name: /^Save$/ }));
     expect(await screen.findByText(/could not be saved/)).toBeInTheDocument();
@@ -123,7 +123,7 @@ describe("Menu", () => {
   };
 
   it("opens from its button, moves with the arrow keys, picks, and closes on Esc", () => {
-    const onPick = jest.fn();
+    const onPick = vi.fn();
     render(<Harness onPick={onPick} />);
     const button = screen.getByText("Import");
     fireEvent.click(button);
@@ -143,11 +143,11 @@ describe("Menu", () => {
 });
 
 describe("Toasts", () => {
-  beforeEach(() => jest.useFakeTimers());
-  afterEach(() => jest.useRealTimers());
+  beforeEach(() => vi.useFakeTimers());
+  afterEach(() => vi.useRealTimers());
 
   it("announces a note with its action, and takes it away after a while", () => {
-    const action = jest.fn();
+    const action = vi.fn();
     const Show = () => {
       const { show } = useToast();
       return <button type="button" onClick={() => show({ message: "Saved “LZ HAWK” to your Library", action: { label: "Open Library", onClick: action } })}>go</button>;
@@ -159,7 +159,7 @@ describe("Toasts", () => {
     expect(action).toHaveBeenCalled();
     expect(screen.queryByText(/Saved “LZ HAWK”/)).toBeNull();
     fireEvent.click(screen.getByText("go"));
-    act(() => { jest.advanceTimersByTime(9000); });
+    act(() => { vi.advanceTimersByTime(9000); });
     expect(screen.queryByText(/Saved “LZ HAWK”/)).toBeNull();
   });
 });

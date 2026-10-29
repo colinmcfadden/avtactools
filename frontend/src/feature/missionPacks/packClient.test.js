@@ -84,7 +84,7 @@ beforeEach(() => {
   hidden = false;
   ids = 0;
   token = "sam-token";
-  api = { getPack: jest.fn(), getEvents: jest.fn(), sendOps: jest.fn() };
+  api = { getPack: vi.fn(), getEvents: vi.fn(), sendOps: vi.fn() };
 });
 
 afterEach(() => client?.stop());
@@ -382,7 +382,7 @@ describe("stopping", () => {
       events: [ev(5, setHeading(110), { actor: SAM, client_op_id: "op-2" })] });
     client.edit(setHeading(100));
     client.edit(setHeading(110)); // queued behind the first
-    const listener = jest.fn();
+    const listener = vi.fn();
     client.subscribe(listener);
     client.stop();
     expect(socket.closedWith).toBe(1000);
@@ -419,7 +419,7 @@ describe("stopping", () => {
   });
 
   it("says what the pack would not take by then, and never sends as someone who signed in since", async () => {
-    const onLost = jest.fn();
+    const onLost = vi.fn();
     const socket = await start(pack(), { onLost });
     await welcome(socket);
     api.sendOps.mockRejectedValueOnce(fail(0));
@@ -435,7 +435,7 @@ describe("stopping", () => {
   });
 
   it("still sends what waits when only the token was refreshed, since the session is the same", async () => {
-    const onLost = jest.fn();
+    const onLost = vi.fn();
     const socket = await start(pack(), { onLost, getSession: () => "7:fam-1" });
     await welcome(socket);
     api.sendOps.mockRejectedValueOnce(fail(0));
@@ -453,7 +453,7 @@ describe("stopping", () => {
 
   it("hands the live stream each new token, so its next check is made with one that has not lapsed", async () => {
     let heard = null;
-    const onToken = jest.fn((listener) => {
+    const onToken = vi.fn((listener) => {
       heard = listener;
       return () => { heard = null; };
     });
@@ -470,7 +470,7 @@ describe("stopping", () => {
 
   // Signing out clears the token before the pack closes, so a client stopped then has none to send with.
   it("gives up at once what waits when the person has signed out, rather than send it with no token", async () => {
-    const onLost = jest.fn();
+    const onLost = vi.fn();
     const socket = await start(pack(), { onLost });
     await welcome(socket);
     api.sendOps.mockRejectedValue(fail(401)); // what a send with no token would get
@@ -487,7 +487,7 @@ describe("stopping", () => {
   });
 
   it("still hears the answer to a batch sent before signing out, and sends nothing after it", async () => {
-    const onLost = jest.fn();
+    const onLost = vi.fn();
     const socket = await start(pack(), { onLost });
     await welcome(socket);
     api.sendOps.mockRejectedValue(fail(401)); // what a send with no token would get
@@ -507,7 +507,7 @@ describe("stopping", () => {
   });
 
   it("gives up, without waiting to try again, a batch sent before signing out that got no answer", async () => {
-    const onLost = jest.fn();
+    const onLost = vi.fn();
     const socket = await start(pack(), { onLost });
     await welcome(socket);
     api.sendOps.mockRejectedValue(fail(401)); // what a send with no token would get

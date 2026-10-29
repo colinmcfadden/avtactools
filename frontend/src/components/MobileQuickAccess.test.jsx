@@ -21,8 +21,8 @@ const renderQuickAccess = (props = {}) =>
 
 describe("the phone's quick access", () => {
   it("exports an analysed LZ/PZ that may not be changed (a finished pack), while its tools stay off", () => {
-    const enableExportMode = jest.fn();
-    const onDownloadClick = jest.fn();
+    const enableExportMode = vi.fn();
+    const onDownloadClick = vi.fn();
     renderQuickAccess({ enableExportMode, onDownloadClick, canUseDiagramTools: false, canSaveDiagram: false, canExport: true });
     expect(screen.getByAltText("Helo").closest("button")).toBeDisabled();
     fireEvent.click(screen.getByRole("button", { name: /Capture/ }));
@@ -44,7 +44,7 @@ describe("the phone's quick access, once a target is set", () => {
   const targeted = { diagramStatus: "targeted", canAnalyze: true, canDrawBoundary: true, canUseDiagramTools: false, canSaveDiagram: false, canExport: false };
 
   it("offers Analyze, and runs it", () => {
-    const onAnalyze = jest.fn();
+    const onAnalyze = vi.fn();
     renderQuickAccess({ ...targeted, onAnalyze, onToggleDrawing: () => {} });
     const analyze = screen.getByRole("button", { name: "Analyze" });
     expect(analyze).toBeEnabled();
@@ -53,7 +53,7 @@ describe("the phone's quick access, once a target is set", () => {
   });
 
   it("offers drawing the boundary by hand, and finishing it", () => {
-    const onToggleDrawing = jest.fn();
+    const onToggleDrawing = vi.fn();
     const { rerender } = renderQuickAccess({ ...targeted, onAnalyze: () => {}, onToggleDrawing });
     const draw = screen.getByRole("button", { name: "Draw LZ" });
     expect(draw).toHaveAttribute("aria-pressed", "false");
@@ -86,8 +86,8 @@ describe("the phone's quick access, once a target is set", () => {
   });
 
   it("offers neither before a target is set, and says why", () => {
-    const onAnalyze = jest.fn();
-    const onToggleDrawing = jest.fn();
+    const onAnalyze = vi.fn();
+    const onToggleDrawing = vi.fn();
     renderQuickAccess({ ...targeted, diagramStatus: "draft", canAnalyze: false, canDrawBoundary: false, onAnalyze, onToggleDrawing });
     const analyze = screen.getByRole("button", { name: "Analyze" });
     const draw = screen.getByRole("button", { name: "Draw LZ" });

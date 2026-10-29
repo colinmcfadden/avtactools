@@ -294,7 +294,7 @@ const Viewer3D = ({ tilesetUrl, contextUrl = null, frame = null, requiresAuth = 
         // outside it. In development the scene is reachable from the console
         // so its real state can be read rather than inferred:
         //   window.__viewer3d.report()
-        if (process.env.NODE_ENV === "development") {
+        if (import.meta.env.DEV) {
           window.__viewer3d = {
             viewer,
             tileset,

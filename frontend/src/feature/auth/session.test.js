@@ -1,6 +1,9 @@
 import axios from "axios";
 
-jest.mock("axios");
+vi.mock("axios", () => {
+  const axios = { post: vi.fn(), get: vi.fn() };
+  return { default: axios, ...axios };
+});
 
 const encode = (value) => btoa(JSON.stringify(value)).replace(/=+$/, "").replace(/\+/g, "-").replace(/\//g, "_");
 const jwt = ({ sid = "fam-1", sub = "7", lifetime = 900, nonce = Math.random() } = {}) => {
@@ -14,20 +17,19 @@ const settle = async () => { for (let i = 0; i < 20; i += 1) await Promise.resol
 
 let session;
 
-beforeEach(() => {
-  jest.useFakeTimers();
+beforeEach(async () => {
+  vi.useFakeTimers();
   localStorage.clear();
   axios.post.mockReset();
   axios.get.mockReset();
   delete navigator.locks;
-  jest.isolateModules(() => {
-    session = require("./session");
-  });
+  vi.resetModules();
+  session = await import("./session");
 });
 
 afterEach(() => {
   session.forgetToken();
-  jest.useRealTimers();
+  vi.useRealTimers();
 });
 
 describe("after a sign-in", () => {
@@ -80,7 +82,7 @@ describe("refreshing", () => {
   });
 
   test("tabs take turns: a refresh waits for the browser-wide lock", async () => {
-    const request = jest.fn((name, work) => work());
+    const request = vi.fn((name, work) => work());
     navigator.locks = { request };
     axios.post.mockResolvedValueOnce(answered(jwt()));
     await session.refreshAccessToken();
@@ -100,9 +102,9 @@ describe("refreshing", () => {
     await session.refreshAccessToken();
     const next = jwt();
     axios.post.mockResolvedValueOnce(answered(next));
-    jest.advanceTimersByTime(12 * 60 * 1000);
+    vi.advanceTimersByTime(12 * 60 * 1000);
     expect(axios.post).toHaveBeenCalledTimes(1);
-    jest.advanceTimersByTime(60 * 1000 + 1);
+    vi.advanceTimersByTime(60 * 1000 + 1);
     expect(axios.post).toHaveBeenCalledTimes(2);
     await settle();
     expect(session.getAccessToken()).toBe(next);
@@ -111,10 +113,10 @@ describe("refreshing", () => {
   test("a scheduled refresh that finds the session ended says so", async () => {
     axios.post.mockResolvedValueOnce(answered(jwt()));
     await session.refreshAccessToken();
-    const expired = jest.fn();
+    const expired = vi.fn();
     window.addEventListener("auth-expired", expired);
     axios.post.mockRejectedValueOnce(refused(401, "invalid_refresh_token"));
-    jest.advanceTimersByTime(14 * 60 * 1000);
+    vi.advanceTimersByTime(14 * 60 * 1000);
     await settle();
     expect(expired).toHaveBeenCalledTimes(1);
     expect(localStorage.getItem("ezpz.session")).toBeNull();
@@ -157,9 +159,8 @@ describe("whether the server offers cookie sessions", () => {
   test("an older server, or none answering, is not asked for one; not knowing is asked again", async () => {
     axios.get.mockResolvedValueOnce({ data: { apiVersion: "1.1.0" } });
     await expect(session.cookieSessionsOffered()).resolves.toBe(false);
-    jest.isolateModules(() => {
-      session = require("./session");
-    });
+    vi.resetModules();
+    session = await import("./session");
     axios.get.mockRejectedValueOnce(new Error("Network Error")).mockResolvedValueOnce({ data: { apiVersion: "2.0.0" } });
     await expect(session.cookieSessionsOffered()).resolves.toBe(false);
     await expect(session.cookieSessionsOffered()).resolves.toBe(true);
@@ -174,7 +175,7 @@ describe("a refresh that met no answer", () => {
     axios.post.mockRejectedValueOnce(new Error("Network Error")).mockResolvedValueOnce(answered(fresh));
     const asked = session.refreshAccessToken();
     await settle();
-    jest.advanceTimersByTime(1500);
+    vi.advanceTimersByTime(1500);
     await expect(asked).resolves.toBe(fresh);
     expect(axios.post).toHaveBeenCalledTimes(2);
   });

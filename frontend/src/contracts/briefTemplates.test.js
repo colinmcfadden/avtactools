@@ -258,8 +258,9 @@ describe("mission brief templates", () => {
     const broken = (edit) => {
       const t = JSON.parse(original);
       edit(t);
-      const spy = jest.spyOn(fs, "readFileSync").mockImplementation((p, ...rest) =>
-        String(p).endsWith(`${path.sep}amb.json`) ? JSON.stringify(t) : jest.requireActual("fs").readFileSync(p, ...rest));
+      const read = fs.readFileSync;
+      const spy = vi.spyOn(fs, "readFileSync").mockImplementation((p, ...rest) =>
+        String(p).endsWith(`${path.sep}amb.json`) ? JSON.stringify(t) : read(p, ...rest));
       try {
         return templateProblems("amb");
       } finally {

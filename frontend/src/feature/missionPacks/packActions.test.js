@@ -4,7 +4,7 @@ import { copyFromLibrary, deleteItemOp, droppedVersions, myEditsName, saveVersio
 import { batchFailed, edit, nextBatch, openSession } from "./packSession";
 import { changedSince, usePackSeen } from "./usePackSeen";
 
-jest.mock("../auth/api", () => ({ get: jest.fn(), post: jest.fn(), put: jest.fn(), delete: jest.fn() }));
+vi.mock("../auth/api", () => ({ default: { get: vi.fn(), post: vi.fn(), put: vi.fn(), delete: vi.fn() } }));
 
 const T = "2026-10-07T12:00:00";
 const PACK = {
@@ -81,25 +81,25 @@ describe("pack actions", () => {
 });
 
 describe("usePackSeen", () => {
-  beforeEach(() => jest.useFakeTimers());
-  afterEach(() => jest.useRealTimers());
+  beforeEach(() => vi.useFakeTimers());
+  afterEach(() => vi.useRealTimers());
 
   it("moves the marker to the newest event while the person looks, and keeps 'new' where they were", async () => {
-    const markSeen = jest.fn().mockResolvedValue({ seen_seq: 9, seen_at: T });
+    const markSeen = vi.fn().mockResolvedValue({ seen_seq: 9, seen_at: T });
     const { result, rerender } = renderHook((props) => usePackSeen({ markSeen, ...props }), {
       initialProps: { packUuid: "p-1", headSeq: 9, seenSeq: 4, looking: false },
     });
-    act(() => { jest.advanceTimersByTime(5000); });
+    act(() => { vi.advanceTimersByTime(5000); });
     expect(markSeen).not.toHaveBeenCalled(); // not looking
     rerender({ packUuid: "p-1", headSeq: 9, seenSeq: 4, looking: true });
     expect(result.current.newSince).toBe(4);
-    await act(async () => { jest.advanceTimersByTime(1500); });
+    await act(async () => { vi.advanceTimersByTime(1500); });
     expect(markSeen).toHaveBeenCalledWith("p-1", 9);
     expect(result.current).toEqual({ seenSeq: 9, newSince: 4 });
   });
 
   it("starts again for another pack", () => {
-    const markSeen = jest.fn().mockResolvedValue({ seen_seq: 0 });
+    const markSeen = vi.fn().mockResolvedValue({ seen_seq: 0 });
     const { result, rerender } = renderHook((props) => usePackSeen({ markSeen, ...props }), {
       initialProps: { packUuid: "p-1", headSeq: 3, seenSeq: 3, looking: false },
     });
@@ -108,7 +108,7 @@ describe("usePackSeen", () => {
   });
 
   it("starts 'new' from the server's marker when a pack opened from the switcher loads", () => {
-    const markSeen = jest.fn().mockResolvedValue({ seen_seq: 50 });
+    const markSeen = vi.fn().mockResolvedValue({ seen_seq: 50 });
     const { result, rerender } = renderHook((props) => usePackSeen({ markSeen, ...props }), {
       initialProps: { packUuid: null, headSeq: 0, seenSeq: 0, loaded: false, looking: false },
     });
@@ -121,7 +121,7 @@ describe("usePackSeen", () => {
   });
 
   it("gives a pack switched to straight from another nothing of the other's", () => {
-    const markSeen = jest.fn().mockResolvedValue({ seen_seq: 0 });
+    const markSeen = vi.fn().mockResolvedValue({ seen_seq: 0 });
     const { result, rerender } = renderHook((props) => usePackSeen({ markSeen, ...props }), {
       initialProps: { packUuid: "p-1", headSeq: 100, seenSeq: 100, loaded: true, looking: true },
     });

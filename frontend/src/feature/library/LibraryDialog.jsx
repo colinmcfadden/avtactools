@@ -104,7 +104,7 @@ const LibraryDialog = ({ initialTab = "lz", sources, onClose, onAddToPack, onOpe
     <>
       <Dialog
         title="Library"
-        subtitle={subtitle ?? "Everything you have saved. Opening one adds it to this session."}
+        subtitle={subtitle}
         icon="folder"
         className="library"
         onClose={onClose}

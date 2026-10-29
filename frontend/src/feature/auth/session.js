@@ -16,7 +16,7 @@ import axios from "axios";
  * next time it is used and ends the session.
  */
 
-const API_BASE_URL = process.env.REACT_APP_API_URL;
+const API_BASE_URL = import.meta.env.VITE_API_URL;
 
 export const LEGACY_TOKEN_KEY = "auth_token";
 export const SESSION_KEY = "ezpz.session";

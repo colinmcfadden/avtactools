@@ -37,7 +37,7 @@ const fakeViewer = (cssWidth = 800, cssHeight = 500, { draws = true, tileset = n
 };
 
 const fakeCanvas = ({ toBlob } = {}) => {
-  const drawImage = jest.fn();
+  const drawImage = vi.fn();
   const canvas = { getContext: () => ({ drawImage }), toBlob: toBlob ?? ((done) => done(new Blob(["png"], { type: "image/png" }))) };
   return { canvas, drawImage };
 };

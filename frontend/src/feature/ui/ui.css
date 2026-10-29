@@ -356,7 +356,8 @@ select.ui-input { cursor: pointer; }
 .ui-menu__item:focus-visible { background: rgba(90, 167, 212, 0.12); outline: none; }
 .ui-menu__item:disabled { color: #6f7885; cursor: not-allowed; background: transparent; }
 .ui-menu__item--danger { color: #f3b1ac; }
-.ui-menu__item--rich { height: 58px; gap: 12px; }
+/* A rich item grows with its words rather than letting them run to its edges. */
+.ui-menu__item--rich { min-height: 58px; padding: 10px; gap: 12px; }
 .ui-menu__item-icon {
   display: flex;
   flex: none;

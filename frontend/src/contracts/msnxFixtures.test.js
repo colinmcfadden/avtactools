@@ -22,7 +22,7 @@ const { UPDATE, dumps, fixturePath, writeFixture } = require("./fixtureIO");
 // Files are cut down to the five parts the reader uses, plus the three the writer changes (the template's 650 KB .vidx
 // vehicle model is never read), about 100 KB each.
 
-jest.setTimeout(180000);
+vi.setConfig({ testTimeout: 180000 });
 
 const TEMPLATE = fs.readFileSync(path.join(__dirname, "../../public/msnx_template.msnx"));
 const KEEP = [

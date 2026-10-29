@@ -28,7 +28,7 @@ const gridSwitch = () => screen.getByRole("switch", { name: "MGRS grid" });
 const openLayers = () => fireEvent.click(layersButton());
 
 afterEach(() => {
-  jest.restoreAllMocks();
+  vi.restoreAllMocks();
   window.localStorage.clear();
 });
 
@@ -91,10 +91,10 @@ describe("the Layers control's MGRS grid switch", () => {
   });
 
   it("still works when the browser refuses storage", () => {
-    jest.spyOn(Storage.prototype, "getItem").mockImplementation(() => {
+    vi.spyOn(Storage.prototype, "getItem").mockImplementation(() => {
       throw new Error("SecurityError");
     });
-    jest.spyOn(Storage.prototype, "setItem").mockImplementation(() => {
+    vi.spyOn(Storage.prototype, "setItem").mockImplementation(() => {
       throw new Error("QuotaExceededError");
     });
     render(<Harness />);

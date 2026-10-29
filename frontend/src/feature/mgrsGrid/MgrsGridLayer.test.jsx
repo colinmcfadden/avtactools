@@ -13,16 +13,16 @@ import MgrsGridLayer, {
 } from "./MgrsGridLayer";
 
 // react-leaflet is an ES module Jest does not transform: useMap hands the layer a real Leaflet map.
-jest.mock("react-leaflet", () => {
+vi.mock("react-leaflet", () => {
   const holder = { map: null };
   return { __holder: holder, useMap: () => holder.map };
 });
-const { __holder: holder } = jest.requireMock("react-leaflet");
+const { __holder: holder } = await import("react-leaflet");
 
 let container;
 let map;
 beforeEach(() => {
-  jest.useFakeTimers();
+  vi.useFakeTimers();
   container = document.createElement("div");
   // jsdom lays nothing out; give the map a size so it has a view to draw over.
   Object.defineProperty(container, "clientWidth", { configurable: true, value: 1200 });
@@ -34,7 +34,7 @@ beforeEach(() => {
 afterEach(() => {
   map.remove();
   container.remove();
-  jest.useRealTimers();
+  vi.useRealTimers();
 });
 
 const pane = (name) => map.getPane(name);
@@ -44,7 +44,7 @@ const labelTexts = () => [...(pane(LABEL_PANE)?.querySelectorAll(".mgrs-grid-lab
 // Lines drawn: a path that is more than Leaflet's empty "M0 0".
 const pathsWithLines = () => drawnPaths().filter((p) => (p.getAttribute("d") || "").includes("L"));
 const settle = () => act(() => {
-  jest.advanceTimersByTime(50);
+  vi.advanceTimersByTime(50);
 });
 
 // Leaflet's own pane stacking, read from its stylesheet as the browser would.

@@ -1,11 +1,8 @@
 import api from "../auth/api";
 import * as packApi from "./packApi";
 
-jest.mock("../auth/api", () => ({
-  get: jest.fn(),
-  post: jest.fn(),
-  put: jest.fn(),
-  delete: jest.fn(),
+vi.mock("../auth/api", () => ({
+  default: { get: vi.fn(), post: vi.fn(), put: vi.fn(), delete: vi.fn() },
 }));
 
 const ANSWER = { ok: true };
@@ -18,7 +15,7 @@ beforeEach(() => {
 });
 
 // [call, method, path, body or query] for every route in contracts/openapi.yaml under packs, teams,
-// invites and people. The path is what axios gets: relative to REACT_APP_API_URL, which ends in /api.
+// invites and people. The path is what axios gets: relative to VITE_API_URL, which ends in /api.
 const CASES = [
   [() => packApi.listPacks(), "get", "/packs"],
   [() => packApi.createPack({ name: "OP DK", team_id: 3 }), "post", "/packs", { name: "OP DK", team_id: 3 }],

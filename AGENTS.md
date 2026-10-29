@@ -57,7 +57,7 @@ These come from the owner. Do not work around them.
 ## 3. Architecture
 
 ```
-Browser — React 19 SPA (CRA), hosted on Vercel
+Browser — React 19 SPA (Vite), hosted on Vercel
  ├─ Leaflet 2D map ───────────── Mapbox satellite/outdoors, FAA VFR sectional tiles
  ├─ Cesium 3D view (in progress) ─ /api/lidar/*, /api/terrain/heightmap/*, Mapbox imagery
  └─ axios + bearer JWT ──────────► Flask API — gunicorn, 1 worker
@@ -91,9 +91,9 @@ reached on `admin.ezpztac.app` (the host check in `app.py` redirects `/` there).
 | **Auth & access** | Google or email/password; email verification; `.mil` affiliation gate; per-user feature entitlements | `feature/auth/` | `routes/auth.py`, `entitlements.py`, `security_config.py`, `auth_rate_limit.py`, `email_service.py` |
 | **Admin dashboard** | Users, roles, entitlements, access approval, password resets, master aircraft list | — (Jinja) | `routes/admin_routes.py`, `templates/admin/` |
 | **App frame** (menu redesign, `docs/MENU_REDESIGN.md`) | Top bar (workspace, Import, Library, account); a right dock of panels (LZ/PZ, Routes, Threats, Imports) picked from an icon rail, a bottom sheet below 1100 px; the shared dialogs, menus and toasts. No browser `prompt`/`confirm`/`alert` on these paths. At 850 px and below the left sidebar is a full-screen menu behind the top bar's ☰, so the map's tool rail (`MobileQuickAccess`) offers Analyze and Draw LZ itself, in words: without them a phone had no visible way to analyse a target (the owner, 2026-10-19) | `feature/shell/`, `feature/ui/`, `components/MobileQuickAccess.jsx` | — |
-| **LZ/PZ workspace** | Several LZ diagrams per session; target by MGRS; switch between them in the LZ/PZ panel | `feature/lzWorkspace/`, `feature/shell/LzPanel.jsx`, `components/MapView.jsx`, `App.js` | — |
+| **LZ/PZ workspace** | Several LZ diagrams per session; target by MGRS; switch between them in the LZ/PZ panel | `feature/lzWorkspace/`, `feature/shell/LzPanel.jsx`, `components/MapView.jsx`, `App.jsx` | — |
 | **Terrain analysis** | SAM finds the LZ boundary in imagery; slope map from DEM, with contour lines of the ground in and round the LZ, and a slope profile along and across the landing heading; how opaque the slope map is drawn is the person's (§13) | `feature/terrain/` | `routes/terrain_routes.py`, `terrain_provider.py` |
-| **Planning graphics** | Helicopters, PZ markers, sectors of fire, go-arounds, doghouses, units, LZ box | `feature/{helicopters,pzMarker,sectorsOfFire,goAround,doghouses,unit}/` | — |
+| **Planning graphics** | Helicopters, PZ markers, sectors of fire, go-arounds, doghouses, units, LZ box, and the LZ's orange measurement line. Each tool is off until the LZ/PZ is analysed (Route never is). The measurement line, once turned or moved, is one item of the diagram's `graphics.measurements` (`{id: "lz-dimensions", type: "lzDimensions", corner, lengthTip, widthTip` as `{lat, lon}`, `lengthLabelAt, widthLabelAt}` fractions): saved, synced and shared in a pack like any graphic, with no change to the saved shape, which always had the collection; with no item it is laid along the LZ's box | `feature/{helicopters,pzMarker,sectorsOfFire,goAround,doghouses,unit,lzMeasure}/`, `components/LZDimensions.jsx` | — |
 | **MIL-STD symbology** | MIL-STD-2525C symbols for units and threats (milsymbol) | `feature/symbols/` | — |
 | **LZ card export** | Card image and Excel card | `feature/export/` | `routes/export_routes.py`, `export_service.py`, `lz_template.xlsx` |
 | **Cloud save** | LZs, routes, point sets. First save names it (Save dialog), later saves are silent; Ctrl/⌘ S; the Library opens, renames, duplicates and deletes. Routes have no dirty flag of their own: a set is compared with what was last saved (`useRouteSaves`) | `feature/saveDialog/`, `feature/library/`, `feature/savedMaps/useSavedMaps.js`, `msnxImport/useSavedRoutes.js` | `routes/{lz_routes,saved_routes,point_sets}.py` |
@@ -140,13 +140,14 @@ avtactools/
 │  ├─ tests/                 pytest
 │  ├─ Dockerfile, fly.toml   Production container and Fly config
 │  └─ version.py             Written by semantic-release
-├─ frontend/                 React 19 SPA (Create React App)
-│  ├─ src/App.js             Top-level state and layout — large; most features hook in here
+├─ frontend/                 React 19 SPA (Vite)
+│  ├─ src/App.jsx            Top-level state and layout — large; most features hook in here
 │  ├─ src/components/        Shared UI (MapView, Controls, MissionSummary, mobile inputs)
 │  ├─ src/feature/<name>/    One folder per feature: components + a use<Name> hook
 │  ├─ src/utils/             Coordinates, MGRS (`mgrs.js`), LZ dictionary, helicopter capacity
 │  ├─ public/                msnx_template.msnx, static assets; public/cesium/ is copied at build
-│  └─ scripts/copy-cesium.js prestart/prebuild: copies Cesium's static build into public/
+│  ├─ index.html, vite.config.mts  The page Vite builds from (entry src/index.jsx); port 3000 and base "/" are load-bearing
+│  └─ scripts/copy-cesium.js prestart/predev/prebuild: copies Cesium's static build into public/
 ├─ android/                  Gradle project for the Android app (§17): pure-Kotlin core modules, Android libraries, the app
 ├─ contracts/                Golden fixtures the web, backend and native apps are all tested against (§17); briefs/: the mission brief's formats as data
 ├─ tools/                    Operator CLIs for LiDAR (find_lidar.py, build_lz.py); import_survey_book.py (the old HLZ survey book into a bundle)
@@ -157,7 +158,7 @@ avtactools/
 ```
 
 **Conventions.** Frontend features are self-contained folders with a
-`use<Feature>.js` hook owning the state; `App.js` composes them. Backend areas
+`use<Feature>.js` hook owning the state; `App.jsx` composes them. Backend areas
 are Flask blueprints under `routes/`, each registered in `app.py`. A button that waits on the server (a measurement, a PDF, an upload)
 is a `BusyButton` (`feature/ui/Spinner.jsx`): a spinner where its icon was, its colour kept, `aria-busy`; work the server
 counts (a book's pages printed) is a `ProgressBar`. Comments
@@ -342,14 +343,25 @@ token carries `sid` and is refused the moment that session ends:
 | Frontend | Vercel, `ezpztac.app` | Automatically: `main` → production, PRs → previews |
 | Backend (Fly) | `backend-brisk-acorn-4800.fly.dev` | **Manually:** `fly deploy` from `backend/` |
 | Backend (self-hosted) | Coolify VM, `prod-ezpz-api.mcfadd.in` via Cloudflare Tunnel | Automatically on push, via Coolify's GitHub App |
-| Backend (staging) | Coolify VM, project EZPZ, environment `staging`, `dev-ezpz-api.mcfadd.in` via the same tunnel; its own Supabase project (free tier: pauses after 7 days unused, restore it from the dashboard) | Automatically on push to **`develop`**. Its own `JWT_SECRET_KEY`; shares the build service and `/data/{topo,tiles,cache}` with production. `CORS_ORIGINS` takes the Vercel previews by a regex (flask-cors treats an origin with `^`, `$`, `*` … as one); the variable is marked **literal** in Coolify and writes `[.]`, not `\.`, because otherwise Coolify mangles the `$` and the regex silently matches nothing. Vercel's *Preview* `REACT_APP_API_URL` points at it, so PR previews never touch production data |
+| Backend (staging) | Coolify VM, project EZPZ, environment `staging`, `dev-ezpz-api.mcfadd.in` via the same tunnel; its own Supabase project (free tier: pauses after 7 days unused, restore it from the dashboard) | Automatically on push to **`develop`**. Its own `JWT_SECRET_KEY`; shares the build service and `/data/{topo,tiles,cache}` with production. `CORS_ORIGINS` takes the Vercel previews by a regex (flask-cors treats an origin with `^`, `$`, `*` … as one); the variable is marked **literal** in Coolify and writes `[.]`, not `\.`, because otherwise Coolify mangles the `$` and the regex silently matches nothing. Vercel's *Preview* `VITE_API_URL` points at it, so PR previews never touch production data |
 | LiDAR build service | Coolify VM, beside the backend — **no public domain** | Automatically on push (separate Coolify app, base dir `/backend/lidar`) |
 | Gotenberg (the brief's PDF) | Coolify VM, beside the backend — **no public domain** | Not yet deployed. A Coolify app from the published image `gotenberg/gotenberg:8.21.1` (tried with it), started as `gotenberg --chromium-disable-javascript=true --chromium-allow-list=^file:///tmp/.* --chromium-deny-list=^(?!file:///tmp/).* --api-timeout=140s` so a brief's text can make Chromium run nothing and fetch nothing, and a whole LZ survey book (§4) has the time it takes (the default ends a request at 30 s; the API waits 150 s); set `GOTENBERG_URL` (e.g. `http://<internal host>:3000`) on the API. About 1 GB of image; a 26-page brief prints in about half a second once its tiles are fetched. Without it the brief's Download PDF says it is not available |
 | Live service (mission packs) | Coolify VM, beside the backend; **needs a public hostname** through the Cloudflare Tunnel (WebSockets) | Not yet deployed. A separate Coolify app, base dir `/backend/realtime`, port 8091; set `DATABASE_URL` and `REALTIME_API_URL` on it and `REALTIME_PUBLIC_URL` on the API. Without it clients poll |
 | Admin | `admin.ezpztac.app` → the backend's `/admin` | with the backend |
 | Database | Supabase Postgres, **Session-mode pooler** | — |
 
-- **Which backend is live is decided by `REACT_APP_API_URL` in Vercel.**
+- **Which backend is live is decided by `VITE_API_URL` in Vercel.**
+- **Vercel builds the web with Vite, as `frontend/vercel.json` says** (the project's root
+  directory is `frontend`): framework `vite`, `npm ci`, `npm run build`, output `dist`, and
+  client-side paths answered with `/index.html` once the filesystem has none (Vite's preset adds
+  no such fallback, which CRA's did; `/cesium`, `/tiles`, `/icons`, `/img`, `/sounds`, `/assets`,
+  `/.well-known` and paths with a dot stay 404 when missing, so Cesium never gets the page for a
+  worker). The file overrides the project's settings, so a branch builds as its own file says:
+  `main` built Create React App from the project's settings until it had the file. Node is
+  `engines.node` in `frontend/package.json` (22.x; Vitest 5 needs 22.12 or later). Every
+  frontend variable is named `VITE_*`, in Production and Preview alike (they were
+  `REACT_APP_*` before October 2026). A variable under its old name is simply not seen: the
+  build succeeds and the site has no API address. Nothing secret goes in `vercel.json`.
 - The container runs **one gunicorn worker with 8 threads** and a 180 s
   timeout. One worker because SAM holds about 1 GB resident and the rate
   limiter, QR store and route-share store are in-process, and so are the LZ survey
@@ -473,12 +485,13 @@ There is **no `backend/.env.example`** — it was removed in `55aef5d` although
 
 | Variable | Purpose |
 |---|---|
-| `REACT_APP_API_URL` | API base **including `/api`**, e.g. `http://127.0.0.1:5000/api`. |
-| `REACT_APP_GOOGLE_CLIENT_ID` | Google OAuth client. |
-| `REACT_APP_LIDAR_BUILD_CWD` | Where the 3D window tells operators to run builds. |
-| `REACT_APP_LIDAR_COLLECTION` | Downloaded LiDAR directory, added to that command. |
+| `VITE_API_URL` | API base **including `/api`**, e.g. `http://127.0.0.1:5000/api`. |
+| `VITE_GOOGLE_CLIENT_ID` | Google OAuth client. |
+| `VITE_LIDAR_BUILD_CWD` | Where the 3D window tells operators to run builds. |
+| `VITE_LIDAR_COLLECTION` | Downloaded LiDAR directory, added to that command. |
 
-CRA inlines these at **build** time — changing one in Vercel needs a redeploy.
+Vite inlines these (`import.meta.env.VITE_*`) at **build** time — changing one in Vercel needs a redeploy. Only names that start `VITE_` reach the app.
+They are set in the Vercel project (Production, and Preview pointing at staging's API), never in `vercel.json`, which is in git.
 
 ---
 
@@ -511,7 +524,7 @@ npm start                                     # copies Cesium into public/cesium
 `.claude/launch.json` defines the `frontend` preview server.
 
 **What trips a fresh machine** (found setting up a Windows laptop with only Python 3.14, October 2026):
-- **`frontend/.env` must exist.** `api.js` takes its base URL from `REACT_APP_API_URL` with no fallback and there is no dev proxy, so without it every call
+- **`frontend/.env` must exist.** `api.js` takes its base URL from `VITE_API_URL` with no fallback and there is no dev proxy, so without it every call
   goes to the dev server itself and sign-in fails with no clear error. Copy `.env.example` (it points at `http://127.0.0.1:5000/api`) and restart `npm start`.
 - **Open `http://localhost:3000`, not `127.0.0.1:3000`**: `CORS_ORIGINS` defaults to `http://localhost:3000`, and emailed links use `FRONTEND_URL`'s same default.
 - **Python 3.14 works** (torch, ultralytics, rasterio and the rest have wheels). `psycopg2-binary` is pinned at 2.9.11 because 2.9.10 had no 3.14 wheel and its
@@ -545,8 +558,8 @@ differs between machines** (on one it is not at `backend/venv`, on another it is
 
 ```powershell
 cd backend;  python -m pytest tests -q
-cd frontend; $env:CI="true"; npm test         # CI=true, or Jest waits in watch mode
-cd frontend; npm run build                    # catches lint errors the tests miss
+cd frontend; npm test                        # vitest run (`npm run test:watch` to watch)
+cd frontend; npm run build                    # the production bundle into dist/; then `npm run preview` serves it
 cd android;  .\gradlew.bat test               # Kotlin core modules, against ../contracts
 python contracts/scripts/mgrs_fixtures.py check   # MGRS fixtures vs PyGeodesy (~20 s)
 python contracts/scripts/light_fixtures.py check  # brief light data vs Skyfield (pip install skyfield==1.55; downloads DE421 once)
@@ -561,7 +574,7 @@ python contracts/scripts/light_fixtures.py check  # brief light data vs Skyfield
   `backend.yaml` (the backend's contract tests: a named list of pytest files that
   need no SAM weights, terrain data or GPU) and `api.yaml` (the API version, §6),
   each only when its paths change. The
-  rest of backend pytest and of the web's Jest suite runs nowhere but on your machine.
+  rest of backend pytest and of the web's Vitest suite runs nowhere but on your machine.
   `backend.yaml` installs only the packages those files import, named in its Install
   step and pinned from `requirements.txt`: a new import in code they reach goes on that
   list too, or CI fails with `ModuleNotFoundError` while every local run passes (OpenCV
@@ -581,10 +594,25 @@ python contracts/scripts/light_fixtures.py check  # brief light data vs Skyfield
   settles numbers to a tolerance and labels as a set (`settled` in `mgrsGridFixtures.test.js`),
   and keeps the committed digits when regenerating, so a regenerated file changes only where
   the grid did.
-- The build prints many pre-existing ESLint warnings; add none of your own.
-- **Jest finds no tests in a Claude worktree** (`.claude/worktrees/<name>/`): CRA's `testMatch`
-  globs skip paths with a dot directory. Pass the pattern yourself, e.g.
-  `npx react-scripts test --watchAll=false --testMatch "**/.claude/**/src/contracts/*.test.js"`.
+- **The web is built by Vite and tested by Vitest** (it was Create React App and Jest until
+  October 2026). Things that differ, each found in the switch:
+  - JSX only in `.jsx` files: Vite will not parse it in a `.js` file.
+  - No `require` in the app's code: the dev server serves real ES modules, so a `require` there
+    leaves the page blank while the production build, which converts it, still works. Import
+    assets (`import icon from "….png"`). Tests may still `require` Node modules.
+  - Write `vi.mock`, never `jest.mock` through an alias: Vitest moves only a literal `vi.mock(...)`
+    above the imports, so an aliased one runs after the real module has loaded and mocks nothing.
+    A factory that keeps part of the real module is `async (importOriginal) => ({ ...(await importOriginal()), … })`,
+    and a module with a default export is mocked as `{ default: … }`.
+  - `setupTests.js` gives Testing Library a global `jest.advanceTimersByTime`, which is the one
+    thing its `waitFor` looks for to move fake timers; without it a `waitFor` under
+    `vi.useFakeTimers()` never finishes.
+  - Nothing runs ESLint any more (CRA's build did, `react-hooks` rules included); setting a
+    linter up is the owner's call.
+  - Vitest finds tests in a Claude worktree too (Jest's globs skipped dot directories).
+  - A module read as `import * as x` lists its exports in another order than it did under Jest,
+    so a fixture that writes them out as text follows the runner (`viewer3d/scene.json`'s
+    `settings` was regenerated for it; the values did not change).
 - `tests/test_realtime.py` needs `websockets` (`pip install -r realtime/requirements.txt`) and skips without it;
   `tests/test_realtime_live.py` also needs `psycopg2` and a local Postgres named by `EZPZ_LIVE_POSTGRES` (its docstring
   has the `docker run` line). `tests/live_server.py` takes `EZPZ_LIVE_DATABASE_URL` for that.
@@ -638,7 +666,7 @@ python contracts/scripts/light_fixtures.py check  # brief light data vs Skyfield
 **Coordinates.** Crews work in MGRS. Lat/lon → MGRS runs in the browser
 (`utils/mgrs.js`: Krüger-series transverse Mercator, matched against the
 backend's PyGeodesy at 5,649 points worldwide — `contracts/fixtures/mgrs`, run
-by Jest — every one identical) — the cursor readout converts on every mouse
+by Vitest — every one identical) — the cursor readout converts on every mouse
 move, so never call the API for it. The browser has the inverse too (`fromUtm`,
 `mgrsToLatLon`, and `toUtmInZone` for a point in a zone it is not in; ported from
 the Android `MgrsConverter`), held to `contracts/fixtures/mgrs/inverse.json`
@@ -846,7 +874,7 @@ KMZ masks are vector polygons because ForeFlight won't render raster overlays.
 - **LAS RGB is 16-bit.** Widen 8-bit colour by ×257 or points render black.
 - **`.pnts` carry no Classification**, so Cesium styles on `${Classification}`
   match nothing. Colour is baked into RGB at build time.
-- **API-relative URLs.** `REACT_APP_API_URL` already ends in `/api`; any URL the
+- **API-relative URLs.** `VITE_API_URL` already ends in `/api`; any URL the
   backend returns for the client must not repeat it.
 - **Every backend import must be in `backend/requirements.txt`.** v1.7.0
   shipped importing `pyproj`, which the developer's machine had and the
@@ -869,10 +897,11 @@ KMZ masks are vector polygons because ForeFlight won't render raster overlays.
 - **Never `import` Cesium through webpack.** Its source reads `import.meta`,
   which CRA's webpack leaves in a non-module chunk: a SyntaxError that broke
   every production 3D view in v1.7 while the dev server worked. Cesium loads
-  from its prebuilt bundle in `public/cesium` (`viewer3d/cesiumSetup.js`).
-  Check 3D changes against a production build (`npm run build`, serve
-  `build/`), not only `npm start` — and a build warning that mentions
-  `import.meta` is a failure, not noise.
+  from its prebuilt bundle in `public/cesium` (`viewer3d/cesiumSetup.js`), and
+  the switch to Vite kept it so. Check 3D changes against a production build
+  (`npm run build`, then `npm run preview`, which serves `dist/`), not only
+  `npm start` — and a build warning that mentions `import.meta` is a failure,
+  not noise.
 - **Coolify rewrites Dockerfiles.** It inserts `ARG` lines after every line
   starting with `FROM` — case-insensitively — so a Python `from x import y` at
   the start of a line inside a multi-line `RUN` gets ARGs spliced into the
@@ -1011,7 +1040,7 @@ KMZ masks are vector polygons because ForeFlight won't render raster overlays.
 - `backend/.env.example` is missing (§10).
 - `tests/test_threat_qr_export.py` fails (pre-existing).
 - CI runs the Kotlin modules, the fixtures and the backend's contract tests
-  (§11); the rest of backend pytest and most of the web's Jest suite run nowhere
+  (§11); the rest of backend pytest and most of the web's Vitest suite run nowhere
   but locally, and `pytest` isn't a declared dependency.
 - Web behaviour the native ports reproduce on purpose, because the web is the
   reference and the fixtures pin it. Each is a candidate to fix on the web
@@ -1069,6 +1098,8 @@ KMZ masks are vector polygons because ForeFlight won't render raster overlays.
   geometry with the aircraft (rotor diameter, tip clearance, picture) would change the shared shape: owner to decide, web first.
 - **Two devices that open at once an LZ/PZ an older client wrote without the headings its doghouses give each send them** (`LzPackSettingsTest`): two lines of the
   history, in two names, for one heading.
+- **The LZ's measurement line is the web's alone so far** (§4, *Planning graphics*): Android carries `graphics.measurements` as it finds it
+  (`DiagramNormalizer`, opaque JSON) but does not draw the line; drawing it from the same item would be Android's to add.
 - **A helicopter's name (`label`) is Android's alone so far** (§17, *A helicopter has a name*): the web keeps the field with the aircraft but neither shows nor sets
   it (its map, the inspector, the LZ card), and a pack's history names an aircraft by its place in the list (`Chalk 2`, `packLz.js`'s `helicopters`), not its name, on
   both platforms. Showing and setting it on the web, and naming it in the history, is web first, the history through `contracts/fixtures/packs/describe.json`.
@@ -1112,7 +1143,7 @@ KMZ masks are vector polygons because ForeFlight won't render raster overlays.
   eye on each row of the LZ/PZ panel to hide one from the map, and a tap on one holds it with *Open* and *Hide* (the owner's request of 2026-10-21; §17, *The open
   LZ/PZs stay on the map*). To give the web the same (web first, owner to decide): draw the workspace's other diagrams faded under the active one, and keep which are
   hidden per browser (`localStorage`, as `ezpz.mgrsGrid`), never in a diagram's `view`, which every client saves with the plan.
-- **The web's point menu offers the IP type once and keeps the point's name** (`App.js`, "Designate point as:": Checkpoint, "RP / IP", "LZ / PZ (Target)", Shaping point; then
+- **The web's point menu offers the IP type once and keeps the point's name** (`App.jsx`, "Designate point as:": Checkpoint, "RP / IP", "LZ / PZ (Target)", Shaping point; then
   "Name the point", filled with the point's own name, else `.CP`, `.RP` or `.LZ`). Android's bar offers the SP and the RP apart, both AMPS IP points, and gives an SP or an RP
   its name, a target `.TGT` in place of a name that only said what the point was, with nothing to type (the owner's request of 2026-10-21; §17, *A route point's type is in its
   bar*). Web first, owner to decide: the same five choices and names on the web, or a name asked for on Android as the web asks for it.
@@ -1141,10 +1172,10 @@ KMZ masks are vector polygons because ForeFlight won't render raster overlays.
 - **The web's cookie session needs the API on the web's own site to work in Safari**: Safari keeps no third-party cookie,
   Partitioned or not, so while the web is `ezpztac.app` and the API `prod-ezpz-api.mcfadd.in` a Safari browser falls back to
   the 24-hour token in `localStorage` and signs in daily (Chrome, Edge and Firefox keep the cookie). The owner's step: serve the
-  API at `api.ezpztac.app` through the Cloudflare Tunnel (as `admin.ezpztac.app` is), point Vercel's `REACT_APP_API_URL` at it and
+  API at `api.ezpztac.app` through the Cloudflare Tunnel (as `admin.ezpztac.app` is), point Vercel's `VITE_API_URL` at it and
   add nothing else; `AUTHENTICATION.md`, *Hosting the cookie*. Vercel's previews (`*.vercel.app`) stay cross-site.
 - In-process stores block horizontal scaling (§9).
-- `App.js` is large; new features should keep their state in a feature hook.
+- `App.jsx` is large; new features should keep their state in a feature hook.
 
 ---
 
@@ -1456,7 +1487,7 @@ client is built around not losing one:
   *before any work* unless `-Pezpz.applicationId=<id>` is passed, because the id is permanent once published and the owner
   has not chosen it. R8 release builds work (verified with an example id).
 - **The server URL** is `-Pezpz.apiUrl=<root>`, default the self-hosted backend. It is the server **root**: the typed calls
-  carry their own `/api` paths, unlike the web's `REACT_APP_API_URL`, which ends in `/api`.
+  carry their own `/api` paths, unlike the web's `VITE_API_URL`, which ends in `/api`.
 - **Security settings in the manifest** (plan, "Security, privacy and distribution"): HTTPS only with the platform's
   certificate checks and no pinning (`network_security_config.xml`; debug builds also allow cleartext to the emulator's
   host loopback `10.0.2.2`), `allowBackup=false` and extraction rules that exclude everything, so LZ locations never reach
@@ -1792,7 +1823,7 @@ client is built around not losing one:
   - **Not verifiable here:** the keyboard shortening the page on a device (the scroll takes `imePadding` outside it), TalkBack announcing the page, the date picker, and the toasts over the
     real map.
 - **Boundary drawing** (`core-data`: `BoundaryDrawing`; `feature-workspace`: `BoundaryViewModel`, `BoundaryScreen`; `feature-map`: `LzScene.draft`;
-  `app`: `HomeViewModel`, `MapHome`). The web's "Draw LZ/PZ boundary" (`toggleDrawingMode` in `App.js`): the person puts the corners down one by
+  `app`: `HomeViewModel`, `MapHome`). The web's "Draw LZ/PZ boundary" (`toggleDrawingMode` in `App.jsx`): the person puts the corners down one by
   one and a ring of three or more is saved as the diagram's `analysis.customLZ` (`[[lat, lon], …]`), which the next analysis takes as the boundary
   instead of the one the model finds (`AnalysisService`).
   - **The corners are a draft, not the diagram's**: they live in `BoundaryDrawing` (a singleton, like `GraphicSelection`) until *Finish*, so abandoning
@@ -2085,7 +2116,7 @@ client is built around not losing one:
     (its colour with it), points added, put on the line, renamed (and onto a local point), designated and re-designated, moved every way, the date, temperature and fuel flow, a point's
     altitude, speed and wind, the clock set, moved and cleared, winds and ground fetched (quiet, and for a set no longer open), a route's name and deletion, the set's name. What stays
     each person's: the routes they hid. `PackScenarioBook` holds a point's first values and its altitude changed in part on the fake, in Room and on the real Flask server.
-  - **What the web writes for each setting is pinned** (`contracts/fixtures/packs/settings.json`, made by the web's own hooks and sketch operations as `App.js` and
+  - **What the web writes for each setting is pinned** (`contracts/fixtures/packs/settings.json`, made by the web's own hooks and sketch operations as `App.jsx` and
     `useRouteSketch` apply them): Android reads each item before and after the setting and writes it back unchanged, finds the web's operations for it, and what it sends
     instead rebuilds the same item (`PackSettingsFixtureTest`, which also names the settings where Android sends more than the web: a PZ marker's tip, part of a plan value,
     a point's first values).
@@ -2330,7 +2361,8 @@ client is built around not losing one:
 - **The map's long press** (S8; `feature-map`: `LongPressTouches`, `DragMapView`, `EzpzMap(onPress)`; `app`: `MapMenu`, `HomeViewModel.pressed`, `MapHome`;
   `feature-workspace`: `RoutesViewModel.pointAction` / `addPointAt`, `savedToLibrary` / `offersLibrary`). A long press on nothing that can be picked up opens the design's map menu
   (`MapMenu`): headed by the grid under the finger, *New LZ/PZ here* (`DiagramsViewModel.newAt`), *Add threat here* (the threat's form at that place), *Add route point here* and *Copy
-  grid*, each only for an account offered its panel (*Copy grid* always). And the *Saved* toast offers *Open Library*. Things to keep true:
+  grid*, each only for an account offered its panel (*Copy grid* always). A tap on the grid heading the menu copies it too (the owner's request of 2026-10-28; the web's menu title
+  copies itself the same way, `components/CopyGridTitle.jsx`). And the *Saved* toast offers *Open Library*. Things to keep true:
   - **No menu while taps are a boundary's corners, a route's points or a tool's placements** (`pressed` is null then, as `dragStarted` picks nothing up). A press on nothing takes the rest
     of that touch from the map (a cancel, as a drag does), so the map does not pan away from the menu while the finger is still down. A longitude past ±180 (the map repeats the world
     across the date line) is brought back: it is the same place.
@@ -2691,7 +2723,7 @@ client is built around not losing one:
     lets the view go, and it does not come back by itself, not even for a frame (a test records every state); one with no target has nothing to look at and its *3D*
     is off. One asked for while its LZ/PZ opens is withdrawn by a close or another ask meanwhile. Its title and whether it is saved follow the LZ/PZ while it is
     shown, and a target moved under it (someone else in a pack) looks again. **Not like the web, on purpose** (the owner's decision of 2026-10-20): the web's
-    window stays open on whichever LZ becomes active and comes back by itself for one with a target (`App.js`); here another LZ/PZ can be opened only in code
+    window stays open on whichever LZ becomes active and comes back by itself for one with a target (`App.jsx`); here another LZ/PZ can be opened only in code
     under the page (a delete, a pack's removal synced from another device), and that lets the view go.
   - **The whole screen, over everything** (the owner's, 2026-10-20): `MapHome` draws it last, over either frame; the frame stays composed and untouched under it, out
     of a screen reader's reach, of the keyboard's (`underPage`: a focus search into it goes to the page, whose focus does not leave it) and of touch (the page is a
@@ -2986,7 +3018,7 @@ client is built around not losing one:
   - **One source of truth for what a symbol looks like: the web's milsymbol.** The plan's decision (milsymbol in the system JS engine, not a native
     2525 library) is why: the symbols match the web exactly and keep the 2525C SIDCs that `.ths` files carry. `android/core-symbols/src/main/assets/
     milsymbol.js` is the web's `node_modules/milsymbol/dist/milsymbol.js` **byte for byte** (a contract test fails if they differ); to upgrade
-    milsymbol, copy that file over, run `UPDATE_CONTRACTS=1 CI=true npx react-scripts test --watchAll=false src/contracts/symbolFixtures` and review the diff.
+    milsymbol, copy that file over, run `UPDATE_CONTRACTS=1 npx vitest run src/contracts/symbolFixtures` and review the diff.
   - **Three things are held by `frontend/src/contracts/symbolFixtures.test.js`**: the SIDC logic and preset lists (`symbols/sidc.json`); the
     pre-rendered preset SVGs, each with the size and anchor milsymbol gave it (`symbols/svg/*.svg`, `symbols/presets.json`; the app ships these files
     as its assets, so they are the web's own pictures); and `ezpz-render.js`, the script the app evaluates in the sandbox, which the test runs

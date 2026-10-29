@@ -8,7 +8,7 @@ import { readFixture } from "./readFixture";
 // and focus, and how each route and LZ/PZ is drawn). The web is the reference (feature/brief/sandtableSteps.js); Android's
 // sandtable (docs/MISSION_BRIEF.md, B9) reads each case's model from compile.json and is held to every case. Regenerate
 // with
-//   cd frontend && UPDATE_CONTRACTS=1 CI=true npx react-scripts test --watchAll=false src/contracts/brief
+//   cd frontend && UPDATE_CONTRACTS=1 npx vitest run src/contracts/brief
 // and review the diff. The briefs are compiled here from compile.json's own cases (briefCases.js), so both files come out
 // of one run whatever order Jest runs the two tests in.
 

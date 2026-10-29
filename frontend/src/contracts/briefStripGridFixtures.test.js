@@ -8,7 +8,7 @@ import { readFixture } from "./readFixture";
 // MISSION_BRIEF.md, B8) reads each strip from compile.json and is held to every case, within the tolerances
 // contracts/fixtures/mgrs/grid.json is compared with (a line sampled with other points, an end a millimetre off).
 // Regenerate with
-//   cd frontend && UPDATE_CONTRACTS=1 CI=true npx react-scripts test --watchAll=false src/contracts/brief
+//   cd frontend && UPDATE_CONTRACTS=1 npx vitest run src/contracts/brief
 // and review the diff.
 
 const FIXTURE = "brief/strip-grid.json";

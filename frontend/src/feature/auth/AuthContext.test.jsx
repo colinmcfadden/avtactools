@@ -4,17 +4,17 @@ import { AuthProvider, useAuth } from "./AuthContext";
 import api from "./api";
 import { forgetToken, refreshSession } from "./session";
 
-jest.mock("./api", () => ({
+vi.mock("./api", () => ({
   __esModule: true,
   default: {
-    get: jest.fn(),
-    post: jest.fn(),
+    get: vi.fn(),
+    post: vi.fn(),
   },
 }));
 
-jest.mock("./session", () => ({
-  ...jest.requireActual("./session"),
-  refreshSession: jest.fn(),
+vi.mock("./session", async (importOriginal) => ({
+  ...(await importOriginal()),
+  refreshSession: vi.fn(),
 }));
 
 const AuthProbe = () => {
@@ -41,7 +41,7 @@ const dispatchTokenStorage = (newValue) => {
 describe("AuthProvider tab synchronization", () => {
   beforeEach(() => {
     localStorage.clear();
-    jest.clearAllMocks();
+    vi.clearAllMocks();
   });
 
   test("restores a login from another tab and follows its logout", async () => {
@@ -81,7 +81,7 @@ describe("AuthProvider tab synchronization", () => {
 describe("AuthProvider with a cookie session", () => {
   beforeEach(() => {
     localStorage.clear();
-    jest.clearAllMocks();
+    vi.clearAllMocks();
   });
 
   afterEach(() => forgetToken());

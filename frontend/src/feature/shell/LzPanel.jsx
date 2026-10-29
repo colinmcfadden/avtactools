@@ -315,18 +315,17 @@ const LzPanel = ({
           </>
         )}
 
-        <div className="shell-hint">
-          <Icon name="info" size={14} />
-          <span>
-            {pack
-              ? pack.finished
+        {/* Only what changes a decision: why nothing here can be changed. */}
+        {pack && (pack.finished || readOnly) && (
+          <div className="shell-hint">
+            <Icon name="info" size={14} />
+            <span>
+              {pack.finished
                 ? "This pack is finished. Viewing and export still work; nothing can be changed."
-                : readOnly
-                  ? "You are a viewer in this pack: you can look at everything in it, but not change it. Its owner can make you an editor."
-                  : `New LZ/PZs you start while ${pack.name} is open are added to it.`
-              : "Set a new target with the MGRS box, or right-click the map, to open another LZ/PZ."}
-          </span>
-        </div>
+                : "You are a viewer in this pack: you can look at everything in it, but not change it. Its owner can make you an editor."}
+            </span>
+          </div>
+        )}
       </div>
     </>
   );

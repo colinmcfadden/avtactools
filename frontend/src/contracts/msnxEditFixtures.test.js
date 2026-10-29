@@ -23,7 +23,7 @@ const { UPDATE, dumps, fixturePath, writeFixture } = require("./fixtureIO");
 // The files are compared as parsed documents, not bytes: two serializers need not agree on how to write the same document.
 // Point and leg ids the web makes up are fixed (the counter below), so the files can be reproduced.
 
-jest.setTimeout(180000);
+vi.setConfig({ testTimeout: 180000 });
 
 const TEMPLATE = fs.readFileSync(fixturePath("msnx/template.msnx"));
 

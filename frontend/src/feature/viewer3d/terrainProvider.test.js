@@ -32,7 +32,7 @@ beforeEach(() => localStorage.clear());
 describe("fetchHeightmap", () => {
   it("holds new tiles while heavy server work runs, then fetches them", async () => {
     // An LZ analysis ran three times slower while terrain tiles were computed.
-    const fetchImpl = jest.fn().mockResolvedValue(ok(tileBytes(250)));
+    const fetchImpl = vi.fn().mockResolvedValue(ok(tileBytes(250)));
     const end = beginPriority();
     const pending = fetchHeightmap(13, 4375, 2519, { fetchImpl });
     await Promise.resolve();
@@ -43,7 +43,7 @@ describe("fetchHeightmap", () => {
   });
 
   it("returns the tile's heights as an Int16Array", async () => {
-    const fetchImpl = jest.fn().mockResolvedValue(ok(tileBytes(250)));
+    const fetchImpl = vi.fn().mockResolvedValue(ok(tileBytes(250)));
     const heights = await fetchHeightmap(13, 4375, 2519, { fetchImpl });
     expect(heights).toBeInstanceOf(Int16Array);
     expect(heights).toHaveLength(TERRAIN_SAMPLES * TERRAIN_SAMPLES);
@@ -52,7 +52,7 @@ describe("fetchHeightmap", () => {
 
   it("sends the bearer token, since the endpoint is behind auth", async () => {
     localStorage.setItem("auth_token", "tok-123");
-    const fetchImpl = jest.fn().mockResolvedValue(ok(tileBytes()));
+    const fetchImpl = vi.fn().mockResolvedValue(ok(tileBytes()));
     await fetchHeightmap(13, 1, 1, { fetchImpl });
     const [, options] = fetchImpl.mock.calls[0];
     expect(options.headers.Authorization).toBe("Bearer tok-123");
@@ -60,23 +60,23 @@ describe("fetchHeightmap", () => {
 
   it("falls back to flat on 204, which means 'no DEM here'", async () => {
     // The DEMs cover part of one country; Cesium asks across the whole globe.
-    const fetchImpl = jest.fn().mockResolvedValue({ ok: false, status: 204 });
+    const fetchImpl = vi.fn().mockResolvedValue({ ok: false, status: 204 });
     expectFlat(await fetchHeightmap(13, 100, 100, { fetchImpl }));
   });
 
   it("falls back to flat on a server error", async () => {
-    const fetchImpl = jest.fn().mockResolvedValue({ ok: false, status: 500 });
+    const fetchImpl = vi.fn().mockResolvedValue({ ok: false, status: 500 });
     expectFlat(await fetchHeightmap(13, 1, 1, { fetchImpl }));
   });
 
   it("falls back to flat when the network rejects", async () => {
     // A rejected callback fails the tile exactly the way a null does.
-    const fetchImpl = jest.fn().mockRejectedValue(new Error("offline"));
+    const fetchImpl = vi.fn().mockRejectedValue(new Error("offline"));
     expectFlat(await fetchHeightmap(13, 1, 1, { fetchImpl }));
   });
 
   it("falls back to flat on a payload of the wrong size", async () => {
-    const fetchImpl = jest.fn().mockResolvedValue(ok(new ArrayBuffer(16)));
+    const fetchImpl = vi.fn().mockResolvedValue(ok(new ArrayBuffer(16)));
     expectFlat(await fetchHeightmap(13, 1, 1, { fetchImpl }));
   });
 
@@ -84,7 +84,7 @@ describe("fetchHeightmap", () => {
     // The bug this guards: the bound was 14, and returning flat above it put
     // the surface at ellipsoid height — some 600 m below real ground — which
     // tore a hole in the globe as soon as the camera zoomed in.
-    const fetchImpl = jest.fn().mockResolvedValue(ok(tileBytes(600)));
+    const fetchImpl = vi.fn().mockResolvedValue(ok(tileBytes(600)));
     for (const level of [14, 16, 18, 20]) {
       const heights = await fetchHeightmap(level, 1, 1, { fetchImpl });
       expect(hasElevation(heights)).toBe(true);
@@ -94,7 +94,7 @@ describe("fetchHeightmap", () => {
   });
 
   it("stops only past the sanity bound, which Cesium never reaches", async () => {
-    const fetchImpl = jest.fn();
+    const fetchImpl = vi.fn();
     expectFlat(await fetchHeightmap(TERRAIN_MAX_LEVEL + 1, 1, 1, { fetchImpl }));
     expect(fetchImpl).not.toHaveBeenCalled();
     expect(TERRAIN_MAX_LEVEL).toBeGreaterThanOrEqual(20);
@@ -112,7 +112,7 @@ describe("fetchHeightmap", () => {
     ];
     for (const outcome of failures) {
       const heights = await fetchHeightmap(0, 0, 0, {
-        fetchImpl: jest.fn().mockResolvedValue(outcome),
+        fetchImpl: vi.fn().mockResolvedValue(outcome),
       });
       expect(heights).not.toBeNull();
       expect(heights).toBeInstanceOf(Int16Array);
@@ -122,13 +122,13 @@ describe("fetchHeightmap", () => {
 
   it("reports real elevation as distinct from the flat fallback", async () => {
     const real = await fetchHeightmap(13, 1, 1, {
-      fetchImpl: jest.fn().mockResolvedValue(ok(tileBytes(430))),
+      fetchImpl: vi.fn().mockResolvedValue(ok(tileBytes(430))),
     });
     expect(hasElevation(real)).toBe(true);
   });
 
   it("requests the level/x/y path the backend serves", async () => {
-    const fetchImpl = jest.fn().mockResolvedValue(ok(tileBytes()));
+    const fetchImpl = vi.fn().mockResolvedValue(ok(tileBytes()));
     await fetchHeightmap(13, 4375, 2519, { fetchImpl });
     expect(fetchImpl.mock.calls[0][0]).toContain("/terrain/heightmap/13/4375/2519");
   });
@@ -136,7 +136,7 @@ describe("fetchHeightmap", () => {
 
 describe("createTerrainProvider", () => {
   it("matches the grid size the backend encodes", () => {
-    const CustomHeightmapTerrainProvider = jest.fn(function (options) {
+    const CustomHeightmapTerrainProvider = vi.fn(function (options) {
       Object.assign(this, options);
     });
     class GeographicTilingScheme {}
@@ -151,7 +151,7 @@ describe("createTerrainProvider", () => {
   it("uses the geographic scheme the tile arithmetic assumes", () => {
     // The backend computes bounds as 2x1 root tiles over the full globe; a
     // Web Mercator scheme would shift every tile.
-    const CustomHeightmapTerrainProvider = jest.fn(function (options) {
+    const CustomHeightmapTerrainProvider = vi.fn(function (options) {
       Object.assign(this, options);
     });
     class GeographicTilingScheme {}

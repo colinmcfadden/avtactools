@@ -68,8 +68,8 @@ fly secrets set JWT_SECRET_KEY="<random-secret>" GOOGLE_CLIENT_ID="<google-clien
 Vercel needs:
 
 ```text
-REACT_APP_API_URL=https://api.example.com/api
-REACT_APP_GOOGLE_CLIENT_ID=<google-client-id>
+VITE_API_URL=https://api.example.com/api
+VITE_GOOGLE_CLIENT_ID=<google-client-id>
 ```
 
 In Google Cloud, add `http://localhost:3000` and the production frontend URL as
@@ -197,7 +197,7 @@ every day. Now:
   keep it, Safari (every iPad) falls back to the daily sign-in. Serving the API at
   **`api.ezpztac.app`** makes the cookie first-party everywhere: add the hostname to
   the Cloudflare Tunnel (as `admin.ezpztac.app` already reaches the backend), point
-  Vercel's Production `REACT_APP_API_URL` at `https://api.ezpztac.app/api`, and keep
+  Vercel's Production `VITE_API_URL` at `https://api.ezpztac.app/api`, and keep
   `CORS_ORIGINS=https://ezpztac.app`. Nothing in the code changes. Staging can do the
   same (`dev-api.ezpztac.app`); Vercel's previews (`*.vercel.app`) stay cross-site.
 - **Cloudflare must not cache `/api/auth/*`** and must pass `Set-Cookie` through;
