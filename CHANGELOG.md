@@ -1,3 +1,10 @@
+## [1.7.8](https://github.com/colinmcfadden/avtactools/compare/v1.7.7...v1.7.8) (2026-10-29)
+
+
+### Bug Fixes
+
+* **backend:** write the threat kmz's mask outlines as simple polygons so foreflight opens them ([dae40a0](https://github.com/colinmcfadden/avtactools/commit/dae40a0d7b053dc26e2694ba0fef86d9305a05f9))
+
 ## [1.7.7](https://github.com/colinmcfadden/avtactools/compare/v1.7.6...v1.7.7) (2026-10-02)
 
 
