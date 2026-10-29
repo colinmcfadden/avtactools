@@ -251,6 +251,7 @@ class LoginEventClientColumnTests(unittest.TestCase):
 
 
 # "user" as production holds it once app.py's ALTERs have run, before notification settings (docs/NOTIFICATIONS.md §5).
+# The user table as production has it: before mil_pending_email and notification_settings.
 LEGACY_USER = """
 CREATE TABLE "user" (
     id INTEGER NOT NULL PRIMARY KEY,
@@ -267,6 +268,10 @@ CREATE TABLE "user" (
     access_approved BOOLEAN NOT NULL DEFAULT TRUE
 )
 """
+
+# What sync_table_columns adds to it, one entry per column a release added since.
+# A test of one column asserts all of them: production gains them together.
+USER_COLUMNS_SINCE = ["mil_pending_email", "notification_settings"]
 
 
 class UserNotificationSettingsColumnTests(unittest.TestCase):
@@ -288,8 +293,8 @@ class UserNotificationSettingsColumnTests(unittest.TestCase):
         db.session.remove()
         self.ctx.pop()
 
-    def test_adds_only_the_settings_and_keeps_everyone_as_they_were(self):
-        self.assertEqual(["notification_settings"], sync_table_columns(db, User))
+    def test_adds_the_settings_and_keeps_everyone_as_they_were(self):
+        self.assertEqual(USER_COLUMNS_SINCE, sync_table_columns(db, User))
         user = User.query.one()
         self.assertIsNone(user.notification_settings)
         self.assertTrue(user.access_approved)
@@ -449,24 +454,6 @@ class SavedRecordSyncColumnsTests(unittest.TestCase):
 
 
 # "user" before mil_pending_email: what every deployment holds, the ALTERs in app.py having added the rest.
-LEGACY_USER = """
-CREATE TABLE "user" (
-    id INTEGER NOT NULL PRIMARY KEY,
-    google_id VARCHAR(100) UNIQUE,
-    email VARCHAR(120) NOT NULL UNIQUE,
-    name VARCHAR(120) NOT NULL,
-    picture VARCHAR(500),
-    created_at DATETIME,
-    role VARCHAR(20) NOT NULL DEFAULT 'user',
-    is_active BOOLEAN NOT NULL DEFAULT TRUE,
-    features JSON,
-    mil_email VARCHAR(120),
-    mil_verified_at TIMESTAMP,
-    access_approved BOOLEAN NOT NULL DEFAULT TRUE
-)
-"""
-
-
 class UserPendingMilColumnTests(unittest.TestCase):
     """The user table gained mil_pending_email: added to the one production has, nothing else touched."""
 
@@ -490,8 +477,8 @@ class UserPendingMilColumnTests(unittest.TestCase):
         db.session.remove()
         self.ctx.pop()
 
-    def test_adds_only_the_pending_column_and_keeps_existing_accounts(self):
-        self.assertEqual(["mil_pending_email"], sync_table_columns(db, User))
+    def test_adds_the_pending_column_and_keeps_existing_accounts(self):
+        self.assertEqual(USER_COLUMNS_SINCE, sync_table_columns(db, User))
         user = db.session.get(User, 7)
         self.assertEqual(("pilot@army.mil", None, True), (user.mil_email, user.mil_pending_email, user.access_approved))
 
