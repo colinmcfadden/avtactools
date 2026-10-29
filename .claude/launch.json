@@ -7,6 +7,12 @@
       "runtimeArgs": ["start", "--prefix", "frontend"],
       "port": 3000,
       "autoPort": true
+    },
+    {
+      "name": "frontend-build",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["run", "preview", "--prefix", "frontend", "--", "--port", "4173", "--strictPort"],
+      "port": 4173
     }
   ]
 }

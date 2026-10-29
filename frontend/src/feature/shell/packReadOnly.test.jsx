@@ -44,7 +44,7 @@ describe("the LZ/PZ panel for a viewer of a live pack", () => {
   });
 
   it("still offers Export LZ card, in a finished pack too: exporting changes nothing", () => {
-    const onExportCard = jest.fn();
+    const onExportCard = vi.fn();
     render(
       <LzPanel
         diagrams={diagrams}

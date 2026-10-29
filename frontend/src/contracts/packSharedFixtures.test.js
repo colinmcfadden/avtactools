@@ -17,8 +17,8 @@ const { UPDATE, dumps, fixturePath, writeFixture } = require("./fixtureIO");
 
 // copyFromLibrary posts through packApi and the app's axios client. The client is stood in for by one that answers at
 // once with what it was sent, so the fixture holds the body packApi really posts, and where. A plain object, not
-// jest.fn: CRA resets every mock's implementation before each test.
-jest.mock("../feature/auth/api", () => ({
+// vi.fn: CRA resets every mock's implementation before each test.
+vi.mock("../feature/auth/api", () => ({
   __esModule: true,
   default: { post: (url, body) => ({ then: (take) => take({ data: { url, body } }) }) },
 }));

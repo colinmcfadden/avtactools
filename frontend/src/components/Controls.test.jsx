@@ -23,7 +23,7 @@ const renderControls = (props = {}) =>
 
 describe("the sidebar's Routes card", () => {
   it("holds the Route tool only: mission files come in through the Import menu and its review", () => {
-    const toggleRouteSketch = jest.fn();
+    const toggleRouteSketch = vi.fn();
     const { container } = renderControls({ toggleRouteSketch });
     expect(screen.getByText("Routes", { selector: ".ff-card-header" })).toBeInTheDocument();
     expect(screen.queryByText(/Routes \(\.msnx\)/)).not.toBeInTheDocument();
@@ -45,8 +45,8 @@ describe("the sidebar's Export card", () => {
     features: { lz_pz_tools: true, exports: true, routes: false },
     targetLocation: [34, -84],
     mapData: { mgrs: "16S GC 1 2" },
-    enableExportMode: jest.fn(),
-    setIsExporting: jest.fn(),
+    enableExportMode: vi.fn(),
+    setIsExporting: vi.fn(),
     showHeatmap: false,
     setShowHeatmap: () => {},
     showLZOutline: true,
@@ -59,8 +59,8 @@ describe("the sidebar's Export card", () => {
   };
 
   it("exports an analysed LZ/PZ that may not be changed (a finished pack), while its tools stay off", () => {
-    const enableExportMode = jest.fn();
-    const setIsExporting = jest.fn();
+    const enableExportMode = vi.fn();
+    const setIsExporting = vi.fn();
     renderControls({
       ...analysed,
       enableExportMode,
@@ -101,8 +101,8 @@ describe("the sidebar's LZ/PZ analysis card", () => {
       ...props,
     });
 
-  it("offers to analyse again once analysed, and says what that unlocked", () => {
-    const performTerrainAnalysis = jest.fn();
+  it("offers to analyse again once analysed, with no line of guidance under it", () => {
+    const performTerrainAnalysis = vi.fn();
     card({
       performTerrainAnalysis,
       diagramStatus: "analyzed",
@@ -112,13 +112,14 @@ describe("the sidebar's LZ/PZ analysis card", () => {
     expect(screen.queryByRole("button", { name: "Analyze the LZ" })).toBeNull();
     fireEvent.click(screen.getByRole("button", { name: "Re-analyze" }));
     expect(performTerrainAnalysis).toHaveBeenCalledWith(34, -84);
-    expect(screen.getByRole("status")).toHaveTextContent("Analyzed. Planning graphics, export and save are unlocked.");
+    expect(screen.queryByRole("status")).toBeNull();
+    expect(screen.queryByText(/are unlocked/)).toBeNull();
   });
 
   const SLOPE = { overlay: "data:image/png;base64,AA==", bounds: [[34, -84], [34.01, -83.99]] };
 
   it("offers the slope map's opacity while it is drawn, said in percent, and hands on what is set", () => {
-    const setSlopeOpacity = jest.fn();
+    const setSlopeOpacity = vi.fn();
     card({ diagramStatus: "analyzed", canUseDiagramTools: true, showHeatmap: true, terrainData: SLOPE, slopeOpacity: 30, setSlopeOpacity });
     const range = screen.getByRole("slider", { name: "Slope map opacity" });
     expect(range.value).toBe("30");
@@ -139,18 +140,46 @@ describe("the sidebar's LZ/PZ analysis card", () => {
     expect(screen.queryByRole("slider", { name: "Slope map opacity" })).toBeNull();
   });
 
-  it("asks for an analysis while there is only a target", () => {
+  it("asks for an analysis while there is only a target: every planning tool is off and says why, the route stays on", () => {
+    const readiness = diagramReadiness({ hasTarget: true, analyzed: false });
+    const toggleRouteSketch = vi.fn();
     card({
       diagramStatus: "targeted",
       canUseDiagramTools: false,
-      diagramReadinessText: diagramReadiness({ hasTarget: true, analyzed: false }),
+      diagramReadinessText: readiness,
+      features: { lz_pz_tools: true, exports: false, routes: true },
+      toggleRouteSketch,
     });
     expect(screen.getByRole("button", { name: "Analyze the LZ" })).toBeEnabled();
-    expect(screen.getByRole("status")).toHaveTextContent("Target set. Analyze the LZ to unlock planning graphics, export, and save.");
+    expect(screen.queryByText(readiness)).toBeNull();
+    for (const label of ["Helo", "PZ", "Sector", "Unit", "L-GA", "R-GA"]) {
+      const tool = screen.getByText(label, { selector: ".btn-label" }).closest("button");
+      expect(tool).toBeDisabled();
+      expect(tool).toHaveAttribute("title", readiness);
+    }
+    expect(screen.getByText("Draw LZ", { selector: ".btn-label" }).closest("button")).toBeEnabled();
+    const route = screen.getByTitle("Sketch a route (click the map to add points)");
+    expect(route).toBeEnabled();
+    fireEvent.click(route);
+    expect(toggleRouteSketch).toHaveBeenCalledTimes(1);
+  });
+
+  it("keeps the route on before there is any target at all", () => {
+    card({
+      targetLocation: null,
+      diagramStatus: "no_target",
+      canAnalyze: false,
+      canDrawBoundary: false,
+      canUseDiagramTools: false,
+      features: { lz_pz_tools: true, exports: false, routes: true },
+      toggleRouteSketch: () => {},
+    });
+    expect(screen.getByText("Helo", { selector: ".btn-label" }).closest("button")).toBeDisabled();
+    expect(screen.getByTitle("Sketch a route (click the map to add points)")).toBeEnabled();
   });
 });
 
-describe("what the analysis card says", () => {
+describe("why the analysis card's controls are off", () => {
   it("follows the LZ/PZ from no target to analysed, and never calls tools unlocked where they are not", () => {
     expect(diagramReadiness({ hasTarget: false, analyzed: false })).toBe("Set a target on the map to initialize an LZ/PZ diagram.");
     expect(diagramReadiness({ hasTarget: true, analyzed: false })).toBe("Target set. Analyze the LZ to unlock planning graphics, export, and save.");

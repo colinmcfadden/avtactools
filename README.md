@@ -60,8 +60,8 @@ carry: LZ cards, AMPS mission files, ForeFlight and ATAK hand-offs, threat files
                                  asks the API who may see each pack
 ```
 
-- **Frontend** (`frontend/`): a Create React App SPA. Each feature lives in its own folder under
-  `src/feature/<name>/`, with a `use<Name>.js` hook that owns its state; `App.js` composes them. The menu
+- **Frontend** (`frontend/`): a React SPA built with Vite. Each feature lives in its own folder under
+  `src/feature/<name>/`, with a `use<Name>.js` hook that owns its state; `App.jsx` composes them. The menu
   redesign gives it a top bar (workspace, Import, Library, account), a right dock of panels (LZ/PZ,
   Routes, Threats, Imports), and a bottom sheet below 1100 px wide.
 - **Backend** (`backend/`): Flask with one blueprint per area under `routes/`. Auth is a JWT with a
@@ -198,8 +198,8 @@ hash keys, so a URL never reveals a location. Each has an `area.json` manifest, 
 `POST /api/lidar/resolve` returns the nearest tileset whose area contains the target. Coordinates only ever
 travel in POST bodies; progress is read by key; the service logs keys and stage names, never coordinates.
 
-**Viewing.** The web loads Cesium from its prebuilt bundle in `public/cesium` (importing it through
-webpack breaks production builds). It shows the point cloud over the heightmap terrain and Mapbox
+**Viewing.** The web loads Cesium from its prebuilt bundle in `public/cesium` (bundling it broke
+production builds under CRA's webpack). It shows the point cloud over the heightmap terrain and Mapbox
 imagery, with eye-dome lighting, routes at their planned MSL with curtains to the ground, and a compass.
 Depth testing against terrain is off, so points and low routes are not hidden by coarse distant terrain.
 Android draws the same scene with its own native renderer
@@ -298,13 +298,13 @@ Then follow [`backend/lidar/SERVER_SETUP.md`](backend/lidar/SERVER_SETUP.md).
 
 ```bash
 cd backend && ./venv/bin/python -m pytest tests -q
-cd frontend && CI=true npm test && npm run build     # the build catches lint errors the tests miss
+cd frontend && npm test && npm run build              # Vitest, then the production bundle into dist/
 cd android && ./gradlew test testDebugUnitTest lintDebug assembleDebug
 python contracts/scripts/mgrs_fixtures.py check     # MGRS fixtures against PyGeodesy
 ```
 
 CI runs the Kotlin modules, the contract fixtures and the backend's contract tests, each only when its
-paths change. The rest of the backend suite and most of the web's Jest suite run only locally.
+paths change. The rest of the backend suite and most of the web's Vitest suite run only locally.
 
 ---
 
@@ -323,8 +323,8 @@ Every backend environment variable is listed in [`AGENTS.md`](AGENTS.md) §10. T
 | `RESEND_API_KEY`, `EMAIL_FROM` | Transactional email (production refuses to start without them) |
 | `REALTIME_PUBLIC_URL` | The mission packs' live stream; unset means clients poll |
 
-The frontend reads `REACT_APP_API_URL` (the API base **including** `/api`) and
-`REACT_APP_GOOGLE_CLIENT_ID`, inlined at build time. Authentication and email setup are in
+The frontend reads `VITE_API_URL` (the API base **including** `/api`) and
+`VITE_GOOGLE_CLIENT_ID`, inlined at build time. Authentication and email setup are in
 [`AUTHENTICATION.md`](AUTHENTICATION.md); terrain data handling is in
 [`backend/TERRAIN_DATA.md`](backend/TERRAIN_DATA.md).
 

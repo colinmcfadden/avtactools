@@ -7,12 +7,12 @@ import ExportHandler from "./ExportHandler";
 import { SCREEN_ONLY_CLASS, keepInCapture } from "./captureFilter";
 
 // react-leaflet is an ES module Jest does not transform: useMap hands out a real Leaflet map.
-jest.mock("react-leaflet", () => {
+vi.mock("react-leaflet", () => {
   const holder = { map: null };
   return { __holder: holder, useMap: () => holder.map };
 });
-jest.mock("html-to-image", () => ({ toCanvas: jest.fn() }));
-const { __holder: holder } = jest.requireMock("react-leaflet");
+vi.mock("html-to-image", () => ({ toCanvas: vi.fn() }));
+const { __holder: holder } = await import("react-leaflet");
 
 const element = (className) => {
   const node = document.createElement("div");
@@ -39,7 +39,7 @@ describe("the LZ card export with the MGRS grid on", () => {
   let container;
   let map;
   beforeEach(() => {
-    jest.useFakeTimers();
+    vi.useFakeTimers();
     container = document.createElement("div");
     Object.defineProperty(container, "clientWidth", { configurable: true, value: 1200 });
     Object.defineProperty(container, "clientHeight", { configurable: true, value: 800 });
@@ -50,8 +50,8 @@ describe("the LZ card export with the MGRS grid on", () => {
   afterEach(() => {
     map.remove();
     container.remove();
-    jest.useRealTimers();
-    jest.restoreAllMocks();
+    vi.useRealTimers();
+    vi.restoreAllMocks();
   });
 
   it("captures the map without the grid's lines or labels", async () => {
@@ -61,9 +61,9 @@ describe("the LZ card export with the MGRS grid on", () => {
 
     // Stop the export at the capture: what it was asked to leave out is all this test needs.
     htmlToImage.toCanvas.mockRejectedValue(new Error("stopped by the test"));
-    jest.spyOn(console, "error").mockImplementation(() => {});
-    jest.spyOn(window, "alert").mockImplementation(() => {});
-    const onExportComplete = jest.fn();
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    vi.spyOn(window, "alert").mockImplementation(() => {});
+    const onExportComplete = vi.fn();
     render(
       <ExportHandler
         isExporting
@@ -73,7 +73,7 @@ describe("the LZ card export with the MGRS grid on", () => {
       />,
     );
     await act(async () => {
-      jest.advanceTimersByTime(1500);
+      vi.advanceTimersByTime(1500);
     });
     expect(onExportComplete).toHaveBeenCalledWith(null);
 

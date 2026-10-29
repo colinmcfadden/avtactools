@@ -2,9 +2,9 @@ import { act, renderHook } from "@testing-library/react";
 import api from "../auth/api";
 import { sameWeatherSpot, slopeWindFor, useWeather } from "./useWeather";
 
-jest.mock("../auth/api", () => ({
+vi.mock("../auth/api", () => ({
   __esModule: true,
-  default: { get: jest.fn() },
+  default: { get: vi.fn() },
 }));
 
 const report = (station, speed, dir) => ({ data: { station_id: station, wind_spd_kts: speed, wind_dir: dir, notams: { Clear: [] } } });

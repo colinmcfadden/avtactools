@@ -39,8 +39,8 @@ const useHarness = (library) => {
 const setup = () => {
   const library = {
     savedRoutes: [],
-    updateSketch: jest.fn().mockResolvedValue({ updated_at: "2026-10-07T12:00:00" }),
-    saveSketch: jest.fn(),
+    updateSketch: vi.fn().mockResolvedValue({ updated_at: "2026-10-07T12:00:00" }),
+    saveSketch: vi.fn(),
   };
   const view = renderHook(() => useHarness(library), { wrapper: ToastProvider });
   return { ...view, library };

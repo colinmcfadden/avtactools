@@ -102,11 +102,18 @@ class RefreshTests(NativeAuthCase):
     def test_a_refresh_token_is_not_an_access_token(self):
         self.assertEqual(self.me(self.session['refresh_token']).status_code, 422)
 
-    def test_the_session_ends_at_the_hard_cap_however_often_it_is_refreshed(self):
-        self.age(self.rows()[0].id, created_at=datetime.utcnow() - timedelta(days=181))
+    def test_a_session_in_use_has_no_end_however_old_it_is(self):
+        # There was a 180-day cap (refresh_expired); a device used within each 30 days now stays signed in.
+        self.age(self.rows()[0].id, created_at=datetime.utcnow() - timedelta(days=3 * 365))
+        response = self.refresh(self.session['refresh_token'])
+        self.assertEqual(response.status_code, 200, response.get_json())
+        self.assertEqual(self.me(response.get_json()['access_token']).status_code, 200)
+
+    def test_a_device_unused_for_30_days_must_sign_in_again(self):
+        self.age(self.rows()[0].id, expires_at=datetime.utcnow() - timedelta(minutes=1))
         response = self.refresh(self.session['refresh_token'])
         self.assertEqual(response.status_code, 401)
-        self.assertEqual(response.get_json()['code'], 'refresh_expired')
+        self.assertEqual(response.get_json()['code'], 'invalid_refresh_token')
         self.assertEqual(self.me(self.session['access_token']).status_code, 401)
 
     def test_a_password_reset_ends_every_device_session(self):

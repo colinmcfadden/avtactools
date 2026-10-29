@@ -11,6 +11,6 @@ the majors served says "Update required" (or, for a server older than the app, t
 for the server). Write both as plain literals: the check reads this file as text.
 """
 
-API_VERSION = "1.2.0"
+API_VERSION = "1.3.0"
 
 API_MAJORS_SERVED = (1,)

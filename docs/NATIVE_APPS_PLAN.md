@@ -330,7 +330,7 @@ The planner keeps its existing terrain source on purpose. Route elevations offli
 - Local data never needs a valid token. Only server calls do.
 - A refresh token (new, see Backend changes) renews the session on reconnect without a sign-in.
 - Entitlements are cached at their last known values.
-- After 14 days without reaching the server, the app asks for a sign-in before it unlocks again. This bounds how long a suspended account keeps working.
+- No time offline signs the app out (the owner, 2026-10-28, as ForeFlight's does). Until then, after 14 days without reaching the server the app asked for a sign-in before it unlocked again, to bound how long a suspended account kept working; that locked crews out of planning where they could not sign in. A session the server has ended (30 days unused, a suspension, a reset) is refused at the next contact.
 
 ## Performance plan
 
@@ -799,7 +799,7 @@ The largest risk is three implementations of the same planning math drifting apa
 - [x] Approve MapLibre Native as the 2D map engine, rather than Mapbox Maps SDK v11.
 - [x] Choose the offline imagery source outside CONUS. (This is not required right now)
 - [x] Approve on-device threat retention (encrypted, 12-hour, no backup) or keep threats memory-only. - I like encrypted, 48 hour store with no backup.
-- [x] Set the offline grace period before sign-in is required again (proposed: 14 days). approved
+- [x] Set the offline grace period before sign-in is required again (proposed: 14 days). approved; removed on 2026-10-28 (no offline limit), with the 180-day cap on a device session
 - [x] Platform order: Android first, with iOS and iPadOS one phase behind.
 - [x] Approve the third-party libraries marked "Ask" in Technology decisions, and fastlane, GDAL and a PMTiles writer.
 - [x] Release reach: public App Store and Play Store listings, plus a signed APK when needed.

@@ -107,7 +107,6 @@ class AppViewModelTest {
         /** Holds the answer to a config call until it is completed: the config still on its way. */
         var configHeld: CompletableDeferred<Unit>? = null
         var refreshed: Result<ApiUser>? = null
-        var offlineTooLong = false
         val calls = mutableListOf<String>()
 
         /** As [app.ezpztac.network.ApiClient.restore]: the store is read once per process, and after that the state is what it is. */
@@ -115,12 +114,6 @@ class AppViewModelTest {
             calls += "restore"
             if (state.value == AuthState.Unknown) state.value = stored
             return state.value
-        }
-        override suspend fun endSessionIfOfflineTooLong(): Boolean {
-            calls += "grace"
-            if (!offlineTooLong) return false
-            state.value = AuthState.SignedOut(SignedOutReason.SESSION_ENDED, "offline_too_long")
-            return true
         }
         override suspend fun refreshUser(): ApiUser {
             calls += "refreshUser"
@@ -449,12 +442,12 @@ class AppViewModelTest {
     }
 
     @Test
-    fun `a device offline for too long is signed out on launch, and says why`() = runTest(dispatcher) {
-        val r = rig(owner = 1, configure = { offlineTooLong = true })
-        assertEquals(Gate.SignedOut(SignedOutReason.SESSION_ENDED, "offline_too_long"), r.model.gate.value)
-        assertEquals(0, r.scheduler.requested)
+    fun `a device with no signal at launch stays signed in, however long it has been offline`() = runTest(dispatcher) {
+        // There is no offline limit (the owner, 2026-10-28): the server ends a session unused for 30 days, at the next contact.
+        val r = rig(owner = 1)
+        assertEquals(Gate.Ready(user(), null), r.model.gate.value)
+        assertTrue("refreshUser" in r.backend.calls)                                        // asked, and no answer came: nothing ended
         assertTrue("its plans were not wiped", "wipe" !in r.accounts.log)
-        assertTrue("refreshUser" !in r.backend.calls)                                       // no point asking a server that cannot be reached
     }
 
     @Test

@@ -10,8 +10,8 @@ import "./viewer3d.css";
 // Where builds are run, and the downloaded survey to read. Configured because
 // they differ per deployment: a workstation checkout on Windows, or the server
 // that holds both the LiDAR and the tilesets it serves.
-const BUILD_CWD = process.env.REACT_APP_LIDAR_BUILD_CWD || "/opt/avtactools";
-const BUILD_COLLECTION = process.env.REACT_APP_LIDAR_COLLECTION || "";
+const BUILD_CWD = import.meta.env.VITE_LIDAR_BUILD_CWD || "/opt/avtactools";
+const BUILD_COLLECTION = import.meta.env.VITE_LIDAR_COLLECTION || "";
 
 // The build service's stage names, as a crew member would want to read them.
 const STAGE_LABELS = {

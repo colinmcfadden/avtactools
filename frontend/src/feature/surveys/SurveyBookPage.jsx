@@ -1,5 +1,6 @@
 import React, { useId, useRef, useState } from "react";
 import Dialog from "../ui/Dialog";
+import { BusyButton, ProgressBar } from "../ui/Spinner";
 import Icon from "../ui/Icon";
 import { STATUS_WORDS } from "./surveyFields";
 import { ImportCell, importStateWords } from "./SurveyImport";
@@ -46,7 +47,7 @@ export const NewSurveyDialog = ({ onCreate, onCancel }) => {
       footer={(
         <>
           <button type="button" className="ui-btn ui-btn--ghost ui-btn--38" onClick={onCancel} disabled={busy}>Cancel</button>
-          <button type="button" className="ui-btn ui-btn--primary ui-btn--38" onClick={submit} disabled={busy}>Make the survey</button>
+          <BusyButton className="ui-btn ui-btn--primary ui-btn--38" busy={busy} onClick={submit}>Make the survey</BusyButton>
         </>
       )}
     >
@@ -138,10 +139,9 @@ export const BookPdf = ({ book, state, onPrint, onDownload }) => {
   } else if (print.state === "ready") {
     body = (
       <div className="survey-page-bar">
-        <button type="button" className="ui-btn ui-btn--primary ui-btn--34" onClick={download} disabled={Boolean(busy)}>
-          <Icon name="download" size={14} />
+        <BusyButton className="ui-btn ui-btn--primary ui-btn--34" icon="download" onClick={download} busy={busy === "download"} disabled={Boolean(busy)}>
           {busy === "download" ? "Fetching…" : "Download the book"}
-        </button>
+        </BusyButton>
         <span className="survey-muted">
           {pagesWords(print.pages)} with its cover and index · {sizeWords(print.size_bytes ?? 0)} · printed {print.printed_at?.slice(0, 10)}
         </span>
@@ -151,19 +151,21 @@ export const BookPdf = ({ book, state, onPrint, onDownload }) => {
     body = <p className="survey-muted">The book's PDF is not printed on this server yet. Each page's preview shows it.</p>;
   } else if (print.state === "printing") {
     body = (
-      <p className="survey-muted" role="status">
-        Printing the book: {print.done_pages ? `page ${print.done_pages} of ${print.pages} drawn` : `${pagesWords(print.pages)} to draw`}…
-      </p>
+      <div className="survey-print-progress">
+        <ProgressBar done={print.done_pages ?? 0} total={print.pages ?? 0} label="Printing the book" />
+        <p className="survey-muted" role="status">
+          Printing the book: {print.done_pages ? `page ${print.done_pages} of ${print.pages} drawn` : `${pagesWords(print.pages)} to draw`}…
+        </p>
+      </div>
     );
   } else {
     body = (
       <>
         {print.state === "failed" && print.error && <p className="survey-state survey-state--warn" role="status">{print.error}</p>}
         <div className="survey-page-bar">
-          <button type="button" className="ui-btn ui-btn--34" onClick={askToPrint} disabled={Boolean(busy)}>
-            <Icon name="download" size={14} />
+          <BusyButton className="ui-btn ui-btn--34" icon="download" onClick={askToPrint} busy={busy === "print"} disabled={Boolean(busy)}>
             {busy === "print" ? "Asking…" : print.state === "failed" ? "Try again" : `Print the book (${pagesWords(print.pages)})`}
-          </button>
+          </BusyButton>
           <span className="survey-muted">Printed on the server, a page at a time: a minute or two for a full book.</span>
         </div>
       </>
@@ -325,7 +327,7 @@ export const BookSettingsDialog = ({ book, teams, canChooseTeam, onSave, onCance
       footer={(
         <>
           <button type="button" className="ui-btn ui-btn--ghost ui-btn--38" onClick={onCancel} disabled={busy}>Cancel</button>
-          <button type="button" className="ui-btn ui-btn--primary ui-btn--38" onClick={submit} disabled={busy}>Save</button>
+          <BusyButton className="ui-btn ui-btn--primary ui-btn--38" busy={busy} onClick={submit}>Save</BusyButton>
         </>
       )}
     >

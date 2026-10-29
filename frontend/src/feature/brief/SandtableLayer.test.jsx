@@ -6,11 +6,11 @@ import SandtableLayer, { attachSandtable } from "./SandtableLayer";
 import { FIGURE_COLOURS, stepView } from "./sandtableSteps";
 
 // react-leaflet is an ES module Jest does not transform: useMap hands the layer a real Leaflet map.
-jest.mock("react-leaflet", () => {
+vi.mock("react-leaflet", () => {
   const holder = { map: null };
   return { __holder: holder, useMap: () => holder.map };
 });
-const { __holder: holder } = jest.requireMock("react-leaflet");
+const { __holder: holder } = await import("react-leaflet");
 
 const MODEL = require("../../../../contracts/fixtures/brief/compile.json").cases[0].expected;
 const indexOf = (id) => MODEL.steps.findIndex((s) => s.id === id);
@@ -119,8 +119,8 @@ describe("the sandtable's map", () => {
   const containsBounds = ([[s, w], [n, e]]) => map.getBounds().contains(L.latLngBounds([s, w], [n, e]));
 
   it("flies to each step's area, clear of what lies over the map", () => {
-    const spy = jest.spyOn(map, "flyToBounds");
-    const measure = jest.fn(() => ({ top: 20, right: 30, bottom: 300, left: 40 }));
+    const spy = vi.spyOn(map, "flyToBounds");
+    const measure = vi.fn(() => ({ top: 20, right: 30, bottom: 300, left: 40 }));
     const hawk = viewOf("4.e@lz:lz-hawk");
     render(<SandtableLayer presentation={presentation(hawk, { measure })} />);
     expect(spy).toHaveBeenCalledWith(hawk.bounds, expect.objectContaining({ paddingTopLeft: [40, 20], paddingBottomRight: [30, 300] }));
@@ -128,7 +128,7 @@ describe("the sandtable's map", () => {
   });
 
   it("flies once a step, not at every change to the plan under it, and again on the next step", () => {
-    const spy = jest.spyOn(map, "flyToBounds");
+    const spy = vi.spyOn(map, "flyToBounds");
     const hawk = viewOf("4.e@lz:lz-hawk");
     const { rerender } = render(<SandtableLayer presentation={presentation(hawk)} />);
     const moved = { ...hawk, bounds: [[hawk.bounds[0][0] + 0.01, hawk.bounds[0][1]], hawk.bounds[1]] };
@@ -139,7 +139,7 @@ describe("the sandtable's map", () => {
   });
 
   it("leaves the map where it is for a step with nowhere to show, and flies back to the one before", () => {
-    const spy = jest.spyOn(map, "flyToBounds");
+    const spy = vi.spyOn(map, "flyToBounds");
     const hawk = viewOf("4.e@lz:lz-hawk");
     const { rerender } = render(<SandtableLayer presentation={presentation(hawk)} />);
     const nowhere = { ...hawk, stepId: "nowhere", bounds: null };
@@ -153,8 +153,8 @@ describe("the sandtable's map", () => {
     const original = window.matchMedia;
     window.matchMedia = (query) => ({ matches: query.includes("reduce"), media: query, addEventListener() {}, removeEventListener() {} });
     try {
-      const fly = jest.spyOn(map, "flyToBounds");
-      const fit = jest.spyOn(map, "fitBounds");
+      const fly = vi.spyOn(map, "flyToBounds");
+      const fit = vi.spyOn(map, "fitBounds");
       render(<SandtableLayer presentation={presentation(viewOf("1"))} />);
       expect(fly).not.toHaveBeenCalled();
       expect(fit).toHaveBeenCalledWith(viewOf("1").bounds, expect.objectContaining({ animate: false }));

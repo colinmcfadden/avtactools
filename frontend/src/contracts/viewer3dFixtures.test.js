@@ -17,9 +17,9 @@ if (typeof global.TextDecoder === "undefined") global.TextDecoder = require("uti
 const Cesium = require("cesium/Build/Cesium/index.cjs");
 const { UPDATE, dumps, fixturePath, writeFixture } = require("./fixtureIO");
 
-jest.mock("../feature/auth/api", () => ({
+vi.mock("../feature/auth/api", () => ({
   __esModule: true,
-  default: { get: jest.fn(), post: jest.fn(), delete: jest.fn() },
+  default: { get: vi.fn(), post: vi.fn(), delete: vi.fn() },
 }));
 
 // The 3D view's pure parts, as the web works them out, for the native apps to be held to (docs/ANDROID_3D_PLAN.md, V0): where each route's line,
@@ -302,7 +302,7 @@ const flowCase = async (name, steps, { keep = false, target = TARGET, stream = f
     let afterMs = 0;
     while (waiting.length === 0 && afterMs < limitMs) {
       // eslint-disable-next-line no-await-in-loop
-      await act(async () => { jest.advanceTimersByTime(500); });
+      await act(async () => { vi.advanceTimersByTime(500); });
       // eslint-disable-next-line no-await-in-loop
       await flush();
       afterMs += 500;
@@ -446,7 +446,7 @@ const streamFixture = async () => {
 };
 
 beforeEach(() => {
-  jest.useFakeTimers();
+  vi.useFakeTimers();
   api.get.mockReset();
   api.post.mockReset();
   api.delete.mockReset();
@@ -454,7 +454,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
-  jest.useRealTimers();
+  vi.useRealTimers();
 });
 
 // -- How the view looks and moves ----------------------------------------------------------------------------------------------------------------

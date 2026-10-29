@@ -11,14 +11,14 @@ const bco = { id: 7, name: "B CO", member_count: 3, role: "owner" };
 
 describe("manage teams", () => {
   const teamApi = () => ({
-    createTeam: jest.fn().mockResolvedValue({ id: 7, name: "B CO", role: "owner", members: [] }),
-    getTeam: jest.fn().mockResolvedValue({
+    createTeam: vi.fn().mockResolvedValue({ id: 7, name: "B CO", role: "owner", members: [] }),
+    getTeam: vi.fn().mockResolvedValue({
       id: 7,
       name: "B CO",
       role: "owner",
       members: [{ user_id: 1, name: "Colin McFadden", email: "colin@army.mil", role: "owner" }],
     }),
-    listTeamInvites: jest.fn().mockResolvedValue({ invites: [] }),
+    listTeamInvites: vi.fn().mockResolvedValue({ invites: [] }),
   });
 
   it("shows a team just made, before and after the list of teams catches up", async () => {
@@ -50,13 +50,13 @@ describe("manage teams", () => {
     const cco = { id: 8, name: "C CO", member_count: 2, role: "member" };
     const api = {
       ...teamApi(),
-      getTeam: jest.fn((id) =>
+      getTeam: vi.fn((id) =>
         Promise.resolve({
           ...(id === 7 ? bco : cco),
           members: [{ user_id: 1, name: "Colin McFadden", email: "colin@army.mil", role: id === 7 ? "owner" : "member" }],
         }),
       ),
-      deleteTeam: jest.fn().mockResolvedValue({}),
+      deleteTeam: vi.fn().mockResolvedValue({}),
     };
     const dialog = (teams) => (
       <ToastProvider>
@@ -85,10 +85,10 @@ describe("manage teams", () => {
 describe("sharing a pack with a team", () => {
   const pack = { uuid: "p1", name: "OP DK", role: "owner", team: null };
   const membersApi = () => ({
-    getPack: jest.fn().mockResolvedValue({ members: [{ user_id: 1, name: "Colin McFadden", email: "colin@army.mil", role: "owner" }] }),
-    listPackInvites: jest.fn().mockResolvedValue({ invites: [] }),
-    updatePack: jest.fn(),
-    searchPeople: jest.fn().mockResolvedValue({ people: [] }),
+    getPack: vi.fn().mockResolvedValue({ members: [{ user_id: 1, name: "Colin McFadden", email: "colin@army.mil", role: "owner" }] }),
+    listPackInvites: vi.fn().mockResolvedValue({ invites: [] }),
+    updatePack: vi.fn(),
+    searchPeople: vi.fn().mockResolvedValue({ people: [] }),
   });
   const dialog = (api, packNow, teams) => (
     <ToastProvider>
@@ -183,11 +183,11 @@ describe("inviting from the Members dialog", () => {
   const pack = { uuid: "p1", name: "OP DK", role: "owner", team: null };
   const jamie = { id: 5, name: "Jamie Ortiz", email: "jamie.ortiz@army.mil" };
   const inviteApi = () => ({
-    getPack: jest.fn().mockResolvedValue({ members: [{ user_id: 1, name: "Colin McFadden", email: "colin@army.mil", role: "owner" }] }),
-    listPackInvites: jest.fn().mockResolvedValue({ invites: [] }),
-    searchPeople: jest.fn().mockResolvedValue({ users: [jamie] }),
-    addMember: jest.fn().mockResolvedValue({ member: { user_id: 5, role: "viewer" } }),
-    inviteToPack: jest.fn().mockResolvedValue({}),
+    getPack: vi.fn().mockResolvedValue({ members: [{ user_id: 1, name: "Colin McFadden", email: "colin@army.mil", role: "owner" }] }),
+    listPackInvites: vi.fn().mockResolvedValue({ invites: [] }),
+    searchPeople: vi.fn().mockResolvedValue({ users: [jamie] }),
+    addMember: vi.fn().mockResolvedValue({ member: { user_id: 5, role: "viewer" } }),
+    inviteToPack: vi.fn().mockResolvedValue({}),
   });
   const dialog = (api, extra = {}) => (
     <ToastProvider>
@@ -274,14 +274,14 @@ describe("inviting from the Members dialog", () => {
 describe("handing a pack over", () => {
   const pack = { uuid: "p1", name: "OP DK", role: "owner", team: null };
   const handApi = () => ({
-    getPack: jest.fn().mockResolvedValue({
+    getPack: vi.fn().mockResolvedValue({
       members: [
         { user_id: 1, name: "Colin McFadden", email: "colin@army.mil", role: "owner" },
         { user_id: 2, name: "Sam Bell", email: "sam.bell@army.mil", role: "editor" },
       ],
     }),
-    listPackInvites: jest.fn().mockResolvedValue({ invites: [] }),
-    changeMember: jest.fn().mockResolvedValue({}),
+    listPackInvites: vi.fn().mockResolvedValue({ invites: [] }),
+    changeMember: vi.fn().mockResolvedValue({}),
   });
   const dialog = (api) => (
     <ToastProvider>

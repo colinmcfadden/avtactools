@@ -98,7 +98,7 @@ const TopBar = ({
           </span>
         </>
       ) : (
-        <span className="shell-topbar__context">Personal workspace · saved items go to your Library</span>
+        <span className="shell-topbar__context">Personal workspace</span>
       )}
 
       <div className="shell-topbar__end">
@@ -150,7 +150,7 @@ const TopBar = ({
               icon={<Icon name="building" size={15} />}
               title="Admin dashboard"
               onClose={account.close}
-              onSelect={() => window.open(`${(process.env.REACT_APP_API_URL || "").replace(/\/api\/?$/, "")}/admin`, "_blank", "noopener")}
+              onSelect={() => window.open(`${(import.meta.env.VITE_API_URL || "").replace(/\/api\/?$/, "")}/admin`, "_blank", "noopener")}
             />
           )}
           {onOpenSurveys && (

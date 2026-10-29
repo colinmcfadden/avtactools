@@ -92,7 +92,7 @@ and how an open pack is held (`packs/session.json`); `contracts/README.md` lists
 them. Change the rules on the web first and regenerate:
 
 ```powershell
-cd frontend; $env:UPDATE_CONTRACTS="1"; $env:CI="true"; npx react-scripts test --watchAll=false src/contracts/pack
+cd frontend; $env:UPDATE_CONTRACTS="1"; npx vitest run src/contracts/pack
 ```
 
 | Operation | Fields | Does |

@@ -4,7 +4,7 @@ import { typedAngle } from "./Disagreements";
 import Obstacles, { descentWords, obstacleWords, spotWords } from "./Obstacles";
 import SurveyMap from "./SurveyMap";
 
-jest.mock("react-leaflet", () => ({
+vi.mock("react-leaflet", () => ({
   MapContainer: ({ children }) => <div>{children}</div>,
   TileLayer: () => null,
   Polygon: () => null,
@@ -15,8 +15,8 @@ jest.mock("react-leaflet", () => ({
   useMap: () => ({ setView: () => {}, getZoom: () => 16 }),
   useMapEvents: () => null,
 }));
-jest.mock("../terrain/SlopeLayer", () => () => null);
-jest.mock("../ui/Toast", () => ({ useToast: () => ({ show: () => {} }) }));
+vi.mock("../terrain/SlopeLayer", () => ({ default: () => null }));
+vi.mock("../ui/Toast", () => ({ useToast: () => ({ show: () => {} }) }));
 
 const SPOT = { lat: 34.596, lon: -84.1278 };
 const BINS = Array.from({ length: 100 }, () => ({ groundFt: 2200 }));
@@ -133,8 +133,8 @@ describe("what the LiDAR found", () => {
   });
 
   it("lets the editor type the approach's angle in place of the plan, and says it is printed", async () => {
-    const onDecide = jest.fn(async () => ({}));
-    const onUndecide = jest.fn();
+    const onDecide = vi.fn(async () => ({}));
+    const onUndecide = vi.fn();
     const { rerender } = render(
       <Obstacles obstacles={MEASURED} plan={PLAN} approach={APPROACH_ROW} onDecide={onDecide} onUndecide={onUndecide} />);
     fireEvent.click(screen.getByRole("button", { name: "Type the approach's angle…" }));
@@ -174,11 +174,11 @@ describe("what the LiDAR found", () => {
   it("offers no typing where the editor cannot decide, nor where the LiDAR has no angle", () => {
     const { rerender } = render(<Obstacles obstacles={MEASURED} approach={APPROACH_ROW} />);
     expect(screen.queryByRole("button", { name: /angle/ })).toBeNull();
-    rerender(<Obstacles obstacles={MEASURED} approach={{ ...APPROACH_ROW, computed: "" }} onDecide={jest.fn()} />);
+    rerender(<Obstacles obstacles={MEASURED} approach={{ ...APPROACH_ROW, computed: "" }} onDecide={vi.fn()} />);
     expect(screen.queryByRole("button", { name: /angle/ })).toBeNull();
     // An angle typed before the LiDAR lost its own (measured again where it has none): it can be let go, not typed again.
     const typed = { ...APPROACH_ROW, computed: "", override: { choice: "typed", value: 12, reason: "Cut", by: "CW3 Admin" }, open: true };
-    rerender(<Obstacles obstacles={MEASURED} approach={typed} onDecide={jest.fn()} onUndecide={jest.fn()} />);
+    rerender(<Obstacles obstacles={MEASURED} approach={typed} onDecide={vi.fn()} onUndecide={vi.fn()} />);
     expect(screen.getByRole("button", { name: "Change your angle…" })).toBeDisabled();
     expect(screen.getByRole("button", { name: "Print the plan" })).toBeEnabled();
   });

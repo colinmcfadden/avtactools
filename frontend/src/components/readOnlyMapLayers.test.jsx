@@ -17,7 +17,7 @@ import UnitMarker from "../feature/unit/UnitMarker";
  * Leaflet map for the layers that draw themselves, and the declarative pieces render plain divs
  * carrying the props the layers gave them.
  */
-jest.mock("react-leaflet", () => {
+vi.mock("react-leaflet", () => {
   const ReactMock = require("react");
   const holder = { map: null };
   const contextMenu = (props) => () =>
@@ -47,27 +47,27 @@ jest.mock("react-leaflet", () => {
   };
 });
 
-const { __holder: holder } = jest.requireMock("react-leaflet");
+const { __holder: holder } = await import("react-leaflet");
 
 let container;
 beforeEach(() => {
-  jest.useFakeTimers();
+  vi.useFakeTimers();
   container = document.createElement("div");
   document.body.appendChild(container);
   holder.map = L.map(container).setView([34.5, -84.2], 16);
-  jest.spyOn(window, "confirm").mockReturnValue(true);
+  vi.spyOn(window, "confirm").mockReturnValue(true);
 });
 afterEach(() => {
   holder.map.remove();
   container.remove();
-  jest.restoreAllMocks();
-  jest.useRealTimers();
+  vi.restoreAllMocks();
+  vi.useRealTimers();
 });
 
 // The layers that draw themselves bind their handlers again a moment after each redraw.
 const render = (ui) => {
   const result = rtlRender(ui);
-  act(() => jest.advanceTimersByTime(200));
+  act(() => vi.advanceTimersByTime(200));
   return result;
 };
 
@@ -77,7 +77,7 @@ describe("a helicopter", () => {
   const asset = { id: 1, type: "helo", lat: 34.5, lon: -84.2, rotation: 90 };
 
   it("in a read-only pack has no move or rotate control, and a right-click does not delete it", () => {
-    const deleteAsset = jest.fn();
+    const deleteAsset = vi.fn();
     render(<Helicopter asset={asset} allAssets={[asset]} profiles={[]} />);
     expect(iconOf(".dh-move")).toBeNull();
     expect(iconOf(".dh-rotate")).toBeNull();
@@ -87,7 +87,7 @@ describe("a helicopter", () => {
   });
 
   it("can be moved, turned and deleted otherwise", () => {
-    const deleteAsset = jest.fn();
+    const deleteAsset = vi.fn();
     render(<Helicopter asset={asset} allAssets={[asset]} profiles={[]} updateAsset={() => {}} deleteAsset={deleteAsset} />);
     expect(iconOf(".dh-move")).not.toBeNull();
     expect(iconOf(".dh-rotate")).not.toBeNull();
@@ -129,7 +129,7 @@ describe("a go-around", () => {
   });
 
   it("can be moved and deleted otherwise", () => {
-    const deleteGoAround = jest.fn();
+    const deleteGoAround = vi.fn();
     render(<GoAroundMarker data={data} updateGoAround={() => {}} deleteGoAround={deleteGoAround} />);
     expect(iconOf(".dh-move")).not.toBeNull();
     fireEvent.contextMenu(iconOf(".ga-body-wrapper"));
@@ -168,7 +168,7 @@ describe("a unit", () => {
   });
 
   it("can be dragged and deleted otherwise", () => {
-    const deleteUnit = jest.fn();
+    const deleteUnit = vi.fn();
     render(<UnitMarker data={data} updateUnitPosition={() => {}} deleteUnit={deleteUnit} />);
     const marker = screen.getByTestId("marker");
     expect(marker).toHaveAttribute("data-draggable", "true");
@@ -221,7 +221,7 @@ describe("a route's points", () => {
   });
 
   it("can be dragged, and the line offers a point to insert, otherwise", () => {
-    const onInsertPoint = jest.fn();
+    const onInsertPoint = vi.fn();
     render(<MsnxRouteLayer routes={routes} onUpdatePosition={() => {}} onInsertPoint={onInsertPoint} />);
     screen.getAllByTestId("marker").forEach((marker) => expect(marker).toHaveAttribute("data-draggable", "true"));
     fireEvent.contextMenu(screen.getByTestId("polyline"));
@@ -285,17 +285,17 @@ describe("a map object being moved or turned when the pack becomes read-only", (
 
   // Press `control`, drag, (maybe) lose the handler, drag on, and lift.
   const gesture = (ui, control, { lose }) => {
-    const update = jest.fn();
+    const update = vi.fn();
     const { rerender } = render(ui(update));
     fireEvent.mouseDown(iconOf(control), { clientX: 0, clientY: 0 });
     fireEvent.mouseMove(document, { clientX: 40, clientY: 40 });
     if (lose) {
       rerender(ui(undefined));
-      act(() => jest.advanceTimersByTime(200));
+      act(() => vi.advanceTimersByTime(200));
     }
     fireEvent.mouseMove(document, { clientX: 80, clientY: 80 });
     fireEvent.mouseUp(document);
-    act(() => jest.advanceTimersByTime(200));
+    act(() => vi.advanceTimersByTime(200));
     return update;
   };
 
@@ -321,14 +321,14 @@ describe("a map object being moved or turned when the pack becomes read-only", (
   });
 
   it("a doghouse field being typed in is left as stored", () => {
-    document.execCommand = jest.fn(); // jsdom has none
+    document.execCommand = vi.fn(); // jsdom has none
     const data = { id: 3, lat: 34.5, lon: -84.2, heading: "090°", time: "1+30", dist: "3", airspeed: "100", id_val: "A" };
     const { rerender } = render(<Doghouse data={data} updateDoghouse={() => {}} />);
     const field = iconOf('.dh-input[data-type="dist"]');
     fireEvent.click(field);
     field.innerText = "9";
     rerender(<Doghouse data={data} />);
-    act(() => jest.advanceTimersByTime(200));
+    act(() => vi.advanceTimersByTime(200));
     // A browser may blur the field as the redraw removes it.
     fireEvent.blur(field);
     expect(errors).toEqual([]);

@@ -72,7 +72,7 @@ describe("the import review", () => {
   ];
 
   it("sends points to the open pack by default, never a mission, and threats only to this session", async () => {
-    const onImport = jest.fn().mockResolvedValue();
+    const onImport = vi.fn().mockResolvedValue();
     render(<ToastProvider><ImportReviewDialog items={items(pack)} pack={pack} onCancel={() => {}} onImport={onImport} /></ToastProvider>);
 
     expect(screen.getByText("Everyone in OP DK (4 members) will see these points.")).toBeInTheDocument();
@@ -131,11 +131,11 @@ describe("importing into an open pack", () => {
   it("drops the session's copy of the points only once the pack has taken them", () => {
     const set = { id: "lps-1", name: "NORTH GA POINTS", points: [{ lat: 34, lon: -84 }] };
     const order = [];
-    const removePointSet = jest.fn(() => order.push("remove"));
-    movePointsToPack(set, { createItem: jest.fn(() => order.push("create") && "ps-1"), removePointSet });
+    const removePointSet = vi.fn(() => order.push("remove"));
+    movePointsToPack(set, { createItem: vi.fn(() => order.push("create") && "ps-1"), removePointSet });
     expect(order).toEqual(["create", "remove"]);
 
-    const refusing = jest.fn(() => null);
+    const refusing = vi.fn(() => null);
     removePointSet.mockClear();
     expect(() => movePointsToPack(set, { createItem: refusing, removePointSet })).toThrow(/did not take them\. They stay in this session/);
     expect(refusing).toHaveBeenCalledWith("NORTH GA POINTS", set.points);
@@ -143,9 +143,9 @@ describe("importing into an open pack", () => {
   });
 
   it("tells the app where each imported file went, leaving out the ones that failed", async () => {
-    const onDone = jest.fn();
+    const onDone = vi.fn();
     const sets = { "NORTH_GA.LPS": { id: "lps-1", name: "NORTH GA" }, "SOUTH.LPS": { id: "lps-2", name: "SOUTH" } };
-    const removePointSet = jest.fn();
+    const removePointSet = vi.fn();
     let imports;
     const Harness = () => {
       imports = useImports({

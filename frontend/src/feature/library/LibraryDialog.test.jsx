@@ -3,16 +3,16 @@ import React from "react";
 import { ToastProvider } from "../ui/Toast";
 import LibraryDialog from "./LibraryDialog";
 
-jest.mock("../auth/api", () => ({ __esModule: true, default: { get: jest.fn(), put: jest.fn(), post: jest.fn() } }));
+vi.mock("../auth/api", () => ({ __esModule: true, default: { get: vi.fn(), put: vi.fn(), post: vi.fn() } }));
 
 const source = (patch = {}) => ({
   entries: [],
   loading: false,
   error: null,
   openIds: new Set(),
-  refresh: jest.fn(),
-  onOpen: jest.fn(),
-  onDelete: jest.fn(),
+  refresh: vi.fn(),
+  onOpen: vi.fn(),
+  onDelete: vi.fn(),
   ...patch,
 });
 
@@ -63,8 +63,8 @@ describe("the Library", () => {
   });
 
   it("links its footer to Mission Packs: the Library closes and the workspace switcher opens", () => {
-    const onClose = jest.fn();
-    const onOpenPacks = jest.fn();
+    const onClose = vi.fn();
+    const onOpenPacks = vi.fn();
     show({}, { onClose, onOpenPacks });
     expect(screen.getByText(/^0 saved LZ\/PZs/)).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Working with a team? Open a Mission Pack" }));

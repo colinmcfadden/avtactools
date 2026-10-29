@@ -7,6 +7,16 @@ import React, {
   useState,
 } from "react";
 import api from "./api";
+import {
+  LEGACY_TOKEN_KEY,
+  SESSION_KEY,
+  endSession,
+  forgetToken,
+  hasCookieSession,
+  refreshSession,
+  signOut,
+  startSession,
+} from "./session";
 
 const AuthContext = createContext(null);
 
@@ -15,11 +25,11 @@ export const AuthProvider = ({ children }) => {
   const [isLoading, setIsLoading] = useState(true);
   const [authNotice, setAuthNotice] = useState("");
 
-  const establishSession = useCallback((payload) => {
+  const establishSession = useCallback(async (payload) => {
     if (!payload?.access_token || !payload?.user) {
       throw new Error("The server returned an incomplete sign-in response.");
     }
-    localStorage.setItem("auth_token", payload.access_token);
+    await startSession(payload);
     setUser(payload.user);
     setAuthNotice("");
     return payload.user;
@@ -31,22 +41,38 @@ export const AuthProvider = ({ children }) => {
 
     const restoreStoredSession = async () => {
       const requestId = ++requestSequence;
-      const token = localStorage.getItem("auth_token");
-      if (!token) {
-        if (active && requestId === requestSequence) setIsLoading(false);
-        return;
-      }
+      const current = () => active && requestId === requestSequence;
       try {
+        if (hasCookieSession()) {
+          // A cookie session: the page starts with no token and asks for one with the cookie.
+          const data = await refreshSession();
+          if (!current()) return;
+          if (data?.user) {
+            setUser(data.user);
+            setAuthNotice("");
+          } else {
+            endSession();
+            setUser(null);
+            setAuthNotice("Your session ended. Sign in again to continue.");
+          }
+          return;
+        }
+        if (!localStorage.getItem(LEGACY_TOKEN_KEY)) return;
         const res = await api.get("/auth/me");
-        if (!active || requestId !== requestSequence) return;
+        if (!current()) return;
         setUser(res.data);
         setAuthNotice("");
       } catch {
-        if (!active || requestId !== requestSequence) return;
-        localStorage.removeItem("auth_token");
+        if (!current()) return;
         setUser(null);
+        if (hasCookieSession()) {
+          // The server could not be asked; nothing ended, and a reload once it is back finds the session.
+          setAuthNotice("Could not reach the server. Reload to try again.");
+        } else {
+          localStorage.removeItem(LEGACY_TOKEN_KEY);
+        }
       } finally {
-        if (active && requestId === requestSequence) setIsLoading(false);
+        if (current()) setIsLoading(false);
       }
     };
 
@@ -60,10 +86,11 @@ export const AuthProvider = ({ children }) => {
       );
     };
     const onStorage = (event) => {
-      if (event.key !== "auth_token" && event.key !== null) return;
+      if (event.key !== LEGACY_TOKEN_KEY && event.key !== SESSION_KEY && event.key !== null) return;
       if (!event.newValue) {
         // Invalidate any in-flight /auth/me response from the older token.
         requestSequence += 1;
+        forgetToken();
         setUser(null);
         setIsLoading(false);
         setAuthNotice("You were signed out in another browser tab.");
@@ -130,14 +157,17 @@ export const AuthProvider = ({ children }) => {
   const dismissAuthNotice = useCallback(() => setAuthNotice(""), []);
 
   const clearSession = useCallback((notice = "") => {
-    localStorage.removeItem("auth_token");
+    endSession();
     setUser(null);
     setAuthNotice(notice);
   }, []);
 
+  // Ends the session on the server too (and clears its cookie), so the browser's sign-in cannot be used again.
   const logout = useCallback(() => {
-    clearSession("You have been signed out.");
-  }, [clearSession]);
+    signOut();
+    setUser(null);
+    setAuthNotice("You have been signed out.");
+  }, []);
 
   const value = useMemo(
     () => ({

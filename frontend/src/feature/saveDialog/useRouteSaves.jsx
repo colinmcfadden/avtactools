@@ -252,13 +252,7 @@ export const useRouteSaves = ({ sets, library, signedIn, onOpenLibrary }) => {
       <SaveDialog
         key={`${dialog.key}-${dialog.copy}`}
         title={dialog.copy ? "Save as new routes" : kind === "mission" ? "Save mission" : "Save routes"}
-        subtitle={
-          dialog.copy
-            ? "Saves a copy under a new name. What is open becomes the copy."
-            : kind === "mission"
-              ? "Saves the mission file with your edits to its points and plans."
-              : "Saves the sketched routes with their plans."
-        }
+        subtitle={dialog.copy ? "Saves a copy under a new name. What is open becomes the copy." : undefined}
         icon="route"
         initialName={dialog.copy ? nextFreeName(name, existing) : name}
         contents={contentsFor(set)}
