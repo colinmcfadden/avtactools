@@ -4,17 +4,17 @@ import api from "../auth/api";
 export const useSavedMaps = () => {
   const [history, setHistory] = useState([]);
   const [isLoadingHistory, setIsLoadingHistory] = useState(false);
+  const [historyError, setHistoryError] = useState(null);
 
   const fetchHistory = async () => {
     setIsLoadingHistory(true);
     try {
       const res = await api.get("/lz");
       setHistory(res.data);
+      setHistoryError(null);
     } catch (err) {
-      // 401s are handled (alert + sign-out) by the api interceptor.
-      if (err.response?.status !== 401) {
-        alert("Couldn't load saved maps: " + err.message);
-      }
+      // 401s are handled (sign-out) by the api interceptor; anything else is shown where the list is.
+      if (err.response?.status !== 401) setHistoryError(err);
     } finally {
       setIsLoadingHistory(false);
     }
@@ -30,8 +30,9 @@ export const useSavedMaps = () => {
     return res.data.lz_data;
   };
 
-  const updateMap = async (id, snapshot) => {
-    const response = await api.put(`/lz/${id}`, { lz_data: snapshot });
+  /** `name` renames the saved record too; without it the name stays as it is. */
+  const updateMap = async (id, snapshot, name) => {
+    const response = await api.put(`/lz/${id}`, name ? { name, lz_data: snapshot } : { lz_data: snapshot });
     return response.data;
   };
 
@@ -40,5 +41,5 @@ export const useSavedMaps = () => {
     setHistory((prev) => prev.filter((entry) => entry.id !== id));
   };
 
-  return { history, isLoadingHistory, fetchHistory, saveMap, loadMap, updateMap, deleteMap };
+  return { history, isLoadingHistory, historyError, fetchHistory, saveMap, loadMap, updateMap, deleteMap };
 };

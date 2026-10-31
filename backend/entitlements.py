@@ -1,17 +1,30 @@
 """Per-user feature entitlements and the super-admin bootstrap.
 
 Feature access is stored per user as a JSON map of ``{feature_key: bool}`` on
-``User.features``. A missing key means enabled, so existing users and any
-newly-introduced feature default to ON and no one is locked out by surprise.
-Admins always have every feature. The single super-admin (configured by the
-``SUPER_ADMIN_EMAIL`` environment variable) is always an active admin and can
-never be demoted or suspended.
+``User.features``. A missing key means the feature's default: enabled, so
+existing users and any newly-introduced feature default to ON and no one is
+locked out by surprise, except a feature in ``DEFAULT_OFF``, which is still
+being built. Admins always have every feature. The single super-admin
+(configured by the ``SUPER_ADMIN_EMAIL`` environment variable) is always an
+active admin and can never be demoted or suspended.
 """
 
 import os
 
+# Features not launched yet: off for everyone but admins and the people an admin
+# turns one on for (testers). For these only an "on" is ever stored
+# (routes/admin_routes.set_features), never an "off", so taking a key out of this
+# set really does turn it on for everyone, including people whose access an admin
+# edited while it was off.
+#
+# lz_surveys is not one to launch this way: it is the key to the LZ survey books, given person by person, never to everyone. Taken
+# out of this set it would let every account read every book for no team, and every team's owner and admins (anyone with Mission
+# Packs can make a team) edit and sign off their team's pages (survey/access.py, docs/LZ_SURVEYS.md §7).
+DEFAULT_OFF = frozenset({"mission_packs", "mission_brief", "lz_surveys"})
+
 # Canonical feature keys and human labels for the admin UI. Add new keys here;
-# they default to enabled for everyone until an admin turns one off.
+# they default to enabled for everyone until an admin turns one off (or, while
+# in DEFAULT_OFF, to disabled until an admin turns one on).
 FEATURES = (
     ("lz_pz_tools", "LZ/PZ tools", "Terrain analysis and LZ/PZ diagram tools"),
     ("routes", "Routes", "Sketch and plan routes"),
@@ -24,6 +37,13 @@ FEATURES = (
         "Aircraft profiles",
         "Create and manage custom aircraft profiles (the master list stays available)",
     ),
+    ("mission_packs", "Mission packs", "Plan together in shared packs of LZs, routes and point sets, and join teams"),
+    ("mission_brief", "Mission brief", "Air movement and hasty multi-ship briefs from the plan: the PDF and the live sandtable"),
+    # The key to the LZ survey books (docs/LZ_SURVEYS.md §7): what its holder may do in a book follows from the book's team, read or
+    # edit. Admins always have it. Never launched to everyone (DEFAULT_OFF above).
+    ("lz_surveys", "LZ surveys",
+     "Open the LZ survey books: read the published pages of their team's books and of books for no team; "
+     "a team's owner and admins also make, edit and sign off its books"),
 )
 
 FEATURE_KEYS = tuple(key for key, _label, _desc in FEATURES)
@@ -78,7 +98,27 @@ def resolve_features(user):
     if is_admin(user):
         return {key: True for key in FEATURE_KEYS}
     stored = user.features if isinstance(getattr(user, "features", None), dict) else {}
-    return {key: bool(stored.get(key, True)) for key in FEATURE_KEYS}
+    return {key: bool(stored.get(key, feature_default(key))) for key in FEATURE_KEYS}
+
+
+def feature_default(key):
+    """What a person has when nothing is stored for them: on, unless the feature is not launched yet."""
+    return key not in DEFAULT_OFF
+
+
+def features_from_form(enabled):
+    """The map to store when an admin saves a person's feature checkboxes (``enabled``: the keys ticked).
+
+    A feature in DEFAULT_OFF is stored only when ticked: leaving it unticked is its
+    default, and storing that "off" would keep the person off once it launches.
+    """
+    features = {}
+    for key in FEATURE_KEYS:
+        on = key in enabled
+        if key in DEFAULT_OFF and not on:
+            continue
+        features[key] = on
+    return features
 
 
 def has_feature(user, key):

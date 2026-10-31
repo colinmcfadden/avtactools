@@ -1,4 +1,5 @@
 from flask_sqlalchemy import SQLAlchemy
+from sqlalchemy.orm import declared_attr
 from datetime import datetime
 
 db = SQLAlchemy()
@@ -29,9 +30,17 @@ class User(db.Model):
     # a .mil address (mil_verified_at set), or an admin approves them manually
     # (access_approved). New users default to unapproved; the ALTER grandfathers
     # everyone who existed before the gate was introduced. See entitlements.py.
+    # mil_email is only ever an address a code confirmed, because an emailed
+    # invitation trusts it (pack_support.addresses); one asked for and not yet
+    # confirmed waits in mil_pending_email (routes/auth.py, mil_request/mil_verify).
     mil_email = db.Column(db.String(120), nullable=True)
     mil_verified_at = db.Column(db.DateTime, nullable=True)
+    mil_pending_email = db.Column(db.String(120), nullable=True)
     access_approved = db.Column(db.Boolean, nullable=False, default=False)
+
+    # Which notifications the person wants ({group: bool}; a missing key is on), on every device
+    # (docs/NOTIFICATIONS.md §5). Added to an existing table by schema_sync in app.py.
+    notification_settings = db.Column(db.JSON, nullable=True)
 
     # This creates a relationship so you can easily get all LZs for a user (e.g., user.saved_lzs)
     saved_lzs = db.relationship('SavedLZ', backref='author', lazy=True)
@@ -100,6 +109,15 @@ class AccountToken(db.Model):
     used_at = db.Column(db.DateTime, nullable=True)
     created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
 
+    # Refresh tokens only (purpose 'refresh'; see refresh_tokens.py). Every token
+    # a device is issued, one after another as it refreshes, shares a `family` --
+    # that chain is one signed-in device. `client` names the app for the device
+    # list ("android/1.4.0 (212)"), and `session_version` is the credential's at
+    # issue, so a password reset ends every family. NULL for every other purpose.
+    family = db.Column(db.String(36), nullable=True, index=True)
+    client = db.Column(db.String(80), nullable=True)
+    session_version = db.Column(db.Integer, nullable=True)
+
     user = db.relationship('User', back_populates='account_tokens')
 
 
@@ -118,10 +136,48 @@ class LoginEvent(db.Model):
     method = db.Column(db.String(20), nullable=False, default='password')  # google | password
     ip = db.Column(db.String(64), nullable=True)
     user_agent = db.Column(db.String(400), nullable=True)
+    # Which app signed in, from the X-EZPZ-Client header, e.g. "android/1.4.0 (212)".
+    # NULL for the web app today and for anything that sent no (or a malformed) header.
+    client = db.Column(db.String(80), nullable=True)
     created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False, index=True)
 
 
-class AircraftProfile(db.Model):
+class SyncMixin:
+    """What a saved record needs to be kept in step across devices.
+
+    The web app, the Android app and the iOS app each keep a copy and edit it
+    offline, so a record needs an identity that does not depend on the server
+    (``client_uuid``), a version to detect edits made on top of a stale copy
+    (``revision``), a tombstone so a deletion can reach devices that were offline
+    (``deleted_at``), and a place in one per-user change order (``change_seq``)
+    that a device can ask "everything after" about. See sync_support.py.
+
+    Added to existing databases by ``schema_sync``; ``app.py`` adds the unique
+    index. ``revision`` defaults to 1, which backfills the rows that predate it.
+    """
+
+    client_uuid = db.Column(db.String(36), nullable=True)
+    revision = db.Column(db.Integer, nullable=False, default=1)
+    deleted_at = db.Column(db.DateTime, nullable=True)
+    change_seq = db.Column(db.Integer, nullable=True, index=True)
+    # The Idempotency-Key of the last write, so a retry of it after a lost
+    # response is recognised as the same write rather than as a conflict with it.
+    last_idem_key = db.Column(db.String(64), nullable=True)
+
+    @staticmethod
+    def sync_indexes(cls):
+        """One record per client identity per user: a retried create cannot duplicate.
+
+        A model with indexes of its own lists these in its ``__table_args__`` too.
+        """
+        return (db.Index(f'ux_{cls.__tablename__}_user_client_uuid', 'user_id', 'client_uuid', unique=True),)
+
+    @declared_attr
+    def __table_args__(cls):  # noqa: N805 — SQLAlchemy's declared_attr convention
+        return SyncMixin.sync_indexes(cls)
+
+
+class AircraftProfile(SyncMixin, db.Model):
     """An airframe's planning defaults, footprint, and AMPS binding.
 
     Two flavours share this table:
@@ -208,9 +264,9 @@ class AircraftProfile(db.Model):
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
-    __table_args__ = (
-        db.Index('ix_aircraft_profile_owner_slug', 'user_id', 'slug'),
-    )
+    @declared_attr
+    def __table_args__(cls):  # noqa: N805 — SQLAlchemy's declared_attr convention
+        return (db.Index('ix_aircraft_profile_owner_slug', 'user_id', 'slug'), *SyncMixin.sync_indexes(cls))
 
     @property
     def is_system(self):
@@ -221,7 +277,19 @@ class AircraftProfile(db.Model):
         return self.template_file is not None
 
     def to_dict(self):
-        """Client-facing shape. Never includes the vidx bytes — only a flag."""
+        """Client-facing shape. Never includes the vidx bytes — only a flag.
+
+        A user's own profile also says which copy it is (``client_uuid``,
+        ``revision``) so a device can sync it; the master list is the admin's and
+        does not sync, so it carries neither.
+        """
+        body = self._shape()
+        if self.user_id is not None:
+            body["client_uuid"] = self.client_uuid
+            body["revision"] = self.revision
+        return body
+
+    def _shape(self):
         return {
             "id": self.id,
             "slug": self.slug,
@@ -249,7 +317,21 @@ class AircraftProfile(db.Model):
         }
 
 
-class SavedRoute(db.Model):
+class SyncCounter(db.Model):
+    """Per-user change counter: the order every saved record's changes happened in.
+
+    Taking the next number locks the user's row until the write commits, so a
+    lower number can never commit after a higher one. That is what lets a device
+    keep a cursor and trust it has seen everything up to it.
+    """
+
+    __tablename__ = 'sync_counter'
+
+    user_id = db.Column(db.Integer, db.ForeignKey('user.id', ondelete='CASCADE'), primary_key=True)
+    seq = db.Column(db.Integer, nullable=False, default=0)
+
+
+class SavedRoute(SyncMixin, db.Model):
     id = db.Column(db.Integer, primary_key=True)
     user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
     name = db.Column(db.String(100), nullable=False)
@@ -265,7 +347,7 @@ class SavedRoute(db.Model):
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
 
-class SavedPointSet(db.Model):
+class SavedPointSet(SyncMixin, db.Model):
     """A named set of local points (imported from an .LPS file) for map display."""
     id = db.Column(db.Integer, primary_key=True)
     user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
@@ -278,7 +360,7 @@ class SavedPointSet(db.Model):
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
 
-class SavedLZ(db.Model):
+class SavedLZ(SyncMixin, db.Model):
     id = db.Column(db.Integer, primary_key=True)
     user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
     name = db.Column(db.String(100), nullable=False)
@@ -287,3 +369,400 @@ class SavedLZ(db.Model):
 
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+class SavedBrief(SyncMixin, db.Model):
+    """A mission brief outside a pack: the person's answers, never a copy of the plan (docs/MISSION_BRIEF.md §2.2).
+
+    ``brief_data`` is the brief document the web writes (template id and version, references to the LZ/PZs and
+    route sets, the flow, constants, answers, edited scripts, options); the server does not look inside it.
+    """
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
+    name = db.Column(db.String(100), nullable=False)
+
+    brief_data = db.Column(db.JSON, nullable=False)
+
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+# -- Mission packs -------------------------------------------------------------
+#
+# A pack is a shared container of LZs, route sets and point sets that every member
+# edits through a server-ordered stream of small operations (pack_ops.py). It is
+# stored apart from the one-off library above, so nothing here touches SavedLZ,
+# SavedRoute, SavedPointSet or the per-user sync feed. Every table is new and made
+# by db.create_all(). See docs/MISSION_PACKS.md and pack_support.py.
+
+
+class Team(db.Model):
+    """A unit or section ("B Co 2-10 AVN"). People find each other by name only through a shared team."""
+
+    __tablename__ = 'team'
+
+    id = db.Column(db.Integer, primary_key=True)
+    name = db.Column(db.String(100), nullable=False)
+    created_by = db.Column(db.Integer, db.ForeignKey('user.id', ondelete='SET NULL'), nullable=True)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+
+
+class TeamMember(db.Model):
+    __tablename__ = 'team_member'
+
+    id = db.Column(db.Integer, primary_key=True)
+    team_id = db.Column(db.Integer, db.ForeignKey('team.id', ondelete='CASCADE'), nullable=False, index=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('user.id', ondelete='CASCADE'), nullable=False, index=True)
+    role = db.Column(db.String(10), nullable=False, default='member')  # owner | admin | member
+    joined_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+
+    __table_args__ = (db.UniqueConstraint('team_id', 'user_id', name='ux_team_member'),)
+
+
+class MissionPack(db.Model):
+    """The pack itself. ``head_seq`` is its own change counter: every event takes the next number under a row lock."""
+
+    __tablename__ = 'mission_pack'
+
+    id = db.Column(db.Integer, primary_key=True)
+    uuid = db.Column(db.String(36), unique=True, nullable=False, index=True)
+    # Always set: deleting the owner's account hands the pack on, or deletes it
+    # when nobody else is in it (pack_support.release_account).
+    owner_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False, index=True)
+    # Shared with a whole team: its members see the pack with ``team_role``.
+    team_id = db.Column(db.Integer, db.ForeignKey('team.id', ondelete='SET NULL'), nullable=True, index=True)
+    team_role = db.Column(db.String(10), nullable=False, default='editor')  # editor | viewer
+    name = db.Column(db.String(100), nullable=False)
+    description = db.Column(db.Text, nullable=False, default='')
+    # finished: the server refuses every edit, the owner's included, until the owner reopens it.
+    status = db.Column(db.String(10), nullable=False, default='active')  # active | finished
+    finished_at = db.Column(db.DateTime, nullable=True)
+    finished_by = db.Column(db.Integer, db.ForeignKey('user.id', ondelete='SET NULL'), nullable=True)
+    head_seq = db.Column(db.Integer, nullable=False, default=0)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+    # A tombstone, content gone, so a device that asks about it learns it was deleted.
+    deleted_at = db.Column(db.DateTime, nullable=True)
+
+
+class MissionPackMember(db.Model):
+    __tablename__ = 'mission_pack_member'
+
+    id = db.Column(db.Integer, primary_key=True)
+    pack_id = db.Column(db.Integer, db.ForeignKey('mission_pack.id', ondelete='CASCADE'), nullable=False, index=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('user.id', ondelete='CASCADE'), nullable=False, index=True)
+    role = db.Column(db.String(10), nullable=False, default='editor')  # owner | editor | viewer
+    added_by = db.Column(db.Integer, db.ForeignKey('user.id', ondelete='SET NULL'), nullable=True)
+    added_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+
+    __table_args__ = (db.UniqueConstraint('pack_id', 'user_id', name='ux_mission_pack_member'),)
+
+
+class MissionPackInvite(db.Model):
+    """An invitation to a pack or to a team, by email or (teams only) by a single-use link.
+
+    The token is stored as SHA-256, like AccountToken. An emailed invite is also
+    matched by address, so someone who signs up later finds it waiting once they
+    clear the .mil gate.
+    """
+
+    __tablename__ = 'mission_pack_invite'
+
+    id = db.Column(db.Integer, primary_key=True)
+    pack_id = db.Column(db.Integer, db.ForeignKey('mission_pack.id', ondelete='CASCADE'), nullable=True, index=True)
+    team_id = db.Column(db.Integer, db.ForeignKey('team.id', ondelete='CASCADE'), nullable=True, index=True)
+    email = db.Column(db.String(120), nullable=True, index=True)  # lower-cased; NULL for a link invite
+    token_hash = db.Column(db.String(64), unique=True, nullable=False)
+    invited_by = db.Column(db.Integer, db.ForeignKey('user.id', ondelete='SET NULL'), nullable=True)
+    role = db.Column(db.String(10), nullable=False)
+    status = db.Column(db.String(10), nullable=False, default='pending')  # pending | accepted | declined | revoked
+    expires_at = db.Column(db.DateTime, nullable=False)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+    accepted_at = db.Column(db.DateTime, nullable=True)
+    accepted_by = db.Column(db.Integer, db.ForeignKey('user.id', ondelete='SET NULL'), nullable=True)
+
+
+class MissionPackItem(db.Model):
+    """An LZ, a set of sketched routes or a point set inside a pack.
+
+    ``data`` is the same JSON the library keeps (lz_data, route_data, points_data),
+    so every editor and exporter works on it unchanged. An item copied in from the
+    library remembers where it came from (``source_*``) so whoever copied it can
+    update it from the original later; the copy is the pack's, and nothing reaches back.
+    """
+
+    __tablename__ = 'mission_pack_item'
+
+    id = db.Column(db.Integer, primary_key=True)
+    pack_id = db.Column(db.Integer, db.ForeignKey('mission_pack.id', ondelete='CASCADE'), nullable=False, index=True)
+    uuid = db.Column(db.String(64), nullable=False)
+    kind = db.Column(db.String(10), nullable=False)  # lz | route | pointset
+    name = db.Column(db.String(100), nullable=False)
+    data = db.Column(db.JSON, nullable=True)  # NULL once deleted
+    revision = db.Column(db.Integer, nullable=False, default=1)
+    change_seq = db.Column(db.Integer, nullable=False, default=0)  # the event that last changed it
+    created_by = db.Column(db.Integer, db.ForeignKey('user.id', ondelete='SET NULL'), nullable=True)
+    updated_by = db.Column(db.Integer, db.ForeignKey('user.id', ondelete='SET NULL'), nullable=True)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+    source_kind = db.Column(db.String(10), nullable=True)
+    source_uuid = db.Column(db.String(36), nullable=True)
+    source_revision = db.Column(db.Integer, nullable=True)
+    deleted_at = db.Column(db.DateTime, nullable=True)
+
+    __table_args__ = (db.UniqueConstraint('pack_id', 'uuid', name='ux_mission_pack_item'),)
+
+
+class MissionPackSeen(db.Model):
+    """How far one person has looked in a pack: the newest event they have seen, and when.
+
+    What "changed since you looked" and "New since you looked" are measured from, on
+    every device the person uses, and what a member's "Seen 2 h ago" is. A person in
+    the pack through a shared team has one too. Not part of the log.
+    """
+
+    __tablename__ = 'mission_pack_seen'
+
+    id = db.Column(db.Integer, primary_key=True)
+    pack_id = db.Column(db.Integer, db.ForeignKey('mission_pack.id', ondelete='CASCADE'), nullable=False, index=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('user.id', ondelete='CASCADE'), nullable=False, index=True)
+    seen_seq = db.Column(db.Integer, nullable=False, default=0)
+    seen_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+
+    __table_args__ = (db.UniqueConstraint('pack_id', 'user_id', name='ux_mission_pack_seen'),)
+
+
+class MissionPackEvent(db.Model):
+    """One numbered change to a pack: the edit log, and what clients replay to catch up.
+
+    Append-only. ``summary`` is the sentence the client that made the change wrote
+    ("Colin moved Chalk 2 on LZ Hawk"); ``payload`` is the operation itself.
+    ``actor_name`` is kept as it was, so the log still reads after an account is gone.
+    """
+
+    __tablename__ = 'mission_pack_event'
+
+    id = db.Column(db.Integer, primary_key=True)
+    pack_id = db.Column(db.Integer, db.ForeignKey('mission_pack.id', ondelete='CASCADE'), nullable=False, index=True)
+    seq = db.Column(db.Integer, nullable=False)
+    user_id = db.Column(db.Integer, db.ForeignKey('user.id', ondelete='SET NULL'), nullable=True)
+    actor_name = db.Column(db.String(120), nullable=False, default='')
+    item_uuid = db.Column(db.String(64), nullable=True)
+    op_type = db.Column(db.String(32), nullable=False)
+    payload = db.Column(db.JSON, nullable=False)
+    summary = db.Column(db.String(300), nullable=False, default='')
+    client_op_id = db.Column(db.String(64), nullable=True)
+    status = db.Column(db.String(10), nullable=False, default='applied')  # applied | skipped
+    reason = db.Column(db.String(32), nullable=True)  # why it was skipped
+    created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+
+    __table_args__ = (
+        db.UniqueConstraint('pack_id', 'seq', name='ux_mission_pack_event_seq'),
+        # A retried batch is recognised rather than applied twice.
+        db.UniqueConstraint('pack_id', 'client_op_id', name='ux_mission_pack_event_client_op'),
+    )
+
+
+# -- Notifications --------------------------------------------------------------
+
+
+class Notification(db.Model):
+    """Something that happened to one person, for their devices to say: the outbox they poll (docs/NOTIFICATIONS.md).
+
+    Written by notify.py in the same transaction as the change that causes it, so a change that rolls back notifies
+    nobody. It keeps ids (``pack_uuid``, ``invite_id``, which a pack deleted or an invitation answered withdraws by)
+    and in ``fields`` who did it and a role, never anything from a pack's items or a pack's or team's name, which the
+    feed reads as they are: a notification shows on a lock screen. Rows go after 30 days (routes/notification_routes).
+    """
+
+    __tablename__ = 'notification'
+
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('user.id', ondelete='CASCADE'), nullable=False, index=True)
+    type = db.Column(db.String(20), nullable=False)  # pack_invite | pack_added | team_invite | pack_finished | pack_owner
+    collapse_key = db.Column(db.String(80), nullable=False)
+    pack_uuid = db.Column(db.String(36), nullable=True, index=True)
+    # No foreign key: a deleted team's invitations go with it (pack_support.delete_team), and the row is withdrawn first.
+    invite_id = db.Column(db.Integer, nullable=True, index=True)
+    fields = db.Column(db.JSON, nullable=False)
+    quiet = db.Column(db.Boolean, nullable=False, default=False)  # past the hour's alerts: listed, not sounded
+    created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False, index=True)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+    deliver_after = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+    withdrawn_at = db.Column(db.DateTime, nullable=True)
+    seen_at = db.Column(db.DateTime, nullable=True)
+
+
+# -- LZ surveys ----------------------------------------------------------------
+#
+# The unit's HLZ survey book (docs/LZ_SURVEYS.md): admins make, measure, sign off and print one page per
+# landing zone. Web only, so nothing here syncs; every table is new and made by db.create_all(). A survey
+# is archived, never deleted (a published revision may be in a printed book). Who made or changed a thing
+# is kept by name as well as by id, so it still reads after an account is gone.
+
+
+class SurveyBook(db.Model):
+    """A book of LZ surveys, a unit's or a team's: its name, the unit line, the cover's text and the page order (docs/LZ_SURVEYS.md
+    §3.1). Who reads and edits it follows from its team (survey/access.py). Archived, never deleted: its pages may be in print."""
+
+    __tablename__ = 'survey_book'
+
+    id = db.Column(db.Integer, primary_key=True)
+    # Null only on a book step L1 made before books had one; the first listing gives it one.
+    uuid = db.Column(db.String(36), unique=True, nullable=True, index=True)
+    name = db.Column(db.String(200), nullable=False)
+    unit_line = db.Column(db.String(200), nullable=False, default='')
+    cover_text = db.Column(db.Text, nullable=False, default='')
+    # The team it is for: its owner and admins edit it, its members with lz_surveys read it. No foreign key on purpose: deleting a team
+    # archives its books (pack_support.delete_team), and a book whose team is gone is no one's but the site admins', never everyone's.
+    team_id = db.Column(db.Integer, nullable=True, index=True)
+    # The surveys' uuids in the book's order; a survey not in it goes after, by HLZ ID.
+    page_order = db.Column(db.JSON, nullable=False, default=list)
+    revision = db.Column(db.Integer, nullable=False, default=1)
+    created_by = db.Column(db.Integer, db.ForeignKey('user.id', ondelete='SET NULL'), nullable=True)
+    created_by_name = db.Column(db.String(120), nullable=False, default='')
+    updated_by_name = db.Column(db.String(120), nullable=False, default='')
+    archived_at = db.Column(db.DateTime, nullable=True)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+
+
+class LzSurvey(db.Model):
+    """One LZ's survey as it is being made: what the field survey recorded, what EZ/PZ measured, and the admin's choices between them.
+
+    ``field`` is the field survey's values as typed (survey/fields.py), ``overrides`` the admin's choice where field and computed
+    disagree, ``diagram`` the web's schema-2 LZ/PZ document (target, boundary, the doghouses for the best approach and exit), and
+    ``snapshot`` the last measurement taken into the survey (survey/measure.py). ``revision`` is bumped by every save, for If-Match.
+    """
+
+    __tablename__ = 'lz_survey'
+
+    id = db.Column(db.Integer, primary_key=True)
+    uuid = db.Column(db.String(36), unique=True, nullable=False, index=True)
+    book_id = db.Column(db.Integer, db.ForeignKey('survey_book.id'), nullable=False, index=True)
+    hlz_id = db.Column(db.String(40), nullable=False, default='')
+    name = db.Column(db.String(100), nullable=False)
+    status = db.Column(db.String(12), nullable=False, default='draft')  # draft | in_review | published
+    revision = db.Column(db.Integer, nullable=False, default=1)
+    field = db.Column(db.JSON, nullable=False, default=dict)
+    overrides = db.Column(db.JSON, nullable=False, default=dict)
+    diagram = db.Column(db.JSON, nullable=True)
+    snapshot = db.Column(db.JSON, nullable=True)
+    created_by = db.Column(db.Integer, db.ForeignKey('user.id', ondelete='SET NULL'), nullable=True)
+    created_by_name = db.Column(db.String(120), nullable=False, default='')
+    updated_by = db.Column(db.Integer, db.ForeignKey('user.id', ondelete='SET NULL'), nullable=True)
+    updated_by_name = db.Column(db.String(120), nullable=False, default='')
+    created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+    archived_at = db.Column(db.DateTime, nullable=True)
+
+    # Every write says which revision it was made from (``WHERE revision = …``), and refuses (StaleDataError) when another write got
+    # there first: If-Match, checked when a request begins, does not cover a request that takes seconds to measure or publish. The
+    # routes set the next revision themselves (``version_id_generator`` False), so a change to its status alone can leave it as it is.
+    __mapper_args__ = {'version_id_col': revision, 'version_id_generator': False}
+
+
+class LzSurveyRevision(db.Model):
+    """A published revision, never changed: the survey as it was signed off, and its page (written by publishing, step L5)."""
+
+    __tablename__ = 'lz_survey_revision'
+
+    id = db.Column(db.Integer, primary_key=True)
+    survey_id = db.Column(db.Integer, db.ForeignKey('lz_survey.id'), nullable=False, index=True)
+    number = db.Column(db.Integer, nullable=False)  # REV n
+    field = db.Column(db.JSON, nullable=False)
+    overrides = db.Column(db.JSON, nullable=False)
+    diagram = db.Column(db.JSON, nullable=True)
+    snapshot = db.Column(db.JSON, nullable=True)
+    asset_ids = db.Column(db.JSON, nullable=False, default=list)
+    # The approver's name, rank, title and date, as the publishing admin entered them (docs/LZ_SURVEYS.md §3.4).
+    signoff = db.Column(db.JSON, nullable=True)
+    changes = db.Column(db.String(500), nullable=False, default='')
+    # What the page said of itself when it was published, so a reprint matches what was signed: its HLZ ID and name, the book's name
+    # and unit line, its page in the book, the date it printed, the EZ/PZ version and the slope map's opacity.
+    page = db.Column(db.JSON, nullable=True)
+    pdf_sha256 = db.Column(db.String(64), nullable=True)
+    published_by = db.Column(db.Integer, db.ForeignKey('user.id', ondelete='SET NULL'), nullable=True)
+    published_by_name = db.Column(db.String(120), nullable=False, default='')
+    published_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+
+    __table_args__ = (db.UniqueConstraint('survey_id', 'number', name='ux_lz_survey_revision_number'),)
+
+
+class LzSurveyAsset(db.Model):
+    """A photo or a 3D capture of one survey. Its bytes are in the asset store (survey/assets.py) under ``sha256``.
+
+    Taken off a survey, an asset is marked ``removed_at`` and kept: a published revision may still show it.
+    """
+
+    __tablename__ = 'lz_survey_asset'
+
+    id = db.Column(db.Integer, primary_key=True)
+    survey_id = db.Column(db.Integer, db.ForeignKey('lz_survey.id'), nullable=False, index=True)
+    kind = db.Column(db.String(20), nullable=False)  # photo_north | photo_approach | photo_other | view_3d
+    caption = db.Column(db.String(200), nullable=False, default='')
+    # The heading the picture looks down, degrees true; none when it was not recorded.
+    heading_deg = db.Column(db.Float, nullable=True)
+    # When it was taken, as the field survey wrote it ("OCT 2023").
+    taken_on = db.Column(db.String(40), nullable=False, default='')
+    # A 3D capture's camera (heading, tilt, range) and its tileset's survey and year (step L3).
+    pose = db.Column(db.JSON, nullable=True)
+    content_type = db.Column(db.String(40), nullable=False)
+    width = db.Column(db.Integer, nullable=False, default=0)
+    height = db.Column(db.Integer, nullable=False, default=0)
+    size_bytes = db.Column(db.Integer, nullable=False)
+    sha256 = db.Column(db.String(64), nullable=False, index=True)
+    created_by = db.Column(db.Integer, db.ForeignKey('user.id', ondelete='SET NULL'), nullable=True)
+    created_by_name = db.Column(db.String(120), nullable=False, default='')
+    created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+    removed_at = db.Column(db.DateTime, nullable=True)
+
+
+class SurveyBookPrint(db.Model):
+    """A book's PDF (docs/LZ_SURVEYS.md §5, step L6), printed in the background when someone asks and kept, in the asset store under
+    its SHA-256, until a page in the book changes: ``fingerprint`` names what it holds (survey/book.py). One row a print; the newest
+    for a fingerprint is the one that counts, and older ones (and their PDFs) are let go once a newer is printed."""
+
+    __tablename__ = 'survey_book_print'
+
+    id = db.Column(db.Integer, primary_key=True)
+    book_id = db.Column(db.Integer, db.ForeignKey('survey_book.id'), nullable=False, index=True)
+    fingerprint = db.Column(db.String(64), nullable=False, index=True)
+    state = db.Column(db.String(10), nullable=False, default='printing')  # printing | ready | failed
+    pages = db.Column(db.Integer, nullable=False, default=0)
+    done_pages = db.Column(db.Integer, nullable=False, default=0)
+    pdf_sha256 = db.Column(db.String(64), nullable=True)
+    size_bytes = db.Column(db.Integer, nullable=True)
+    error = db.Column(db.String(300), nullable=True)
+    requested_by = db.Column(db.Integer, db.ForeignKey('user.id', ondelete='SET NULL'), nullable=True)
+    requested_by_name = db.Column(db.String(120), nullable=False, default='')
+    started_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+    finished_at = db.Column(db.DateTime, nullable=True)
+
+
+class LzSurveyImport(db.Model):
+    """Where a survey the import made came from, and what is left to check on it (docs/LZ_SURVEYS.md §6): the old book's page, what
+    could not be read there, and how its measuring in the background stands. One for each survey the import made, none for the rest.
+
+    Kept apart from the survey: the background measuring writes its ``state`` here while an editor may be saving the survey, and the
+    survey's own revision moves only when its content does (a boundary found, a snapshot taken).
+    """
+
+    __tablename__ = 'lz_survey_import'
+
+    id = db.Column(db.Integer, primary_key=True)
+    survey_id = db.Column(db.Integer, db.ForeignKey('lz_survey.id'), nullable=False, unique=True, index=True)
+    source = db.Column(db.String(200), nullable=False, default='')  # the old book's file name
+    page = db.Column(db.Integer, nullable=True)
+    # {unread: [...], blank: [...], warnings: [...]}: what the page did not say, said with nothing after it, or said in a way to check.
+    notes = db.Column(db.JSON, nullable=False, default=dict)
+    # queued | finding | measuring | done | no_target | no_boundary | failed | changed (survey/importing.py)
+    state = db.Column(db.String(12), nullable=False, default='queued')
+    reason = db.Column(db.String(300), nullable=True)
+    imported_by = db.Column(db.Integer, db.ForeignKey('user.id', ondelete='SET NULL'), nullable=True)
+    imported_by_name = db.Column(db.String(120), nullable=False, default='')
+    imported_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+    checked_by_name = db.Column(db.String(120), nullable=True)
+    checked_at = db.Column(db.DateTime, nullable=True)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)

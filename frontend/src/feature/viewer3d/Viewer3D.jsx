@@ -5,6 +5,11 @@ import { MAPBOX_IMAGERY } from "../mapStyles/mapStyles";
 import { createTerrainProvider } from "./terrainProvider";
 import { drawRoutes, routePositions } from "./routeEntities";
 import Compass3D from "./Compass3D";
+import { framingRange, lzSphere } from "./framing";
+import {
+  BACKGROUND, CAMERA_HEADING_DEG, CAMERA_PITCH_DEG, CONTEXT_SCREEN_SPACE_ERROR, CORE_SCREEN_SPACE_ERROR,
+  DEFAULT_POINT_SIZE_PX, EDL_RADIUS, EDL_STRENGTH, FRAME_SECONDS, POINT_SIZE_RANGE,
+} from "./sceneSettings";
 // Cesium's own stylesheet sizes .cesium-widget to fill its container. Without
 // it the widget has no dimensions and the canvas falls back to its 300x150
 // default, so the scene renders into a postage stamp regardless of layout.
@@ -20,20 +25,15 @@ import "./viewer3d.css";
 // through to the fallback colour. The only other thing a style set was
 // pointSize, which attenuation below overrides anyway.
 
-// Opening view: looking down at 35 degrees from the north-west, far enough
-// back to hold the whole area of interest. Shallow enough that treelines and
-// obstruction heights read against the horizon, steep enough to still see the
-// landing surface itself.
-const CAMERA_HEADING_DEG = -30;
-const CAMERA_PITCH_DEG = -35;
-const CAMERA_RANGE_FACTOR = 2.2;
-
-/** Frame a bounding sphere the way the view opens: oblique, from the north-west. */
-const frameSphere = (Cesium, camera, sphere, { duration } = {}) => {
+/**
+ * Frame a bounding sphere the way the view opens: oblique, from the north-west, far enough back to hold it across the view however narrow
+ * the view is (framing.js). ``view`` turns it another way: an LZ survey's capture looks down the best approach (feature/surveys).
+ */
+const frameSphere = (Cesium, camera, sphere, { duration, view } = {}) => {
   const offset = new Cesium.HeadingPitchRange(
-    Cesium.Math.toRadians(CAMERA_HEADING_DEG),
-    Cesium.Math.toRadians(CAMERA_PITCH_DEG),
-    sphere.radius * CAMERA_RANGE_FACTOR,
+    Cesium.Math.toRadians(view?.headingDeg ?? CAMERA_HEADING_DEG),
+    Cesium.Math.toRadians(view?.pitchDeg ?? CAMERA_PITCH_DEG),
+    framingRange(sphere.radius, camera.frustum.aspectRatio, camera.frustum.fov),
   );
   if (duration === undefined) {
     camera.lookAt(sphere.center, offset);
@@ -45,12 +45,6 @@ const frameSphere = (Cesium, camera, sphere, { duration } = {}) => {
   }
 };
 
-// Point size and shading are a matter of taste and of display density, and
-// getting them right by exchanging screenshots is slow. These are the
-// defaults; window.__viewer3d.tune() changes them live in development.
-const DEFAULT_POINT_SIZE_PX = 5;
-const POINT_SIZE_RANGE = [2, 16];
-
 // Remembered across sessions. Point size is the one setting that depends on
 // the display as much as the data — a retina panel doubles it — so the right
 // value is the viewer's to pick, not one this code can know.
@@ -61,11 +55,6 @@ const storedPointSize = () => {
   return Number.isFinite(stored) && stored >= POINT_SIZE_RANGE[0]
     && stored <= POINT_SIZE_RANGE[1] ? stored : DEFAULT_POINT_SIZE_PX;
 };
-
-// The ring is thinned landscape at several metres between points, so pulling
-// it in at the core's fidelity would cost bandwidth for detail that is not
-// there. Looser error means it streams coarse and stays cheap.
-const CONTEXT_SCREEN_SPACE_ERROR = 8;
 
 /** What the scene actually contains, for diagnosing a render from outside it. */
 const report = (viewer, tileset) => {
@@ -110,8 +99,17 @@ const report = (viewer, tileset) => {
  */
 const NO_ROUTES = [];
 
-const Viewer3D = ({ tilesetUrl, contextUrl = null, requiresAuth = true,
-                   showTerrain = true, routeScene = NO_ROUTES, onReady }) => {
+// A streamed survey's points are coloured from USDA's NAIP imagery, served by
+// USGS The National Map (backend lidar/photo.py), which asks to be credited.
+const STREAMED_CREDIT = "LiDAR: USGS 3DEP · Point colour: USDA NAIP, from USGS The National Map";
+
+/**
+ * ``view`` ({ headingDeg, pitchDeg }) is the way the view opens and *LZ* flies back to, where it is not the usual one. ``capturable``
+ * keeps each frame's pixels to be read once drawn (WebGL's preserveDrawingBuffer), for a capture of the view (an LZ survey's page);
+ * a view that is only looked at does without it.
+ */
+const Viewer3D = ({ tilesetUrl, contextUrl = null, frame = null, requiresAuth = true,
+                   showTerrain = true, routeScene = NO_ROUTES, view = null, capturable = false, onReady }) => {
   const containerRef = useRef(null);
   const [status, setStatus] = useState({ state: "loading", detail: "" });
 
@@ -121,6 +119,12 @@ const Viewer3D = ({ tilesetUrl, contextUrl = null, requiresAuth = true,
   // they arrived — the drawing effect below only runs when they change.
   const routeSceneRef = useRef(routeScene);
   routeSceneRef.current = routeScene;
+  // Read when the view opens and when *LZ* is pressed, never a reason to
+  // load the tileset again.
+  const frameRef = useRef(frame);
+  frameRef.current = frame;
+  const viewRef = useRef(view);
+  viewRef.current = view;
   const [pointSize, setPointSize] = useState(storedPointSize);
 
   useEffect(() => {
@@ -160,9 +164,10 @@ const Viewer3D = ({ tilesetUrl, contextUrl = null, requiresAuth = true,
           // configured. Harmless — the layer is replaced below either way —
           // but it puts a failed request in the console of every session.
           baseLayer: false,
+          ...(capturable ? { contextOptions: { webgl: { preserveDrawingBuffer: true } } } : {}),
         });
 
-        viewer.scene.backgroundColor = Cesium.Color.fromCssColorString("#05080d");
+        viewer.scene.backgroundColor = Cesium.Color.fromCssColorString(BACKGROUND);
 
         // The ground surface, drawn from the same Mapbox satellite imagery the
         // 2D map uses. Without this the scene is points in a void, which is
@@ -204,7 +209,9 @@ const Viewer3D = ({ tilesetUrl, contextUrl = null, requiresAuth = true,
           // 8 the viewer was refusing to load the fine tiles at all, which
           // capped how dense the cloud could ever look no matter what was
           // built. An LZ is small enough to afford loading it properly.
-          maximumScreenSpaceError: 2,
+          maximumScreenSpaceError: CORE_SCREEN_SPACE_ERROR,
+          // Only a streamed survey comes with a frame (useLidarTileset).
+          ...(frameRef.current ? { credit: STREAMED_CREDIT, showCreditsOnScreen: true } : {}),
         });
         if (cancelled) return;
 
@@ -231,8 +238,8 @@ const Viewer3D = ({ tilesetUrl, contextUrl = null, requiresAuth = true,
         // which is what made returns read as separate tiles with borders
         // rather than as a continuous canopy. Enough shading to show relief,
         // not so much that it draws the points.
-        shading.eyeDomeLightingStrength = 0.5;
-        shading.eyeDomeLightingRadius = 0.5;
+        shading.eyeDomeLightingStrength = EDL_STRENGTH;
+        shading.eyeDomeLightingRadius = EDL_RADIUS;
         // Attenuation grows point size as the camera approaches and this caps
         // it, in CSS pixels, which a retina display then doubles. Too low and
         // close-up views thin out until vegetation seems to vanish; too high
@@ -257,8 +264,8 @@ const Viewer3D = ({ tilesetUrl, contextUrl = null, requiresAuth = true,
             const ringShading = ring.pointCloudShading;
             ringShading.attenuation = true;
             ringShading.eyeDomeLighting = true;
-            ringShading.eyeDomeLightingStrength = 0.5;
-            ringShading.eyeDomeLightingRadius = 0.5;
+            ringShading.eyeDomeLightingStrength = EDL_STRENGTH;
+            ringShading.eyeDomeLightingRadius = EDL_RADIUS;
             ringShading.maximumAttenuation = storedPointSize();
             sceneRef.current.tilesets.push(ring);
           }).catch(() => {
@@ -287,7 +294,7 @@ const Viewer3D = ({ tilesetUrl, contextUrl = null, requiresAuth = true,
         // outside it. In development the scene is reachable from the console
         // so its real state can be read rather than inferred:
         //   window.__viewer3d.report()
-        if (process.env.NODE_ENV === "development") {
+        if (import.meta.env.DEV) {
           window.__viewer3d = {
             viewer,
             tileset,
@@ -322,7 +329,7 @@ const Viewer3D = ({ tilesetUrl, contextUrl = null, requiresAuth = true,
         // An LZ is also read obliquely, not from directly overhead: the whole
         // reason for a 3D view is seeing how tall the obstructions are on
         // approach, and that is invisible from straight down.
-        frameSphere(Cesium, viewer.camera, tileset.boundingSphere);
+        frameSphere(Cesium, viewer.camera, lzSphere(Cesium, tileset, frameRef.current), { view: viewRef.current });
       })
       .catch((error) => {
         if (!cancelled) {
@@ -337,7 +344,7 @@ const Viewer3D = ({ tilesetUrl, contextUrl = null, requiresAuth = true,
       // destroy they outlive unmount and the next viewer fails to get a context.
       if (viewer && !viewer.isDestroyed()) viewer.destroy();
     };
-  }, [tilesetUrl, contextUrl, requiresAuth, showTerrain, onReady]);
+  }, [tilesetUrl, contextUrl, requiresAuth, showTerrain, capturable, onReady]);
 
   useEffect(() => {
     const { viewer, Cesium, routes } = sceneRef.current;
@@ -351,7 +358,8 @@ const Viewer3D = ({ tilesetUrl, contextUrl = null, requiresAuth = true,
   const frameLz = () => {
     const { viewer, Cesium, tilesets } = sceneRef.current;
     if (!viewer || viewer.isDestroyed() || !tilesets[0]) return;
-    frameSphere(Cesium, viewer.camera, tilesets[0].boundingSphere, { duration: 1.2 });
+    frameSphere(Cesium, viewer.camera, lzSphere(Cesium, tilesets[0], frameRef.current),
+                { duration: FRAME_SECONDS, view: viewRef.current });
   };
 
   const frameRoutes = () => {
@@ -360,7 +368,7 @@ const Viewer3D = ({ tilesetUrl, contextUrl = null, requiresAuth = true,
     const positions = routePositions(Cesium, routeScene);
     if (positions.length === 0) return;
     frameSphere(Cesium, viewer.camera, Cesium.BoundingSphere.fromPoints(positions),
-                { duration: 1.2 });
+                { duration: FRAME_SECONDS });
   };
 
   return (

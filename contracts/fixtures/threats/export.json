@@ -1,0 +1,309 @@
+{
+ "nowUtc": "2026-10-02T12:34:56Z",
+ "dtg": "02123456102026",
+ "threats": [
+  {
+   "name": "SA-6 Gainful",
+   "milstdId": "SHGPEWMAI------",
+   "lat": 34.5,
+   "lon": -84.25,
+   "information": "Default threat",
+   "source": "SOF",
+   "showThreat": true,
+   "radars": [
+    {
+     "type": 0,
+     "rangeNmi": 25,
+     "antennaHeightFt": 20,
+     "aglNotMsl": true,
+     "showMask": true,
+     "showRangeRings": true,
+     "bands": [
+      {
+       "altFt": 50,
+       "color": "#aaaaaa",
+       "alpha": 0.3,
+       "colorIndex": 1,
+       "viewable": true
+      },
+      {
+       "altFt": 250,
+       "color": "#aaaaaa",
+       "alpha": 0.3,
+       "colorIndex": 3,
+       "viewable": true
+      },
+      {
+       "altFt": 500,
+       "color": "#aaaaaa",
+       "alpha": 0.3,
+       "colorIndex": 5,
+       "viewable": true
+      }
+     ]
+    },
+    {
+     "type": 1,
+     "rangeNmi": 15,
+     "antennaHeightFt": 20,
+     "aglNotMsl": true,
+     "showMask": true,
+     "showRangeRings": true,
+     "bands": [
+      {
+       "altFt": 50,
+       "color": "#aaaaaa",
+       "alpha": 0.3,
+       "colorIndex": 2,
+       "viewable": true
+      },
+      {
+       "altFt": 250,
+       "color": "#aaaaaa",
+       "alpha": 0.3,
+       "colorIndex": 4,
+       "viewable": true
+      },
+      {
+       "altFt": 500,
+       "color": "#aaaaaa",
+       "alpha": 0.3,
+       "colorIndex": 0,
+       "viewable": true
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "name": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA😀tail",
+   "milstdId": "SHGPEWMAI------EXTRA",
+   "lat": 33.123456789,
+   "lon": -83.987654321,
+   "information": "éééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééé",
+   "source": "SSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSS",
+   "showThreat": true,
+   "radars": [
+    {
+     "type": 1,
+     "rangeNmi": 8.5,
+     "antennaHeightFt": 33.7,
+     "aglNotMsl": false,
+     "showMask": true,
+     "showRangeRings": true,
+     "bands": [
+      {
+       "altFt": 50,
+       "color": "#aaaaaa",
+       "alpha": 0.3,
+       "colorIndex": 2,
+       "viewable": true
+      },
+      {
+       "altFt": 250,
+       "color": "#aaaaaa",
+       "alpha": 0.3,
+       "colorIndex": 4,
+       "viewable": true
+      },
+      {
+       "altFt": 500,
+       "color": "#aaaaaa",
+       "alpha": 0.3,
+       "colorIndex": 0,
+       "viewable": true
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "name": "",
+   "milstdId": "",
+   "lat": -12.5,
+   "lon": 130.75,
+   "information": "",
+   "source": "",
+   "showThreat": false,
+   "radars": [
+    {
+     "type": 0,
+     "rangeNmi": 12,
+     "antennaHeightFt": 20,
+     "aglNotMsl": true,
+     "showMask": false,
+     "showRangeRings": false,
+     "bands": [
+      {
+       "altFt": 50,
+       "color": "#aaaaaa",
+       "alpha": 0.3,
+       "colorIndex": 1,
+       "viewable": true
+      },
+      {
+       "altFt": 250,
+       "color": "#aaaaaa",
+       "alpha": 0.3,
+       "colorIndex": 3,
+       "viewable": true
+      },
+      {
+       "altFt": 500,
+       "color": "#aaaaaa",
+       "alpha": 0.3,
+       "colorIndex": 5,
+       "viewable": true
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "name": "Two bands",
+   "milstdId": "SHGPEWMAI------",
+   "lat": 35.0,
+   "lon": -85.0,
+   "information": "",
+   "source": "SOF",
+   "showThreat": true,
+   "radars": [
+    {
+     "type": 1,
+     "rangeNmi": 10,
+     "antennaHeightFt": 20,
+     "aglNotMsl": true,
+     "showMask": true,
+     "showRangeRings": true,
+     "bands": [
+      {
+       "altFt": 250.9,
+       "color": "#ff0000",
+       "alpha": 0.4,
+       "colorIndex": 7,
+       "viewable": false
+      },
+      {
+       "altFt": -0.4,
+       "color": "#00ff00",
+       "alpha": 0.4,
+       "colorIndex": 8,
+       "viewable": true
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "name": "Many bands",
+   "milstdId": "SHGPEWMAI------",
+   "lat": 36.0,
+   "lon": -86.0,
+   "information": "",
+   "source": "SOF",
+   "showThreat": true,
+   "radars": [
+    {
+     "type": 0,
+     "rangeNmi": 30,
+     "antennaHeightFt": 20,
+     "aglNotMsl": true,
+     "showMask": true,
+     "showRangeRings": true,
+     "bands": [
+      {
+       "altFt": 100,
+       "color": "#111111",
+       "alpha": 0.2,
+       "colorIndex": 9,
+       "viewable": true
+      },
+      {
+       "altFt": 200,
+       "color": "#222222",
+       "alpha": 0.2,
+       "colorIndex": 10,
+       "viewable": false
+      },
+      {
+       "altFt": 300,
+       "color": "#333333",
+       "alpha": 0.2,
+       "colorIndex": 11,
+       "viewable": true
+      },
+      {
+       "altFt": 400,
+       "color": "#444444",
+       "alpha": 0.2,
+       "colorIndex": 12,
+       "viewable": false
+      }
+     ]
+    },
+    {
+     "type": 1,
+     "rangeNmi": 5,
+     "antennaHeightFt": 20,
+     "aglNotMsl": true,
+     "showMask": true,
+     "showRangeRings": true,
+     "bands": []
+    }
+   ]
+  },
+  {
+   "name": "Marker only",
+   "milstdId": "SHGPUCI----K---",
+   "lat": 37.0,
+   "lon": -87.0,
+   "information": "No radar",
+   "source": "SOF",
+   "showThreat": true,
+   "radars": []
+  },
+  {
+   "name": "   ",
+   "milstdId": " ",
+   "lat": 38.0,
+   "lon": -88.0,
+   "information": " ",
+   "source": " ",
+   "showThreat": true,
+   "radars": [
+    {
+     "type": 0,
+     "rangeNmi": 5,
+     "antennaHeightFt": 20,
+     "aglNotMsl": true,
+     "showMask": true,
+     "showRangeRings": true,
+     "bands": [
+      {
+       "altFt": 50,
+       "color": "#aaaaaa",
+       "alpha": 0.3,
+       "colorIndex": 1,
+       "viewable": true
+      },
+      {
+       "altFt": 250,
+       "color": "#aaaaaa",
+       "alpha": 0.3,
+       "colorIndex": 3,
+       "viewable": true
+      },
+      {
+       "altFt": 500,
+       "color": "#aaaaaa",
+       "alpha": 0.3,
+       "colorIndex": 5,
+       "viewable": true
+      }
+     ]
+    }
+   ]
+  }
+ ],
+ "tables": "sqlite/tables.json, key threats.ths"
+}

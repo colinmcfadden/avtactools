@@ -11,7 +11,8 @@ import {
   rotorRadiusFt,
 } from '../aircraft/aircraftProfiles';
 
-const getHeloIcon = (rot, sizePx = 40, iconKey = 'uh60') => {
+// `locked`: nothing may move it (a read-only Mission Pack), so it has no move or rotate controls.
+const getHeloIcon = (rot, sizePx = 40, iconKey = 'uh60', locked = false) => {
   const displayRot = Math.round(((rot % 360) + 360) % 360);
   const boxWidth = Math.max(sizePx + 100, 140);
 
@@ -22,12 +23,12 @@ const getHeloIcon = (rot, sizePx = 40, iconKey = 'uh60') => {
             
             <div class="helo-interaction-group" style="position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); width: ${boxWidth}px; height: ${sizePx + 40}px; pointer-events: auto; display: flex; align-items: center; justify-content: center; background: rgba(0,0,0,0.01); border-radius: 8px;">
                 
-                <div class="map-object-controls dh-controls" style="position: absolute; left: 6px; right: 6px; top: 0; bottom: 0; display: flex; justify-content: space-between; align-items: center; z-index: 10; pointer-events: none;">
+                ${locked ? "" : `<div class="map-object-controls dh-controls" style="position: absolute; left: 6px; right: 6px; top: 0; bottom: 0; display: flex; justify-content: space-between; align-items: center; z-index: 10; pointer-events: none;">
                     ${mapObjectControlMarkup({ type: "rotate", title: "Drag to rotate helicopter", className: "dh-btn dh-rotate" })}
                     ${mapObjectControlMarkup({ type: "move", title: "Drag to move helicopter", className: "dh-btn dh-move" })}
-                </div>
+                </div>`}
 
-                <div class="helo-body-wrapper" style="position: relative; display: flex; justify-content: center; align-items: center; width: ${sizePx}px; height: ${sizePx}px; z-index: 20; cursor: grab;">
+                <div class="helo-body-wrapper" style="position: relative; display: flex; justify-content: center; align-items: center; width: ${sizePx}px; height: ${sizePx}px; z-index: 20; cursor: ${locked ? "default" : "grab"};">
                     <div class="heading-readout" data-type="heading" style="
                         position: absolute; 
                         top: -15px; 
@@ -77,6 +78,8 @@ const Helicopter = ({
 
   const profile = profileForAsset(asset, profiles, activeProfile) || FALLBACK_PROFILE;
   const profileRef = useRef(profile);
+  // No updateAsset (a read-only Mission Pack): it is shown, but cannot be moved, turned or deleted.
+  const locked = !updateAsset;
 
   useEffect(() => {
     stateRef.current = asset;
@@ -170,6 +173,15 @@ const Helicopter = ({
     return { x: e.clientX, y: e.clientY };
   };
 
+  // A move or turn the pack became read-only during (the owner finished it, or this person's role
+  // was lowered) has nothing to take it when the finger lifts: show the helicopter as stored, locked.
+  const putBack = (markerInst) => {
+    const stored = stateRef.current;
+    markerInst.setLatLng([stored.lat, stored.lon]);
+    markerInst.setIcon(getHeloIcon(stored.rotation || 0, calculateSizePx(stored.lat), profileRef.current?.icon_key, true));
+    setTimeout(() => attachListeners(markerInst), 50);
+  };
+
   const attachListeners = (markerInst) => {
     const element = markerInst.getElement();
     if (!element) return;
@@ -197,6 +209,7 @@ const Helicopter = ({
         isRotating = true;
         rotateBtn.classList.add('active-rotate');
         map.dragging.disable();
+        const startRotation = stateRef.current.rotation;
 
         if (markerInst._icon) {
             L.DomUtil.addClass(markerInst._icon, 'mobile-lifting');
@@ -235,7 +248,14 @@ const Helicopter = ({
           document.removeEventListener("mouseup", onRotateEnd);
           document.removeEventListener("touchend", onRotateEnd);
 
-          updateRef.current(asset.id, {
+          const update = updateRef.current;
+          if (!update) {
+            // The turn is written onto the asset as it goes, so it comes off again.
+            stateRef.current.rotation = startRotation;
+            putBack(markerInst);
+            return;
+          }
+          update(asset.id, {
             rotation: stateRef.current.rotation,
           });
         };
@@ -308,7 +328,9 @@ const Helicopter = ({
             if (markerInst._icon) L.DomUtil.removeClass(markerInst._icon, 'mobile-lifting');
             if (linesLayerRef.current) linesLayerRef.current.clearLayers();
             const pos = markerInst.getLatLng();
-            updateRef.current(asset.id, { lat: pos.lat, lon: pos.lng });
+            const update = updateRef.current;
+            if (update) update(asset.id, { lat: pos.lat, lon: pos.lng });
+            else putBack(markerInst);
           } else {
             wrapper.classList.toggle('show-controls');
           }
@@ -330,7 +352,9 @@ const Helicopter = ({
         wrapper.classList.toggle('show-controls');
       });
 
+      // Without deleteAsset the right-click goes on to the map's own menu.
       L.DomEvent.on(bodyWrapper, 'contextmenu', (e) => {
+        if (!deleteAssetRef.current) return;
         L.DomEvent.stop(e);
         if (window.confirm("Delete this helicopter?")) deleteAssetRef.current(asset.id);
       });
@@ -341,7 +365,7 @@ const Helicopter = ({
     const initialSize = calculateSizePx(asset.lat);
 
     const helo = L.marker([asset.lat, asset.lon], {
-      icon: getHeloIcon(asset.rotation || 0, initialSize, profileRef.current?.icon_key),
+      icon: getHeloIcon(asset.rotation || 0, initialSize, profileRef.current?.icon_key, !updateRef.current),
       draggable: false, 
       zIndexOffset: 500,
     }).addTo(map);
@@ -354,7 +378,7 @@ const Helicopter = ({
 
     const handleZoom = () => {
       const newSize = calculateSizePx(stateRef.current.lat);
-      helo.setIcon(getHeloIcon(stateRef.current.rotation, newSize, profileRef.current?.icon_key));
+      helo.setIcon(getHeloIcon(stateRef.current.rotation, newSize, profileRef.current?.icon_key, !updateRef.current));
       setTimeout(() => attachListeners(helo), 50);
     };
     map.on("zoomend", handleZoom);
@@ -384,9 +408,9 @@ const Helicopter = ({
     const currentSize = calculateSizePx(asset.lat);
     
     heloRef.current.setLatLng([asset.lat, asset.lon]);
-    heloRef.current.setIcon(getHeloIcon(asset.rotation || 0, currentSize, profile.icon_key));
+    heloRef.current.setIcon(getHeloIcon(asset.rotation || 0, currentSize, profile.icon_key, locked));
     setTimeout(() => attachListeners(heloRef.current), 50);
-  }, [asset.lat, asset.lon, asset.rotation, map, profile.icon_key, profile.rotor_diameter_m]);
+  }, [asset.lat, asset.lon, asset.rotation, map, profile.icon_key, profile.rotor_diameter_m, locked]);
 
   return null;
 };

@@ -1,0 +1,495 @@
+{
+  "formatVersion": 1,
+  "database": {
+    "version": 3,
+    "identityHash": "127ff05bd86435ac7526adc0bb0a203b",
+    "entities": [
+      {
+        "tableName": "record",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`kind` TEXT NOT NULL, `uuid` TEXT NOT NULL, `serverId` INTEGER, `baseRevision` INTEGER, `name` TEXT NOT NULL, `data` TEXT NOT NULL, `dirty` INTEGER NOT NULL, `deleted` INTEGER NOT NULL, `localVersion` INTEGER NOT NULL, `conflictOf` TEXT, `fileId` TEXT, `fileName` TEXT, PRIMARY KEY(`kind`, `uuid`))",
+        "fields": [
+          {
+            "fieldPath": "kind",
+            "columnName": "kind",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "uuid",
+            "columnName": "uuid",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "serverId",
+            "columnName": "serverId",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "baseRevision",
+            "columnName": "baseRevision",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "name",
+            "columnName": "name",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "data",
+            "columnName": "data",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "dirty",
+            "columnName": "dirty",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "deleted",
+            "columnName": "deleted",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "localVersion",
+            "columnName": "localVersion",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "conflictOf",
+            "columnName": "conflictOf",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "fileId",
+            "columnName": "fileId",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "fileName",
+            "columnName": "fileName",
+            "affinity": "TEXT"
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "kind",
+            "uuid"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_record_kind_deleted",
+            "unique": false,
+            "columnNames": [
+              "kind",
+              "deleted"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_record_kind_deleted` ON `${TABLE_NAME}` (`kind`, `deleted`)"
+          }
+        ]
+      },
+      {
+        "tableName": "outbox",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`seq` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `kind` TEXT NOT NULL, `uuid` TEXT NOT NULL, `operation` TEXT NOT NULL, `sentKey` TEXT, `sentVersion` INTEGER, `sentBaseRevision` INTEGER, `sentName` TEXT, `sentData` TEXT, `sentFileId` TEXT, `sentFileName` TEXT, `attempts` INTEGER NOT NULL, `lastError` TEXT, `blocked` INTEGER NOT NULL)",
+        "fields": [
+          {
+            "fieldPath": "seq",
+            "columnName": "seq",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "kind",
+            "columnName": "kind",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "uuid",
+            "columnName": "uuid",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "operation",
+            "columnName": "operation",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "sentKey",
+            "columnName": "sentKey",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "sentVersion",
+            "columnName": "sentVersion",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "sentBaseRevision",
+            "columnName": "sentBaseRevision",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "sentName",
+            "columnName": "sentName",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "sentData",
+            "columnName": "sentData",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "sentFileId",
+            "columnName": "sentFileId",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "sentFileName",
+            "columnName": "sentFileName",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "attempts",
+            "columnName": "attempts",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "lastError",
+            "columnName": "lastError",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "blocked",
+            "columnName": "blocked",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": true,
+          "columnNames": [
+            "seq"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_outbox_kind_uuid_operation",
+            "unique": true,
+            "columnNames": [
+              "kind",
+              "uuid",
+              "operation"
+            ],
+            "orders": [],
+            "createSql": "CREATE UNIQUE INDEX IF NOT EXISTS `index_outbox_kind_uuid_operation` ON `${TABLE_NAME}` (`kind`, `uuid`, `operation`)"
+          }
+        ]
+      },
+      {
+        "tableName": "sync_state",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`key` TEXT NOT NULL, `value` INTEGER NOT NULL, PRIMARY KEY(`key`))",
+        "fields": [
+          {
+            "fieldPath": "key",
+            "columnName": "key",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "value",
+            "columnName": "value",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "key"
+          ]
+        }
+      },
+      {
+        "tableName": "blob",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` TEXT NOT NULL, `bytes` BLOB NOT NULL, PRIMARY KEY(`id`))",
+        "fields": [
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "bytes",
+            "columnName": "bytes",
+            "affinity": "BLOB",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "id"
+          ]
+        }
+      },
+      {
+        "tableName": "pack",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`uuid` TEXT NOT NULL, `userId` INTEGER NOT NULL, `meta` TEXT NOT NULL, `members` TEXT NOT NULL, `itemOrder` TEXT NOT NULL, `seq` INTEGER NOT NULL, `readOnly` INTEGER NOT NULL, `gone` TEXT, `diverged` INTEGER NOT NULL, `openedAt` INTEGER NOT NULL, PRIMARY KEY(`uuid`))",
+        "fields": [
+          {
+            "fieldPath": "uuid",
+            "columnName": "uuid",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "userId",
+            "columnName": "userId",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "meta",
+            "columnName": "meta",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "members",
+            "columnName": "members",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "itemOrder",
+            "columnName": "itemOrder",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "seq",
+            "columnName": "seq",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "readOnly",
+            "columnName": "readOnly",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "gone",
+            "columnName": "gone",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "diverged",
+            "columnName": "diverged",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "openedAt",
+            "columnName": "openedAt",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "uuid"
+          ]
+        }
+      },
+      {
+        "tableName": "pack_item",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`packUuid` TEXT NOT NULL, `uuid` TEXT NOT NULL, `kind` TEXT NOT NULL, `name` TEXT NOT NULL, `data` TEXT NOT NULL, `deleted` INTEGER NOT NULL, `info` TEXT, PRIMARY KEY(`packUuid`, `uuid`))",
+        "fields": [
+          {
+            "fieldPath": "packUuid",
+            "columnName": "packUuid",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "uuid",
+            "columnName": "uuid",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "kind",
+            "columnName": "kind",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "name",
+            "columnName": "name",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "data",
+            "columnName": "data",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "deleted",
+            "columnName": "deleted",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "info",
+            "columnName": "info",
+            "affinity": "TEXT"
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "packUuid",
+            "uuid"
+          ]
+        }
+      },
+      {
+        "tableName": "pack_op_outbox",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`localSeq` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `packUuid` TEXT NOT NULL, `userId` INTEGER NOT NULL, `clientOpId` TEXT NOT NULL, `op` TEXT NOT NULL, `state` TEXT NOT NULL, `reason` TEXT, `dropOrder` INTEGER, `seq` INTEGER)",
+        "fields": [
+          {
+            "fieldPath": "localSeq",
+            "columnName": "localSeq",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "packUuid",
+            "columnName": "packUuid",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "userId",
+            "columnName": "userId",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "clientOpId",
+            "columnName": "clientOpId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "op",
+            "columnName": "op",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "state",
+            "columnName": "state",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "reason",
+            "columnName": "reason",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "dropOrder",
+            "columnName": "dropOrder",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "seq",
+            "columnName": "seq",
+            "affinity": "INTEGER"
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": true,
+          "columnNames": [
+            "localSeq"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_pack_op_outbox_packUuid_clientOpId",
+            "unique": true,
+            "columnNames": [
+              "packUuid",
+              "clientOpId"
+            ],
+            "orders": [],
+            "createSql": "CREATE UNIQUE INDEX IF NOT EXISTS `index_pack_op_outbox_packUuid_clientOpId` ON `${TABLE_NAME}` (`packUuid`, `clientOpId`)"
+          },
+          {
+            "name": "index_pack_op_outbox_packUuid_state",
+            "unique": false,
+            "columnNames": [
+              "packUuid",
+              "state"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_pack_op_outbox_packUuid_state` ON `${TABLE_NAME}` (`packUuid`, `state`)"
+          }
+        ]
+      },
+      {
+        "tableName": "pack_own",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`packUuid` TEXT NOT NULL, `itemUuid` TEXT NOT NULL, `own` TEXT NOT NULL, PRIMARY KEY(`packUuid`, `itemUuid`))",
+        "fields": [
+          {
+            "fieldPath": "packUuid",
+            "columnName": "packUuid",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "itemUuid",
+            "columnName": "itemUuid",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "own",
+            "columnName": "own",
+            "affinity": "TEXT",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "packUuid",
+            "itemUuid"
+          ]
+        }
+      }
+    ],
+    "setupQueries": [
+      "CREATE TABLE IF NOT EXISTS room_master_table (id INTEGER PRIMARY KEY,identity_hash TEXT)",
+      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, '127ff05bd86435ac7526adc0bb0a203b')"
+    ]
+  }
+}

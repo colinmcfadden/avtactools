@@ -6,6 +6,11 @@ import { mapObjectControlMarkup } from "../../utils/mapObjectControls";
 
 const UnitMarker = ({ data, updateUnitPosition, deleteUnit, onEdit }) => {
   const markerRef = useRef(null);
+  // No updateUnitPosition (a read-only Mission Pack): it is shown, but cannot be moved.
+  const movable = Boolean(updateUnitPosition);
+  const moveControl = movable
+    ? `<div class="unit-object-controls">${mapObjectControlMarkup({ type: "move", title: "Drag to move unit", size: 28 })}</div>`
+    : "";
 
   // 1. Create the Icon (Memoized to prevent flickering). We use divIcon so it
   // can be wrapped in the drag-lifter for the mobile drag-lift effect.
@@ -26,7 +31,7 @@ const UnitMarker = ({ data, updateUnitPosition, deleteUnit, onEdit }) => {
         html: `
           <div class="drag-lifter map-object-shell unit-object-shell" style="position:relative;width:${parts.size.width}px;height:${parts.size.height}px;display:flex;align-items:center;justify-content:center;">
             ${parts.svg}
-            <div class="unit-object-controls">${mapObjectControlMarkup({ type: "move", title: "Drag to move unit", size: 28 })}</div>
+            ${moveControl}
           </div>`,
         iconSize: [parts.size.width, parts.size.height],
         iconAnchor: [parts.anchor.x, parts.anchor.y],
@@ -38,13 +43,13 @@ const UnitMarker = ({ data, updateUnitPosition, deleteUnit, onEdit }) => {
       html: `
             <div class="drag-lifter map-object-shell unit-object-shell" style="position: relative; width: 100%; height: 100%; display: flex; align-items: center; justify-content: center;">
                 <img src="${data.path}" style="width: 50px; height: 30px; object-fit: contain; pointer-events: none;" draggable="false" />
-                <div class="unit-object-controls">${mapObjectControlMarkup({ type: "move", title: "Drag to move unit", size: 28 })}</div>
+                ${moveControl}
             </div>
         `,
       iconSize: [50, 30],
       iconAnchor: [25, 15],
     });
-  }, [data.sidc, data.uniqueDesignation, data.higherFormation, data.path]);
+  }, [data.sidc, data.uniqueDesignation, data.higherFormation, data.path, moveControl]);
 
   // 2. MEMOIZE EVENT HANDLERS
   const eventHandlers = useMemo(
@@ -72,6 +77,7 @@ const UnitMarker = ({ data, updateUnitPosition, deleteUnit, onEdit }) => {
         onEdit?.(data); // open the symbol editor
       },
       contextmenu(e) {
+        if (!deleteUnit) return; // nothing to delete it with: the map's own menu opens instead
         L.DomEvent.stopPropagation(e); // Prevent map context menu
         if (window.confirm("Delete this unit?")) {
           deleteUnit(data.id);
@@ -86,7 +92,7 @@ const UnitMarker = ({ data, updateUnitPosition, deleteUnit, onEdit }) => {
       ref={markerRef}
       position={[data.lat, data.lon]}
       icon={unitIcon}
-      draggable={true} // Standard Leaflet dragging works perfectly here!
+      draggable={movable} // Standard Leaflet dragging works perfectly here!
       eventHandlers={eventHandlers}
       zIndexOffset={600}
     />

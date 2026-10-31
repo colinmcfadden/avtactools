@@ -20,7 +20,10 @@
     display: flex;
     flex-direction: column;
     overflow: hidden;
-    z-index: 9999;
+    /* Every floating planning window (aircraft, units, threats, exports, 3D) takes this. Above the map,
+       the dock, the top bar and the phone's planning menu (2000), under the redesign's dialogs (3000),
+       menus (3200) and toasts (3500), so a top-bar menu opened over a window can be clicked. */
+    z-index: 2500;
 }
 
 /* 2. Tighten the gap specifically for 3-column rows */

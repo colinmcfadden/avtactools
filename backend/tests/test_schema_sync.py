@@ -18,8 +18,8 @@ if str(BACKEND_DIR) not in sys.path:
     sys.path.insert(0, str(BACKEND_DIR))
 
 from aircraft_seed import seed_aircraft_profiles  # noqa: E402
-from models import AircraftProfile, db  # noqa: E402
-from schema_sync import sync_table_columns  # noqa: E402
+from models import AccountToken, AircraftProfile, LoginEvent, SavedLZ, SavedPointSet, SavedRoute, User, db  # noqa: E402
+from schema_sync import ensure_unique_index, sync_table_columns  # noqa: E402
 
 
 # The shape aircraft_profile had before perf_source and the template_* columns
@@ -54,6 +54,8 @@ CREATE TABLE aircraft_profile (
 """
 
 NEW_COLUMNS = {"perf_source", "template_file", "template_name", "template_kind"}
+# What every synced table gained after that (see SyncMixin in models.py).
+SYNC_COLUMNS = {"client_uuid", "revision", "deleted_at", "change_seq", "last_idem_key"}
 
 
 class SchemaSyncTests(unittest.TestCase):
@@ -84,8 +86,8 @@ class SchemaSyncTests(unittest.TestCase):
 
         added = sync_table_columns(db, AircraftProfile)
 
-        self.assertEqual(NEW_COLUMNS, set(added))
-        self.assertTrue(NEW_COLUMNS <= self._columns())
+        self.assertEqual(NEW_COLUMNS | SYNC_COLUMNS, set(added))
+        self.assertTrue(NEW_COLUMNS | SYNC_COLUMNS <= self._columns())
 
     def test_the_query_that_used_to_500_now_works(self):
         self._create_legacy()
@@ -124,6 +126,47 @@ class SchemaSyncTests(unittest.TestCase):
         sync_table_columns(db, AircraftProfile)
         self.assertEqual([], sync_table_columns(db, AircraftProfile))
 
+    def test_existing_profiles_start_at_revision_one_with_no_identity_yet(self):
+        # A deployed database holds the admin's master list and crews' own profiles.
+        self._create_legacy()
+        db.session.execute(text(
+            "INSERT INTO aircraft_profile (user_id, slug, name, designation) VALUES "
+            "(NULL, 'master', 'Master', 'M'), (7, 'mine', 'Mine', 'X')"
+        ))
+        db.session.commit()
+
+        sync_table_columns(db, AircraftProfile)
+
+        for row in AircraftProfile.query.all():
+            self.assertEqual(row.revision, 1)
+            self.assertIsNone(row.client_uuid)
+            self.assertIsNone(row.change_seq)
+            self.assertIsNone(row.deleted_at)
+        self.assertIn("revision", AircraftProfile.query.filter_by(slug="mine").one().to_dict())
+
+    def test_the_identity_index_is_added_and_holds_per_user(self):
+        from sqlalchemy.exc import IntegrityError
+        self._create_legacy()
+        sync_table_columns(db, AircraftProfile)
+        name = "ux_aircraft_profile_user_client_uuid"
+        self.assertTrue(ensure_unique_index(db, AircraftProfile, ("user_id", "client_uuid"), name))
+        self.assertTrue(ensure_unique_index(db, AircraftProfile, ("user_id", "client_uuid"), name))   # idempotent
+
+        insert = "INSERT INTO aircraft_profile (user_id, slug, name, designation, client_uuid) VALUES (:u, :s, 'n', 'd', :c)"
+        db.session.execute(text(insert), {"u": 7, "s": "a", "c": "aaaaaaaa-0000-0000-0000-000000000001"})
+        db.session.execute(text(insert), {"u": 8, "s": "a", "c": "aaaaaaaa-0000-0000-0000-000000000001"})   # another user: fine
+        db.session.commit()
+        with self.assertRaises(IntegrityError):
+            db.session.execute(text(insert), {"u": 7, "s": "b", "c": "aaaaaaaa-0000-0000-0000-000000000001"})
+            db.session.commit()
+        db.session.rollback()
+
+    def test_the_model_declares_the_same_index_a_fresh_database_gets(self):
+        db.create_all()
+        indexes = {i["name"] for i in sa_inspect(db.engine).get_indexes("aircraft_profile")}
+        self.assertIn("ux_aircraft_profile_user_client_uuid", indexes)
+        self.assertIn("ix_aircraft_profile_owner_slug", indexes)            # the one it had before
+
     def test_leaves_columns_the_model_dropped_alone(self):
         # Dropping data automatically is never worth it; the stale vidx_*
         # columns from the rename just sit unused.
@@ -143,3 +186,302 @@ class SchemaSyncTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+# login_event as it was before `client` (the X-EZPZ-Client app version) was added.
+LEGACY_LOGIN_EVENT = """
+CREATE TABLE login_event (
+    id INTEGER NOT NULL PRIMARY KEY,
+    user_id INTEGER NOT NULL,
+    method VARCHAR(20) NOT NULL,
+    ip VARCHAR(64),
+    user_agent VARCHAR(400),
+    created_at DATETIME NOT NULL
+)
+"""
+
+
+class LoginEventClientColumnTests(unittest.TestCase):
+    """Production already has a login_event table: the new column must be added to it."""
+
+    def setUp(self):
+        self.app = Flask(__name__)
+        self.app.config.update(
+            SQLALCHEMY_DATABASE_URI="sqlite:///:memory:",
+            SQLALCHEMY_TRACK_MODIFICATIONS=False,
+        )
+        db.init_app(self.app)
+        self.ctx = self.app.app_context()
+        self.ctx.push()
+        db.session.execute(text(LEGACY_LOGIN_EVENT))
+        db.session.execute(text(
+            "INSERT INTO login_event (user_id, method, ip, created_at) "
+            "VALUES (7, 'password', '203.0.113.9', '2026-09-01 12:00:00')"
+        ))
+        db.session.commit()
+
+    def tearDown(self):
+        db.session.remove()
+        self.ctx.pop()
+
+    def _columns(self):
+        return {c["name"] for c in sa_inspect(db.engine).get_columns("login_event")}
+
+    def test_adds_the_client_column_and_keeps_existing_sign_ins(self):
+        self.assertNotIn("client", self._columns())
+
+        self.assertEqual(["client"], sync_table_columns(db, LoginEvent))
+
+        self.assertIn("client", self._columns())
+        # The query that would 500 without the column, against a row that predates it.
+        event = LoginEvent.query.one()
+        self.assertEqual("203.0.113.9", event.ip)
+        self.assertIsNone(event.client)
+
+    def test_new_sign_ins_can_store_a_client(self):
+        sync_table_columns(db, LoginEvent)
+        db.session.add(LoginEvent(user_id=7, method="google", client="android/1.4.0 (212)"))
+        db.session.commit()
+        newest = LoginEvent.query.order_by(LoginEvent.id.desc()).first()
+        self.assertEqual("android/1.4.0 (212)", newest.client)
+
+    def test_is_idempotent(self):
+        sync_table_columns(db, LoginEvent)
+        self.assertEqual([], sync_table_columns(db, LoginEvent))
+
+
+# "user" as production holds it once app.py's ALTERs have run, before notification settings (docs/NOTIFICATIONS.md §5).
+# The user table as production has it: before mil_pending_email and notification_settings.
+LEGACY_USER = """
+CREATE TABLE "user" (
+    id INTEGER NOT NULL PRIMARY KEY,
+    google_id VARCHAR(100) UNIQUE,
+    email VARCHAR(120) NOT NULL UNIQUE,
+    name VARCHAR(120) NOT NULL,
+    picture VARCHAR(500),
+    created_at DATETIME,
+    role VARCHAR(20) NOT NULL DEFAULT 'user',
+    is_active BOOLEAN NOT NULL DEFAULT TRUE,
+    features JSON,
+    mil_email VARCHAR(120),
+    mil_verified_at DATETIME,
+    access_approved BOOLEAN NOT NULL DEFAULT TRUE
+)
+"""
+
+# What sync_table_columns adds to it, one entry per column a release added since.
+# A test of one column asserts all of them: production gains them together.
+USER_COLUMNS_SINCE = ["mil_pending_email", "notification_settings"]
+
+
+class UserNotificationSettingsColumnTests(unittest.TestCase):
+    """The user table predates notification settings: the column is added, and nothing else about anyone changes."""
+
+    def setUp(self):
+        self.app = Flask(__name__)
+        self.app.config.update(SQLALCHEMY_DATABASE_URI="sqlite:///:memory:", SQLALCHEMY_TRACK_MODIFICATIONS=False)
+        db.init_app(self.app)
+        self.ctx = self.app.app_context()
+        self.ctx.push()
+        db.session.execute(text(LEGACY_USER))
+        db.session.execute(text(
+            "INSERT INTO \"user\" (email, name, role, is_active, access_approved) VALUES ('pilot@example.com', 'Pilot', 'user', 1, 1)"
+        ))
+        db.session.commit()
+
+    def tearDown(self):
+        db.session.remove()
+        self.ctx.pop()
+
+    def test_adds_the_settings_and_keeps_everyone_as_they_were(self):
+        self.assertEqual(USER_COLUMNS_SINCE, sync_table_columns(db, User))
+        user = User.query.one()
+        self.assertIsNone(user.notification_settings)
+        self.assertTrue(user.access_approved)
+        user.notification_settings = {"pack_finished": False}
+        db.session.commit()
+        self.assertEqual({"pack_finished": False}, User.query.one().notification_settings)
+
+    def test_is_idempotent(self):
+        sync_table_columns(db, User)
+        self.assertEqual([], sync_table_columns(db, User))
+
+
+# account_token before refresh tokens added family, client and session_version.
+LEGACY_ACCOUNT_TOKEN = """
+CREATE TABLE account_token (
+    id INTEGER NOT NULL PRIMARY KEY,
+    user_id INTEGER NOT NULL,
+    purpose VARCHAR(32) NOT NULL,
+    token_hash VARCHAR(64) NOT NULL UNIQUE,
+    expires_at DATETIME NOT NULL,
+    used_at DATETIME,
+    created_at DATETIME NOT NULL
+)
+"""
+
+
+class AccountTokenRefreshColumnsTests(unittest.TestCase):
+    """Production already has an account_token table full of verification and reset tokens."""
+
+    def setUp(self):
+        self.app = Flask(__name__)
+        self.app.config.update(
+            SQLALCHEMY_DATABASE_URI="sqlite:///:memory:",
+            SQLALCHEMY_TRACK_MODIFICATIONS=False,
+        )
+        db.init_app(self.app)
+        self.ctx = self.app.app_context()
+        self.ctx.push()
+        db.session.execute(text(LEGACY_ACCOUNT_TOKEN))
+        db.session.execute(text(
+            "INSERT INTO account_token (user_id, purpose, token_hash, expires_at, created_at) "
+            "VALUES (3, 'password_reset', 'abc', '2026-12-01 00:00:00', '2026-09-01 00:00:00')"
+        ))
+        db.session.commit()
+
+    def tearDown(self):
+        db.session.remove()
+        self.ctx.pop()
+
+    def test_adds_the_refresh_columns_and_keeps_existing_tokens(self):
+        added = sync_table_columns(db, AccountToken)
+        self.assertEqual({"family", "client", "session_version"}, set(added))
+        row = AccountToken.query.one()
+        self.assertEqual("password_reset", row.purpose)
+        self.assertIsNone(row.family)
+        self.assertIsNone(row.session_version)
+
+    def test_is_idempotent(self):
+        sync_table_columns(db, AccountToken)
+        self.assertEqual([], sync_table_columns(db, AccountToken))
+
+
+# The saved-record tables as production has them: before client_uuid, revision,
+# deleted_at, change_seq and last_idem_key existed.
+LEGACY_SAVED = {
+    "saved_lz": (
+        "CREATE TABLE saved_lz (id INTEGER NOT NULL PRIMARY KEY, user_id INTEGER NOT NULL, "
+        "name VARCHAR(100) NOT NULL, lz_data JSON NOT NULL, created_at DATETIME, updated_at DATETIME)",
+        SavedLZ, "(1, 'Old LZ', '{\"k\": 1}')", "user_id, name, lz_data",
+    ),
+    "saved_route": (
+        "CREATE TABLE saved_route (id INTEGER NOT NULL PRIMARY KEY, user_id INTEGER NOT NULL, "
+        "name VARCHAR(100) NOT NULL, kind VARCHAR(20) NOT NULL, route_data JSON NOT NULL, "
+        "msnx_file BLOB, file_name VARCHAR(255), created_at DATETIME, updated_at DATETIME)",
+        SavedRoute, "(1, 'Old route', 'sketch', '{}')", "user_id, name, kind, route_data",
+    ),
+    "saved_point_set": (
+        "CREATE TABLE saved_point_set (id INTEGER NOT NULL PRIMARY KEY, user_id INTEGER NOT NULL, "
+        "name VARCHAR(100) NOT NULL, points_data JSON NOT NULL, created_at DATETIME, updated_at DATETIME)",
+        SavedPointSet, "(1, 'Old points', '[]')", "user_id, name, points_data",
+    ),
+}
+
+
+class SavedRecordSyncColumnsTests(unittest.TestCase):
+    """Production has these three tables full of crews' work. Adding sync must not touch it."""
+
+    def setUp(self):
+        self.app = Flask(__name__)
+        self.app.config.update(
+            SQLALCHEMY_DATABASE_URI="sqlite:///:memory:",
+            SQLALCHEMY_TRACK_MODIFICATIONS=False,
+        )
+        db.init_app(self.app)
+        self.ctx = self.app.app_context()
+        self.ctx.push()
+        for ddl, _model, values, columns in LEGACY_SAVED.values():
+            db.session.execute(text(ddl))
+        for table, (_ddl, _model, values, columns) in LEGACY_SAVED.items():
+            db.session.execute(text(f"INSERT INTO {table} ({columns}) VALUES {values}"))
+        db.session.commit()
+
+    def tearDown(self):
+        db.session.remove()
+        self.ctx.pop()
+
+    def test_each_table_gains_the_sync_columns_and_keeps_its_rows(self):
+        for table, (_ddl, model, _values, _columns) in LEGACY_SAVED.items():
+            with self.subTest(table=table):
+                self.assertEqual(SYNC_COLUMNS, set(sync_table_columns(db, model)))
+                row = model.query.one()
+                self.assertEqual(row.name.startswith("Old"), True)
+
+    def test_existing_rows_start_at_revision_one_and_have_no_identity_yet(self):
+        for _table, (_ddl, model, _values, _columns) in LEGACY_SAVED.items():
+            sync_table_columns(db, model)
+            row = model.query.one()
+            self.assertEqual(row.revision, 1)
+            self.assertIsNone(row.client_uuid)
+            self.assertIsNone(row.change_seq)
+            self.assertIsNone(row.deleted_at)
+
+    def test_the_unique_index_is_added_once_and_enforced(self):
+        from sqlalchemy.exc import IntegrityError
+        for table, (_ddl, model, _values, _columns) in LEGACY_SAVED.items():
+            with self.subTest(table=table):
+                sync_table_columns(db, model)
+                name = f"ux_{table}_user_client_uuid"
+                self.assertTrue(ensure_unique_index(db, model, ("user_id", "client_uuid"), name))
+                self.assertTrue(ensure_unique_index(db, model, ("user_id", "client_uuid"), name))   # idempotent
+                db.session.execute(text(f"UPDATE {table} SET client_uuid = 'aaaaaaaa-0000-0000-0000-000000000001'"))
+                db.session.commit()
+                with self.assertRaises(IntegrityError):
+                    db.session.execute(text(
+                        f"INSERT INTO {table} (id, user_id, name, {_columns.split(', ', 2)[2]}, client_uuid) "
+                        f"SELECT 99, user_id, 'dup', {_columns.split(', ', 2)[2]}, client_uuid FROM {table}"
+                    ))
+                    db.session.commit()
+                db.session.rollback()
+
+    def test_rows_with_no_identity_do_not_collide_under_the_index(self):
+        # Every existing row has client_uuid NULL; NULLs are never equal, so the index cannot fail on them.
+        table, (_ddl, model, _values, _columns) = next(iter(LEGACY_SAVED.items()))
+        sync_table_columns(db, model)
+        db.session.execute(text(f"INSERT INTO {table} (id, user_id, name, lz_data) VALUES (50, 1, 'b', '{{}}')"))
+        db.session.commit()
+        self.assertTrue(ensure_unique_index(db, model, ("user_id", "client_uuid"), f"ux_{table}_user_client_uuid"))
+
+    def test_a_failed_index_is_reported_not_raised(self):
+        table, (_ddl, model, _values, _columns) = next(iter(LEGACY_SAVED.items()))
+        sync_table_columns(db, model)
+        db.session.execute(text(f"UPDATE {table} SET client_uuid = 'dup'"))
+        db.session.execute(text(f"INSERT INTO {table} (id, user_id, name, lz_data, client_uuid) VALUES (60, 1, 'b', '{{}}', 'dup')"))
+        db.session.commit()
+        self.assertFalse(ensure_unique_index(db, model, ("user_id", "client_uuid"), f"ux_{table}_user_client_uuid"))
+        self.assertEqual(model.query.count(), 2)            # still usable afterwards
+
+
+# "user" before mil_pending_email: what every deployment holds, the ALTERs in app.py having added the rest.
+class UserPendingMilColumnTests(unittest.TestCase):
+    """The user table gained mil_pending_email: added to the one production has, nothing else touched."""
+
+    def setUp(self):
+        self.app = Flask(__name__)
+        self.app.config.update(
+            SQLALCHEMY_DATABASE_URI="sqlite:///:memory:",
+            SQLALCHEMY_TRACK_MODIFICATIONS=False,
+        )
+        db.init_app(self.app)
+        self.ctx = self.app.app_context()
+        self.ctx.push()
+        db.session.execute(text(LEGACY_USER))
+        db.session.execute(text(
+            'INSERT INTO "user" (id, email, name, mil_email, mil_verified_at) '
+            "VALUES (7, 'pilot@example.com', 'Pilot', 'pilot@army.mil', '2026-09-01 12:00:00')"
+        ))
+        db.session.commit()
+
+    def tearDown(self):
+        db.session.remove()
+        self.ctx.pop()
+
+    def test_adds_the_pending_column_and_keeps_existing_accounts(self):
+        self.assertEqual(USER_COLUMNS_SINCE, sync_table_columns(db, User))
+        user = db.session.get(User, 7)
+        self.assertEqual(("pilot@army.mil", None, True), (user.mil_email, user.mil_pending_email, user.access_approved))
+
+    def test_is_idempotent(self):
+        sync_table_columns(db, User)
+        self.assertEqual([], sync_table_columns(db, User))

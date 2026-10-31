@@ -1,0 +1,134 @@
+{%- macro band(constants) -%}
+<div class="band">{% for c in constants %}<span><b>{{ c.short }}</b>{{ c.value if c.value else '____' }}</span>{% endfor %}</div>
+{%- endmacro -%}
+{%- macro figure(fig, caption) -%}
+<div class="figure"><img src="{{ fig.file }}" alt="">{{ fig.svg }}</div>
+<div class="caption">{{ caption }}</div>
+{%- endmacro -%}
+{%- macro sentence(parts) -%}
+{% for part in parts %}{% if part.writeIn is defined %}{% if part.label %}<span class="write-label">{{ part.label }} </span>{% endif %}<span class="write"></span>{% else %}{{ part.text }}{% endif %}{% endfor %}
+{%- endmacro -%}
+{%- macro step_body(step, heading) -%}
+{% if heading %}<h2>{{ step.number }} {{ step.title }} <small>· {{ step.who }}</small></h2>{% else %}<h2>{{ step.number }} {{ step.title }} <small>· {{ step.who }}</small></h2>{% endif %}
+{% if step.figure_render and heading %}{{ figure(step.figure_render, step.caption) }}{% endif %}
+{% if step.facts %}<table class="facts">{% for f in step.facts %}<tr><td>{{ f.label }}</td><td>{% if f.value %}{{ f.value }}{% else %}<span class="write"></span>{% endif %}</td></tr>{% endfor %}</table>{% endif %}
+<table>
+{% for item in step['items'] if item.kind != 'info' and (not item.writeIn or write_ins) %}
+<tr><td class="id">{{ item.id }}</td><td class="label">{{ item.label }}</td><td>{% if item.writeIn %}<span class="write"></span>{% elif item.kind == 'procedure' and show_script %}{{ 'Standard' if item.source == 'standard' else 'Custom' }}: in the script below{% else %}{{ item.text }}{% endif %}</td></tr>
+{% endfor %}
+</table>
+{% if show_script and step.script %}
+<div class="script"><div class="who">SCRIPT · {{ step.who | upper }}</div>{% for parts in step.script %}<p>{{ sentence(parts) }}</p>{% endfor %}</div>
+{% endif %}
+{%- endmacro -%}
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>{{ title }}</title>
+<style>
+  @page { size: {{ page_size }}; margin: 0.62in 0.5in 0.62in 0.5in; }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; }
+  body { font-family: "Helvetica Neue", Helvetica, Arial, sans-serif; font-size: 9pt; line-height: 1.34; color: #16181b; }
+  .page { break-after: page; }
+  .page:last-child { break-after: auto; }
+  .kicker { font-size: 7.5pt; font-weight: 800; letter-spacing: 0.08em; color: #555b62; text-transform: uppercase; }
+  h1 { margin: 2pt 0 4pt; font-size: 24pt; }
+  h2 { margin: 0 0 4pt; font-size: 13pt; }
+  h2 small { font-size: 9pt; font-weight: 500; color: #555b62; }
+  .band { display: flex; flex-wrap: wrap; gap: 3pt 12pt; margin: 6pt 0; padding: 4pt 7pt; background: #e9e5d9; border-radius: 2pt; }
+  .band span b { font-size: 7pt; letter-spacing: 0.05em; color: #555b62; margin-right: 3pt; }
+  .figure { position: relative; margin: 6pt 0; border: 0.6pt solid #8a857a; }
+  .figure img { display: block; width: 100%; }
+  .figure svg { position: absolute; inset: 0; width: 100%; height: 100%; }
+  .caption { font-size: 7.5pt; color: #555b62; margin: -3pt 0 6pt; }
+  table { width: 100%; border-collapse: collapse; margin: 4pt 0; }
+  th, td { text-align: left; vertical-align: top; padding: 2.5pt 4pt; border-bottom: 0.5pt solid #c9c3b4; }
+  th { font-size: 7.5pt; letter-spacing: 0.04em; color: #555b62; font-weight: 800; }
+  td.id { width: 40pt; color: #555b62; font-weight: 700; }
+  td.label { width: 34%; }
+  .facts td:first-child { width: 22%; font-size: 7.5pt; font-weight: 800; letter-spacing: 0.04em; color: #555b62; }
+  .write { display: inline-block; min-width: 110pt; border-bottom: 0.7pt solid #16181b; height: 10pt; }
+  .script { margin-top: 6pt; padding: 5pt 8pt; border-left: 2.5pt solid #3f6fa3; background: #eef0f3; break-inside: avoid; }
+  .script p { margin: 3pt 0 0; }
+  .script .who { font-size: 7.5pt; font-weight: 800; letter-spacing: 0.06em; color: #3f6fa3; }
+  .script .write { min-width: 60pt; }
+  .script .write-label { font-size: 6.5pt; color: #555b62; }
+  .contents td:last-child { width: 90pt; }
+  .contents td { padding: 1.5pt 4pt; }
+  .summary { font-size: 10.5pt; margin: 4pt 0 8pt; }
+  .problems { margin: 6pt 0; padding: 5pt 8pt; border: 0.8pt solid #b8860b; color: #6b4e00; }
+  .problems ul { margin: 2pt 0 0; padding-left: 12pt; }
+  /* Strip charts: three to a page, each 5.5 by 21.5 cm as compileBrief cut it (its scale holds on paper), to cut out. */
+  .strips { display: flex; gap: 0.2in; margin-top: 4pt; }
+  .strip { margin: 0; width: 5.5cm; break-inside: avoid; }
+  .strip figcaption { font-size: 7.5pt; color: #16181b; margin-bottom: 2pt; overflow-wrap: anywhere; }
+  /* The border outside the box, so what is drawn is the strip's 5.5 by 21.5 cm exactly, as its scale needs. */
+  .strip .figure { box-sizing: content-box; width: 5.5cm; height: 21.5cm; margin: 0; }
+  .strip .figure img { width: 100%; height: 100%; }
+  .strip .squares { font-size: 7pt; color: #555b62; margin-top: 2pt; }
+</style>
+</head>
+<body>
+{% for page in pages %}
+<section class="page" id="p{{ page.n }}">
+  {% if page.kind == 'cover' %}
+    <div class="kicker">{{ format_title }}</div>
+    <h1>{{ mission_name }}</h1>
+    <div>{{ aircraft or '' }}{% if aircraft and mission_date %} · {% endif %}{{ mission_date or '' }} · generated {{ generated }}</div>
+    {% if summary %}<p class="summary">{{ summary }}</p>{% endif %}
+    {% if constants %}{{ band(constants) }}{% endif %}
+    {% if page.figure %}{{ figure(page.figure, 'Overview of the mission.') }}{% endif %}
+    <table class="contents">
+      <tr><th>Contents</th><th>Briefed by</th></tr>
+      {% for row in contents %}<tr><td>{{ row.title }}</td><td>{{ row.who or '' }}</td></tr>{% endfor %}
+    </table>
+    {% if problems %}
+      <div class="problems"><b>Check before briefing</b><ul>{% for p in problems %}<li>{{ p }}</li>{% endfor %}</ul></div>
+    {% endif %}
+</section>
+<section class="page">
+    <div class="kicker">{{ page.step.paragraph }} · {{ mission_name }}</div>
+    {% if constants %}{{ band(constants) }}{% endif %}
+    {{ step_body(page.step, True) }}
+  {% elif page.kind == 'step' %}
+    <div class="kicker">{{ page.step.paragraph }} · {{ mission_name }}</div>
+    {% if constants %}{{ band(constants) }}{% endif %}
+    {{ step_body(page.step, True) }}
+  {% elif page.kind == 'lzCard' %}
+    <div class="kicker">Appendix · {{ page.role_word }} card</div>
+    <h2>{{ page.stop.name }}</h2>
+    {% if page.figure %}{{ figure(page.figure, page.stop.name ~ ' from the plan.') }}{% endif %}
+    <table class="facts">{% for f in page.facts %}<tr><td>{{ f.label }}</td><td>{{ f.value if f.value else '' }}{% if not f.value %}<span class="write"></span>{% endif %}</td></tr>{% endfor %}</table>
+  {% elif page.kind == 'navLog' %}
+    <div class="kicker">Appendix · nav log</div>
+    <h2>{{ page.route.name }}</h2>
+    {% if page.figure %}{{ figure(page.figure, page.route.name ~ ' as planned.') }}{% endif %}
+    <table>
+      <tr><th>From</th><th>To</th><th>Course</th><th>Distance</th><th>Time</th><th>Clock</th><th>Altitude</th><th>Airspeed</th></tr>
+      {% for leg in page.route.log %}
+        <tr><td>{{ leg.from }}</td><td>{{ leg.to }}</td><td>{{ leg.course or '' }}</td><td>{{ leg.distance or '' }}</td><td>{{ leg.time or '' }}</td><td>{{ leg.clock or '' }}</td><td>{{ leg.altitude or '' }}</td><td>{{ leg.airspeed or '' }}</td></tr>
+      {% endfor %}
+    </table>
+  {% elif page.kind == 'strips' %}
+    <div class="kicker">Appendix · strip charts · direction of flight up</div>
+    <h2>{{ page.title }}</h2>
+    <div class="strips">
+      {% for s in page.strips %}
+      <figure class="strip">
+        <figcaption><b>{{ s.course }} · {{ s.scale }} · {{ s.part }}/{{ s.parts }}</b> {{ s.name }}</figcaption>
+        <div class="figure"><img src="{{ s.figure.file }}" alt="">{{ s.figure.svg }}</div>
+        <div class="squares">{% if s.gridded %}{% if s.squares %}MGRS {{ s.squares }}{% if s.others %} · also {{ s.others }}{% endif %} · {% endif %}eastings left, northings right, others marked E or N{% else %}No MGRS grid was sent with this strip.{% endif %}</div>
+      </figure>
+      {% endfor %}
+    </div>
+  {% elif page.kind == 'iimc' %}
+    <div class="kicker">Appendix · IIMC card</div>
+    <h2>IIMC</h2>
+    {% if page.text %}<p>{{ page.text }}</p>{% else %}<p><span class="write"></span></p>{% endif %}
+  {% endif %}
+</section>
+{% endfor %}
+</body>
+</html>

@@ -22,9 +22,14 @@ from werkzeug.security import check_password_hash
 from google.oauth2 import id_token
 from google.auth.transport import requests as google_requests
 
-from models import db, User, SavedRoute, SavedLZ, SavedPointSet, LoginEvent, AircraftProfile
+from models import (
+    db, User, SavedRoute, SavedLZ, SavedPointSet, SavedBrief, LoginEvent, AircraftProfile, SyncCounter,
+    MissionPack, MissionPackItem, MissionPackMember, Team, TeamMember,
+)
+import pack_support
+import sync_support as sync
 from entitlements import (
-    FEATURES, FEATURE_KEYS, resolve_features,
+    DEFAULT_OFF, FEATURES, features_from_form, resolve_features,
     is_admin, is_super_admin, account_active, affiliation_ok,
 )
 from amps_package import inspect_amps_package
@@ -87,6 +92,7 @@ def _inject():
     return {
         'csrf_token': _csrf_token,
         'FEATURES': FEATURES,
+        'DEFAULT_OFF': DEFAULT_OFF,
         'resolve_features': resolve_features,
         'is_admin': is_admin,
         'is_super_admin': is_super_admin,
@@ -204,9 +210,10 @@ def user_detail(uid):
     if not user:
         abort(404)
     counts = {
-        'routes': SavedRoute.query.filter_by(user_id=uid).count(),
-        'lzs': SavedLZ.query.filter_by(user_id=uid).count(),
-        'point_sets': SavedPointSet.query.filter_by(user_id=uid).count(),
+        # Not the tombstones a deletion leaves behind for devices to learn of it.
+        'routes': SavedRoute.query.filter_by(user_id=uid, deleted_at=None).count(),
+        'lzs': SavedLZ.query.filter_by(user_id=uid, deleted_at=None).count(),
+        'point_sets': SavedPointSet.query.filter_by(user_id=uid, deleted_at=None).count(),
     }
     try:
         lp = max(1, int(request.args.get('lp', 1)))
@@ -276,10 +283,43 @@ def set_features(uid):
     _check_csrf()
     user = _load_target(uid)
     enabled = set(request.form.getlist('feature'))
-    user.features = {key: (key in enabled) for key in FEATURE_KEYS}
+    user.features = features_from_form(enabled)
     db.session.commit()
     flash('Feature access updated.', 'ok')
     return redirect(url_for('admin.user_detail', uid=uid))
+
+
+@admin_bp.route('/users/features/bulk', methods=['POST'])
+@admin_required
+def bulk_feature():
+    """One feature given to, or taken from, everyone ticked on the users list: the LZ survey books' readers are many, and a tick each
+    on their own pages would be a morning's work (docs/LZ_SURVEYS.md §7, R1)."""
+    _check_csrf()
+    labels = {key: label for key, label, _desc in FEATURES}
+    key = request.form.get('feature')
+    grant = request.form.get('action') == 'grant'
+    ids = {int(v) for v in request.form.getlist('uid') if v.isdigit()}
+    back = redirect(url_for('admin.users', q=request.form.get('q') or None, page=request.form.get('page') or None))
+    if key not in labels or request.form.get('action') not in ('grant', 'revoke') or not ids:
+        flash('Tick the people first, then give or take a feature.', 'error')
+        return back
+    changed = 0
+    for user in User.query.filter(User.id.in_(ids)).all():
+        before = dict(user.features) if isinstance(user.features, dict) else {}
+        after = dict(before)
+        if grant:
+            after[key] = True
+        elif key in DEFAULT_OFF:
+            after.pop(key, None)        # its default is off: an "off" stored would keep them off once it launches
+        else:
+            after[key] = False
+        if after != before:
+            user.features = after       # a new dict, or the JSON column would not see the change
+            changed += 1
+    db.session.commit()
+    flash(f"{labels[key]} {'given to' if grant else 'taken from'} {changed} {'person' if changed == 1 else 'people'}"
+          + (f" ({len(ids) - changed} had it as asked already)." if changed < len(ids) else "."), 'ok')
+    return back
 
 
 @admin_bp.route('/users/<int:uid>/edit', methods=['POST'])
@@ -343,14 +383,81 @@ def delete_user(uid):
         flash("Deletion cancelled: the confirmation email didn't match.", 'error')
         return redirect(url_for('admin.user_detail', uid=uid))
 
+    # Packs they own pass to someone else in them, or go when nobody else is.
+    pack_support.release_account(uid)
     SavedRoute.query.filter_by(user_id=uid).delete()
     SavedLZ.query.filter_by(user_id=uid).delete()
     SavedPointSet.query.filter_by(user_id=uid).delete()
+    SavedBrief.query.filter_by(user_id=uid).delete()
     LoginEvent.query.filter_by(user_id=uid).delete()
+    SyncCounter.query.filter_by(user_id=uid).delete()
     db.session.delete(user)  # cascades local_credential + account_tokens
     db.session.commit()
     flash('User deleted.', 'ok')
     return redirect(url_for('admin.users'))
+
+
+# --- mission packs and teams (read only) -------------------------------------
+#
+# What exists and who is in it, never what a pack holds: an LZ's place is the
+# crew's business. Nothing here changes a pack; owners and members do that.
+
+def _page_arg():
+    try:
+        return max(1, int(request.args.get('page', 1)))
+    except (TypeError, ValueError):
+        return 1
+
+
+def _counts(model, column, ids, **filters):
+    if not ids:
+        return {}
+    rows = (db.session.query(getattr(model, column), func.count()).filter(getattr(model, column).in_(ids))
+            .filter_by(**filters).group_by(getattr(model, column)).all())
+    return dict(rows)
+
+
+@admin_bp.route('/packs')
+@admin_required
+def packs():
+    q = (request.args.get('q') or '').strip()
+    page = _page_arg()
+    query = MissionPack.query.filter(MissionPack.deleted_at.is_(None))
+    if q:
+        query = query.filter(MissionPack.name.ilike(f"%{q}%"))
+    total = query.count()
+    rows = query.order_by(MissionPack.updated_at.desc()).offset((page - 1) * PER_PAGE).limit(PER_PAGE).all()
+    ids = [p.id for p in rows]
+    owners = {u.id: u for u in User.query.filter(User.id.in_({p.owner_id for p in rows})).all()} if rows else {}
+    teams = {t.id: t for t in Team.query.filter(Team.id.in_({p.team_id for p in rows if p.team_id})).all()} if rows else {}
+    return render_template(
+        'admin/packs.html', nav_section='packs', packs=rows, q=q, page=page, total=total,
+        pages=max(1, (total + PER_PAGE - 1) // PER_PAGE), owners=owners, teams=teams,
+        members=_counts(MissionPackMember, 'pack_id', ids),
+        items=_counts(MissionPackItem, 'pack_id', ids, deleted_at=None),
+    )
+
+
+@admin_bp.route('/teams')
+@admin_required
+def teams():
+    q = (request.args.get('q') or '').strip()
+    page = _page_arg()
+    query = Team.query
+    if q:
+        query = query.filter(Team.name.ilike(f"%{q}%"))
+    total = query.count()
+    rows = query.order_by(Team.name).offset((page - 1) * PER_PAGE).limit(PER_PAGE).all()
+    ids = [t.id for t in rows]
+    owner_rows = TeamMember.query.filter(TeamMember.team_id.in_(ids), TeamMember.role == 'owner').all() if ids else []
+    owner_users = {u.id: u for u in User.query.filter(User.id.in_({m.user_id for m in owner_rows})).all()} if owner_rows else {}
+    return render_template(
+        'admin/teams.html', nav_section='teams', teams=rows, q=q, page=page, total=total,
+        pages=max(1, (total + PER_PAGE - 1) // PER_PAGE),
+        owners={m.team_id: owner_users.get(m.user_id) for m in owner_rows},
+        members=_counts(TeamMember, 'team_id', ids),
+        shared=_counts(MissionPack, 'team_id', ids, deleted_at=None),
+    )
 
 
 # --- aircraft profiles ------------------------------------------------------
@@ -423,6 +530,25 @@ def _aircraft_form_errors(profile, form):
     return errors
 
 
+def _live_profile_or_404(pid):
+    """The profile, or a 404. A deleted custom profile is only a tombstone, kept for the owner's devices."""
+    profile = db.session.get(AircraftProfile, pid)
+    if not profile or profile.deleted_at is not None:
+        abort(404)
+    return profile
+
+
+def _commit_profile_change(profile):
+    """Commit an admin's edit. A user's own profile is also versioned, so their devices pick it up.
+
+    Without that, an admin's change would sit on the server and a device would later
+    overwrite it, or never hear of it (see sync_support.py).
+    """
+    if profile.user_id is not None:
+        sync.stamp(profile, profile.user_id)
+    db.session.commit()
+
+
 @admin_bp.route('/aircraft')
 @admin_required
 def aircraft():
@@ -432,7 +558,7 @@ def aircraft():
         .all()
     )
     custom = (
-        AircraftProfile.query.filter(AircraftProfile.user_id.isnot(None))
+        AircraftProfile.query.filter(AircraftProfile.user_id.isnot(None), AircraftProfile.deleted_at.is_(None))
         .order_by(AircraftProfile.updated_at.desc())
         .limit(100)
         .all()
@@ -467,9 +593,7 @@ def aircraft_new():
 @admin_bp.route('/aircraft/<int:pid>')
 @admin_required
 def aircraft_detail(pid):
-    profile = db.session.get(AircraftProfile, pid)
-    if not profile:
-        abort(404)
+    profile = _live_profile_or_404(pid)
     owner = db.session.get(User, profile.user_id) if profile.user_id else None
     return render_template(
         'admin/aircraft_form.html', nav_section='aircraft', p=profile, creating=False, owner=owner,
@@ -507,9 +631,7 @@ def aircraft_create():
 @admin_required
 def aircraft_save(pid):
     _check_csrf()
-    profile = db.session.get(AircraftProfile, pid)
-    if not profile:
-        abort(404)
+    profile = _live_profile_or_404(pid)
 
     errors = _aircraft_form_errors(profile, request.form)
     if errors:
@@ -517,7 +639,7 @@ def aircraft_save(pid):
         for message in errors:
             flash(message, 'error')
     else:
-        db.session.commit()
+        _commit_profile_change(profile)
         flash('Saved.', 'ok')
     return redirect(url_for('admin.aircraft_detail', pid=pid))
 
@@ -527,15 +649,13 @@ def aircraft_save(pid):
 def aircraft_template(pid):
     """Attach or clear the AMPS package that makes export use this airframe."""
     _check_csrf()
-    profile = db.session.get(AircraftProfile, pid)
-    if not profile:
-        abort(404)
+    profile = _live_profile_or_404(pid)
 
     if request.form.get('clear') == '1':
         profile.template_file = None
         profile.template_name = None
         profile.template_kind = None
-        db.session.commit()
+        _commit_profile_change(profile)
         flash('Template removed. Exports for this profile fall back to the UH-60L package.', 'ok')
         return redirect(url_for('admin.aircraft_detail', pid=pid))
 
@@ -572,7 +692,7 @@ def aircraft_template(pid):
     # unless an admin already typed one in.
     if detected.get('vehicle_description') and not profile.amps_vehicle_description:
         profile.amps_vehicle_description = detected['vehicle_description'][:200]
-    db.session.commit()
+    _commit_profile_change(profile)
 
     note = ''
     if detected.get('vehicle_description'):
@@ -585,16 +705,18 @@ def aircraft_template(pid):
 @admin_required
 def aircraft_delete(pid):
     _check_csrf()
-    profile = db.session.get(AircraftProfile, pid)
-    if not profile:
-        abort(404)
+    profile = _live_profile_or_404(pid)
     if (request.form.get('confirm_slug') or '').strip() != profile.slug:
         flash("Deletion cancelled: the confirmation slug didn't match.", 'error')
         return redirect(url_for('admin.aircraft_detail', pid=pid))
 
     label = profile.name
     was_master = profile.is_system
-    db.session.delete(profile)
+    if was_master:
+        db.session.delete(profile)
+    else:
+        # A user's profile leaves a tombstone, so their devices learn it is gone.
+        sync.tombstone_aircraft(profile, profile.user_id)
     db.session.commit()
     # A deleted seed slug comes back on the next boot; say so rather than
     # letting it look like a bug.
@@ -610,8 +732,8 @@ def aircraft_delete(pid):
 def aircraft_promote(pid):
     """Copy a user's custom profile into the master list."""
     _check_csrf()
-    source = db.session.get(AircraftProfile, pid)
-    if not source or source.is_system:
+    source = _live_profile_or_404(pid)
+    if source.is_system:
         abort(404)
 
     base = _aircraft_slug(source.designation or source.name) or f'custom-{source.id}'

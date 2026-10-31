@@ -3,11 +3,18 @@ import L from "leaflet";
 import { useMap } from "react-leaflet";
 import { calculateBearing } from '../../utils/Helpers';
 import { mapObjectControlMarkup } from '../../utils/mapObjectControls';
+import {
+  doghouseDisplay,
+  doghouseFieldUpdates,
+  doghouseHeadingDegrees,
+  doghouseHeadingText,
+  doghouseRotation,
+} from "./doghouseFields";
 
 const Doghouse = ({ data, updateDoghouse }) => {
   const map = useMap();
   const markerRef = useRef(null);
-  const rotationRef = useRef(parseInt(data.heading) || 0);
+  const rotationRef = useRef(doghouseRotation(data));
 
   const dataRef = useRef(data);
   const updateRef = useRef(updateDoghouse);
@@ -16,40 +23,42 @@ const Doghouse = ({ data, updateDoghouse }) => {
     dataRef.current = data;
     updateRef.current = updateDoghouse;
   }, [data, updateDoghouse]);
+  // No updateDoghouse (a read-only Mission Pack): it is shown, but cannot be moved, turned or typed in.
+  const locked = !updateDoghouse;
 
   // --- HTML GENERATOR ---
-  const getHtml = (dh, rotation) => {
-    const time = (dh.time || "00+00").split("+");
-    const airspeed = dh.airspeed ? dh.airspeed.split(" ")[0] : "90";
+  const getHtml = (dh, rotation, locked = false) => {
+    const shown = doghouseDisplay(dh, rotation);
+    const field = locked ? "default" : "text";
 
     return `
       <div class="drag-lifter doghouse-interactive-wrapper" style="position: relative; width: 100%; height: 100%; display: flex; align-items: center; justify-content: center; pointer-events: none;">
         
-        <div class="map-object-controls dh-controls" style="position: absolute; width: 140px; display: flex; justify-content: space-between; align-items: center; z-index: 10;">
+        ${locked ? "" : `<div class="map-object-controls dh-controls" style="position: absolute; width: 140px; display: flex; justify-content: space-between; align-items: center; z-index: 10;">
             ${mapObjectControlMarkup({ type: "rotate", title: "Drag to rotate doghouse", className: "dh-btn dh-rotate" })}
             ${mapObjectControlMarkup({ type: "move", title: "Drag to move doghouse", className: "dh-btn dh-move" })}
-        </div>
+        </div>`}
 
         <div class="doghouse-wrapper" style="pointer-events: auto; width: 60px; transform: rotate(${rotation}deg); transform-origin: center center; position: absolute; z-index: 20;">
             <div style="width: 0; height: 0; border-left: 30px solid transparent; border-right: 30px solid transparent; border-bottom: 20px solid black; position: relative;">
-                <div class="dh-input" data-type="id" style="position: absolute; top: 2px; left: -30px; width: 60px; text-align: center; font-weight: bold; font-size: 10px; color: white; cursor: text;">${dh.id_val}</div>
+                <div class="dh-input" data-type="id" style="position: absolute; top: 2px; left: -30px; width: 60px; text-align: center; font-weight: bold; font-size: 10px; color: white; cursor: ${field};">${shown.id}</div>
             </div>
             <div style="background: white; border: 2px solid black; width: 60px; display: flex; flex-direction: column; font-family: monospace; font-weight: bold; font-size: 12px; color: black;">
                 <div style="border-bottom: 1px solid black; display: flex; justify-content: center; align-items: center;">
-                    <span class="dh-input" data-type="heading" style="cursor: text; min-width: 20px; text-align: right; padding: 2px 0;">${Math.round(rotation).toString().padStart(3, "0")}</span>
+                    <span class="dh-input" data-type="heading" style="cursor: ${field}; min-width: 20px; text-align: right; padding: 2px 0;">${shown.heading}</span>
                     <span style="pointer-events: none;">°</span>
                 </div>
                 <div style="border-bottom: 1px solid black; display: flex; justify-content: center; align-items: center;">
-                    <span class="dh-input" data-type="time-m" style="cursor: text; min-width: 15px; text-align: right; padding: 2px 0;">${time[0] || "00"}</span>
+                    <span class="dh-input" data-type="time-m" style="cursor: ${field}; min-width: 15px; text-align: right; padding: 2px 0;">${shown.minutes}</span>
                     <span style="pointer-events: none;">+</span>
-                    <span class="dh-input" data-type="time-s" style="cursor: text; min-width: 15px; text-align: left; padding: 2px 0;">${time[1] || "00"}</span>
+                    <span class="dh-input" data-type="time-s" style="cursor: ${field}; min-width: 15px; text-align: left; padding: 2px 0;">${shown.seconds}</span>
                 </div>
                 <div style="border-bottom: 1px solid black; display: flex; justify-content: center; align-items: center;">
-                    <span class="dh-input" data-type="dist" style="cursor: text; min-width: 20px; text-align: right; padding: 2px 0;">${parseFloat(dh.dist) || 0}</span>
+                    <span class="dh-input" data-type="dist" style="cursor: ${field}; min-width: 20px; text-align: right; padding: 2px 0;">${shown.distance}</span>
                     <span style="font-size: 10px; margin-left: 1px; pointer-events: none;"> km</span>
                 </div>
                 <div style="display: flex; justify-content: center; align-items: center;">
-                    <span class="dh-input" data-type="airspeed" style="cursor: text; min-width: 20px; text-align: right; padding: 2px 0;">${parseInt(airspeed) || 90}</span>
+                    <span class="dh-input" data-type="airspeed" style="cursor: ${field}; min-width: 20px; text-align: right; padding: 2px 0;">${shown.airspeed}</span>
                     <span style="font-size: 10px; margin-left: 1px; pointer-events: none;"> kts</span>
                 </div>
             </div>
@@ -62,6 +71,23 @@ const Doghouse = ({ data, updateDoghouse }) => {
     if (e.touches && e.touches.length > 0) return { x: e.touches[0].clientX, y: e.touches[0].clientY };
     if (e.changedTouches && e.changedTouches.length > 0) return { x: e.changedTouches[0].clientX, y: e.changedTouches[0].clientY };
     return { x: e.clientX, y: e.clientY };
+  };
+
+  // A move or turn the pack became read-only during (the owner finished it, or this person's role
+  // was lowered) has nothing to take it when the finger lifts: show the doghouse as stored, locked.
+  const putBack = (markerInst) => {
+    const stored = dataRef.current;
+    rotationRef.current = doghouseRotation(stored);
+    markerInst.setIcon(
+      L.divIcon({
+        className: "doghouse-container",
+        html: getHtml(stored, rotationRef.current, true),
+        iconSize: [160, 120],
+        iconAnchor: [80, 60],
+      })
+    );
+    markerInst.setLatLng([stored.lat, stored.lon]);
+    setTimeout(() => attachListeners(markerInst), 50);
   };
 
   const attachListeners = (markerInst) => {
@@ -84,6 +110,9 @@ const Doghouse = ({ data, updateDoghouse }) => {
         wrapper.classList.remove('show-controls');
     });
 
+    // Nothing below may change it without updateDoghouse to take the change.
+    if (!updateRef.current) return;
+
     // --- 2. Text Input Logic ---
     const inputs = element.querySelectorAll(".dh-input");
     inputs.forEach((span) => {
@@ -102,13 +131,16 @@ const Doghouse = ({ data, updateDoghouse }) => {
         span.style.backgroundColor = "transparent";
         map.dragging.enable();
 
+        // Locked while it was being typed in: the redraw that locked it has already replaced the field.
+        const update = updateRef.current;
+        if (!update) return;
+
         const val = (span.innerText || "").trim();
         const type = span.getAttribute("data-type");
         const currentData = dataRef.current; 
 
         if (type === "heading") {
-          let newDeg = parseInt(val) || 0;
-          newDeg = (newDeg + 360) % 360; 
+          const newDeg = doghouseHeadingDegrees(val);
           rotationRef.current = newDeg; 
 
           markerInst.setIcon(
@@ -120,20 +152,19 @@ const Doghouse = ({ data, updateDoghouse }) => {
             })
           );
 
-          updateRef.current(currentData.id, { heading: `${newDeg.toString().padStart(3, "0")}°` });
+          update(currentData.id, { heading: doghouseHeadingText(newDeg) });
           setTimeout(() => attachListeners(markerInst), 50);
         } else {
-          let updates = {};
-          if (type === "id") updates.id_val = val;
-          else if (type === "dist") updates.dist = `${val}km`;
-          else if (type === "airspeed") updates.airspeed = `${val} kts`;
-          else if (type.startsWith("time")) {
+          let time;
+          if (type.startsWith("time")) {
             const row = span.parentElement;
-            const m = row.querySelector('[data-type="time-m"]').innerText;
-            const s = row.querySelector('[data-type="time-s"]').innerText;
-            updates.time = `${m}+${s}`;
+            time = {
+              minutes: row.querySelector('[data-type="time-m"]').innerText,
+              seconds: row.querySelector('[data-type="time-s"]').innerText,
+            };
           }
-          updateRef.current(currentData.id, updates);
+          const updates = doghouseFieldUpdates(type, val, time);
+          update(currentData.id, updates);
         }
       };
 
@@ -192,7 +223,12 @@ const Doghouse = ({ data, updateDoghouse }) => {
           document.removeEventListener("mouseup", onRotateEnd);
           document.removeEventListener("touchend", onRotateEnd);
 
-          updateRef.current(dataRef.current.id, {
+          const update = updateRef.current;
+          if (!update) {
+            putBack(markerInst);
+            return;
+          }
+          update(dataRef.current.id, {
             heading: `${Math.round(rotationRef.current).toString().padStart(3, "0")}°`,
           });
         };
@@ -251,8 +287,13 @@ const Doghouse = ({ data, updateDoghouse }) => {
           document.removeEventListener("mouseup", onDragEnd);
           document.removeEventListener("touchend", onDragEnd);
 
+          const update = updateRef.current;
+          if (!update) {
+            putBack(markerInst);
+            return;
+          }
           const pos = markerInst.getLatLng();
-          updateRef.current(dataRef.current.id, { lat: pos.lat, lon: pos.lng });
+          update(dataRef.current.id, { lat: pos.lat, lon: pos.lng });
         };
 
         document.addEventListener("mousemove", onDrag, { passive: false });
@@ -270,7 +311,7 @@ const Doghouse = ({ data, updateDoghouse }) => {
     const marker = L.marker([data.lat, data.lon], {
       icon: L.divIcon({
         className: "doghouse-container",
-        html: getHtml(data, rotationRef.current),
+        html: getHtml(data, rotationRef.current, !updateRef.current),
         iconSize: [160, 120], 
         iconAnchor: [80, 60],
       }),
@@ -292,13 +333,13 @@ const Doghouse = ({ data, updateDoghouse }) => {
   useEffect(() => {
     if (!markerRef.current) return;
 
-    const incomingHeading = parseInt(data.heading) || 0;
+    const incomingHeading = doghouseRotation(data);
     rotationRef.current = incomingHeading;
 
     markerRef.current.setIcon(
       L.divIcon({
         className: "doghouse-container",
-        html: getHtml(data, incomingHeading),
+        html: getHtml(data, incomingHeading, locked),
         iconSize: [160, 120],
         iconAnchor: [80, 60],
       })
@@ -306,7 +347,7 @@ const Doghouse = ({ data, updateDoghouse }) => {
     
     markerRef.current.setLatLng([data.lat, data.lon]);
     setTimeout(() => attachListeners(markerRef.current), 50);
-  }, [data.lat, data.lon, data.heading, data.time, data.dist, data.airspeed, data.id_val]);
+  }, [data.lat, data.lon, data.heading, data.time, data.dist, data.airspeed, data.id_val, locked]);
 
   return null;
 };

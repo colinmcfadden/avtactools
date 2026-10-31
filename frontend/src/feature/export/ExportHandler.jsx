@@ -2,6 +2,7 @@ import { useEffect, useRef } from "react";
 import { useMap } from "react-leaflet";
 import L from "leaflet";
 import * as htmlToImage from 'html-to-image';
+import { keepInCapture } from './captureFilter';
 
 const ExportHandler = ({ isExporting, exportBox, setExportProgress, onExportComplete }) => {
   const map = useMap();
@@ -60,10 +61,8 @@ const ExportHandler = ({ isExporting, exportBox, setExportProgress, onExportComp
            pixelRatio: 2, 
            skipAutoScale: true,
            skipFonts: true,
-           filter: (node) => {
-             return !node.classList?.contains('leaflet-control-container') && 
-                    !node.classList?.contains('ff-panel');
-           }
+           // Controls, panels and screen-only layers (the MGRS grid) stay off the card.
+           filter: keepInCapture,
         });
         setExportProgress(40);
 

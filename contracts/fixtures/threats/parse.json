@@ -1,0 +1,221 @@
+{
+  "description": "What parseThsFile reads out of each .ths in ../sqlite, as threatToPayload sends it: position, symbol, text and radars with their bands. Colours and transparency come from the defaults for the radar type, not from the file.",
+  "generatedBy": "frontend/src/contracts/sqliteFixtures.test.js (UPDATE_CONTRACTS=1)",
+  "tolerance": 1e-9,
+  "files": {
+    "threats.ths": [
+      {
+        "name": "SA-6 Gainful",
+        "milstdId": "SHGPEWMAI------",
+        "lat": 34.5,
+        "lon": -84.25,
+        "information": "Default threat",
+        "source": "SOF",
+        "showThreat": true,
+        "radars": [
+          {
+            "type": 0,
+            "rangeNmi": 25,
+            "antennaHeightFt": 20,
+            "aglNotMsl": true,
+            "showMask": true,
+            "showRangeRings": true,
+            "bands": [
+              {"altFt":50,"color":"#fbbf24","alpha":0.32,"colorIndex":1,"viewable":true},
+              {"altFt":250,"color":"#f97316","alpha":0.28,"colorIndex":3,"viewable":true},
+              {"altFt":500,"color":"#facc15","alpha":0.24,"colorIndex":5,"viewable":true}
+            ]
+          },
+          {
+            "type": 1,
+            "rangeNmi": 15,
+            "antennaHeightFt": 20,
+            "aglNotMsl": true,
+            "showMask": true,
+            "showRangeRings": true,
+            "bands": [
+              {"altFt":50,"color":"#ef4444","alpha":0.42,"colorIndex":2,"viewable":true},
+              {"altFt":250,"color":"#dc2626","alpha":0.34,"colorIndex":4,"viewable":true},
+              {"altFt":500,"color":"#b91c1c","alpha":0.26,"colorIndex":0,"viewable":true}
+            ]
+          }
+        ]
+      },
+      {
+        "name": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA😀",
+        "milstdId": "SHGPEWMAI------",
+        "lat": 33.123456789,
+        "lon": -83.987654321,
+        "information": "ééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééé",
+        "source": "SSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSS",
+        "showThreat": true,
+        "radars": [
+          {
+            "type": 1,
+            "rangeNmi": 8.5,
+            "antennaHeightFt": 33.7,
+            "aglNotMsl": false,
+            "showMask": true,
+            "showRangeRings": true,
+            "bands": [
+              {"altFt":50,"color":"#ef4444","alpha":0.42,"colorIndex":2,"viewable":true},
+              {"altFt":250,"color":"#dc2626","alpha":0.34,"colorIndex":4,"viewable":true},
+              {"altFt":500,"color":"#b91c1c","alpha":0.26,"colorIndex":0,"viewable":true}
+            ]
+          }
+        ]
+      },
+      {
+        "name": "Threat 3",
+        "milstdId": "SHGPEWMAI------",
+        "lat": -12.5,
+        "lon": 130.75,
+        "information": "",
+        "source": "SOF",
+        "showThreat": true,
+        "radars": [
+          {
+            "type": 0,
+            "rangeNmi": 12,
+            "antennaHeightFt": 20,
+            "aglNotMsl": true,
+            "showMask": false,
+            "showRangeRings": false,
+            "bands": [
+              {"altFt":50,"color":"#fbbf24","alpha":0.32,"colorIndex":1,"viewable":true},
+              {"altFt":250,"color":"#f97316","alpha":0.28,"colorIndex":3,"viewable":true},
+              {"altFt":500,"color":"#facc15","alpha":0.24,"colorIndex":5,"viewable":true}
+            ]
+          }
+        ]
+      },
+      {
+        "name": "Two bands",
+        "milstdId": "SHGPEWMAI------",
+        "lat": 35,
+        "lon": -85,
+        "information": "",
+        "source": "SOF",
+        "showThreat": true,
+        "radars": [
+          {
+            "type": 1,
+            "rangeNmi": 10,
+            "antennaHeightFt": 20,
+            "aglNotMsl": true,
+            "showMask": true,
+            "showRangeRings": true,
+            "bands": [
+              {"altFt":250,"color":"#ef4444","alpha":0.42,"colorIndex":7,"viewable":false},
+              {"altFt":0,"color":"#dc2626","alpha":0.34,"colorIndex":8,"viewable":true},
+              {"altFt":0,"color":"#b91c1c","alpha":0.26,"colorIndex":1,"viewable":true}
+            ]
+          }
+        ]
+      },
+      {
+        "name": "Many bands",
+        "milstdId": "SHGPEWMAI------",
+        "lat": 36,
+        "lon": -86,
+        "information": "",
+        "source": "SOF",
+        "showThreat": true,
+        "radars": [
+          {
+            "type": 0,
+            "rangeNmi": 30,
+            "antennaHeightFt": 20,
+            "aglNotMsl": true,
+            "showMask": true,
+            "showRangeRings": true,
+            "bands": [
+              {"altFt":100,"color":"#fbbf24","alpha":0.32,"colorIndex":9,"viewable":true},
+              {"altFt":200,"color":"#f97316","alpha":0.28,"colorIndex":10,"viewable":false},
+              {"altFt":300,"color":"#facc15","alpha":0.24,"colorIndex":11,"viewable":true}
+            ]
+          },
+          {
+            "type": 1,
+            "rangeNmi": 5,
+            "antennaHeightFt": 20,
+            "aglNotMsl": true,
+            "showMask": true,
+            "showRangeRings": true,
+            "bands": [
+              {"altFt":0,"color":"#ef4444","alpha":0.42,"colorIndex":1,"viewable":true},
+              {"altFt":0,"color":"#dc2626","alpha":0.34,"colorIndex":3,"viewable":true},
+              {"altFt":0,"color":"#b91c1c","alpha":0.26,"colorIndex":5,"viewable":true}
+            ]
+          }
+        ]
+      },
+      {
+        "name": "Marker only",
+        "milstdId": "SHGPUCI----K---",
+        "lat": 37,
+        "lon": -87,
+        "information": "No radar",
+        "source": "SOF",
+        "showThreat": true,
+        "radars": [
+          {
+            "type": 0,
+            "rangeNmi": 25,
+            "antennaHeightFt": 20,
+            "aglNotMsl": true,
+            "showMask": true,
+            "showRangeRings": true,
+            "bands": [
+              {"altFt":50,"color":"#fbbf24","alpha":0.32,"colorIndex":1,"viewable":true},
+              {"altFt":250,"color":"#f97316","alpha":0.28,"colorIndex":3,"viewable":true},
+              {"altFt":500,"color":"#facc15","alpha":0.24,"colorIndex":5,"viewable":true}
+            ]
+          },
+          {
+            "type": 1,
+            "rangeNmi": 15,
+            "antennaHeightFt": 20,
+            "aglNotMsl": true,
+            "showMask": true,
+            "showRangeRings": true,
+            "bands": [
+              {"altFt":50,"color":"#ef4444","alpha":0.42,"colorIndex":2,"viewable":true},
+              {"altFt":250,"color":"#dc2626","alpha":0.34,"colorIndex":4,"viewable":true},
+              {"altFt":500,"color":"#b91c1c","alpha":0.26,"colorIndex":0,"viewable":true}
+            ]
+          }
+        ]
+      },
+      {
+        "name": "",
+        "milstdId": "",
+        "lat": 38,
+        "lon": -88,
+        "information": "",
+        "source": "",
+        "showThreat": true,
+        "radars": [
+          {
+            "type": 0,
+            "rangeNmi": 5,
+            "antennaHeightFt": 20,
+            "aglNotMsl": true,
+            "showMask": true,
+            "showRangeRings": true,
+            "bands": [
+              {"altFt":50,"color":"#fbbf24","alpha":0.32,"colorIndex":1,"viewable":true},
+              {"altFt":250,"color":"#f97316","alpha":0.28,"colorIndex":3,"viewable":true},
+              {"altFt":500,"color":"#facc15","alpha":0.24,"colorIndex":5,"viewable":true}
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "errors": {
+    "not SQLite": "This doesn't look like an AMPS .ths threat file.",
+    "no THREATS table": "No THREATS table found — is this an AMPS .ths file?",
+    "no readable threats": "This .ths file contains no readable threats."
+  }
+}

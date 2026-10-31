@@ -1,0 +1,166 @@
+package app.ezpztac.model
+
+import kotlinx.serialization.KSerializer
+import kotlinx.serialization.descriptors.elementNames
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.JsonNull
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.jsonObject
+
+/**
+ * The routes saved together under one name: what the web keeps in a saved route's `route_data` (`{ version: 1, routes: [...] }`, the routes drawn in
+ * one sitting) and what one `kind: sketch` record on the server holds. One record is one [RouteSet], whole, so a set made here opens on the web and
+ * back.
+ *
+ * Nothing is dropped on the way through. A field a newer web release adds to the document, a route, a point or the plan is kept in `extras` and written
+ * back; a route this version cannot read at all is kept in [unreadable] and written back after the others. (A field *inside* a per-point override, or
+ * inside an airspeed, altitude or wind, is the one place not kept: those have no room for it.)
+ */
+public data class RouteSet(
+    /** The record's identity (its `client_uuid`), which is how the set is found whatever else changes. */
+    val id: String,
+    /** The server's id once it has one; null for a set made here that has not synced. */
+    val savedId: Int? = null,
+    val name: String,
+    val routes: List<SketchRoute>,
+    /** Top-level fields of the document other than `routes`, `version` included: a version this release does not know is written back as it was found. */
+    val extras: JsonObject = JsonObject(emptyMap()),
+    /** Routes in the document that could not be read as a route, as they were. */
+    val unreadable: List<JsonElement> = emptyList(),
+    /**
+     * Set when this is an imported AMPS mission and not a set drawn here. A mission's **file** is its document: the routes are read out of it when it is opened and the edits are
+     * written back into it, so everything in the file this app does not read is kept. The link is never part of [RouteSets]' JSON (a mission's `route_data` is only a summary).
+     */
+    val mission: MissionLink? = null,
+) {
+    /** The route named [routeId], if it is in the set. */
+    public fun route(routeId: String): SketchRoute? = routes.firstOrNull { it.id == routeId }
+
+    /** The set with [routeId] changed by [change]; the same set when there is no such route or [change] leaves it as it was. */
+    public fun mapRoute(routeId: String, change: (SketchRoute) -> SketchRoute): RouteSet {
+        var found = false
+        val next = routes.map { r ->
+            if (r.id != routeId) r else change(r).also { found = true }
+        }
+        return if (found && next != routes) copy(routes = next) else this
+    }
+
+    /** The set with [route] added at the end. */
+    public fun plus(route: SketchRoute): RouteSet = copy(routes = routes + route)
+
+    /** The set without [routeId]. */
+    public fun without(routeId: String): RouteSet = if (routes.any { it.id == routeId }) copy(routes = routes.filterNot { it.id == routeId }) else this
+}
+
+/** What makes a [RouteSet] an imported mission: [fileName] is what its `.msnx` is called. */
+public data class MissionLink(val fileName: String)
+
+/** Reading a [RouteSet] from the web's `route_data` and writing it back. */
+public object RouteSets {
+    /** The document's own version, which the web writes as 1. A document made with no version is given this one. */
+    public const val VERSION: Int = 1
+
+    private val json = Json { ignoreUnknownKeys = true; coerceInputValues = true; encodeDefaults = true; explicitNulls = false }
+
+    /**
+     * The set a record holds. Tolerant: a document with no `routes` is an empty set, a ground elevation or a point's "to" values that are null are none (as
+     * the web reads them, and as a mission pack leaves a key that went), and a route that cannot be read as one is kept as it was ([RouteSet.unreadable])
+     * instead of being thrown away or failing the whole set.
+     */
+    public fun parse(id: String, savedId: Int?, name: String, data: JsonObject): RouteSet {
+        val raw = (data["routes"] as? JsonArray) ?: JsonArray(emptyList())
+        val routes = ArrayList<SketchRoute>()
+        val unreadable = ArrayList<JsonElement>()
+        for (element in raw) {
+            val route = readRoute(element)
+            if (route != null) routes += route else unreadable += element
+        }
+        val extras = JsonObject(data.filterKeys { it != "routes" })
+        return RouteSet(id = id, savedId = savedId, name = name, routes = routes, extras = extras, unreadable = unreadable)
+    }
+
+    /** The document for [set]: the routes as the web writes them, then what could not be read, with the fields this version does not know kept. */
+    public fun serialize(set: RouteSet): JsonObject {
+        val routes = set.routes.map(::writeRoute) + set.unreadable
+        return JsonObject(mapOf("version" to JsonPrimitive(VERSION)) + set.extras + mapOf("routes" to JsonArray(routes)))
+    }
+
+    /**
+     * What the server keeps beside a mission's file, for lists: `{version: 1, routes: [{name, color}]}`, as the web saves it. It is not the mission (the file is); it is what a
+     * list can show without opening the file, and where each route's colour is kept.
+     */
+    public fun missionSummary(routes: List<SketchRoute>): JsonObject = JsonObject(
+        mapOf(
+            "version" to JsonPrimitive(VERSION),
+            "routes" to JsonArray(routes.map { JsonObject(mapOf("name" to JsonPrimitive(it.name), "color" to JsonPrimitive(it.color))) }),
+        ),
+    )
+
+    private val COLOR = Regex("^#[0-9A-Fa-f]{6}$")
+
+    /**
+     * The colour each route of a mission was given, by its place in the file; null where the summary names none. The summary is the server's text and a colour reaches the map as a
+     * style value, so anything that is not `#RRGGBB` is none.
+     */
+    public fun missionColors(summary: JsonObject): List<String?> =
+        ((summary["routes"] as? JsonArray) ?: JsonArray(emptyList())).map { route ->
+            ((route as? JsonObject)?.get("color") as? JsonPrimitive)?.takeIf { it.isString }?.content?.takeIf { COLOR.matches(it) }
+        }
+
+    private fun readRoute(element: JsonElement): SketchRoute? {
+        val obj = element as? JsonObject ?: return null
+        val route = try {
+            json.decodeFromJsonElement(SketchRoute.serializer(), withoutNullEntries(obj))
+        } catch (_: IllegalArgumentException) {                                        // SerializationException is one
+            return null
+        }
+        val rawPoints = obj["points"] as? JsonArray
+        val points = route.points.mapIndexed { i, p ->
+            val raw = rawPoints?.getOrNull(i) as? JsonObject
+            if (raw == null) p else p.copy(extras = unknown(raw, RoutePoint.serializer()))
+        }
+        val rawPlan = obj["plan"] as? JsonObject
+        val plan = if (rawPlan == null) route.plan else route.plan.copy(extras = unknown(rawPlan, RoutePlan.serializer()))
+        return route.copy(points = points, plan = plan, extras = unknown(obj, SketchRoute.serializer()))
+    }
+
+    private fun writeRoute(route: SketchRoute): JsonElement {
+        val points = route.points.map { p -> withExtras(json.encodeToJsonElement(RoutePoint.serializer(), p).jsonObject, p.extras) }
+        val plan = withExtras(json.encodeToJsonElement(RoutePlan.serializer(), route.plan).jsonObject, route.plan.extras)
+        val typed = json.encodeToJsonElement(SketchRoute.serializer(), route).jsonObject
+        return withExtras(JsonObject(typed + mapOf("points" to JsonArray(points), "plan" to plan)), route.extras)
+    }
+
+    /**
+     * [route] with the null entries of its two maps taken out, for the types to read: a ground elevation, or a point's "to" values, that is null is none,
+     * as the web reads them (`elevationsFt[p.id] ?? null`, `plan.perPoint?.[p.id]?.altitude`). A mission pack's route has them, because no operation
+     * deletes a key: one that went is sent as null (a point moved off the ground fetched for it, a clock moved to another point). Read strictly, one such
+     * entry made the whole route one this version could not read, and a pack's editor then wrote the route a second time (`RoutePackKind`).
+     */
+    private fun withoutNullEntries(route: JsonObject): JsonObject {
+        val elevations = (route["elevations"] as? JsonObject)?.withoutNulls()
+        val plan = route["plan"] as? JsonObject
+        val perPoint = (plan?.get("perPoint") as? JsonObject)?.withoutNulls()
+        if (elevations == null && perPoint == null) return route
+        val fields = LinkedHashMap(route)
+        if (elevations != null) fields["elevations"] = elevations
+        if (plan != null && perPoint != null) fields["plan"] = JsonObject(LinkedHashMap(plan).apply { put("perPoint", perPoint) })
+        return JsonObject(fields)
+    }
+
+    /** This object without its entries that are null; null when it has none. */
+    private fun JsonObject.withoutNulls(): JsonObject? = if (values.none { it is JsonNull }) null else JsonObject(filterValues { it !is JsonNull })
+
+    /** The keys of [obj] that [serializer]'s class does not have: what a newer release added. */
+    private fun unknown(obj: JsonObject, serializer: KSerializer<*>): JsonObject {
+        val known = serializer.descriptor.elementNames.toSet()
+        return JsonObject(obj.filterKeys { it !in known })
+    }
+
+    /** [typed] with [extras] added, [typed] winning: a field this version knows is never overwritten by a stale copy. */
+    private fun withExtras(typed: JsonObject, extras: JsonObject): JsonObject =
+        if (extras.isEmpty()) typed else JsonObject(typed + extras.filterKeys { it !in typed })
+}

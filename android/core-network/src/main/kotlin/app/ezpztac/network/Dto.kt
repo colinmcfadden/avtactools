@@ -1,0 +1,450 @@
+package app.ezpztac.network
+
+import kotlinx.serialization.SerialName
+import kotlinx.serialization.Serializable
+import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.JsonNull
+import kotlinx.serialization.json.JsonObject
+
+/*
+ * What the server sends and receives, one type per body in `contracts/openapi.yaml`.
+ * Field names are the server's (snake_case where it is), so a body reads straight into
+ * its type. Every one is held to the real responses recorded in
+ * `contracts/fixtures/network/responses.json`, strictly: a test fails if the server sends
+ * a field a type here does not have.
+ *
+ * Reading ignores a field a *newer* server adds (an installed app must keep working), and
+ * a field the app does not need is simply left out of the type.
+ */
+
+@Serializable
+public data class ApiUser(
+    val id: Int,
+    val email: String,
+    val name: String,
+    val picture: String? = null,
+    @SerialName("email_verified") val emailVerified: Boolean = false,
+    @SerialName("account_status") val accountStatus: String? = null,
+    @SerialName("has_password") val hasPassword: Boolean = false,
+    val role: String,
+    @SerialName("is_admin") val isAdmin: Boolean,
+    @SerialName("is_active") val isActive: Boolean,
+    /** Entitlements. A missing key means enabled. */
+    val features: Map<String, Boolean>,
+    @SerialName("mil_email") val milEmail: String? = null,
+    @SerialName("affiliation_verified") val affiliationVerified: Boolean = false,
+    /** Whether the `.mil` / approval gate is cleared. */
+    @SerialName("access_ok") val accessOk: Boolean,
+) {
+    /** A feature is on unless the server says it is off. */
+    public fun hasFeature(key: String): Boolean = features[key] != false
+}
+
+@Serializable
+public data class TokenResponse(
+    val status: String,
+    @SerialName("access_token") val accessToken: String,
+    /** Native clients only. Spent on use: the response to a refresh carries the next one. */
+    @SerialName("refresh_token") val refreshToken: String? = null,
+    /** Seconds a refresh token lives; each refresh extends it. */
+    @SerialName("refresh_expires_in") val refreshExpiresIn: Long? = null,
+    val user: ApiUser,
+)
+
+/**
+ * A request the server accepted without saying what it did. For sign-up, resending a link and a password reset it never says whether an
+ * address has an account, so the answer is the same either way (and a screen must not claim more than "if the address is eligible...").
+ */
+@Serializable
+public data class Accepted(
+    val status: String,
+    val message: String,
+    /** Present on sign-up: the account cannot be used until the emailed link is followed. */
+    @SerialName("requires_verification") val requiresVerification: Boolean = false,
+)
+
+/** A request that was carried out. [message] is for the person. */
+@Serializable
+public data class Done(val status: String, val message: String)
+
+@Serializable
+internal data class MilVerifyBody(val status: String, val user: ApiUser)
+
+/** One signed-in device. */
+@Serializable
+public data class DeviceSession(
+    val id: String,
+    val client: String? = null,
+    @SerialName("created_at") val createdAt: String,
+    @SerialName("last_active_at") val lastActiveAt: String,
+    /** This device. */
+    val current: Boolean,
+)
+
+@Serializable
+internal data class SessionsBody(val sessions: List<DeviceSession>)
+
+@Serializable
+public data class AppConfig(
+    val configVersion: Int,
+    val serverVersion: String,
+    val minAppVersion: MinAppVersion,
+    val maintenance: Maintenance,
+    val services: Services,
+    val mapbox: MapboxConfig,
+    /** The API the server serves now (`contracts/openapi.yaml`'s `info.version`); absent from a server older than it, which serves API 1. */
+    val apiVersion: String? = null,
+    /** Every API major the server still answers; absent from a server older than the field. */
+    val apiMajors: List<Int>? = null,
+) {
+    @Serializable public data class MinAppVersion(val android: String? = null, val ios: String? = null)
+    @Serializable public data class Maintenance(val active: Boolean, val message: String? = null)
+    @Serializable public data class Services(val lidarBuilds: Boolean, val packs: Boolean)
+    @Serializable public data class MapboxConfig(val publicToken: String? = null)
+}
+
+/** A saved LZ without its diagram. */
+@Serializable
+public data class LzSummary(
+    val id: Int,
+    val name: String,
+    @SerialName("created_at") val createdAt: String,
+    @SerialName("updated_at") val updatedAt: String,
+    /** The record's identity: the device's own if it sent one. */
+    @SerialName("client_uuid") val clientUuid: String,
+    /** Bumped by every change. */
+    val revision: Int,
+)
+
+@Serializable
+public data class LzFull(
+    val id: Int,
+    val name: String,
+    @SerialName("created_at") val createdAt: String,
+    @SerialName("updated_at") val updatedAt: String,
+    @SerialName("client_uuid") val clientUuid: String,
+    val revision: Int,
+    /** The diagram document, schema 2. Opaque here; `core-model` reads it. */
+    @SerialName("lz_data") val lzData: JsonObject,
+)
+
+/** A saved set of sketched routes without its routes (`kind` is `sketch`; a `mission` also holds the AMPS file the web imported). */
+@Serializable
+public data class RouteSummary(
+    val id: Int,
+    val name: String,
+    val kind: String,
+    @SerialName("file_name") val fileName: String? = null,
+    @SerialName("has_file") val hasFile: Boolean,
+    @SerialName("created_at") val createdAt: String,
+    @SerialName("updated_at") val updatedAt: String,
+    @SerialName("client_uuid") val clientUuid: String,
+    val revision: Int,
+)
+
+@Serializable
+public data class RouteFull(
+    val id: Int,
+    val name: String,
+    val kind: String,
+    @SerialName("file_name") val fileName: String? = null,
+    @SerialName("has_file") val hasFile: Boolean,
+    @SerialName("created_at") val createdAt: String,
+    @SerialName("updated_at") val updatedAt: String,
+    @SerialName("client_uuid") val clientUuid: String,
+    val revision: Int,
+    /** A sketch's `{ version: 1, routes: [...] }`; a mission's is a display summary. Opaque here; `core-model` reads it. */
+    @SerialName("route_data") val routeData: JsonObject,
+)
+
+/**
+ * What `/api/weather` says about a position. The services behind it are other people's, so it always answers with what could be had: no station is
+ * `station_id` `TIMEOUT` with null numbers, and the NOTAMs are either an object of lists by feature or a sentence. A number is a whole number or a
+ * decimal as the station wrote it (`18`, `16.5`), and a few fields are a number or text (a variable wind is `VRB`, a visibility `10+`, an altimeter `--`
+ * when there is none), so they are all [JsonElement]s here, exactly as sent; `core-model` reads them.
+ */
+@Serializable
+public data class WeatherReportDto(
+    @SerialName("station_id") val stationId: String,
+    val name: String,
+    @SerialName("temp_c") val tempC: JsonElement? = null,
+    @SerialName("dewp_c") val dewpC: JsonElement? = null,
+    @SerialName("wind_spd_kts") val windSpeedKts: JsonElement? = null,
+    @SerialName("wind_dir") val windDir: JsonElement? = null,
+    @SerialName("wind_gust_kts") val windGustKts: JsonElement? = null,
+    @SerialName("vis_sm") val visSm: JsonElement? = null,
+    val pressure: JsonElement? = null,
+    @SerialName("flight_category") val flightCategory: String? = null,
+    @SerialName("raw_metar") val rawMetar: String? = null,
+    @SerialName("distance_miles") val distanceMiles: JsonElement? = null,
+    val notams: JsonElement? = null,
+)
+
+/** A saved set of local points without its points. The colour and whether it is shown are not saved: each device keeps its own. */
+@Serializable
+public data class PointSetSummary(
+    val id: Int,
+    val name: String,
+    @SerialName("point_count") val pointCount: Int,
+    @SerialName("created_at") val createdAt: String,
+    @SerialName("updated_at") val updatedAt: String,
+    @SerialName("client_uuid") val clientUuid: String,
+    val revision: Int,
+)
+
+@Serializable
+public data class PointSetFull(
+    val id: Int,
+    val name: String,
+    @SerialName("point_count") val pointCount: Int,
+    @SerialName("created_at") val createdAt: String,
+    @SerialName("updated_at") val updatedAt: String,
+    @SerialName("client_uuid") val clientUuid: String,
+    val revision: Int,
+    /** The points as the web keeps them (`{ id, name, description, group, icon, elevationFt, lat, lon }`). Opaque here; `core-model` reads them. */
+    val points: JsonArray,
+)
+
+/** A saved mission brief without its document (docs/MISSION_BRIEF.md §3): the Library's record of a brief made outside a pack. */
+@Serializable
+public data class BriefSummary(
+    val id: Int,
+    val name: String,
+    @SerialName("created_at") val createdAt: String,
+    @SerialName("updated_at") val updatedAt: String,
+    @SerialName("client_uuid") val clientUuid: String,
+    val revision: Int,
+)
+
+@Serializable
+public data class BriefFull(
+    val id: Int,
+    val name: String,
+    @SerialName("created_at") val createdAt: String,
+    @SerialName("updated_at") val updatedAt: String,
+    @SerialName("client_uuid") val clientUuid: String,
+    val revision: Int,
+    /** The brief document (docs/MISSION_BRIEF.md §2.2). Opaque here; `core-brief` reads it. */
+    val data: JsonObject,
+)
+
+/** An airframe profile: the admin's master list, or one of the caller's own. */
+@Serializable
+public data class AircraftProfileDto(
+    val id: Int,
+    val slug: String,
+    val name: String,
+    val designation: String,
+    @SerialName("icon_key") val iconKey: String,
+    @SerialName("is_system") val isSystem: Boolean,
+    @SerialName("rotor_diameter_m") val rotorDiameterM: Double,
+    @SerialName("rotor_tip_clearance_m") val rotorTipClearanceM: Double,
+    @SerialName("default_airspeed_kts") val defaultAirspeedKts: Double,
+    @SerialName("default_airspeed_type") val defaultAirspeedType: String,
+    @SerialName("max_indicated_kts") val maxIndicatedKts: Double,
+    @SerialName("default_altitude_ft") val defaultAltitudeFt: Double,
+    @SerialName("default_altitude_ref") val defaultAltitudeRef: String,
+    @SerialName("min_altitude_ft_msl") val minAltitudeFtMsl: Double,
+    @SerialName("max_altitude_ft_msl") val maxAltitudeFtMsl: Double,
+    @SerialName("default_fuel_flow_lb_hr") val defaultFuelFlowLbHr: Double,
+    @SerialName("default_gross_weight_lb") val defaultGrossWeightLb: Double,
+    @SerialName("perf_source") val perfSource: String,
+    @SerialName("amps_vehicle_description") val ampsVehicleDescription: String? = null,
+    @SerialName("has_template") val hasTemplate: Boolean,
+    @SerialName("template_kind") val templateKind: String? = null,
+    @SerialName("template_name") val templateName: String? = null,
+    @SerialName("sort_order") val sortOrder: Int,
+    /** The caller's own profiles only: the master list does not sync. */
+    @SerialName("client_uuid") val clientUuid: String? = null,
+    val revision: Int? = null,
+)
+
+/** What a user may set on their own profile. A field left null is not sent and is left as it is. */
+@Serializable
+public data class AircraftProfileInput(
+    @SerialName("client_uuid") val clientUuid: String? = null,
+    val name: String? = null,
+    val designation: String? = null,
+    @SerialName("icon_key") val iconKey: String? = null,
+    @SerialName("rotor_diameter_m") val rotorDiameterM: Double? = null,
+    @SerialName("rotor_tip_clearance_m") val rotorTipClearanceM: Double? = null,
+    @SerialName("default_airspeed_kts") val defaultAirspeedKts: Double? = null,
+    @SerialName("default_airspeed_type") val defaultAirspeedType: String? = null,
+    @SerialName("max_indicated_kts") val maxIndicatedKts: Double? = null,
+    @SerialName("default_altitude_ft") val defaultAltitudeFt: Double? = null,
+    @SerialName("default_altitude_ref") val defaultAltitudeRef: String? = null,
+    @SerialName("min_altitude_ft_msl") val minAltitudeFtMsl: Double? = null,
+    @SerialName("max_altitude_ft_msl") val maxAltitudeFtMsl: Double? = null,
+    @SerialName("default_fuel_flow_lb_hr") val defaultFuelFlowLbHr: Double? = null,
+    @SerialName("default_gross_weight_lb") val defaultGrossWeightLb: Double? = null,
+    @SerialName("amps_vehicle_description") val ampsVehicleDescription: String? = null,
+)
+
+/** One changed record in the sync feed. `type` is `lz`, `route`, `pointset` or `aircraft`. */
+@Serializable
+public data class SyncChange(
+    val type: String,
+    val id: Int,
+    @SerialName("client_uuid") val clientUuid: String,
+    val revision: Int,
+    /** A tombstone: the record is gone. Its `name` is empty and its `data` is empty. */
+    val deleted: Boolean,
+    val name: String,
+    @SerialName("created_at") val createdAt: String? = null,
+    @SerialName("updated_at") val updatedAt: String? = null,
+    /** This change's place in the user's order. */
+    val seq: Int,
+    /** Routes only: `sketch` or `mission`. */
+    val kind: String? = null,
+    @SerialName("file_name") val fileName: String? = null,
+    @SerialName("has_file") val hasFile: Boolean = false,
+    /** The LZ's diagram, the route's data, the point set's points or the profile, per [type]. */
+    val data: JsonElement = JsonNull,
+)
+
+@Serializable
+public data class ChangeFeed(
+    /** Send this as `since` next time. Equals `since` when nothing changed. */
+    val cursor: Int,
+    /** Ask again at once. */
+    @SerialName("has_more") val hasMore: Boolean,
+    val changes: List<SyncChange>,
+)
+
+// -- Terrain analysis ---------------------------------------------------------------
+
+/** What `/api/analyze-field` found: the polygon of the landing area and the ground elevation there. */
+@Serializable
+public data class FieldAnalysis(
+    val status: String,
+    /** The area as `[lat, lon]` pairs, in the order the model traced it. */
+    @SerialName("suggested_lz") val suggestedLz: List<List<Double>>,
+    /** Feet, as the server writes it: whole feet as a string, or `TBD` when the elevation service could not be reached. */
+    val elevation: String,
+    val message: String,
+)
+
+@Serializable
+public data class SlopeStats(
+    val maxDeg: Double,
+    val p95Deg: Double,
+    val areaOver6Pct: Double,
+    val areaOver10Pct: Double,
+    val areaOver15Pct: Double,
+    val sampleCount: Int,
+    val sampleAreaM2: Double,
+)
+
+/** Slope along and across a landing heading, against the UH-60 limits in [SlopeThresholds]. */
+@Serializable
+public data class DirectionalSlope(
+    val headingDeg: Double,
+    val noseHighMaxDeg: Double,
+    val noseLowMaxDeg: Double,
+    val crossSlopeMaxDeg: Double,
+    val noseHighOverLimitPct: Double,
+    val noseLowOverLimitPct: Double,
+    val crossSlopeOverLimitPct: Double,
+)
+
+/**
+ * The steepest slope over the landing zone for one whole [heading] (0..359), in degrees to 0.1: nose high is the ground rising ahead (the nose
+ * up), nose low the ground falling away (the nose down), and the cross slope is either side. The app judges a landing heading from these.
+ */
+@Serializable
+public data class HeadingSlope(val heading: Int, val noseHighMaxDeg: Double, val noseLowMaxDeg: Double, val crossSlopeMaxDeg: Double)
+
+/**
+ * One piece of a contour line of the ground in or round the landing zone: its height in feet ([elevationFt], the source's datum), whether it
+ * is a [major] (every fifth) line, whether it lies [inside] the boundary or in the 40 m ring outside it, its [points] as `[lat, lon]` (a ring's
+ * last is its first), and where the height's number goes ([label], `[lat, lon]`), on at most one piece of a height.
+ */
+@Serializable
+public data class ContourLine(val elevationFt: Int, val major: Boolean, val inside: Boolean, val points: List<List<Double>>, val label: List<Double>? = null)
+
+/** The contour lines of the ground in and round the landing zone, every [intervalFt] feet. */
+@Serializable
+public data class SlopeContours(val intervalFt: Int, val lines: List<ContourLine>)
+
+/**
+ * The ground along one straight line through the landing zone's middle at [heading] (0..179, true): its heights in feet ([elevationsFt], null
+ * where the terrain has none) every `stepM` from `halfLengthM` behind the middle to `halfLengthM` ahead, and where the line crosses the
+ * boundary ([lz], metres from the middle, behind negative), or null. A heading of 180 or more is this line read backwards.
+ */
+@Serializable
+public data class ProfileLine(val heading: Int, val elevationsFt: List<Double?>, val lz: List<Double>? = null)
+
+/** The ground along lines through the landing zone's middle ([center], `[lat, lon]`), one every [headingStepDeg], for the slope profile. */
+@Serializable
+public data class SlopeProfiles(val center: List<Double>, val stepM: Double, val halfLengthM: Double, val headingStepDeg: Int, val lines: List<ProfileLine>)
+
+/** The UH-60's slope landing limits with no wind, degrees: 15 nose high (nose up), 6 nose low (nose down), 15 cross slope. */
+@Serializable
+public data class Uh60Limits(val noseHigh: Double, val noseLow: Double, val crossSlope: Double)
+
+@Serializable
+public data class SlopeThresholds(
+    /** The band edges the raster is coloured by, degrees. */
+    val bands: List<Double>,
+    val uh60: Uh60Limits,
+)
+
+/** What `/api/terrain-analysis` returns: a banded slope raster over [bounds] and the numbers behind it. */
+@Serializable
+public data class TerrainAnalysis(
+    val status: String,
+    /** A `data:image/png;base64,` raster, transparent outside the polygon. */
+    val overlay: String,
+    /** `[[south, west], [north, east]]` of the raster. */
+    val bounds: List<List<Double>>,
+    /** Which terrain source answered (`local_highres_cog`, `terrarium` …), shown with the numbers so two sources are never mixed silently. */
+    val source: String,
+    val resolutionM: Double,
+    val verticalDatum: String,
+    val stats: SlopeStats,
+    /** Null when no landing heading was sent. */
+    val directional: DirectionalSlope? = null,
+    /** The steepest slope for every whole heading, 0 to 359 in order. Null from a server older than the field, which judges no heading. */
+    val byHeading: List<HeadingSlope>? = null,
+    /** The contour lines of the ground in and round the polygon. Null from a server older than the field, which draws the raster alone. */
+    val contours: SlopeContours? = null,
+    /** The ground along lines through the polygon, for the slope profile. Null from a server older than the field, or with no ground round the polygon. */
+    val profiles: SlopeProfiles? = null,
+    val thresholds: SlopeThresholds,
+)
+
+/** What `/api/elevations` answered: one elevation in whole feet for each point asked about, in order, `null` where its tile could not be read. */
+@Serializable
+public data class ElevationsResponse(
+    val elevationsFt: List<Int?>,
+    /** Set when sampling failed outright (the server still answers 200, with every elevation null); words for a log, not for a person. */
+    val error: String? = null,
+)
+
+/** The wind the server found for one point of a route. */
+@Serializable
+public data class PointWindDto(
+    /** Whole degrees true the wind blows FROM; 0 when it is variable. */
+    val dirTrue: Int,
+    val speedKts: Double,
+    val variable: Boolean,
+    /** The nearest observation's temperature, if it had one. */
+    val tempC: Double? = null,
+    val station: String? = null,
+    /** `METAR` (an observation) or `TAF` (a forecast). */
+    val source: String,
+    val distanceMiles: Double,
+)
+
+/** What `/api/route-winds` answered: the wind for each point it could find one for, by the id the point was sent with. A point with no station in reach is not in it. */
+@Serializable
+public data class WindsResponse(val winds: Map<String, PointWindDto>)
+
+/** One radar's terrain mask: a `data:image/png;base64,` raster over the response's `bounds`, in the colours of the radar's altitude bands. */
+@Serializable
+public data class ThreatMaskRadarDto(val type: Int, val png: String)
+
+/** What `/api/threat-mask` answered: where the masks are (`[[south, west], [north, east]]`) and a mask for each radar that had something to show (none, when nothing is visible). */
+@Serializable
+public data class ThreatMaskDto(val bounds: List<List<Double>>, val radars: List<ThreatMaskRadarDto>)

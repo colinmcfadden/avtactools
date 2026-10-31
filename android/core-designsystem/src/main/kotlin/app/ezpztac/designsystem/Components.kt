@@ -1,0 +1,303 @@
+package app.ezpztac.designsystem
+
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Icon
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Snackbar
+import androidx.compose.material3.SnackbarData
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.SnackbarVisuals
+import androidx.compose.material3.Surface
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.autofill.ContentType
+import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.semantics.contentType
+import androidx.compose.ui.semantics.error
+import androidx.compose.ui.semantics.liveRegion
+import androidx.compose.ui.semantics.stateDescription
+import androidx.compose.ui.semantics.LiveRegionMode
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.input.KeyboardCapitalization
+import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.text.input.VisualTransformation
+import androidx.compose.ui.unit.dp
+
+/** What kind of notice a [Banner] is. Colour never carries the meaning alone: each has its own words and role. */
+enum class BannerKind { Error, Warning, Info, Success }
+
+/**
+ * An inline notice with a retry or dismiss, in place of the web's blocking `alert()` (docs/NATIVE_APPS_PLAN.md, "App architecture").
+ * Drawn as the redesign draws a notice (docs/native-design, the Threats panel's): a card tinted with the kind's colour, its border a
+ * little stronger, its icon in that colour and its words in the screen's own. A screen reader announces it when it appears.
+ */
+/** How strongly a notice is tinted with its kind's colour behind words in the screen's own (`TokenContrastTest` holds the pair to AA). */
+internal const val BANNER_TINT = 0.10f
+
+@Composable
+fun Banner(
+    text: String,
+    kind: BannerKind,
+    modifier: Modifier = Modifier,
+    actionLabel: String? = null,
+    onAction: (() -> Unit)? = null,
+) {
+    val tint = bannerTint(kind)
+    Surface(
+        modifier = modifier.fillMaxWidth().semantics { liveRegion = LiveRegionMode.Polite },
+        color = tint.copy(alpha = BANNER_TINT),
+        contentColor = MaterialTheme.colorScheme.onSurface,
+        shape = RoundedCornerShape(Tokens.Radius.lg.dp),
+        border = BorderStroke(1.dp, tint.copy(alpha = 0.30f)),
+    ) {
+        Row(
+            modifier = Modifier.padding(start = Tokens.Spacing.md.dp, end = Tokens.Spacing.lg.dp, top = Tokens.Spacing.md.dp, bottom = Tokens.Spacing.md.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(Tokens.Spacing.md.dp),
+        ) {
+            Icon(painterResource(bannerIcon(kind)), contentDescription = null, tint = tint, modifier = Modifier.size(Tokens.Size.iconSmall.dp))
+            Text(text, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
+            if (actionLabel != null && onAction != null) {
+                TextButton(
+                    onClick = onAction,
+                    modifier = Modifier.heightIn(min = Tokens.Size.touchTarget.dp),
+                    colors = ButtonDefaults.textButtonColors(contentColor = tint),
+                ) { Text(actionLabel, fontWeight = FontWeight.SemiBold) }
+            }
+        }
+    }
+}
+
+/**
+ * Where toasts appear: short notices about something that has just happened (the redesign's `Snackbar`, docs/native-design), each with its
+ * words, at most one action and a close button, drawn in the palette's own colours ([toastColorsFor]), never Material's stock ones. A screen
+ * reader announces each, and Material gives one more time when an accessibility service is on.
+ */
+@Composable
+fun ToastHost(state: SnackbarHostState, modifier: Modifier = Modifier, actions: Boolean = true) {
+    val colors = LocalToastColors.current
+    SnackbarHost(state, modifier) { data ->
+        Snackbar(
+            snackbarData = if (actions) data else WordsAlone(data),
+            shape = RoundedCornerShape(Tokens.Radius.sm.dp),
+            containerColor = androidx.compose.ui.graphics.Color(colors.container),
+            contentColor = androidx.compose.ui.graphics.Color(colors.content),
+            actionColor = androidx.compose.ui.graphics.Color(colors.action),
+            dismissActionContentColor = androidx.compose.ui.graphics.Color(colors.content),
+        )
+    }
+}
+
+/**
+ * A toast with its words and close button and no action ([ToastHost] with `actions` off): while a brief is presented on the live sandtable a toast's action would
+ * open a planning flow, so it offers none, as the web's toasts offer none then. What it asked of the person is left as unanswered, as a toast that times out.
+ */
+private class WordsAlone(private val data: SnackbarData) : SnackbarData {
+    override val visuals: SnackbarVisuals = object : SnackbarVisuals by data.visuals {
+        override val actionLabel: String? get() = null
+    }
+
+    override fun performAction() = data.performAction()
+
+    override fun dismiss() = data.dismiss()
+}
+
+@Composable
+private fun bannerTint(kind: BannerKind): androidx.compose.ui.graphics.Color = when (kind) {
+    BannerKind.Error -> MaterialTheme.colorScheme.error
+    BannerKind.Warning -> EzpzTheme.status.warning
+    BannerKind.Info -> EzpzTheme.status.accent
+    BannerKind.Success -> EzpzTheme.status.success
+}
+
+private fun bannerIcon(kind: BannerKind): Int = when (kind) {
+    BannerKind.Error -> EzpzIcons.errorFill
+    BannerKind.Warning -> EzpzIcons.warning
+    BannerKind.Info -> EzpzIcons.info
+    BannerKind.Success -> EzpzIcons.checkCircleFill
+}
+
+/** A labelled text field, with a hint under it and an error that replaces the hint. Touch target at least 56 dp. */
+@Composable
+fun EzpzTextField(
+    value: String,
+    onValueChange: (String) -> Unit,
+    label: String,
+    modifier: Modifier = Modifier,
+    hint: String? = null,
+    error: String? = null,
+    keyboardType: KeyboardType = KeyboardType.Text,
+    capitalization: KeyboardCapitalization = KeyboardCapitalization.None,
+    imeAction: ImeAction = ImeAction.Next,
+    onImeAction: () -> Unit = {},
+    enabled: Boolean = true,
+    singleLine: Boolean = true,
+    visualTransformation: VisualTransformation = VisualTransformation.None,
+    contentType: ContentType? = null,
+    trailing: (@Composable () -> Unit)? = null,
+) {
+    OutlinedTextField(
+        value = value,
+        onValueChange = onValueChange,
+        label = { Text(label) },
+        modifier = modifier
+            .fillMaxWidth()
+            .heightIn(min = Tokens.Size.touchTarget.dp)
+            .semantics {
+                if (contentType != null) this.contentType = contentType
+                if (error != null) this.error(error)
+            },
+        enabled = enabled,
+        singleLine = singleLine,
+        isError = error != null,
+        visualTransformation = visualTransformation,
+        keyboardOptions = KeyboardOptions(keyboardType = keyboardType, capitalization = capitalization, imeAction = imeAction),
+        keyboardActions = KeyboardActions(onAny = { onImeAction() }),
+        supportingText = (error ?: hint)?.let { text -> { Text(text) } },
+        trailingIcon = trailing,
+        shape = RoundedCornerShape(Tokens.Radius.md.dp),
+    )
+}
+
+/** A password field that can be revealed, because typing a 15-character passphrase on glass without seeing it is how mistakes happen. */
+@Composable
+fun PasswordField(
+    value: String,
+    onValueChange: (String) -> Unit,
+    label: String,
+    modifier: Modifier = Modifier,
+    hint: String? = null,
+    error: String? = null,
+    imeAction: ImeAction = ImeAction.Done,
+    onImeAction: () -> Unit = {},
+    newPassword: Boolean = false,
+    enabled: Boolean = true,
+    showLabel: String = "Show",
+    hideLabel: String = "Hide",
+) {
+    var visible by remember { mutableStateOf(false) }
+    EzpzTextField(
+        value = value,
+        onValueChange = onValueChange,
+        label = label,
+        modifier = modifier,
+        hint = hint,
+        error = error,
+        keyboardType = KeyboardType.Password,
+        imeAction = imeAction,
+        onImeAction = onImeAction,
+        enabled = enabled,
+        visualTransformation = if (visible) VisualTransformation.None else PasswordVisualTransformation(),
+        contentType = if (newPassword) ContentType.NewPassword else ContentType.Password,
+        trailing = {
+            TextButton(onClick = { visible = !visible }, modifier = Modifier.heightIn(min = Tokens.Size.touchTarget.dp)) {
+                Text(if (visible) hideLabel else showLabel)
+            }
+        },
+    )
+}
+
+/** The main action of a screen. While [busy] it shows progress and does not take another tap. */
+@Composable
+fun PrimaryButton(
+    text: String,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    busy: Boolean = false,
+    busyText: String? = null,
+    enabled: Boolean = true,
+) {
+    Button(
+        // While busy it is still drawn as an enabled button (a grey one hides the spinner and looks broken); it just takes no taps.
+        onClick = { if (!busy) onClick() },
+        enabled = enabled,
+        modifier = modifier.fillMaxWidth().heightIn(min = Tokens.Size.touchTarget.dp).semantics { if (busy) stateDescription = "Working" },
+        shape = RoundedCornerShape(50),                                       // the redesign's buttons are pills
+        colors = ButtonDefaults.buttonColors(),
+    ) {
+        if (busy) {
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(Tokens.Spacing.md.dp)) {
+                CircularProgressIndicator(modifier = Modifier.size(Tokens.Size.iconSmall.dp), strokeWidth = 2.dp, color = MaterialTheme.colorScheme.onPrimary)
+                Text(busyText ?: text)
+            }
+        } else {
+            Text(text)
+        }
+    }
+}
+
+@Composable
+fun SecondaryButton(
+    text: String,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    enabled: Boolean = true,
+) {
+    OutlinedButton(
+        onClick = onClick,
+        enabled = enabled,
+        modifier = modifier.fillMaxWidth().heightIn(min = Tokens.Size.touchTarget.dp),
+        shape = RoundedCornerShape(50),                                       // the redesign's buttons are pills
+        // A disabled one often carries words that have to be read (a countdown), so its text stays at the secondary-text contrast
+        // the palettes are tested to; only the border and the missing tap say it is off.
+        // Named, not left to the default: the default drew the label in the muted grey of a disabled button (seen in a screenshot).
+        colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.primary, disabledContentColor = MaterialTheme.colorScheme.onSurfaceVariant),
+    ) { Text(text) }
+}
+
+/** A quiet action in running text or beside a form: a link-like button with a full-size touch target. */
+@Composable
+fun TextAction(text: String, onClick: () -> Unit, modifier: Modifier = Modifier, enabled: Boolean = true) {
+    TextButton(onClick = onClick, enabled = enabled, modifier = modifier.heightIn(min = Tokens.Size.touchTarget.dp)) { Text(text) }
+}
+
+/** A screen's heading and what it is for. */
+@Composable
+fun ScreenHeader(title: String, modifier: Modifier = Modifier, subtitle: String? = null, eyebrow: String? = null) {
+    Column(modifier = modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(Tokens.Spacing.xs.dp)) {
+        if (eyebrow != null) {
+            Text(eyebrow, style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
+        }
+        Text(title, style = MaterialTheme.typography.headlineMedium)
+        if (subtitle != null) {
+            Text(subtitle, style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+    }
+}
+
+/** A separator with a word in it, such as "or". */
+@Composable
+fun LabelledDivider(label: String, modifier: Modifier = Modifier) {
+    Row(modifier = modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(Tokens.Spacing.md.dp)) {
+        HorizontalDivider(modifier = Modifier.weight(1f), color = MaterialTheme.colorScheme.outline)
+        Text(label, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        HorizontalDivider(modifier = Modifier.weight(1f), color = MaterialTheme.colorScheme.outline)
+    }
+}

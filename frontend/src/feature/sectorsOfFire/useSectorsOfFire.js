@@ -1,6 +1,26 @@
 import { useState } from "react";
 
 /**
+ * A new sector of fire: a triangle about 110 m (0.001 degrees) across, pointing north from the target. Nothing for a target that is
+ * not a position. Pure, and exported so the native apps can be held to it (contracts/fixtures/planning/graphics.json).
+ */
+export const createSectorOfFire = (target, id) => {
+  const centerLat = Number(target[0]);
+  const centerLon = Number(target[1]);
+  if (!Number.isFinite(centerLat) || !Number.isFinite(centerLon)) return null;
+
+  const offset = 0.001;
+  return {
+    id,
+    points: [
+      { lat: centerLat + offset, lng: centerLon },
+      { lat: centerLat - offset, lng: centerLon + offset },
+      { lat: centerLat - offset, lng: centerLon - offset },
+    ],
+  };
+};
+
+/**
  * Optional controlled-state shape:
  *   { sectorsOfFire: Sector[], setSectors: React.Dispatch<React.SetStateAction<Sector[]>> }
  */
@@ -17,19 +37,8 @@ export const useSectorsOfFire = (targetLocation, options = {}) => {
   const addSectorOfFire = () => {
     if (!targetLocation) return;
 
-    const centerLat = Number(targetLocation[0]);
-    const centerLon = Number(targetLocation[1]);
-    if (!Number.isFinite(centerLat) || !Number.isFinite(centerLon)) return;
-
-    const offset = 0.001;
-    const newSector = {
-      id: `sec-${Date.now()}`,
-      points: [
-        { lat: centerLat + offset, lng: centerLon },
-        { lat: centerLat - offset, lng: centerLon + offset },
-        { lat: centerLat - offset, lng: centerLon - offset },
-      ],
-    };
+    const newSector = createSectorOfFire(targetLocation, `sec-${Date.now()}`);
+    if (!newSector) return;
 
     setSectors((previous) => [
       ...(Array.isArray(previous) ? previous : []),

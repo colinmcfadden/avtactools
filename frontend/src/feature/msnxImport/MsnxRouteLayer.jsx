@@ -132,6 +132,8 @@ const MsnxRouteLayer = ({
               pathOptions={{ color: route.color, weight: 3 }}
               eventHandlers={{
                 contextmenu: (e) => {
+                  // Nowhere to insert a point (a read-only Mission Pack): the map's own menu opens.
+                  if (!onInsertPoint) return;
                   L.DomEvent.stop(e);
                   e.originalEvent.preventDefault();
                   onInsertPoint(
@@ -187,8 +189,9 @@ const MsnxRouteLayer = ({
                   // nothing in points.xml to write a new position back to, so a
                   // drag would only move the marker until the next re-import —
                   // don't offer it. Points that do have an AMPS id (including
-                  // real CalcPtSerpentine shaping points) stay draggable.
-                  draggable={Boolean(point.id)}
+                  // real CalcPtSerpentine shaping points) stay draggable, unless
+                  // there is nothing to take the move (a read-only Mission Pack).
+                  draggable={Boolean(point.id) && Boolean(onUpdatePosition)}
                   eventHandlers={eventHandlers}
                 >
                   {showLabel && (

@@ -1,0 +1,89 @@
+plugins {
+    id("ezpz.android-application")
+    id("ezpz.android-compose")
+    id("ezpz.android-hilt")
+}
+
+android {
+    namespace = "app.ezpztac.android"
+
+    defaultConfig {
+        // The server's root, without /api: the typed calls carry their own /api paths. The default is the
+        // self-hosted backend in AGENTS.md §9; a build for another server passes -Pezpz.apiUrl=<root>.
+        val apiUrl = providers.gradleProperty("ezpz.apiUrl").orElse("https://prod-ezpz-api.mcfadd.in/").get()
+        buildConfigField("String", "API_URL", "\"$apiUrl\"")
+
+        // The Google OAuth *web* client ID the server accepts as an ID token's audience (its GOOGLE_CLIENT_IDS). It is public, and
+        // without it the Google button is not offered. -Pezpz.googleClientId=<id>
+        val googleClientId = providers.gradleProperty("ezpz.googleClientId").orElse("").get()
+        buildConfigField("String", "GOOGLE_SERVER_CLIENT_ID", "\"$googleClientId\"")
+
+        // The API majors this build can talk to (ezpz.apiMajors in android/gradle.properties; contracts/scripts/api_version.py
+        // holds them to what the server serves). Against a server that serves none of them the app sends nothing and says why.
+        val apiMajors = providers.gradleProperty("ezpz.apiMajors").orNull?.split(',')?.map { it.trim() }?.filter { it.isNotEmpty() }
+            ?.takeIf { majors -> majors.isNotEmpty() && majors.all { it.toIntOrNull()?.let { n -> n > 0 } == true } }
+            ?: error("android/gradle.properties needs ezpz.apiMajors, comma-separated whole numbers")
+        buildConfigField("String", "SUPPORTED_API_MAJORS", "\"${apiMajors.joinToString(",")}\"")
+    }
+
+    buildFeatures {
+        buildConfig = true
+    }
+
+    buildTypes {
+        release {
+            isMinifyEnabled = true
+            isShrinkResources = true
+            proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
+        }
+        debug {
+            // A device build against the local Flask server (http://10.0.2.2:5000/) is allowed cleartext by
+            // src/debug/res/xml/network_security_config.xml; release never is.
+            applicationIdSuffix = ".debug"
+        }
+    }
+}
+
+dependencies {
+    implementation(project(":core-designsystem"))
+    implementation(project(":core-network"))
+    implementation(project(":core-data"))
+    implementation(project(":core-symbols"))
+    implementation(project(":feature-auth"))
+    implementation(project(":feature-map"))
+    implementation(project(":feature-workspace"))
+    implementation(project(":feature-packs"))
+    implementation(project(":feature-viewer3d"))
+    implementation(project(":feature-brief"))
+
+    implementation(libs.androidx.core.ktx)
+    implementation(libs.androidx.activity.compose)
+    implementation(libs.androidx.lifecycle.runtime.compose)
+    implementation(libs.androidx.lifecycle.viewmodel.compose)
+    implementation(libs.androidx.hilt.navigation.compose)
+    implementation(libs.androidx.navigation.compose)
+    implementation(libs.androidx.credentials)
+    implementation(libs.androidx.credentials.play)
+    implementation(libs.googleid)
+    implementation(libs.androidx.work.runtime)
+    implementation(libs.androidx.hilt.work)
+    ksp(libs.androidx.hilt.compiler)
+
+    testImplementation(libs.androidx.work.testing)
+    testImplementation(testFixtures(project(":core-sync")))
+    testImplementation(project(":core-testing"))
+}
+
+// AMPS exports start from the repository's real, cleaned templates, so Android and the web/backend preserve the same native package and SQLite schema.
+// They are copied into the app's assets at build, not committed a second time.
+val copyMissionTemplate = tasks.register<Copy>("copyMissionTemplate") {
+    from(rootProject.layout.projectDirectory.file("../frontend/public/msnx_template.msnx"))
+    from(rootProject.layout.projectDirectory.file("../backend/threat_template.ths"))
+    into(layout.buildDirectory.dir("generated/missionAssets"))
+}
+extensions.getByType(com.android.build.api.variant.ApplicationAndroidComponentsExtension::class.java).onVariants { variant ->
+    variant.sources.assets?.addStaticSourceDirectory(layout.buildDirectory.dir("generated/missionAssets").get().asFile.path)
+}
+tasks.matching { it.name.matches(Regex("(merge|generate|package|lint).*(Assets|Resources)")) || it.name.startsWith("process") }.configureEach {
+    dependsOn(copyMissionTemplate)
+}

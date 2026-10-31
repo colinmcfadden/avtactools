@@ -80,3 +80,23 @@ def sync_table_columns(db, model):
             db.session.rollback()
 
     return added
+
+
+def ensure_unique_index(db, model, columns, name):
+    """Create a unique index on an existing table if it is not there. True if it is.
+
+    ``create_all`` never adds an index to a table that already exists, and
+    ``sync_table_columns`` adds columns only. ``IF NOT EXISTS`` makes this safe to
+    run on every boot, and a failure (say, duplicate rows that would violate it)
+    is reported rather than allowed to stop the app starting.
+    """
+    table = model.__tablename__
+    try:
+        db.session.execute(text(
+            f"CREATE UNIQUE INDEX IF NOT EXISTS {name} ON {table} ({', '.join(columns)})"
+        ))
+        db.session.commit()
+        return True
+    except Exception:  # noqa: BLE001 — never block boot on an index
+        db.session.rollback()
+        return False

@@ -8,7 +8,12 @@ Two properties matter:
 
 **Keys are opaque.** A URL like ``/api/lidar/tilesets/34.5916_-84.1282`` tells
 anyone who sees it where a crew is planning to land. The key is a hash instead,
-so the address reveals nothing about the place.
+so the address reveals nothing about the place. It is a *keyed* hash (an HMAC
+under ``LIDAR_KEY_SECRET``): a plain SHA-256 of a rounded target can be turned
+back into its place by hashing every rounded place in a region, which one GPU
+does for CONUS in seconds. The API and the build service must share the secret.
+Tilesets built before it keep their unkeyed names; they are found by coverage,
+not by key, so nothing needs renaming.
 
 **Keys are stable.** The same target must resolve to the same tileset every
 time, or every rebuild orphans the last one. Coordinates are rounded before
@@ -28,6 +33,7 @@ nearest centre first. The key remains how a tileset is addressed once found.
 from __future__ import annotations
 
 import hashlib
+import hmac
 import json
 import math
 import os
@@ -60,6 +66,36 @@ def tiles_dir() -> Path:
     return Path(os.environ.get("LIDAR_TILES_DIR", DEFAULT_TILES_DIR))
 
 
+# A bare local run's secret. Public, so it is refused wherever the process is a
+# deployment: keys made with it can be hashed back into places.
+DEV_KEY_SECRET = "dev-lidar-key-secret-change-me"
+
+KEY_SECRET_MIN_LENGTH = 32
+
+
+def key_secret(environ=os.environ) -> str:
+    """The secret tileset keys are made with, or RuntimeError on a deployment
+    without one.
+
+    The production signals are the API's (``security_config.is_production``),
+    repeated here because the build service's image carries only this package,
+    plus ``LIDAR_BUILDER_TOKEN``, which every deployed API and build service
+    has. Called at startup by both, so a missing secret stops a deploy rather
+    than the first build.
+    """
+    secret = environ.get("LIDAR_KEY_SECRET") or ""
+    deployed = (environ.get("FLY_APP_NAME")
+                or (environ.get("TRUSTED_PROXY") or "").strip()
+                or (environ.get("APP_ENV") or "").strip().lower() == "production"
+                or (environ.get("LIDAR_BUILDER_TOKEN") or "").strip())
+    if deployed and len(secret) < KEY_SECRET_MIN_LENGTH:
+        raise RuntimeError(
+            "LIDAR_KEY_SECRET must be configured on a deployment and contain at "
+            f"least {KEY_SECRET_MIN_LENGTH} characters (openssl rand -hex 32); "
+            "the API and the build service must share it")
+    return secret or DEV_KEY_SECRET
+
+
 def key_for(lat: float, lon: float, *, radius_m: float) -> str:
     """Opaque, stable identifier for the tileset covering a target."""
     seed = (
@@ -67,7 +103,8 @@ def key_for(lat: float, lon: float, *, radius_m: float) -> str:
         f"{round(float(lon), COORDINATE_PRECISION)}:"
         f"{round(float(radius_m))}"
     )
-    return hashlib.sha256(seed.encode()).hexdigest()[:16]
+    return hmac.new(key_secret().encode(), seed.encode(),
+                    hashlib.sha256).hexdigest()[:16]
 
 
 def is_valid_key(key: str) -> bool:
@@ -128,6 +165,27 @@ def read_manifest(directory):
                 float(document["radius_m"]))
     except (ValueError, KeyError, TypeError, OSError):
         return None
+
+
+# What a viewer fetches from a tileset; everything else in its folder (the
+# manifest, logs a build left) stays on the server.
+SERVED_SUFFIXES = (".json", ".pnts", ".b3dm", ".glb", ".subtree")
+
+
+def is_served_file(path: str) -> bool:
+    """Whether a path inside a tileset may be sent to a client.
+
+    Only tile files, never ``area.json`` (the place itself: latitude, longitude
+    and radius) and nothing under a dot (a build's ``.staging-*`` folder holds a
+    manifest too). Compared without regard to case, because the store may be
+    on a filesystem that ignores it.
+    """
+    parts = (path or "").split("/")
+    if not parts or any(not part or part.startswith(".") for part in parts):
+        return False
+    name = parts[-1]
+    return (name.endswith(SERVED_SUFFIXES)
+            and name.casefold() != MANIFEST_FILENAME.casefold())
 
 
 def has_context(key, *, root=None) -> bool:

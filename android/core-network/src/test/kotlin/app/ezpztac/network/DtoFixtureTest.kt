@@ -1,0 +1,270 @@
+package app.ezpztac.network
+
+import kotlinx.serialization.KSerializer
+import kotlinx.serialization.builtins.ListSerializer
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.JsonNull
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.doubleOrNull
+import kotlinx.serialization.json.jsonObject
+import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertTrue
+import org.junit.jupiter.api.DynamicTest
+import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.TestFactory
+
+/**
+ * Every successful response the server was recorded giving, decoded **strictly** by the type the client uses for it.
+ * Strictly means a field the server sends and the type lacks is a failure here (the client itself ignores unknown
+ * fields, so an installed app survives a newer server), so a type cannot quietly fall behind the server.
+ */
+class DtoFixtureTest {
+    private val strict = Json { ignoreUnknownKeys = false; explicitNulls = false; encodeDefaults = true }
+
+    private val decoders: Map<String, KSerializer<*>> = mapOf(
+        "config" to AppConfig.serializer(),
+        "login: android" to TokenResponse.serializer(),
+        "login: web, which gets no refresh token" to TokenResponse.serializer(),
+        "refresh" to TokenResponse.serializer(),
+        "refresh: the same request again within the grace period" to TokenResponse.serializer(),
+        "me" to ApiUser.serializer(),
+        "sessions" to SessionsBody.serializer(),
+        "lz: create" to LzSummary.serializer(),
+        "lz: create again with the same identity" to LzSummary.serializer(),
+        "lz: list" to ListSerializer(LzSummary.serializer()),
+        "lz: get" to LzFull.serializer(),
+        "lz: update" to LzSummary.serializer(),
+        "route: create" to RouteSummary.serializer(),
+        "route: create again with the same identity" to RouteSummary.serializer(),
+        "route: list" to ListSerializer(RouteSummary.serializer()),
+        "route: get" to RouteFull.serializer(),
+        "route: update" to RouteSummary.serializer(),
+        "weather" to WeatherReportDto.serializer(),
+        "weather: the second station is nearer" to WeatherReportDto.serializer(),
+        "weather: no station and no NOTAMs" to WeatherReportDto.serializer(),
+        "weather: both services down" to WeatherReportDto.serializer(),
+        "weather: the NOTAM search fails" to WeatherReportDto.serializer(),
+        // The weather at a planned time (`weatherAt`): kept whole as JSON, which is how the brief's compiler reads it (docs/MISSION_BRIEF.md §2.5).
+        "weather: at a planned time, from the TAF" to JsonObject.serializer(),
+        "weather: at a time no TAF covers, the observation" to JsonObject.serializer(),
+        "pointset: create" to PointSetSummary.serializer(),
+        "pointset: create again with the same identity" to PointSetSummary.serializer(),
+        "pointset: list" to ListSerializer(PointSetSummary.serializer()),
+        "pointset: get" to PointSetFull.serializer(),
+        "pointset: update" to PointSetSummary.serializer(),
+        "brief: create" to BriefSummary.serializer(),
+        "brief: create again with the same identity" to BriefSummary.serializer(),
+        "brief: list" to ListSerializer(BriefSummary.serializer()),
+        "brief: get" to BriefFull.serializer(),
+        "brief: update" to BriefSummary.serializer(),
+        "aircraft: list with no profiles of my own" to ListSerializer(AircraftProfileDto.serializer()),
+        "aircraft: create" to AircraftProfileDto.serializer(),
+        "aircraft: list" to ListSerializer(AircraftProfileDto.serializer()),
+        "aircraft: update" to AircraftProfileDto.serializer(),
+        "register" to Accepted.serializer(),
+        "register: the same address again looks the same" to Accepted.serializer(),
+        "verify-email" to Done.serializer(),
+        "login: right after verifying" to TokenResponse.serializer(),
+        "resend-verification" to Accepted.serializer(),
+        "forgot-password" to Accepted.serializer(),
+        "forgot-password: an address nobody has looks the same" to Accepted.serializer(),
+        "reset-password" to Done.serializer(),
+        "mil: me before the gate is cleared" to ApiUser.serializer(),
+        "mil/request" to Done.serializer(),
+        "mil/verify" to MilVerifyBody.serializer(),
+        "analyze-field" to FieldAnalysis.serializer(),
+        "terrain-analysis" to TerrainAnalysis.serializer(),
+        "terrain-analysis: no landing heading" to TerrainAnalysis.serializer(),
+        "threat-mask" to ThreatMaskDto.serializer(),
+        "threat-mask: nothing to show" to ThreatMaskDto.serializer(),
+        "threat-mask: no radar sees anything at a band that is not viewable" to ThreatMaskDto.serializer(),
+        "elevations" to ElevationsResponse.serializer(),
+        "elevations: no points" to ElevationsResponse.serializer(),
+        "elevations: sampling fails" to ElevationsResponse.serializer(),
+        "route-winds" to WindsResponse.serializer(),
+        "route-winds: no points" to WindsResponse.serializer(),
+        "route-winds: no station answers" to WindsResponse.serializer(),
+        "sync: changes" to ChangeFeed.serializer(),
+        "sync: nothing new" to ChangeFeed.serializer(),
+        "sync: changes, with a brief" to ChangeFeed.serializer(),
+        // Mission packs, teams, invitations and finding people
+        "packs" to PacksBody.serializer(),
+        "pack: create" to Pack.serializer(),
+        "pack: create again with the same uuid" to Pack.serializer(),
+        "pack: get" to Pack.serializer(),
+        "pack: get, where the live service runs" to Pack.serializer(),
+        "pack: access" to PackAccess.serializer(),
+        "pack: rename and describe" to Pack.serializer(),
+        "pack: share with a team" to Pack.serializer(),
+        "pack: finish" to Pack.serializer(),
+        "pack: reopen" to Pack.serializer(),
+        "pack: duplicate" to Pack.serializer(),
+        "pack: delete" to StatusReply.serializer(),
+        "ops: make an LZ, a route set and a point set" to PackOpsResult.serializer(),
+        "ops: edits, one skipped, with the events after base_seq" to PackOpsResult.serializer(),
+        "ops: the same batch again, answered from the log" to PackOpsResult.serializer(),
+        "ops: a brief in a finished pack" to PackOpsResult.serializer(),
+        "events: a page" to PackEventPage.serializer(),
+        "events: the rest" to PackEventPage.serializer(),
+        "seen" to PackSeenDto.serializer(),
+        "item: copy in from the library" to PackItemReply.serializer(),
+        "item: copy in again with the same item" to PackItemReply.serializer(),
+        "item: get" to ItemBody.serializer(),
+        "item: get, after the original and the copy both changed" to ItemBody.serializer(),
+        "item: update from the original" to PackItemReply.serializer(),
+        "item: save to the library" to LibraryCopy.serializer(),
+        "member: add a teammate" to MemberBody.serializer(),
+        "member: change a role" to MemberBody.serializer(),
+        "member: hand the pack over" to MemberBody.serializer(),
+        "member: remove" to StatusReply.serializer(),
+        "pack invite: by email" to InviteReply.serializer(),
+        "pack invite: the same address again" to InviteReply.serializer(),
+        "pack invite: send again" to InviteReply.serializer(),
+        "pack invite: withdraw" to InviteBody.serializer(),
+        "pack invites" to InvitesBody.serializer(),
+        "invites: mine, to a team" to InvitesBody.serializer(),
+        "invites: mine, to a pack" to InvitesBody.serializer(),
+        "notifications: an invitation to a team" to NotificationFeed.serializer(),
+        "notifications: an invitation to a pack" to NotificationFeed.serializer(),
+        "notifications: a pack finished" to NotificationFeed.serializer(),
+        "notifications: added to a pack, and handed it" to NotificationFeed.serializer(),
+        "notifications: seen" to NotificationsSeen.serializer(),
+        "notifications: settings" to NotificationSettingsReply.serializer(),
+        "invite: accept" to InviteAccepted.serializer(),
+        "invite: accept from a link" to InviteAccepted.serializer(),
+        "invite: decline" to InviteBody.serializer(),
+        "teams" to TeamsBody.serializer(),
+        "team: create" to Team.serializer(),
+        "team: get" to Team.serializer(),
+        "team: rename" to Team.serializer(),
+        "team: delete" to StatusReply.serializer(),
+        "team member: change a role" to Team.serializer(),
+        "team member: remove" to StatusReply.serializer(),
+        "team invite: a link" to InviteReply.serializer(),
+        "team invite: by email" to InviteReply.serializer(),
+        "team invite: withdraw" to InviteBody.serializer(),
+        "team invites" to InvitesBody.serializer(),
+        "users: search" to UsersBody.serializer(),
+        "users: search finds only teammates" to UsersBody.serializer(),
+        "lidar: resolve, nothing built here" to LidarResolveDto.serializer(),
+        "lidar: resolve, built" to LidarResolveDto.serializer(),
+        "lidar: resolve, on a server that cannot build" to LidarResolveDto.serializer(),
+        "lidar: resolve, streamed" to LidarResolveDto.serializer(),
+        "lidar: resolve, streamed but not asked for" to LidarResolveDto.serializer(),
+        "lidar: build" to LidarBuildDto.serializer(),
+        "lidar: build, asked for again" to LidarBuildDto.serializer(),
+        "lidar: build of a saved LZ/PZ, nobody waiting" to LidarBuildDto.serializer(),
+        "lidar: build, built already" to LidarBuildDto.serializer(),
+        "lidar: progress, queued" to LidarBuildDto.serializer(),
+        "lidar: progress, queued behind another" to LidarBuildDto.serializer(),
+        "lidar: a build under way" to LidarBuildDto.serializer(),
+        "lidar: progress, done" to LidarBuildDto.serializer(),
+        "lidar: progress, failed" to LidarBuildDto.serializer(),
+        "lidar: release" to LidarBuildDto.serializer(),
+        "lidar: progress, dropped once nobody waited" to LidarBuildDto.serializer(),
+        "terrain: heights" to TerrainHeightsDto.serializer(),
+        "terrain: heights, no points" to TerrainHeightsDto.serializer(),
+    )
+
+    /** Documents a format reader reads, not records: a tileset's `tileset.json` is 3D Tiles, whose reader passes over what it does not know. */
+    private val documents = setOf("lidar: the tileset's root", "lidar: the ring's root", "lidar: a streamed survey's root")
+
+    @TestFactory
+    fun `every successful response decodes strictly`(): List<DynamicTest> =
+        Recorded.all.filter { it.status in 200..202 && it.name in decoders }.map { entry ->
+            DynamicTest.dynamicTest(entry.name) {
+                @Suppress("UNCHECKED_CAST")
+                val serializer = decoders.getValue(entry.name) as KSerializer<Any>
+                val value = strict.decodeFromString(serializer, Recorded.text(entry.name))
+                // ... and encodes back to at least what was read, so nothing the server sent was dropped on the way in.
+                assertKeeps(entry.body!!, strict.encodeToJsonElement(serializer, value), "$")
+            }
+        }
+
+    @Test
+    fun `no successful response is left without a type`() {
+        val uncovered = Recorded.all
+            // A binary body (a heightmap, a tile) is recorded as null with its bytes beside it: not a record either.
+            .filter { it.status in 200..202 && it.body != null && it.body !is JsonNull && it.name !in decoders }
+            .map { it.name }
+            // Bodies that are a status word only, not a record.
+            .filterNot { it in setOf("logout", "lz: delete", "route: delete", "pointset: delete", "brief: delete", "aircraft: delete", "account deletion") }
+            .filterNot { it in documents }
+        assertTrue(uncovered.isEmpty(), "recorded responses with no type decoding them: $uncovered")
+    }
+
+    @Test
+    fun `the weather at a planned time carries what the brief reads of it`() {
+        // Kept whole as JSON, so no type notices a field renamed: what core-brief's compile reads of a report (the station, its words, whether it is a forecast,
+        // the wind, the altimeter and the NOTAMs) is held to what the server answers here.
+        listOf("weather: at a planned time, from the TAF" to "forecast", "weather: at a time no TAF covers, the observation" to "observation").forEach { (name, kind) ->
+            val report = Json.parseToJsonElement(Recorded.text(name)).jsonObject
+            fun number(key: String) = (report[key] as? JsonPrimitive)?.takeUnless { it.isString }?.doubleOrNull
+            assertEquals(JsonPrimitive(kind), report["kind"], name)
+            assertTrue((report["station_id"] as? JsonPrimitive)?.isString == true, name)
+            assertTrue(listOf("raw_taf", "raw_metar").any { (report[it] as? JsonPrimitive)?.isString == true }, name)
+            assertTrue(number("wind_spd_kts") != null && number("wind_dir") != null && number("pressure") != null, name)
+            assertTrue(report["notams"] is JsonObject, name)
+        }
+    }
+
+    @Test
+    fun `a pack's item counts take briefs, and a server that does not count them says none`() {
+        assertEquals(PackItemCounts(1, 2, 0, 0), strict.decodeFromString(PackItemCounts.serializer(), """{"lz": 1, "route": 2, "pointset": 0}"""))
+        assertEquals(3, strict.decodeFromString(PackItemCounts.serializer(), """{"lz": 1, "route": 2, "pointset": 0, "brief": 3}""").brief)
+    }
+
+    @Test
+    fun `an installed app survives a field a newer server adds`() {
+        val withNew = Recorded.text("me").replaceFirst("{", """{"added_in_a_later_release": {"x": [1, 2]}, """)
+        val user = ApiClient.JSON.decodeFromString(ApiUser.serializer(), withNew)
+        assertEquals("pilot@example.com", user.email)
+    }
+
+    @Test
+    fun `an entitlement is on unless the server says it is off`() {
+        val user = Recorded.user()
+        assertTrue(user.hasFeature("aircraft_profiles"))
+        assertTrue(user.hasFeature("a_feature_added_after_this_release"))
+        assertEquals(false, user.copy(features = mapOf("threats" to false)).hasFeature("threats"))
+    }
+
+    @Test
+    fun `an own profile carries its identity and the master list does not`() {
+        val own = strict.decodeFromString(AircraftProfileDto.serializer(), Recorded.text("aircraft: create"))
+        assertTrue(own.clientUuid != null && own.revision == 1 && !own.isSystem)
+    }
+
+    @Test
+    fun `a pack's operations keep the nulls they were sent with`() {
+        // `value: null` clears a field and `after: null` puts an element first: dropping either would change what an edit does.
+        val answer = ApiClient.JSON.decodeFromString(PackOpsResult.serializer(), Recorded.text("ops: edits, one skipped, with the events after base_seq"))
+        val ops = answer.events.associate { it.clientOpId to it.op }
+        assertEquals(JsonNull, ops.getValue("op-5")["value"])
+        assertEquals(JsonNull, ops.getValue("op-6")["after"])
+        assertEquals(listOf("applied", "applied", "applied", "skipped", "applied"), answer.results.map { it.status })
+    }
+
+    /** Everything in [sent] is in [kept], with the same value. [kept] may hold more: a default the server left out. */
+    private fun assertKeeps(sent: JsonElement, kept: JsonElement, path: String) {
+        when (sent) {
+            is JsonObject -> {
+                assertTrue(kept is JsonObject, "$path: expected an object")
+                sent.forEach { (key, value) ->
+                    if (value is JsonNull) return@forEach                       // a null and a missing field are the same to the types
+                    val there = (kept as JsonObject)[key]
+                    assertTrue(there != null, "$path.$key was sent and is not kept")
+                    assertKeeps(value, there!!, "$path.$key")
+                }
+            }
+            is JsonArray -> {
+                assertTrue(kept is JsonArray && kept.size == sent.size, "$path: expected ${sent.size} items")
+                sent.forEachIndexed { i, item -> assertKeeps(item, (kept as JsonArray)[i], "$path[$i]") }
+            }
+            else -> assertEquals(sent, kept, path)
+        }
+    }
+}

@@ -1,0 +1,2342 @@
+package app.ezpztac.android
+
+import app.ezpztac.android.frame.Panel
+import app.ezpztac.data.AircraftProfiles
+import app.ezpztac.data.AnalysisService
+import app.ezpztac.data.AnalysisStatus
+import app.ezpztac.data.BoundaryCorners
+import app.ezpztac.data.BoundaryDrawing
+import app.ezpztac.data.DiagramRepository
+import app.ezpztac.data.DiagramSession
+import app.ezpztac.data.DiagramsOnMap
+import app.ezpztac.data.DrawingMode
+import app.ezpztac.data.GraphicPlacement
+import app.ezpztac.data.GraphicSelection
+import app.ezpztac.data.InMemoryAircraftChoice
+import app.ezpztac.data.InMemoryHiddenDiagramStore
+import app.ezpztac.data.InMemoryMasterProfileStore
+import app.ezpztac.data.InMemoryOpenDiagramStore
+import app.ezpztac.data.InMemoryOpenRouteSetStore
+import app.ezpztac.data.InMemorySlopeOpacity
+import app.ezpztac.data.LocalPoints
+import app.ezpztac.data.MapDrag
+import app.ezpztac.data.MapFocus
+import app.ezpztac.data.MaskState
+import app.ezpztac.data.OpenDiagrams
+import app.ezpztac.data.OpenRouteSets
+import app.ezpztac.data.OtherDiagrams
+import app.ezpztac.data.PlaceTool
+import app.ezpztac.data.PointSelection
+import app.ezpztac.data.PointSetRepository
+import app.ezpztac.data.PointSetView
+import app.ezpztac.data.PointSetViewStore
+import app.ezpztac.data.PointSetViews
+import app.ezpztac.data.RouteHeld
+import app.ezpztac.data.RouteRepository
+import app.ezpztac.data.RouteSelection
+import app.ezpztac.data.RouteSession
+import app.ezpztac.data.RouteSketching
+import app.ezpztac.data.SlopeVisibility
+import app.ezpztac.data.TerrainApi
+import app.ezpztac.data.ThreatMaskApi
+import app.ezpztac.data.ThreatMasks
+import app.ezpztac.data.ThreatPicture
+import app.ezpztac.data.ThreatSelection
+import app.ezpztac.data.ThreatStore
+import app.ezpztac.data.ThreatVault
+import app.ezpztac.data.WeatherApi
+import app.ezpztac.data.WeatherCache
+import app.ezpztac.data.WeatherService
+import app.ezpztac.geo.MgrsConverter
+import app.ezpztac.map.CameraState
+import app.ezpztac.map.LzScene
+import app.ezpztac.map.MapProjection
+import app.ezpztac.map.ContourPiece
+import app.ezpztac.map.SlopeImage
+import app.ezpztac.map.SlopeToggleUi
+import app.ezpztac.missionpacks.PackState
+import app.ezpztac.missionpacks.PackStatus
+import app.ezpztac.model.AircraftProfile
+import app.ezpztac.model.DiagramOps
+import app.ezpztac.model.DiagramStatus
+import app.ezpztac.model.DiagramTarget
+import app.ezpztac.model.GraphicRef
+import app.ezpztac.model.LatLon
+import app.ezpztac.model.Radar
+import app.ezpztac.model.Radars
+import app.ezpztac.model.Threat
+import app.ezpztac.model.WeatherSnapshot
+import app.ezpztac.network.ContourLine
+import app.ezpztac.network.FieldAnalysis
+import app.ezpztac.network.NetworkException
+import app.ezpztac.network.SlopeContours
+import app.ezpztac.network.SlopeStats
+import app.ezpztac.network.SlopeThresholds
+import app.ezpztac.network.TerrainAnalysis
+import app.ezpztac.network.ThreatMaskDto
+import app.ezpztac.network.ThreatMaskRadarDto
+import app.ezpztac.network.Uh60Limits
+import app.ezpztac.network.WeatherReportDto
+import app.ezpztac.packs.PackDoor
+import app.ezpztac.planning.RouteColors
+import app.ezpztac.symbols.SymbolOutcome
+import app.ezpztac.symbols.SymbolRenderer
+import app.ezpztac.sync.InMemorySyncStore
+import app.ezpztac.sync.RecordFeed
+import app.ezpztac.sync.RecordingScheduler
+import app.ezpztac.sync.SequentialIds
+import app.ezpztac.sync.SyncRepository
+import app.ezpztac.sync.SyncStore
+import app.ezpztac.sync.SyncTransaction
+import app.ezpztac.testing.Fixtures
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.test.StandardTestDispatcher
+import kotlinx.coroutines.test.TestScope
+import kotlinx.coroutines.test.UnconfinedTestDispatcher
+import kotlinx.coroutines.test.advanceUntilIdle
+import kotlinx.coroutines.test.resetMain
+import kotlinx.coroutines.test.runTest
+import kotlinx.coroutines.test.setMain
+import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.put
+import org.junit.After
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertNull
+import org.junit.Assert.assertSame
+import org.junit.Assert.assertTrue
+import org.junit.Before
+import org.junit.Test
+
+@OptIn(ExperimentalCoroutinesApi::class)
+class HomeViewModelTest {
+    private val dispatcher = StandardTestDispatcher()
+
+    @Before
+    fun before() = Dispatchers.setMain(dispatcher)
+
+    @After
+    fun after() = Dispatchers.resetMain()
+
+    private val target = DiagramTarget(34.783817, -84.08219, "16S GD 66993 52949")
+
+    private class Flaky(private val inner: InMemorySyncStore = InMemorySyncStore()) : SyncStore, RecordFeed by inner {
+        var failing = false
+        override suspend fun <T> transaction(block: suspend SyncTransaction.() -> T): T {
+            if (failing) error("the database was busy")
+            return inner.transaction(block)
+        }
+    }
+
+    /** A server that measures every slope the same and keeps count; with [reachable] false it is a phone with no signal. */
+    private class SlopeServer(var reachable: Boolean = true) : TerrainApi {
+        val slopeCalls = mutableListOf<List<LatLon>>()
+
+        /** An area the model is still finding, answered when a test says; none and the area is not asked for. */
+        var field: kotlinx.coroutines.CompletableDeferred<FieldAnalysis>? = null
+        override suspend fun analyzeField(at: LatLon): FieldAnalysis =
+            field?.await() ?: throw NetworkException("not asked in these tests", null, requestMayHaveBeenSent = false)
+        override suspend fun terrainAnalysis(polygon: List<LatLon>, landingHeadingDeg: Double?): TerrainAnalysis {
+            slopeCalls += polygon
+            if (!reachable) throw NetworkException("no signal", null, requestMayHaveBeenSent = false)
+            return TerrainAnalysis(
+                status = "success", overlay = "data:image/png;base64,AA==", bounds = listOf(listOf(34.70, -84.10), listOf(34.80, -84.00)),
+                source = "local_highres_cog", resolutionM = 10.0, verticalDatum = "NAVD88",
+                stats = SlopeStats(4.0, 3.0, 0.0, 0.0, 0.0, 100, 9_000.0), directional = null,
+                thresholds = SlopeThresholds(listOf(3.0, 6.0, 10.0, 15.0), Uh60Limits(6.0, 15.0, 15.0)),
+            )
+        }
+    }
+
+    private class FakeLastDiagram(var stored: String? = null) : LastDiagram {
+        override fun id() = stored
+
+        override fun remember(id: String) {
+            stored = id
+        }
+    }
+
+    private class CountingWeather : WeatherApi {
+        val asked = mutableListOf<LatLon>()
+
+        override suspend fun weather(at: LatLon): WeatherReportDto {
+            asked += at
+            return WeatherReportDto("KRYY", "Cobb County Airport", windSpeedKts = JsonPrimitive(10), notams = JsonObject(emptyMap()))
+        }
+    }
+
+    private class KeptWeather : WeatherCache {
+        private var kept: Map<String, WeatherSnapshot> = emptyMap()
+        override fun load() = kept
+        override fun save(snapshots: Map<String, WeatherSnapshot>) { kept = snapshots }
+    }
+
+    private class MemoryViews : PointSetViewStore {
+        override fun load() = emptyMap<String, PointSetView>()
+
+        override fun save(views: Map<String, PointSetView>) {}
+    }
+
+    private class MemoryThreats : ThreatVault {
+        private var kept: ThreatPicture? = null
+        override fun load() = kept
+        override fun save(picture: ThreatPicture) { kept = picture }
+        override fun wipe() { kept = null }
+    }
+
+    /** The server's answer to a mask, scripted: what it said, and what it was asked. */
+    private class FakeMaskApi : ThreatMaskApi {
+        var answer = ThreatMaskDto(
+            listOf(listOf(34.0, -85.0), listOf(35.0, -84.0)),
+            listOf(ThreatMaskRadarDto(0, "data:image/png;base64,AAAA"), ThreatMaskRadarDto(1, "data:image/png;base64,BBBB")),
+        )
+        val asked = mutableListOf<Pair<LatLon, List<Radar>>>()
+
+        override suspend fun mask(at: LatLon, radars: List<Radar>): ThreatMaskDto {
+            asked += at to radars
+            return answer
+        }
+    }
+
+    private class FakeLastRouteSet(var stored: String? = null) : LastRouteSet {
+        override fun id() = stored
+
+        override fun remember(id: String) {
+            stored = id
+        }
+    }
+
+    /** A pack's documents by their ids, as a session reads and writes them. */
+    private class PackDocs<D : Any>(private val idOf: (D) -> String) : app.ezpztac.data.DocumentStore<D> {
+        val docs = mutableMapOf<String, D>()
+        override suspend fun open(uuid: String): D? = docs[uuid]
+        override suspend fun save(document: D): D = document.also { docs[idOf(it)] = it }
+    }
+
+    /** Pack p, "OP DK": live, finished by Sam Bell, or one this person only views. */
+    private fun pack(finished: Boolean = false, viewer: Boolean = false) = PackState(
+        "p", app.ezpztac.missionpacks.PackStatus.LIVE,
+        app.ezpztac.missionpacks.PackSession(
+            1,
+            kotlinx.serialization.json.buildJsonObject {
+                put("uuid", "p")
+                put("name", "OP DK")
+                put("status", if (finished) "finished" else "active")
+                put("role", if (viewer) "viewer" else "editor")
+            },
+            kotlinx.serialization.json.JsonArray(emptyList()), emptyMap(), emptyMap(), emptyList(), 10, emptyList(), emptyList(), finished || viewer, null, false, emptyMap(),
+        ),
+        emptyList(), emptyList(), null,
+    )
+
+    /** The workspace, as a test sets it: no pack open unless one says so. */
+    private class NoPacks : PackDoor {
+        override val user = MutableStateFlow<Int?>(null)
+        override val open = MutableStateFlow<PackState?>(null)
+        override suspend fun openPack(uuid: String) = Unit
+        override suspend fun closePack() = Unit
+
+        /** Where this person was said to be pointing, in order (null: nowhere). */
+        val pointed = mutableListOf<LatLon?>()
+        override fun point(lat: Double?, lon: Double?) {
+            pointed += if (lat != null && lon != null) LatLon(lat, lon) else null
+        }
+    }
+
+        private class Rig(scope: TestScope, val server: SlopeServer = SlopeServer(), listening: Boolean = true) {
+        val store = Flaky()
+        val sync = SyncRepository(store, SequentialIds("t"))
+        val scheduler = RecordingScheduler()
+        val repository = DiagramRepository(sync, store, scheduler)
+        // A pack's LZ/PZs and route sets, as a session reads them: opened under their pack ids, as the app's are.
+        val lzPacks = PackDocs<app.ezpztac.model.Diagram> { it.id }
+        val routePacks = PackDocs<app.ezpztac.model.RouteSet> { it.id }
+        val session = DiagramSession(repository, scope.backgroundScope, lzPacks)
+        // Not backgroundScope: advanceUntilIdle leaves a background scope's work alone, and a slope being measured is work a test waits for.
+        val analysis = AnalysisService(server, session, CoroutineScope(SupervisorJob() + StandardTestDispatcher(scope.testScheduler)), StandardTestDispatcher(scope.testScheduler))
+        val selection = GraphicSelection()
+        val aircraft = AircraftProfiles(
+            store, InMemoryMasterProfileStore(listOf(AircraftProfile(), AircraftProfile(id = 2, slug = "ch47f", name = "CH-47F Chinook", designation = "CH-47F", iconKey = "ch47", rotorDiameterM = 18.29))),
+            { emptyList() }, InMemoryAircraftChoice(), CoroutineScope(SupervisorJob() + StandardTestDispatcher(scope.testScheduler)), sync, scheduler,
+        )
+        val mode = DrawingMode()
+        val drawing = BoundaryDrawing(session, mode)
+        val routes = RouteRepository(sync, store, scheduler)
+        val routeSession = RouteSession(routes, scope.backgroundScope, routePacks)
+        val routeSelection = RouteSelection()
+        val sketching = RouteSketching(routeSession, aircraft, mode)
+        val last = FakeLastDiagram()
+        val openSet = OpenDiagrams(InMemoryOpenDiagramStore())
+        val lastSet = FakeLastRouteSet()
+        val openRouteSets = OpenRouteSets(InMemoryOpenRouteSetStore())
+        val pointSets = PointSetRepository(sync, store, scheduler)
+        val pointViews = PointSetViews(MemoryViews())
+        val localPoints = LocalPoints(pointSets, pointViews)
+        val pointSelection = PointSelection()
+        val threats = ThreatStore(MemoryThreats(), scope.backgroundScope)
+        val threatSelection = ThreatSelection()
+        val maskApi = FakeMaskApi()
+        val masks = ThreatMasks(maskApi, threats, scope.backgroundScope)
+        val weatherApi = CountingWeather()
+        val weather = WeatherService(weatherApi, KeptWeather(), CoroutineScope(SupervisorJob() + StandardTestDispatcher(scope.testScheduler)))
+        val mapFocus = MapFocus()
+        val corners = BoundaryCorners(session)
+        val placement = GraphicPlacement(session, aircraft, mode)
+        val packs = NoPacks()
+        val mapDrag = MapDrag(session, routeSession, threats)
+        val slopeOpacity = InMemorySlopeOpacity()
+        val slopeVisibility = SlopeVisibility(slopeOpacity)
+        val onMap = DiagramsOnMap(InMemoryHiddenDiagramStore())
+        val others = OtherDiagrams(repository, openSet, onMap, StandardTestDispatcher(scope.testScheduler))
+        val model = HomeViewModel(
+            session, analysis, selection, aircraft, drawing, routeSession, routeSelection, sketching, last, openSet, lastSet, openRouteSets, localPoints, pointSelection,
+            threats, threatSelection, weather, mapDrag, slopeVisibility, corners, masks, placement, packs, mapFocus, onMap, others,
+            symbols = SymbolRenderer { _, _ -> SymbolOutcome.Unavailable },
+        )
+        val seen = mutableListOf<OpenedDiagram>()
+        private val testScope = scope
+
+        /** [id] was the set of routes on the map when the app was last left: remembered, and among the open ones (the Routes panel puts what opens there). */
+        fun leftSetOpen(id: String) {
+            lastSet.stored = id
+            openRouteSets.add(id)
+        }
+
+        /** [id] was the diagram on the map when the app was last left: remembered, and among the open ones (the LZ/PZ panel puts what opens there). */
+        fun leftOpen(id: String) {
+            last.stored = id
+            openSet.add(id)
+        }
+
+        init {
+            model.allowThreats(true)                                                             // the account has threats, as most do; one without them says so
+            if (listening) listen()
+        }
+
+        /** The map starts listening for the diagrams that open. Unconfined, so the collector is subscribed the moment it starts and nothing emitted after is missed. */
+        fun listen() {
+            testScope.backgroundScope.launch(UnconfinedTestDispatcher(testScope.testScheduler)) { model.opened.collect { seen += it } }
+        }
+    }
+
+    @Test
+    fun `a request to show somewhere reaches the map, once, and is not kept for a map that comes later`() = runTest(dispatcher) {
+        val r = Rig(this)
+        val seen = mutableListOf<MapFocus.Request>()
+        backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) { r.model.focus.collect { seen += it } }
+        r.mapFocus.show(LatLon(34.5, -84.5), 11.0)
+        assertEquals(listOf(MapFocus.Request(LatLon(34.5, -84.5), 11.0)), seen)
+        r.mapFocus.show(LatLon(35.0, -85.0), 9.0)
+        assertEquals(2, seen.size)
+    }
+
+    // -- Coming back to the diagram that was open --------------------------------------------------------------------------
+
+    @Test
+    fun `the diagram that was open is open again at launch, and the map is taken to it`() = runTest(dispatcher) {
+        val r = Rig(this)
+        val made = r.repository.create(target, "LZ HAWK")
+        r.leftOpen(made.id)
+        advanceUntilIdle()
+        assertEquals(made.id, r.session.active.value?.id)
+        assertEquals(listOf(OpenedDiagram(made.id, LatLon(34.783817, -84.08219), "satellite")), r.seen)
+    }
+
+    @Test
+    fun `it waits until the map is listening, so the event that takes the map there is not lost`() = runTest(dispatcher) {
+        val r = Rig(this, listening = false)
+        val made = r.repository.create(target, "LZ HAWK")
+        r.leftOpen(made.id)
+        advanceUntilIdle()
+        assertEquals(null, r.session.active.value)                                          // nobody to tell yet: nothing opened
+        r.listen()
+        advanceUntilIdle()
+        assertEquals(made.id, r.session.active.value?.id)
+        assertEquals(1, r.seen.size)
+    }
+
+    @Test
+    fun `nothing remembered opens nothing`() = runTest(dispatcher) {
+        val r = Rig(this)
+        r.repository.create(target, "LZ HAWK")
+        advanceUntilIdle()
+        assertEquals(null, r.session.active.value)
+        assertEquals(emptyList<OpenedDiagram>(), r.seen)
+    }
+
+    @Test
+    fun `a diagram that is gone is not opened, and is not an error`() = runTest(dispatcher) {
+        val r = Rig(this)
+        val made = r.repository.create(target, "LZ HAWK")
+        r.repository.delete(made.id)
+        r.leftOpen(made.id)
+        val never = Rig(this)
+        never.leftOpen("never-existed")                                                 // an id this account never had, as after another signs in
+        advanceUntilIdle()
+        assertEquals(null, r.session.active.value)
+        assertEquals(null, never.session.active.value)
+        assertEquals(emptyList<OpenedDiagram>(), r.seen + never.seen)
+    }
+
+    @Test
+    fun `a diagram that will not open leaves the app running, with nothing open`() = runTest(dispatcher) {
+        val r = Rig(this)
+        val made = r.repository.create(target, "LZ HAWK")
+        r.leftOpen(made.id)
+        r.store.failing = true                                                              // the database is busy at launch
+        advanceUntilIdle()                                                                  // an uncaught failure here would fail the test
+        assertEquals(null, r.session.active.value)
+        r.store.failing = false
+        r.session.open(made.id)                                                             // and the person can open it from the list afterwards
+        advanceUntilIdle()
+        assertEquals(made.id, r.session.active.value?.id)
+    }
+
+    @Test
+    fun `a diagram closed before the app was left stays closed`() = runTest(dispatcher) {
+        val r = Rig(this)
+        val made = r.repository.create(target, "LZ HAWK")
+        r.last.stored = made.id                                                             // the last on the map, then closed: no longer among the open ones
+        advanceUntilIdle()
+        assertEquals(null, r.session.active.value)
+        assertEquals(emptyList<OpenedDiagram>(), r.seen)
+    }
+
+    @Test
+    fun `a diagram opened in the meantime is not replaced by the remembered one`() = runTest(dispatcher) {
+        val r = Rig(this)
+        val old = r.repository.create(target, "LZ HAWK")
+        val chosen = r.repository.create(DiagramTarget(35.0, -85.0, "16S GD 1 1"), "LZ CROW")
+        r.leftOpen(old.id)
+        r.session.open(chosen.id)
+        advanceUntilIdle()
+        assertEquals(chosen.id, r.session.active.value?.id)
+    }
+
+    @Test
+    fun `a pack opened first keeps the person's own LZ_PZ and routes set aside at launch`() = runTest(dispatcher) {
+        val r = Rig(this)
+        val made = r.repository.create(target, "LZ HAWK")
+        val set = r.routes.create("MISSION 1")
+        r.leftOpen(made.id)
+        r.leftSetOpen(set.id)
+        r.packs.open.value = PackState("p-dk", PackStatus.LOADING, null, emptyList(), emptyList(), null)    // the workspace opened the pack remembered
+        advanceUntilIdle()
+        assertEquals(null, r.session.active.value)
+        assertEquals(null, r.routeSession.active.value)
+        assertEquals(emptyList<OpenedDiagram>(), r.seen)                                     // and the map was not taken there
+    }
+
+    // -- Coming back to the set of routes that was open ------------------------------------------------------------------
+
+    @Test
+    fun `the set of routes that was open is open again at launch`() = runTest(dispatcher) {
+        val r = Rig(this)
+        val made = r.routes.create("MISSION 1")
+        r.leftSetOpen(made.id)
+        advanceUntilIdle()
+        assertEquals(made.id, r.routeSession.active.value?.id)
+    }
+
+    @Test
+    fun `it does not need the map to be listening, and it leaves the diagram alone`() = runTest(dispatcher) {
+        val r = Rig(this, listening = false)
+        val made = r.routes.create("MISSION 1")
+        r.leftSetOpen(made.id)
+        advanceUntilIdle()
+        assertEquals(made.id, r.routeSession.active.value?.id)
+        assertEquals(null, r.session.active.value)
+    }
+
+    @Test
+    fun `the last set closed stays closed, as only a set still open comes back`() = runTest(dispatcher) {
+        val r = Rig(this)
+        val made = r.routes.create("MISSION 1")
+        r.lastSet.stored = made.id                                                          // remembered, but no longer among the open ones
+        advanceUntilIdle()
+        assertEquals(null, r.routeSession.active.value)
+    }
+
+    @Test
+    fun `nothing remembered opens no set`() = runTest(dispatcher) {
+        val r = Rig(this)
+        r.routes.create("MISSION 1")
+        advanceUntilIdle()
+        assertEquals(null, r.routeSession.active.value)
+    }
+
+    @Test
+    fun `a set that is gone is not opened, and is not an error`() = runTest(dispatcher) {
+        val r = Rig(this)
+        val made = r.routes.create("MISSION 1")
+        r.routes.delete(made.id)
+        r.leftSetOpen(made.id)
+        val never = Rig(this)
+        never.leftSetOpen("never-existed")                                              // an id this account never had, as after another signs in
+        advanceUntilIdle()
+        assertEquals(null, r.routeSession.active.value)
+        assertEquals(null, never.routeSession.active.value)
+    }
+
+    @Test
+    fun `a set that will not open leaves the app running, and can be opened afterwards`() = runTest(dispatcher) {
+        val r = Rig(this)
+        val made = r.routes.create("MISSION 1")
+        r.leftSetOpen(made.id)
+        r.store.failing = true
+        advanceUntilIdle()                                                                  // an uncaught failure here would fail the test
+        assertEquals(null, r.routeSession.active.value)
+        r.store.failing = false
+        r.routeSession.open(made.id)
+        advanceUntilIdle()
+        assertEquals(made.id, r.routeSession.active.value?.id)
+    }
+
+    @Test
+    fun `a set opened in the meantime is not replaced by the remembered one`() = runTest(dispatcher) {
+        val r = Rig(this)
+        val old = r.routes.create("OLD")
+        val chosen = r.routes.create("CHOSEN")
+        r.leftSetOpen(old.id)
+        r.routeSession.open(chosen.id)
+        advanceUntilIdle()
+        assertEquals(chosen.id, r.routeSession.active.value?.id)
+    }
+
+    @Test
+    fun `opening a set remembers it, and closing the session does not forget it`() = runTest(dispatcher) {
+        val r = Rig(this)
+        advanceUntilIdle()
+        val made = r.routes.create("MISSION 1")
+        r.routeSession.open(made.id)
+        advanceUntilIdle()
+        assertEquals(made.id, r.lastSet.stored)
+        r.routeSession.close()                                                              // as at sign-out: the same account is back next time
+        advanceUntilIdle()
+        assertEquals(made.id, r.lastSet.stored)
+    }
+
+    @Test
+    fun `the diagram and the set are remembered apart`() = runTest(dispatcher) {
+        val r = Rig(this)
+        advanceUntilIdle()
+        val diagram = r.repository.create(target, "LZ HAWK")
+        val set = r.routes.create("MISSION 1")
+        r.session.open(diagram.id)
+        r.routeSession.open(set.id)
+        advanceUntilIdle()
+        assertEquals(diagram.id, r.last.stored)
+        assertEquals(set.id, r.lastSet.stored)
+    }
+
+    @Test
+    fun `opening a diagram remembers it, and closing the session does not forget it`() = runTest(dispatcher) {
+        val r = Rig(this)
+        advanceUntilIdle()
+        val made = r.repository.create(target, "LZ HAWK")
+        r.session.open(made.id)
+        advanceUntilIdle()
+        assertEquals(made.id, r.last.stored)
+        r.session.close()                                                                   // as at sign-out: the same account is back next time
+        advanceUntilIdle()
+        assertEquals(made.id, r.last.stored)
+    }
+
+    @Test
+    fun `opening a diagram says where the map should go and which base map it had`() = runTest(dispatcher) {
+        val r = Rig(this)
+        advanceUntilIdle()
+        val made = r.repository.create(target, "LZ HAWK")
+        r.session.open(made.id)
+        advanceUntilIdle()
+        assertEquals(listOf(OpenedDiagram(made.id, LatLon(34.783817, -84.08219), "satellite")), r.seen)
+    }
+
+    @Test
+    fun `editing the open diagram does not send the map back to it`() = runTest(dispatcher) {
+        val r = Rig(this)
+        advanceUntilIdle()
+        val made = r.repository.create(target, "LZ HAWK")
+        r.session.open(made.id)
+        advanceUntilIdle()
+        r.session.edit("Rename") { it.copy(name = "LZ CROW") }
+        r.model.baseMapChosen("topo")
+        advanceUntilIdle()
+        assertEquals(1, r.seen.size)
+    }
+
+    @Test
+    fun `opening a second diagram says so`() = runTest(dispatcher) {
+        val r = Rig(this)
+        advanceUntilIdle()
+        val a = r.repository.create(target, "A")
+        val b = r.repository.create(DiagramTarget(35.0, -85.0, "16S FD 00000 00000"), "B")
+        r.session.open(a.id)
+        advanceUntilIdle()
+        r.session.open(b.id)
+        advanceUntilIdle()
+        assertEquals(listOf(a.id, b.id), r.seen.map { it.id })
+        assertEquals(LatLon(35.0, -85.0), r.seen.last().at)
+    }
+
+    @Test
+    fun `a screen that is built later is not told about a diagram that was already open`() = runTest(dispatcher) {
+        val r = Rig(this)
+        advanceUntilIdle()
+        val made = r.repository.create(target, "LZ HAWK")
+        r.session.open(made.id)
+        advanceUntilIdle()
+        val late = mutableListOf<OpenedDiagram>()
+        backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) { r.model.opened.collect { late += it } }   // a turn of the phone
+        advanceUntilIdle()
+        assertEquals(emptyList<OpenedDiagram>(), late)
+    }
+
+    @Test
+    fun `the base map the person chooses is saved with the diagram`() = runTest(dispatcher) {
+        val r = Rig(this)
+        advanceUntilIdle()
+        val made = r.repository.create(target, "LZ HAWK")
+        r.session.open(made.id)
+        r.model.baseMapChosen("topo")
+        r.session.flush()
+        assertEquals("topo", r.repository.open(made.id)!!.view.mapStyle)
+        assertEquals(0, r.session.undoDepth.value)
+    }
+
+    @Test
+    fun `choosing a base map with nothing open does nothing`() = runTest(dispatcher) {
+        val r = Rig(this)
+        advanceUntilIdle()
+        r.model.baseMapChosen("topo")
+        advanceUntilIdle()
+        assertEquals(emptyList<OpenedDiagram>(), r.seen)
+    }
+
+    // Going to the background (writing what is unsaved at once) is the shell's: AppViewModelTest.
+
+    // -- What the map draws -------------------------------------------------------------------------------------------
+
+    private fun boundary(vararg points: Pair<Double, Double>) = JsonArray(points.map { (a, b) -> JsonArray(listOf(JsonPrimitive(a), JsonPrimitive(b))) })
+    private val lz = boundary(34.71 to -84.09, 34.71 to -84.01, 34.79 to -84.01, 34.79 to -84.09)
+
+    /** A diagram that was analysed (its boundary is [lz]), made the way an analysis makes one. */
+    private suspend fun Rig.analysed(): String {
+        val id = repository.create(target, "LZ HAWK").id
+        session.update(id) { DiagramOps.afterAnalysis(it, kotlinx.serialization.json.JsonObject(mapOf("detectedLZ" to lz))) }
+        return id
+    }
+
+    // -- The weather at the target -------------------------------------------------------------------------------------------
+
+    @Test
+    fun `opening an analysed diagram fetches the weather at its target, once`() = runTest(dispatcher) {
+        val r = Rig(this)
+        advanceUntilIdle()
+        val id = r.analysed()
+        r.session.open(id)
+        advanceUntilIdle()
+        assertEquals(listOf(LatLon(34.783817, -84.08219)), r.weatherApi.asked)
+        assertEquals("KRYY", r.weather.stateOf(id).snapshot!!.observation!!.stationId)
+
+        r.session.close(); r.session.open(id); advanceUntilIdle()                              // reopened: what is held is fresh, so it is not asked again
+        assertEquals(1, r.weatherApi.asked.size)
+    }
+
+    @Test
+    fun `a diagram that has not been analysed has no weather asked for, until it is`() = runTest(dispatcher) {
+        val r = Rig(this)
+        advanceUntilIdle()
+        val id = r.repository.create(target, "LZ HAWK").id
+        r.session.open(id)
+        advanceUntilIdle()
+        assertTrue(r.weatherApi.asked.isEmpty())                                                // the web shows the weather only once there is an analysis
+
+        r.session.update(id) { DiagramOps.afterAnalysis(it, kotlinx.serialization.json.JsonObject(mapOf("detectedLZ" to lz))) }
+        advanceUntilIdle()
+        assertEquals(1, r.weatherApi.asked.size)                                                // analysed while open: now it is
+    }
+
+    @Test
+    fun `a diagram that is not open has no weather asked for`() = runTest(dispatcher) {
+        val r = Rig(this)
+        advanceUntilIdle()
+        r.analysed()
+        advanceUntilIdle()
+        assertTrue(r.weatherApi.asked.isEmpty())
+    }
+
+    @Test
+    fun `with nothing open the map draws nothing`() = runTest(dispatcher) {
+        val r = Rig(this)
+        advanceUntilIdle()
+        assertTrue(r.model.scene.value.isEmpty)
+    }
+
+    @Test
+    fun `an open diagram is drawn with its target and boundary`() = runTest(dispatcher) {
+        val r = Rig(this)
+        advanceUntilIdle()
+        val id = r.analysed()
+        r.session.open(id)
+        advanceUntilIdle()
+        val scene = r.model.scene.value
+        assertEquals(LatLon(34.783817, -84.08219), scene.target)
+        assertEquals(4, scene.boundary.size)
+    }
+
+    @Test
+    fun `the slope map carries the analysis's contour lines, leaving out a point that is not one`() {
+        fun analysis(contours: SlopeContours?) = TerrainAnalysis(
+            status = "success", overlay = "data:image/png;base64,AA==", bounds = listOf(listOf(34.70, -84.10), listOf(34.80, -84.00)),
+            source = "local_highres_cog", resolutionM = 10.0, verticalDatum = "NAVD88", stats = SlopeStats(4.0, 3.0, 0.0, 0.0, 0.0, 100, 9_000.0),
+            contours = contours, thresholds = SlopeThresholds(listOf(3.0, 6.0, 10.0, 15.0), Uh60Limits(6.0, 15.0, 15.0)),
+        )
+        val lines = listOf(
+            ContourLine(1520, major = false, inside = true, points = listOf(listOf(34.75, -84.05), listOf(34.76, -84.05)), label = listOf(34.755, -84.05)),
+            ContourLine(1525, major = true, inside = false, points = listOf(listOf(34.75, -84.04), listOf(Double.NaN, -84.04), listOf(34.76, -84.04), listOf(1.0))),
+            ContourLine(1530, major = false, inside = true, points = listOf(listOf(34.75, -84.03), listOf(34.76))),           // one good point: no line
+            ContourLine(1535, major = false, inside = true, points = listOf(listOf(34.75, -84.02), listOf(34.76, -84.02)), label = listOf(34.75)),
+        )
+        assertEquals(
+            listOf(
+                ContourPiece(1520, false, true, listOf(LatLon(34.75, -84.05), LatLon(34.76, -84.05)), LatLon(34.755, -84.05)),
+                ContourPiece(1525, true, false, listOf(LatLon(34.75, -84.04), LatLon(34.76, -84.04)), null),
+                ContourPiece(1535, false, true, listOf(LatLon(34.75, -84.02), LatLon(34.76, -84.02)), null),
+            ),
+            analysis(SlopeContours(5, lines)).contourPieces(),
+        )
+        assertEquals(emptyList<ContourPiece>(), analysis(null).contourPieces())                   // a server from before contours
+    }
+
+    @Test
+    fun `opening an analysed diagram measures its slope once, and the raster is laid where the server said`() = runTest(dispatcher) {
+        val r = Rig(this)
+        advanceUntilIdle()
+        val id = r.analysed()
+        r.session.open(id)
+        advanceUntilIdle()
+        assertEquals(1, r.server.slopeCalls.size)
+        assertEquals(SlopeImage(south = 34.70, west = -84.10, north = 34.80, east = -84.00, dataUri = "data:image/png;base64,AA=="), r.model.scene.value.slope)
+
+        r.session.edit("Rename") { it.copy(name = "renamed") }                                // an edit that leaves the boundary alone
+        advanceUntilIdle()
+        assertEquals(1, r.server.slopeCalls.size)
+    }
+
+    @Test
+    fun `a raster is not drawn over a boundary it was not measured for`() = runTest(dispatcher) {
+        val r = Rig(this, SlopeServer())
+        advanceUntilIdle()
+        val id = r.analysed()
+        r.session.open(id)
+        advanceUntilIdle()
+        assertTrue(r.model.scene.value.slope != null)
+
+        r.server.reachable = false                                                           // the next measurement will fail
+        r.session.edit("Boundary") { it.copy(analysis = it.analysis.copy(detectedLZ = boundary(34.7 to -84.1, 34.7 to -84.0, 34.8 to -84.0))) }
+        advanceUntilIdle()
+        assertEquals(null, r.model.scene.value.slope)                                        // the old picture is gone, not left lying
+        assertEquals(3, r.model.scene.value.boundary.size)
+    }
+
+    @Test
+    fun `with no signal the diagram is drawn without a raster, and a diagram not yet analysed asks for none`() = runTest(dispatcher) {
+        val r = Rig(this, SlopeServer(reachable = false))
+        advanceUntilIdle()
+        val id = r.analysed()
+        r.session.open(id)
+        advanceUntilIdle()
+        assertEquals(null, r.model.scene.value.slope)
+        assertEquals(LatLon(34.783817, -84.08219), r.model.scene.value.target)
+
+        val plain = r.repository.create(target, "targeted only").id
+        r.session.open(plain)
+        advanceUntilIdle()
+        assertEquals(1, r.server.slopeCalls.size)                                            // only the first diagram's
+        assertEquals(DiagramStatus.TARGETED, r.session.active.value!!.status)
+        assertEquals(LzScene.of(r.session.active.value).copy(), r.model.scene.value)
+    }
+
+    // -- Planning graphics on the map ----------------------------------------------------------------------------------
+
+    private fun pzMarker(id: String) = JsonObject(
+        mapOf(
+            "id" to JsonPrimitive(id), "lat" to JsonPrimitive(34.7838), "lon" to JsonPrimitive(-84.0822),
+            "tipLat" to JsonPrimitive(34.7838), "tipLon" to JsonPrimitive(-84.0832),
+        ),
+    )
+
+    @Test
+    fun `graphics placed on the open diagram are drawn, and the one that is held has a halo`() = runTest(dispatcher) {
+        val r = Rig(this)
+        advanceUntilIdle()
+        val id = r.analysed()
+        r.session.open(id)
+        advanceUntilIdle()
+        // An analysis makes the standard SP and RP doghouses, so the scene is not bare; nothing has been placed yet.
+        assertEquals(2, r.model.scene.value.graphics.doghouses.size)
+        assertTrue(r.model.scene.value.graphics.pzMarkers.isEmpty() && r.model.scene.value.graphics.aircraft.isEmpty())
+
+        r.session.edit("Place PZ marker") { DiagramOps.upsertGraphic(it, "pzMarkers", pzMarker("pz-1")) }
+        advanceUntilIdle()
+        assertEquals(1, r.model.scene.value.graphics.pzMarkers.size)
+        assertEquals(null, r.model.scene.value.graphics.selectedAt)
+
+        r.selection.select(GraphicRef("pzMarkers", "pz-1"))
+        advanceUntilIdle()
+        assertEquals(LatLon(34.7838, -84.0822), r.model.scene.value.graphics.selectedAt)
+
+        r.selection.clear()
+        advanceUntilIdle()
+        assertEquals(null, r.model.scene.value.graphics.selectedAt)
+    }
+
+    @Test
+    fun `opening another diagram lets go of what was held in the first`() = runTest(dispatcher) {
+        val r = Rig(this)
+        advanceUntilIdle()
+        val first = r.analysed()
+        r.session.open(first)
+        advanceUntilIdle()                                                                    // opening is heard before the person can hold anything
+        r.session.edit("Place PZ marker") { DiagramOps.upsertGraphic(it, "pzMarkers", pzMarker("pz-1")) }
+        r.selection.select(GraphicRef("pzMarkers", "pz-1"))
+        advanceUntilIdle()
+        assertEquals(GraphicRef("pzMarkers", "pz-1"), r.selection.selected.value)
+
+        val second = r.repository.create(DiagramTarget(35.0, -85.0, "16S FD 00000 00000"), "B").id
+        r.session.open(second)
+        advanceUntilIdle()
+        assertEquals(null, r.selection.selected.value)
+    }
+
+    @Test
+    fun `editing the open diagram keeps what is held`() = runTest(dispatcher) {
+        val r = Rig(this)
+        advanceUntilIdle()
+        r.session.open(r.analysed())
+        advanceUntilIdle()
+        r.session.edit("Place PZ marker") { DiagramOps.upsertGraphic(it, "pzMarkers", pzMarker("pz-1")) }
+        r.selection.select(GraphicRef("pzMarkers", "pz-1"))
+        advanceUntilIdle()
+        r.session.edit("Move") { DiagramOps.patchGraphic(it, "pzMarkers", JsonPrimitive("pz-1"), JsonObject(mapOf("lat" to JsonPrimitive(34.79)))) }
+        advanceUntilIdle()
+        assertEquals(GraphicRef("pzMarkers", "pz-1"), r.selection.selected.value)
+    }
+
+    // -- Tapping the map -----------------------------------------------------------------------------------------------
+
+    private fun view(center: LatLon = LatLon(34.7838, -84.0822)) = MapProjection(CameraState(center, 18.0), 0.0, 0.0, 1.0)
+
+    @Test
+    fun `a tap on a graphic holds it, a tap on another changes to it, and a tap on nothing puts it down`() = runTest(dispatcher) {
+        val r = Rig(this)
+        advanceUntilIdle()
+        r.session.open(r.analysed())
+        advanceUntilIdle()
+        r.session.edit("Place PZ marker") { DiagramOps.upsertGraphic(it, "pzMarkers", pzMarker("pz-1")) }
+        r.session.edit("Place PZ marker") {
+            DiagramOps.upsertGraphic(it, "pzMarkers", JsonObject(pzMarker("pz-2") + mapOf("lat" to JsonPrimitive(34.7848), "tipLat" to JsonPrimitive(34.7848))))
+        }
+        advanceUntilIdle()
+
+        r.model.mapTapped(LatLon(34.7838, -84.0822), view(), touchRadiusPx = 24.0)
+        assertEquals(GraphicRef("pzMarkers", "pz-1"), r.selection.selected.value)
+
+        r.model.mapTapped(LatLon(34.7848, -84.0822), view(), touchRadiusPx = 24.0)               // the other, about 110 m north
+        assertEquals(GraphicRef("pzMarkers", "pz-2"), r.selection.selected.value)
+
+        r.model.mapTapped(LatLon(34.7800, -84.0900), view(), touchRadiusPx = 24.0)               // empty ground
+        assertEquals(null, r.selection.selected.value)
+    }
+
+    @Test
+    fun `tapping the map with nothing drawn changes nothing`() = runTest(dispatcher) {
+        val r = Rig(this)
+        advanceUntilIdle()
+        r.model.mapTapped(LatLon(34.78, -84.08), view(), touchRadiusPx = 24.0)
+        assertEquals(null, r.selection.selected.value)
+    }
+
+    // -- The open LZ/PZs not being worked on (the owner's request of 2026-10-21) -------------------------------------------------
+
+    /** [name] made at [at] and opened, as the LZ/PZ panel opens one: the session has it, and so does the open set. */
+    private suspend fun Rig.opened(name: String, at: LatLon): String {
+        val id = repository.create(DiagramTarget(at.lat, at.lon, "16S GD 66993 52949"), name).id
+        openSet.add(id)
+        session.open(id)
+        return id
+    }
+
+    @Test
+    fun `a new LZ PZ leaves the one before it drawn, faded, and an LZ PZ opened is the one worked on`() = runTest(dispatcher) {
+        val r = Rig(this)
+        advanceUntilIdle()
+        val hawk = r.opened("LZ HAWK", LatLon(34.7838, -84.0822))
+        advanceUntilIdle()
+        assertTrue("the one worked on is the open scene's, not a faded one", r.model.others.value.isEmpty)
+        r.opened("LZ DOVE", LatLon(34.80, -84.10))
+        advanceUntilIdle()
+        assertEquals(listOf("LZ HAWK"), r.model.others.value.lzs.map { it.name })
+        assertEquals(LatLon(34.7838, -84.0822), r.model.others.value.lzs.single().target)
+        assertEquals("LZ DOVE", r.session.active.value!!.name)
+        // Back to the first: the second is the faded one now.
+        r.session.open(hawk)
+        advanceUntilIdle()
+        assertEquals(listOf("LZ DOVE"), r.model.others.value.lzs.map { it.name })
+    }
+
+    @Test
+    fun `one hidden with its eye is not drawn, and opening it shows it again`() = runTest(dispatcher) {
+        val r = Rig(this)
+        advanceUntilIdle()
+        val hawk = r.opened("LZ HAWK", LatLon(34.7838, -84.0822))
+        r.opened("LZ DOVE", LatLon(34.80, -84.10))
+        advanceUntilIdle()
+        r.model.toggleOnMap(hawk)
+        advanceUntilIdle()
+        assertEquals(setOf(hawk), r.model.hiddenOnMap.value)
+        assertTrue(r.model.others.value.isEmpty)
+        r.session.open(hawk)
+        advanceUntilIdle()
+        assertEquals(emptySet<String>(), r.model.hiddenOnMap.value)
+        assertEquals(listOf("LZ DOVE"), r.model.others.value.lzs.map { it.name })
+    }
+
+    @Test
+    fun `a tap on one holds it for its bar, a tap on it again or on nothing puts it down first, and Hide takes it off the map`() = runTest(dispatcher) {
+        val r = Rig(this)
+        advanceUntilIdle()
+        val hawk = r.opened("LZ HAWK", LatLon(34.7838, -84.0822))
+        r.opened("LZ DOVE", LatLon(34.80, -84.10))
+        advanceUntilIdle()
+        assertFalse("its target is under the finger: held, not the frame's", r.model.mapTapped(LatLon(34.7838, -84.0822), view(), touchRadiusPx = 24.0))
+        advanceUntilIdle()
+        assertEquals(hawk, r.model.heldOther.value?.id)
+        assertEquals("LZ HAWK", r.model.heldOther.value?.name)
+        assertEquals("Also open", r.model.heldOther.value?.where)
+        assertEquals(app.ezpztac.android.frame.Panel.Lz, r.model.heldPanel())
+        assertFalse("a tap on nothing puts it down first", r.model.mapTapped(ground, view(), touchRadiusPx = 24.0))
+        advanceUntilIdle()
+        assertEquals(null, r.model.heldOther.value)
+        assertTrue(r.model.mapTapped(ground, view(), touchRadiusPx = 24.0))
+        // Held again, then hidden from its bar: put down, and no longer drawn.
+        r.model.mapTapped(LatLon(34.7838, -84.0822), view(), touchRadiusPx = 24.0)
+        advanceUntilIdle()
+        r.model.hideOther(hawk)
+        advanceUntilIdle()
+        assertEquals(null, r.model.heldOther.value)
+        assertTrue(r.model.others.value.isEmpty)
+    }
+
+    @Test
+    fun `a graphic of the one worked on is held before a faded LZ PZ under it, and holding it puts the faded one down`() = runTest(dispatcher) {
+        val r = Rig(this)
+        advanceUntilIdle()
+        r.opened("LZ DOVE", LatLon(34.7838, -84.0822))
+        advanceUntilIdle()
+        val analysed = r.analysed()
+        r.openSet.add(analysed)
+        r.session.open(analysed)
+        advanceUntilIdle()
+        r.session.edit("Place PZ marker") { DiagramOps.upsertGraphic(it, "pzMarkers", pzMarker("pz-1")) }
+        advanceUntilIdle()
+        assertEquals(listOf("LZ DOVE"), r.model.others.value.lzs.map { it.name })
+        r.model.mapTapped(LatLon(34.7838, -84.0822), view(), touchRadiusPx = 24.0)               // both are there: the open one's marker wins
+        advanceUntilIdle()
+        assertEquals(GraphicRef("pzMarkers", "pz-1"), r.selection.selected.value)
+        assertEquals(null, r.model.heldOther.value)
+    }
+
+    @Test
+    fun `a long press on one holds it and opens no menu, and opening another lets it go`() = runTest(dispatcher) {
+        val r = Rig(this)
+        advanceUntilIdle()
+        val hawk = r.opened("LZ HAWK", LatLon(34.7838, -84.0822))
+        r.opened("LZ DOVE", LatLon(34.80, -84.10))
+        advanceUntilIdle()
+        assertTrue(r.model.dragStarted(LatLon(34.7838, -84.0822), view(), touchRadiusPx = 24.0))
+        advanceUntilIdle()
+        assertEquals(hawk, r.model.heldOther.value?.id)
+        r.session.open(hawk)                                                                    // the bar's Open
+        advanceUntilIdle()
+        assertEquals(null, r.model.heldOther.value)
+    }
+
+    @Test
+    fun `closing the one worked on, as a sign-out does, puts down an LZ PZ held beside it`() = runTest(dispatcher) {
+        val r = Rig(this)
+        advanceUntilIdle()
+        val hawk = r.opened("LZ HAWK", LatLon(34.7838, -84.0822))
+        r.opened("LZ DOVE", LatLon(34.80, -84.10))
+        advanceUntilIdle()
+        r.model.mapTapped(LatLon(34.7838, -84.0822), view(), touchRadiusPx = 24.0)
+        advanceUntilIdle()
+        assertEquals(hawk, r.model.heldOther.value?.id)
+        r.session.close()
+        advanceUntilIdle()
+        assertEquals(null, r.model.heldOther.value)
+    }
+
+    // -- Which tap is the frame's (it hides the phone's frame, or shows it again) ------------------------------------------------
+
+    private val ground = LatLon(34.7800, -84.0900)                                              // nothing of the rigs' graphics, routes or threats is near
+
+    @Test
+    fun `a tap on empty ground with nothing held is the frame's, again and again`() = runTest(dispatcher) {
+        val r = Rig(this)
+        advanceUntilIdle()
+        assertTrue(r.model.mapTapped(ground, view(), touchRadiusPx = 24.0))
+        assertTrue(r.model.mapTapped(ground, view(), touchRadiusPx = 24.0))
+        r.session.open(r.analysed())
+        r.session.edit("Place PZ marker") { DiagramOps.upsertGraphic(it, "pzMarkers", pzMarker("pz-1")) }
+        advanceUntilIdle()
+        assertTrue("nothing under the finger", r.model.mapTapped(ground, view(), touchRadiusPx = 24.0))
+    }
+
+    @Test
+    fun `a tap on something holds it and is not the frame's`() = runTest(dispatcher) {
+        val r = Rig(this)
+        advanceUntilIdle()
+        r.session.open(r.analysed())
+        r.session.edit("Place PZ marker") { DiagramOps.upsertGraphic(it, "pzMarkers", pzMarker("pz-1")) }
+        advanceUntilIdle()
+        assertFalse(r.model.mapTapped(LatLon(34.7838, -84.0822), view(), touchRadiusPx = 24.0))
+        assertEquals(GraphicRef("pzMarkers", "pz-1"), r.selection.selected.value)
+    }
+
+    @Test
+    fun `a tap that puts down a graphic only puts it down, and the next is the frame's`() = runTest(dispatcher) {
+        val r = Rig(this)
+        advanceUntilIdle()
+        r.session.open(r.analysed())
+        r.session.edit("Place PZ marker") { DiagramOps.upsertGraphic(it, "pzMarkers", pzMarker("pz-1")) }
+        advanceUntilIdle()
+        r.selection.select(GraphicRef("pzMarkers", "pz-1"))
+        assertFalse(r.model.mapTapped(ground, view(), touchRadiusPx = 24.0))
+        assertNull(r.selection.selected.value)
+        assertTrue(r.model.mapTapped(ground, view(), touchRadiusPx = 24.0))
+    }
+
+    @Test
+    fun `a tap that puts down a threat, a local point or a corner is not the frame's`() = runTest(dispatcher) {
+        val r = Rig(this)
+        advanceUntilIdle()
+        val threat = r.threat(LatLon(34.7838, -84.0822))
+        val set = r.importedSet()
+        r.session.open(r.analysed())
+        advanceUntilIdle()
+        r.threatSelection.select(threat)
+        assertFalse(r.model.mapTapped(ground, view(), touchRadiusPx = 24.0))
+        assertNull(r.threatSelection.held.value)
+        r.pointSelection.select(set.id, set.points.first().id)
+        assertFalse(r.model.mapTapped(ground, view(), touchRadiusPx = 24.0))
+        assertNull(r.pointSelection.held.value)
+        r.corners.select(app.ezpztac.model.BoundaryCornerRef(false, 0))
+        assertFalse(r.model.mapTapped(ground, view(), touchRadiusPx = 24.0))
+        assertNull(r.corners.held.value)
+        assertTrue(r.model.mapTapped(ground, view(), touchRadiusPx = 24.0))                    // nothing left to put down
+    }
+
+    @Test
+    fun `a threat held but hidden is not on the map, and a tap is the frame's`() = runTest(dispatcher) {
+        val r = Rig(this)
+        advanceUntilIdle()
+        val threat = r.threat(LatLon(34.7838, -84.0822))
+        r.threats.setVisible(threat, false)
+        advanceUntilIdle()
+        r.threatSelection.select(threat)
+        assertTrue(r.model.mapTapped(ground, view(), touchRadiusPx = 24.0))
+    }
+
+    @Test
+    fun `a tap that puts down a route's point or shaping point is not the frame's, and the route stays held, alone, which does not hold back the next`() = runTest(dispatcher) {
+        val r = Rig(this)
+        advanceUntilIdle()
+        val made = r.routes.create(
+            "MISSION",
+            listOf(route("r1", point("p1", here), point("s1", LatLon(34.7843, -84.0832), name = "", kind = "shaping"), point("p2", north))),
+        )
+        r.routeSession.open(made.id)
+        advanceUntilIdle()
+        r.routeSelection.select("r1", "p2")
+        assertFalse(r.model.mapTapped(ground, view(), touchRadiusPx = 24.0))
+        assertEquals(app.ezpztac.data.RouteHeld("r1", null), r.routeSelection.held.value)
+        r.routeSelection.select("r1", "s1")
+        assertFalse(r.model.mapTapped(ground, view(), touchRadiusPx = 24.0))
+        assertEquals(app.ezpztac.data.RouteHeld("r1", null), r.routeSelection.held.value)
+        assertTrue("a route held alone has no bar", r.model.mapTapped(ground, view(), touchRadiusPx = 24.0))
+        assertEquals(app.ezpztac.data.RouteHeld("r1", null), r.routeSelection.held.value)  // and stays held
+    }
+
+    @Test
+    fun `while a boundary or a route is drawn, or a tool places, a tap is never the frame's`() = runTest(dispatcher) {
+        val r = Rig(this)
+        advanceUntilIdle()
+        r.session.open(r.analysed())
+        advanceUntilIdle()
+        assertNull(r.placement.begin(PlaceTool.HELICOPTER))
+        assertFalse(r.model.mapTapped(ground, view(), touchRadiusPx = 24.0))
+        r.placement.finish()
+        r.drawing.start()
+        assertFalse(r.model.mapTapped(ground, view(), touchRadiusPx = 24.0))
+        r.drawing.cancel()
+        r.openRoute()
+        r.sketching.start()
+        assertFalse(r.model.mapTapped(ground, view(), touchRadiusPx = 24.0))
+        r.sketching.cancel()
+        r.routeSelection.clear()
+        r.selection.clear()
+        assertTrue(r.model.mapTapped(ground, view(), touchRadiusPx = 24.0))
+    }
+    // -- Drawing a boundary -----------------------------------------------------------------------------------------------
+
+    @Test
+    fun `while a boundary is being drawn a tap is a corner of it, wherever it falls`() = runTest(dispatcher) {
+        val r = Rig(this)
+        advanceUntilIdle()
+        r.session.open(r.analysed())
+        advanceUntilIdle()
+        r.drawing.start()
+        r.model.mapTapped(LatLon(34.7800, -84.0900), view(), touchRadiusPx = 24.0)
+        r.model.mapTapped(LatLon(34.7900, -84.0700), view(), touchRadiusPx = 24.0)
+        assertEquals(listOf(LatLon(34.78, -84.09), LatLon(34.79, -84.07)), r.drawing.draft.value!!.points)
+    }
+
+    @Test
+    fun `a tap on a boundary corner holds it, a graphic outranks it, and a tap on nothing puts it down`() = runTest(dispatcher) {
+        val r = Rig(this)
+        advanceUntilIdle()
+        r.session.open(r.analysed())
+        r.session.edit("Place PZ marker") { DiagramOps.upsertGraphic(it, "pzMarkers", pzMarker("pz-1")) }
+        advanceUntilIdle()
+        val camera = view(LatLon(34.75, -84.05))
+        r.model.mapTapped(LatLon(34.71, -84.09), camera, touchRadiusPx = 24.0)
+        assertEquals(app.ezpztac.model.BoundaryCornerRef(false, 0), r.corners.held.value)
+        assertEquals(null, r.selection.selected.value)
+        r.model.mapTapped(LatLon(34.7838, -84.0822), view(), touchRadiusPx = 24.0)                // a graphic: held instead
+        assertEquals(null, r.corners.held.value)
+        assertEquals(GraphicRef("pzMarkers", "pz-1"), r.selection.selected.value)
+        r.model.mapTapped(LatLon(34.79, -84.01), camera, touchRadiusPx = 24.0)
+        assertEquals(app.ezpztac.model.BoundaryCornerRef(false, 2), r.corners.held.value)
+        assertEquals(null, r.selection.selected.value)
+        r.model.mapTapped(LatLon(34.75, -84.05), camera, touchRadiusPx = 24.0)                    // empty ground
+        assertEquals(null, r.corners.held.value)
+    }
+
+    @Test
+    fun `an outline the LZ-PZ's view hides is not drawn, nor held by a tap, and a corner held already keeps its corners drawn until put down`() = runTest(dispatcher) {
+        val r = Rig(this)
+        advanceUntilIdle()
+        r.session.open(r.analysed())
+        advanceUntilIdle()
+        val camera = view(LatLon(34.75, -84.05))
+        fun outline(shown: Boolean) = r.session.setQuietly { it.copy(view = it.view.copy(showLZOutline = shown)) }
+        outline(false)
+        advanceUntilIdle()
+        assertEquals(false, r.model.scene.value.boundaryShown)
+        assertEquals("still the diagram's", 4, r.model.scene.value.boundary.size)
+        // Where a corner is, but not drawn: the tap holds nothing, and is the frame's.
+        assertTrue(r.model.mapTapped(LatLon(34.71, -84.09), camera, touchRadiusPx = 24.0))
+        assertNull(r.corners.held.value)
+        outline(true)
+        advanceUntilIdle()
+        r.model.mapTapped(LatLon(34.71, -84.09), camera, touchRadiusPx = 24.0)
+        assertEquals(app.ezpztac.model.BoundaryCornerRef(false, 0), r.corners.held.value)
+        // Hidden while one is held: the corners stay drawn, and in reach, while the person works on them.
+        outline(false)
+        advanceUntilIdle()
+        assertTrue(r.model.scene.value.boundaryCornersShown)
+        r.model.mapTapped(LatLon(34.79, -84.01), camera, touchRadiusPx = 24.0)
+        assertEquals(app.ezpztac.model.BoundaryCornerRef(false, 2), r.corners.held.value)
+        r.model.mapTapped(LatLon(34.75, -84.05), camera, touchRadiusPx = 24.0)                       // empty ground: put down
+        assertNull(r.corners.held.value)
+        advanceUntilIdle()
+        assertFalse(r.model.scene.value.boundaryCornersShown)
+    }
+
+    @Test
+    fun `the map draws the slope at the opacity this device keeps`() = runTest(dispatcher) {
+        val r = Rig(this)
+        advanceUntilIdle()
+        assertEquals(55, r.model.slopeOpacity.value)
+        r.slopeVisibility.setOpacity(25)
+        assertEquals(25, r.model.slopeOpacity.value)
+        assertEquals(25, r.slopeOpacity.kept)
+    }
+
+    @Test
+    fun `a tap while drawing is a new corner and holds no existing one`() = runTest(dispatcher) {
+        val r = Rig(this)
+        advanceUntilIdle()
+        r.session.open(r.analysed())
+        advanceUntilIdle()
+        r.drawing.start()
+        r.model.mapTapped(LatLon(34.71, -84.09), view(LatLon(34.75, -84.05)), touchRadiusPx = 24.0)
+        assertEquals(null, r.corners.held.value)
+    }
+
+    @Test
+    fun `a tap on a graphic while drawing is a corner and does not hold the graphic`() = runTest(dispatcher) {
+        val r = Rig(this)
+        advanceUntilIdle()
+        r.session.open(r.analysed())
+        r.session.edit("Place PZ marker") { DiagramOps.upsertGraphic(it, "pzMarkers", pzMarker("pz-1")) }
+        advanceUntilIdle()
+        r.drawing.start()
+        r.model.mapTapped(LatLon(34.7838, -84.0822), view(), touchRadiusPx = 24.0)                  // right on the PZ marker
+        assertEquals(null, r.selection.selected.value)
+        assertEquals(1, r.drawing.draft.value!!.points.size)
+        r.drawing.cancel()
+        r.model.mapTapped(LatLon(34.7838, -84.0822), view(), touchRadiusPx = 24.0)                  // and once drawing is over, it is a tap on a graphic again
+        assertEquals(GraphicRef("pzMarkers", "pz-1"), r.selection.selected.value)
+    }
+
+    @Test
+    fun `the map draws the corners put down on the diagram they belong to`() = runTest(dispatcher) {
+        val r = Rig(this)
+        advanceUntilIdle()
+        r.session.open(r.analysed())
+        advanceUntilIdle()
+        assertEquals(emptyList<LatLon>(), r.model.scene.value.draft)
+        r.drawing.start()
+        r.drawing.addPoint(LatLon(34.78, -84.09))
+        advanceUntilIdle()
+        assertEquals(listOf(LatLon(34.78, -84.09)), r.model.scene.value.draft)
+    }
+
+    @Test
+    fun `the sheet is told when drawing starts and stops`() = runTest(dispatcher) {
+        val r = Rig(this)
+        advanceUntilIdle()
+        r.session.open(r.analysed())
+        advanceUntilIdle()
+        assertEquals(false, r.model.isDrawing.value)
+        r.drawing.start()
+        advanceUntilIdle()
+        assertEquals(true, r.model.isDrawing.value)
+        r.drawing.cancel()
+        advanceUntilIdle()
+        assertEquals(false, r.model.isDrawing.value)
+    }
+
+    @Test
+    fun `each tool begun is told as a new start, so the sheet goes down again, though the map's taps were never let go`() = runTest(dispatcher) {
+        val r = Rig(this)
+        advanceUntilIdle()
+        r.session.open(r.analysed())
+        advanceUntilIdle()
+        assertNull(r.model.drawingWhat.value)
+        r.placement.begin(PlaceTool.HELICOPTER)
+        advanceUntilIdle()
+        assertEquals(PlaceTool.HELICOPTER, r.model.drawingWhat.value)
+        r.placement.begin(PlaceTool.PZ_MARKER)                                                  // finishes the first: drawing never stops
+        advanceUntilIdle()
+        assertEquals(true, r.model.isDrawing.value)
+        assertEquals(PlaceTool.PZ_MARKER, r.model.drawingWhat.value)
+        r.placement.finish()
+        r.drawing.start()
+        advanceUntilIdle()
+        assertEquals("boundary", r.model.drawingWhat.value)
+        r.drawing.addPoint(LatLon(34.7838, -84.0822))                                           // a corner is not a new start
+        advanceUntilIdle()
+        assertEquals("boundary", r.model.drawingWhat.value)
+    }
+
+    @Test
+    fun `the map never draws one diagram's corners on another, not even for the moment before they are dropped`() = runTest(dispatcher) {
+        val r = Rig(this)
+        advanceUntilIdle()
+        r.session.open(r.analysed())
+        advanceUntilIdle()
+        r.drawing.start()
+        r.drawing.addPoint(LatLon(34.78, -84.09))
+        advanceUntilIdle()
+        val seen = mutableListOf<LzScene>()
+        backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) { r.model.scene.collect { seen += it } }
+        val other = r.repository.create(DiagramTarget(35.0, -85.0, "16S GD 1 1"), "LZ CROW")
+        r.session.open(other.id)
+        advanceUntilIdle()
+        val onOther = seen.filter { it.target == LatLon(35.0, -85.0) }
+        assertTrue("the other diagram was shown", onOther.isNotEmpty())
+        assertTrue("no corner of the first was drawn on it", onOther.all { it.draft.isEmpty() })
+    }
+
+    @Test
+    fun `opening another diagram drops a boundary half drawn`() = runTest(dispatcher) {
+        val r = Rig(this)
+        advanceUntilIdle()
+        val first = r.analysed()
+        r.session.open(first)
+        advanceUntilIdle()
+        r.drawing.start()
+        r.drawing.addPoint(LatLon(34.78, -84.09))
+        advanceUntilIdle()
+        val other = r.repository.create(DiagramTarget(35.0, -85.0, "16S GD 1 1"), "LZ CROW")
+        r.session.open(other.id)
+        advanceUntilIdle()
+        assertEquals(null, r.drawing.draft.value)
+        assertEquals(emptyList<LatLon>(), r.model.scene.value.draft)
+    }
+
+// -- Aircraft on the map -----------------------------------------------------------------------------------------------
+
+    private fun helo(id: Int, profile: String) = JsonObject(
+        mapOf(
+            "id" to JsonPrimitive(id), "lat" to JsonPrimitive(34.7838), "lon" to JsonPrimitive(-84.0822), "rotation" to JsonPrimitive(0),
+            "type" to JsonPrimitive("helo"), "profileId" to JsonPrimitive(profile),
+        ),
+    )
+
+    @Test
+    fun `each aircraft is drawn as the airframe it was placed as, and one this device does not know as the mission aircraft`() = runTest(dispatcher) {
+        val r = Rig(this)
+        advanceUntilIdle()
+        r.session.open(r.analysed())
+        advanceUntilIdle()
+        r.session.edit("Place") { DiagramOps.upsertGraphic(it, "helicopters", helo(1, "ch47f")) }
+        r.session.edit("Place") { DiagramOps.upsertGraphic(it, "helicopters", helo(2, "uh60l")) }
+        r.session.edit("Place") { DiagramOps.upsertGraphic(it, "helicopters", helo(3, "not-in-the-list")) }
+        advanceUntilIdle()
+        assertEquals(listOf("CH-47F", "UH-60L", "UH-60L"), r.model.scene.value.graphics.aircraft.map { it.designation })   // the UH-60L is the mission aircraft
+        assertEquals(18.29, r.model.scene.value.graphics.aircraft[0].diameterM, 1e-9)
+
+        r.aircraft.select("ch47f")
+        advanceUntilIdle()
+        assertEquals(listOf("CH-47F", "UH-60L", "CH-47F"), r.model.scene.value.graphics.aircraft.map { it.designation })   // and follows the choice
+    }
+
+    // -- Routes -----------------------------------------------------------------------------------------------------------
+
+    private fun point(id: String, at: LatLon, name: String = ".TGT", kind: String = "amps") =
+        app.ezpztac.model.RoutePoint(id = id, lat = at.lat, lon = at.lon, kind = kind, ptType = "target", name = name)
+
+    private val here = LatLon(34.7838, -84.0822)
+    private val north = LatLon(34.7848, -84.0822)                                   // about 110 m north: far apart on the screen at zoom 18
+
+    private fun route(id: String, vararg points: app.ezpztac.model.RoutePoint, visible: Boolean = true) =
+        app.ezpztac.model.SketchRoute(id = id, name = "R-$id", color = "#FF453A", visible = visible, points = points.toList())
+
+    /** A set with one route running from [here] to [north], open. */
+    private suspend fun Rig.openRoute(): String {
+        val made = routes.create("MISSION", listOf(route("r1", point("p1", here), point("p2", north))))
+        routeSession.open(made.id)
+        return made.id
+    }
+
+    @Test
+    fun `with no set of routes open the map draws no routes`() = runTest(dispatcher) {
+        val r = Rig(this)
+        advanceUntilIdle()
+        assertTrue(r.model.routes.value.isEmpty)
+    }
+
+    @Test
+    fun `the routes of the open set are drawn, the one being worked on heavier and its point marked`() = runTest(dispatcher) {
+        val r = Rig(this)
+        advanceUntilIdle()
+        r.openRoute()
+        advanceUntilIdle()
+        assertEquals(listOf("r1"), r.model.routes.value.routes.map { it.id })
+        assertFalse(r.model.routes.value.routes.single().selected)
+        r.routeSelection.select("r1", "p2")
+        advanceUntilIdle()
+        assertTrue(r.model.routes.value.routes.single().selected)
+        assertEquals(listOf("p2"), r.model.routes.value.routes.single().pins.filter { it.selected }.map { it.id })
+    }
+
+    @Test
+    fun `a held route that is no longer in the set is not drawn as held`() = runTest(dispatcher) {
+        val r = Rig(this)
+        advanceUntilIdle()
+        r.openRoute()
+        advanceUntilIdle()
+        r.routeSelection.select("gone", "p1")
+        advanceUntilIdle()
+        assertTrue(r.model.routes.value.routes.none { it.selected })
+        assertTrue(r.model.routes.value.routes.flatMap { it.pins }.none { it.selected })
+    }
+
+    @Test
+    fun `a point held on another route is not marked on this one`() = runTest(dispatcher) {
+        val r = Rig(this)
+        advanceUntilIdle()
+        val made = r.routes.create("MISSION", listOf(route("r1", point("p1", here), point("p2", north)), route("r2", point("q1", here), point("q2", north))))
+        r.routeSession.open(made.id)
+        r.routeSelection.select("r2", "p1")                                                   // p1 belongs to r1, not r2
+        advanceUntilIdle()
+        assertTrue(r.model.routes.value.routes.flatMap { it.pins }.none { it.selected })
+    }
+
+    @Test
+    fun `a route being drawn is drawn with the set it belongs to, and not on another`() = runTest(dispatcher) {
+        val r = Rig(this)
+        advanceUntilIdle()
+        r.openRoute()
+        r.sketching.start()
+        r.sketching.addPoint(LatLon(34.70, -84.10))
+        advanceUntilIdle()
+        assertEquals(listOf(LatLon(34.70, -84.10)), r.model.routes.value.draft)
+        r.routeSession.open(r.routes.create("OTHER").id)
+        advanceUntilIdle()
+        assertTrue(r.model.routes.value.draft.isEmpty())
+    }
+
+    @Test
+    fun `while a route is being drawn a tap is a point of it, wherever it falls, and the sheet goes down`() = runTest(dispatcher) {
+        val r = Rig(this)
+        advanceUntilIdle()
+        r.openRoute()
+        r.session.open(r.analysed())
+        r.session.edit("Place PZ marker") { DiagramOps.upsertGraphic(it, "pzMarkers", pzMarker("pz-1")) }
+        advanceUntilIdle()
+        assertFalse(r.model.isDrawing.value)
+        r.sketching.start()
+        advanceUntilIdle()
+        assertTrue(r.model.isDrawing.value)
+        r.model.mapTapped(LatLon(34.7838, -84.0822), view(), touchRadiusPx = 24.0)           // right on the PZ marker and on a route point
+        r.model.mapTapped(LatLon(34.7900, -84.0700), view(), touchRadiusPx = 24.0)
+        assertEquals(2, r.sketching.draft.value!!.points.size)
+        assertNull(r.selection.selected.value)
+        assertNull(r.routeSelection.held.value)
+    }
+
+    // -- Local points ------------------------------------------------------------------------------------------------
+
+    private val lps = Fixtures.bytes("sqlite/local-points.lps")
+
+    private suspend fun Rig.importedSet(name: String = "NORTH GA.lps") = (pointSets.import(lps, name) as app.ezpztac.data.ImportOutcome.Imported).set
+
+    @Test
+    fun `with no sets of points the map draws none`() = runTest(dispatcher) {
+        val r = Rig(this)
+        advanceUntilIdle()
+        assertTrue(r.model.points.value.isEmpty)
+    }
+
+    @Test
+    fun `an imported set is drawn, every point in its colour`() = runTest(dispatcher) {
+        val r = Rig(this)
+        advanceUntilIdle()
+        val set = r.importedSet()
+        advanceUntilIdle()
+        val pins = r.model.points.value.pins
+        assertEquals(set.points.size, pins.size)
+        assertEquals(setOf(set.id), pins.map { it.setId }.toSet())
+        assertEquals(setOf(RouteColors.PALETTE[0]), pins.map { it.color }.toSet())
+        assertTrue(pins.none { it.selected })
+    }
+
+    @Test
+    fun `a set that is hidden is not drawn, and is again when shown`() = runTest(dispatcher) {
+        val r = Rig(this)
+        advanceUntilIdle()
+        val one = r.importedSet("ONE.lps")
+        r.importedSet("TWO.lps")
+        advanceUntilIdle()
+        val total = r.model.points.value.pins.size
+        r.pointViews.toggle(one.id)
+        advanceUntilIdle()
+        assertEquals(total / 2, r.model.points.value.pins.size)
+        assertTrue(r.model.points.value.pins.none { it.setId == one.id })
+        r.pointViews.toggle(one.id)
+        advanceUntilIdle()
+        assertEquals(total, r.model.points.value.pins.size)
+    }
+
+    @Test
+    fun `a tap on a local point holds it, and the same tap again puts it down`() = runTest(dispatcher) {
+        val r = Rig(this)
+        advanceUntilIdle()
+        val set = r.importedSet()
+        advanceUntilIdle()
+        val pin = r.model.points.value.pins.first()
+        r.model.mapTapped(pin.at, view(pin.at), touchRadiusPx = 24.0)
+        assertEquals(app.ezpztac.data.PointHeld(set.id, pin.pointId), r.pointSelection.held.value)
+        advanceUntilIdle()
+        assertTrue(r.model.points.value.pins.single { it.selected }.pointId == pin.pointId)
+        r.model.mapTapped(pin.at, view(pin.at), touchRadiusPx = 24.0)
+        assertNull(r.pointSelection.held.value)
+    }
+
+    @Test
+    fun `a tap on nothing puts a held local point down`() = runTest(dispatcher) {
+        val r = Rig(this)
+        advanceUntilIdle()
+        val set = r.importedSet()
+        advanceUntilIdle()
+        r.pointSelection.select(set.id, set.points.first().id)
+        r.model.mapTapped(LatLon(10.0, 10.0), view(), touchRadiusPx = 24.0)
+        assertNull(r.pointSelection.held.value)
+    }
+
+    @Test
+    fun `a hidden set cannot be tapped, because it is not on the map`() = runTest(dispatcher) {
+        val r = Rig(this)
+        advanceUntilIdle()
+        val set = r.importedSet()
+        advanceUntilIdle()
+        val pin = r.model.points.value.pins.first()
+        r.pointViews.toggle(set.id)
+        advanceUntilIdle()
+        r.model.mapTapped(pin.at, view(pin.at), touchRadiusPx = 24.0)
+        assertNull(r.pointSelection.held.value)
+    }
+
+    @Test
+    fun `a route point on a local point wins the tap, and a graphic wins over both`() = runTest(dispatcher) {
+        val r = Rig(this)
+        advanceUntilIdle()
+        r.openRoute()
+        val set = r.importedSet()
+        advanceUntilIdle()
+        r.pointSelection.select(set.id, set.points.first().id)
+
+        r.model.mapTapped(north, view(), touchRadiusPx = 24.0)                                // the route's point p2, nothing else near
+        assertEquals(app.ezpztac.data.RouteHeld("r1", "p2"), r.routeSelection.held.value)
+        assertNull(r.pointSelection.held.value)                                                // choosing a route point puts the local point down
+    }
+
+    // -- Threats on the map -------------------------------------------------------------------------------------------------
+
+    private fun Rig.threat(at: LatLon, name: String = "SA-6") =
+        threats.add(Threat(name, "SHGPEWRR------", at.lat, at.lon, "", "SOF", radars = Radars.defaultPair()))
+
+    @Test
+    fun `the map draws the threats that are shown, the held one marked`() = runTest(dispatcher) {
+        val r = Rig(this)
+        advanceUntilIdle()
+        val a = r.threat(LatLon(34.78, -84.08), "A")
+        val b = r.threat(LatLon(34.79, -84.09), "B")
+        val hidden = r.threat(LatLon(34.80, -84.10), "H")
+        r.threats.setVisible(hidden, false)
+        r.threatSelection.select(b)
+        advanceUntilIdle()
+        val drawn = r.model.threatScene.value.pins
+        assertEquals(listOf("A", "B"), drawn.map { it.name })
+        assertEquals(listOf(false, true), drawn.map { it.selected })
+        assertEquals(listOf(a, b), drawn.map { it.id })
+        r.threatSelection.select(hidden)                                                       // a held threat that is hidden marks nothing
+        advanceUntilIdle()
+        assertTrue(r.model.threatScene.value.pins.none { it.selected })
+    }
+
+    @Test
+    fun `an account without threats has none drawn, held or counted, though a picture is still kept on the device`() = runTest(dispatcher) {
+        val r = Rig(this)
+        advanceUntilIdle()
+        val id = r.threat(LatLon(34.7838, -84.0822))
+        r.threatSelection.select(id)
+        advanceUntilIdle()
+        r.model.allowThreats(false)                                                             // an administrator turned threats off for the account
+        advanceUntilIdle()
+        assertNull("what was held is put down", r.threatSelection.held.value)
+        assertTrue(r.model.threatScene.value.pins.isEmpty())
+        assertEquals(0, r.model.counts.value.threats)
+        r.model.mapTapped(LatLon(34.7838, -84.0822), view(), touchRadiusPx = 24.0)
+        assertNull(r.threatSelection.held.value)
+        assertFalse(r.model.dragStarted(LatLon(34.7838, -84.0822), view(), touchRadiusPx = 24.0))
+        assertEquals(1, r.threats.entries.value.size)                                           // kept, for if they are turned on again
+        r.model.allowThreats(true)
+        advanceUntilIdle()
+        assertEquals(listOf(id), r.model.threatScene.value.pins.map { it.id })
+    }
+
+    @Test
+    fun `a tap on a threat holds it, and the same tap again puts it down`() = runTest(dispatcher) {
+        val r = Rig(this)
+        advanceUntilIdle()
+        val id = r.threat(LatLon(34.7838, -84.0822))
+        advanceUntilIdle()
+        r.model.mapTapped(LatLon(34.7838, -84.0822), view(), touchRadiusPx = 24.0)
+        assertEquals(id, r.threatSelection.held.value)
+        r.model.mapTapped(LatLon(34.7838, -84.0822), view(), touchRadiusPx = 24.0)
+        assertNull(r.threatSelection.held.value)
+    }
+
+    @Test
+    fun `a tap on nothing puts a held threat down, and a tap on a hidden threat does not hold it`() = runTest(dispatcher) {
+        val r = Rig(this)
+        advanceUntilIdle()
+        val id = r.threat(LatLon(34.7838, -84.0822))
+        advanceUntilIdle()
+        r.threatSelection.select(id)
+        r.model.mapTapped(LatLon(10.0, 10.0), view(), touchRadiusPx = 24.0)
+        assertNull(r.threatSelection.held.value)
+        r.threats.setVisible(id, false)
+        advanceUntilIdle()
+        r.model.mapTapped(LatLon(34.7838, -84.0822), view(), touchRadiusPx = 24.0)
+        assertNull(r.threatSelection.held.value)
+    }
+
+    @Test
+    fun `a threat wins the tap over a local point on the same place, and holding it puts the point down`() = runTest(dispatcher) {
+        val r = Rig(this)
+        advanceUntilIdle()
+        val set = r.importedSet()
+        advanceUntilIdle()
+        val pin = r.model.points.value.pins.first()
+        val id = r.threat(pin.at)
+        advanceUntilIdle()
+        r.pointSelection.select(set.id, pin.pointId)
+        r.model.mapTapped(pin.at, view(pin.at), touchRadiusPx = 24.0)
+        assertEquals(id, r.threatSelection.held.value)
+        assertNull(r.pointSelection.held.value)
+    }
+
+    @Test
+    fun `a threat wins the tap over a route point under it, which is let go while the route stays held`() = runTest(dispatcher) {
+        val r = Rig(this)
+        advanceUntilIdle()
+        r.openRoute()
+        val id = r.threat(north)
+        advanceUntilIdle()
+        r.routeSelection.select("r1", "p2")
+        r.model.mapTapped(north, view(), touchRadiusPx = 24.0)
+        assertEquals(id, r.threatSelection.held.value)
+        assertEquals(app.ezpztac.data.RouteHeld("r1", null), r.routeSelection.held.value)
+    }
+
+    @Test
+    fun `a route point is still reached where no threat is, and holding it puts a held threat down`() = runTest(dispatcher) {
+        val r = Rig(this)
+        advanceUntilIdle()
+        r.openRoute()
+        val id = r.threat(LatLon(34.7800, -84.0900))                                            // elsewhere
+        advanceUntilIdle()
+        r.threatSelection.select(id)
+        r.model.mapTapped(north, view(), touchRadiusPx = 24.0)
+        assertEquals(app.ezpztac.data.RouteHeld("r1", "p2"), r.routeSelection.held.value)
+        assertNull(r.threatSelection.held.value)
+    }
+
+    @Test
+    fun `a graphic wins the tap over a threat, and holding it puts the threat down`() = runTest(dispatcher) {
+        val r = Rig(this)
+        advanceUntilIdle()
+        r.session.open(r.analysed())
+        advanceUntilIdle()
+        r.session.edit("Place PZ marker") { DiagramOps.upsertGraphic(it, "pzMarkers", pzMarker("pz-1")) }
+        advanceUntilIdle()
+        val id = r.threat(LatLon(34.7838, -84.0822))                                           // right on the PZ marker
+        advanceUntilIdle()
+        r.threatSelection.select(id)
+        r.model.mapTapped(LatLon(34.7838, -84.0822), view(), touchRadiusPx = 24.0)
+        assertEquals(GraphicRef("pzMarkers", "pz-1"), r.selection.selected.value)             // the graphic is held, not the threat
+        assertNull(r.threatSelection.held.value)
+    }
+
+    @Test
+    fun `a tap on a route's named point holds the route and the point`() = runTest(dispatcher) {
+        val r = Rig(this)
+        advanceUntilIdle()
+        r.openRoute()
+        advanceUntilIdle()
+        r.model.mapTapped(north, view(), touchRadiusPx = 24.0)
+        assertEquals(app.ezpztac.data.RouteHeld("r1", "p2"), r.routeSelection.held.value)
+    }
+
+    @Test
+    fun `a tap on the line holds the route and no point`() = runTest(dispatcher) {
+        val r = Rig(this)
+        advanceUntilIdle()
+        r.openRoute()
+        advanceUntilIdle()
+        r.model.mapTapped(LatLon(34.7843, -84.0822), view(), touchRadiusPx = 24.0)           // half way between the two points
+        assertEquals(app.ezpztac.data.RouteHeld("r1", null), r.routeSelection.held.value)
+    }
+
+    @Test
+    fun `a tap on nothing puts the point down and keeps the route`() = runTest(dispatcher) {
+        val r = Rig(this)
+        advanceUntilIdle()
+        r.openRoute()
+        advanceUntilIdle()
+        r.routeSelection.select("r1", "p2")
+        r.model.mapTapped(LatLon(34.7800, -84.0900), view(), touchRadiusPx = 24.0)
+        assertEquals(app.ezpztac.data.RouteHeld("r1", null), r.routeSelection.held.value)
+        r.routeSelection.clear()
+        r.model.mapTapped(LatLon(34.7800, -84.0900), view(), touchRadiusPx = 24.0)           // and nothing held stays nothing held
+        assertNull(r.routeSelection.held.value)
+    }
+
+    @Test
+    fun `a tap on a graphic holds the graphic and not the route under it`() = runTest(dispatcher) {
+        val r = Rig(this)
+        advanceUntilIdle()
+        r.openRoute()
+        r.session.open(r.analysed())
+        r.session.edit("Place PZ marker") { DiagramOps.upsertGraphic(it, "pzMarkers", pzMarker("pz-1")) }
+        advanceUntilIdle()
+        r.model.mapTapped(here, view(), touchRadiusPx = 24.0)                                   // the PZ marker and the route's first point are both here
+        assertEquals(GraphicRef("pzMarkers", "pz-1"), r.selection.selected.value)
+        assertNull(r.routeSelection.held.value)
+    }
+
+    @Test
+    fun `a tap on a route holds it and lets go of a graphic that was held`() = runTest(dispatcher) {
+        val r = Rig(this)
+        advanceUntilIdle()
+        r.openRoute()
+        r.session.open(r.analysed())
+        r.session.edit("Place PZ marker") { DiagramOps.upsertGraphic(it, "pzMarkers", pzMarker("pz-1")) }
+        advanceUntilIdle()
+        r.selection.select(GraphicRef("pzMarkers", "pz-1"))
+        r.model.mapTapped(north, view(), touchRadiusPx = 24.0)
+        assertNull(r.selection.selected.value)
+        assertEquals("r1", r.routeSelection.held.value!!.routeId)
+    }
+
+    @Test
+    fun `opening another set, or closing the set, puts down what was held and drops a route half drawn`() = runTest(dispatcher) {
+        val r = Rig(this)
+        advanceUntilIdle()
+        r.openRoute()
+        advanceUntilIdle()
+        r.routeSelection.select("r1", "p1")
+        r.sketching.start()
+        r.sketching.addPoint(LatLon(34.70, -84.10))
+        r.routeSession.open(r.routes.create("OTHER").id)
+        advanceUntilIdle()
+        assertNull(r.routeSelection.held.value)
+        assertNull(r.sketching.draft.value)
+        assertFalse(r.model.isDrawing.value)
+
+        r.routeSelection.select("x", null)
+        r.sketching.start()
+        r.routeSession.close()
+        advanceUntilIdle()
+        assertNull(r.routeSelection.held.value)
+        assertNull(r.sketching.draft.value)
+    }
+
+    @Test
+    fun `editing the open set does not put down what is held`() = runTest(dispatcher) {
+        val r = Rig(this)
+        advanceUntilIdle()
+        r.openRoute()
+        advanceUntilIdle()
+        r.routeSelection.select("r1", "p1")
+        r.routeSession.edit("Hide") { set -> set.mapRoute("r1") { it.copy(visible = false) } }
+        advanceUntilIdle()
+        assertEquals(app.ezpztac.data.RouteHeld("r1", "p1"), r.routeSelection.held.value)
+        assertTrue(r.model.routes.value.routes.isEmpty())                                      // a hidden route is not drawn
+    }
+
+    @Test
+    fun `a boundary being drawn still has the map's taps when a route is also open`() = runTest(dispatcher) {
+        val r = Rig(this)
+        advanceUntilIdle()
+        r.openRoute()
+        r.session.open(r.analysed())
+        advanceUntilIdle()
+        r.drawing.start()
+        advanceUntilIdle()
+        r.model.mapTapped(north, view(), touchRadiusPx = 24.0)                                   // on a route's point: still a corner
+        assertEquals(1, r.drawing.draft.value!!.points.size)
+        assertNull(r.routeSelection.held.value)
+        assertEquals("Finish or cancel the boundary first.", r.sketching.start())
+        assertTrue(r.model.isDrawing.value)
+    }
+
+    // -- Long press and drag ------------------------------------------------------------------------------------------
+
+    @Test
+    fun `a long press on a graphic holds it, opening nothing else, and the finger moves it as one undo step`() = runTest(dispatcher) {
+        val r = Rig(this)
+        advanceUntilIdle()
+        r.session.open(r.analysed())
+        advanceUntilIdle()
+        r.session.edit("Place PZ marker") { DiagramOps.upsertGraphic(it, "pzMarkers", pzMarker("pz-1")) }
+        advanceUntilIdle()
+        val before = r.session.undoDepth.value
+
+        val finger = LatLon(34.7838, -84.0822)
+        assertTrue(r.model.dragStarted(finger, view(), touchRadiusPx = 24.0))
+        assertEquals("held as a tap holds it: its bar, and nothing else", GraphicRef("pzMarkers", "pz-1"), r.selection.selected.value)
+        repeat(10) { i -> r.model.dragMoved(LatLon(34.7838 + i * 0.00002, -84.0822)) }
+        r.model.dragEnded(LatLon(34.7842, -84.0822))
+        advanceUntilIdle()
+
+        val moved = r.session.active.value!!.graphics.pzMarkers.single() as JsonObject
+        assertEquals(34.7842, (moved["lat"] as JsonPrimitive).content.toDouble(), 1e-6)
+        assertEquals(before + 1, r.session.undoDepth.value)
+        // The map's own scene follows: what is drawn is where it was put.
+        assertEquals(34.7842, r.model.scene.value.graphics.pzMarkers.single().anchor.lat, 1e-6)
+    }
+
+    @Test
+    fun `a long press on nothing picks nothing up, so the map pans`() = runTest(dispatcher) {
+        val r = Rig(this)
+        advanceUntilIdle()
+        r.session.open(r.analysed())
+        advanceUntilIdle()
+        r.session.edit("Place PZ marker") { DiagramOps.upsertGraphic(it, "pzMarkers", pzMarker("pz-1")) }
+        advanceUntilIdle()
+        assertFalse(r.model.dragStarted(LatLon(34.7800, -84.0900), view(), touchRadiusPx = 24.0))
+        assertNull(r.selection.selected.value)
+    }
+
+    @Test
+    fun `a long press on nothing opens the map menu headed by the grid there, but not while taps are corners, points or placements`() = runTest(dispatcher) {
+        val r = Rig(this)
+        advanceUntilIdle()
+        val at = LatLon(34.7838, -84.0822)
+        assertEquals(MapMenuPlace(at, MgrsConverter.toMgrs(at.lat, at.lon)!!.format()), r.model.pressed(at))
+        assertEquals("90.00000, 10.00000", r.model.pressed(LatLon(90.0, 10.0))!!.grid)           // no MGRS at the pole: degrees, as the web's menu
+        assertNull(r.model.pressed(LatLon(Double.NaN, 10.0)))
+        // Past the date line the map gives a longitude beyond 180: the same place, brought back.
+        val wrapped = r.model.pressed(LatLon(-17.8, 180.4))!!
+        assertEquals(-179.6, wrapped.at.lon, 1e-9)
+        assertEquals(MgrsConverter.toMgrs(-17.8, -179.6)!!.format(), wrapped.grid)
+        assertEquals(179.6, r.model.pressed(LatLon(-17.8, -180.4))!!.at.lon, 1e-9)
+
+        r.session.open(r.analysed())
+        advanceUntilIdle()
+        assertNull(r.placement.begin(PlaceTool.HELICOPTER))
+        assertNull(r.model.pressed(at))                                                          // a press places
+        r.placement.finish()
+        r.drawing.start()                                                                       // (after the tool: starting a boundary takes the analysis back)
+        assertNull(r.model.pressed(at))                                                          // a press is a corner
+        r.drawing.cancel()
+        r.openRoute()
+        r.sketching.start()
+        assertNull(r.model.pressed(at))                                                          // a press is a point of the route
+        r.sketching.cancel()
+        assertNotNull(r.model.pressed(at))
+    }
+
+    @Test
+    fun `nothing is picked up while a boundary or a route is being drawn, since a press is a corner then`() = runTest(dispatcher) {
+        val r = Rig(this)
+        advanceUntilIdle()
+        r.session.open(r.analysed())
+        r.session.edit("Place PZ marker") { DiagramOps.upsertGraphic(it, "pzMarkers", pzMarker("pz-1")) }
+        advanceUntilIdle()
+        r.drawing.start()
+        assertFalse(r.model.dragStarted(LatLon(34.7838, -84.0822), view(), touchRadiusPx = 24.0))
+        r.drawing.cancel()
+        assertTrue(r.model.dragStarted(LatLon(34.7838, -84.0822), view(), touchRadiusPx = 24.0))
+    }
+
+    private fun Rig.mapDragActive() = mapDrag.active.value
+
+    @Test
+    fun `a long press that does not move holds what it is on and leaves it where it was`() = runTest(dispatcher) {
+        val r = Rig(this)
+        advanceUntilIdle()
+        r.session.open(r.analysed())
+        r.session.edit("Place PZ marker") { DiagramOps.upsertGraphic(it, "pzMarkers", pzMarker("pz-1")) }
+        advanceUntilIdle()
+        val graphics = r.session.active.value!!.graphics
+        val steps = r.session.undoDepth.value
+        val finger = LatLon(34.7838, -84.0822)
+        assertTrue(r.model.dragStarted(finger, view(), touchRadiusPx = 24.0))
+        r.model.dragEnded(finger)
+        advanceUntilIdle()
+        assertEquals(GraphicRef("pzMarkers", "pz-1"), r.selection.selected.value)
+        assertEquals("no step to undo", steps, r.session.undoDepth.value)
+        assertEquals(graphics, r.session.active.value!!.graphics)
+    }
+
+    @Test
+    fun `a long press on a threat holds it, and one already held stays held`() = runTest(dispatcher) {
+        val r = Rig(this)
+        advanceUntilIdle()
+        val at = LatLon(34.7838, -84.0822)
+        val id = r.threat(at)
+        advanceUntilIdle()
+        assertTrue(r.model.dragStarted(at, view(), touchRadiusPx = 24.0))
+        assertEquals(id, r.threatSelection.held.value)
+        r.model.dragEnded(at)
+        advanceUntilIdle()
+        assertTrue(r.model.dragStarted(at, view(), touchRadiusPx = 24.0))
+        assertEquals("a long press never lets go, as a second tap would", id, r.threatSelection.held.value)
+    }
+
+    // -- A pack that turns read-only (P2c) -----------------------------------------------------------------------------------
+
+    /** The analysed LZ/PZ of pack p (item lz-1), with a PZ marker on it, open; the pack live until a test says otherwise. */
+    private suspend fun TestScope.packLz(r: Rig) {
+        val made = r.repository.open(r.analysed())!!
+        r.lzPacks.docs["pack:p:lz-1"] = made.let { DiagramOps.upsertGraphic(it, "pzMarkers", pzMarker("pz-1")) }.copy(id = "pack:p:lz-1")
+        r.packs.open.value = pack()
+        r.session.open("pack:p:lz-1")
+        advanceUntilIdle()
+    }
+
+    @Test
+    fun `when its pack is finished, a tool's mode on its LZ-PZ ends without taking anything back, and the person is told`() = runTest(dispatcher) {
+        val r = Rig(this)
+        advanceUntilIdle()
+        val said = mutableListOf<String>()
+        backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) { r.model.notices.collect { said += it } }
+        packLz(r)
+        assertNull(r.placement.begin(PlaceTool.HELICOPTER))
+        r.placement.placeAt(LatLon(34.7838, -84.0822))
+        advanceUntilIdle()
+        val placed = r.session.active.value!!.graphics.helicopters.size
+        r.packs.open.value = pack(finished = true)
+        advanceUntilIdle()
+        assertNull(r.placement.placing.value)
+        assertEquals("what was placed stays: ending is not taking back", placed, r.session.active.value!!.graphics.helicopters.size)
+        assertEquals(listOf("OP DK was finished: placing stopped."), said)
+        assertTrue(r.model.scene.value.locked)
+        // Nothing of it is picked up now: the press holds what it is on (the helicopter placed over the marker), to be looked at in its bar (not the map's menu), and the
+        // finger moves nothing.
+        val graphics = r.session.active.value!!.graphics
+        assertTrue(r.model.dragStarted(LatLon(34.7838, -84.0822), view(), touchRadiusPx = 24.0))
+        assertEquals("helicopters", r.selection.selected.value?.collection)
+        assertNull(r.mapDragActive())
+        r.model.dragMoved(LatLon(34.7900, -84.0822))
+        r.model.dragEnded(LatLon(34.7900, -84.0822))
+        advanceUntilIdle()
+        assertEquals("not moved", graphics, r.session.active.value!!.graphics)
+        r.packs.open.value = pack()                                                              // reopened: it can be moved again
+        advanceUntilIdle()
+        assertFalse(r.model.scene.value.locked)
+        assertTrue(r.model.dragStarted(LatLon(34.7838, -84.0822), view(), touchRadiusPx = 24.0))
+        assertNotNull(r.mapDragActive())
+    }
+
+    @Test
+    fun `when this person is made a viewer, a boundary being drawn and a drag on its LZ-PZ end, in a viewer's words`() = runTest(dispatcher) {
+        val r = Rig(this)
+        advanceUntilIdle()
+        val said = mutableListOf<String>()
+        backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) { r.model.notices.collect { said += it } }
+        packLz(r)
+        assertTrue(r.model.dragStarted(LatLon(34.7838, -84.0822), view(), touchRadiusPx = 24.0))
+        r.model.dragMoved(LatLon(34.7900, -84.0822))
+        val moved = r.session.active.value
+        val steps = r.session.undoDepth.value
+        r.packs.open.value = pack(viewer = true)
+        advanceUntilIdle()
+        assertNull(r.mapDragActive())
+        // Not moved back: that would be a change of its own, refused. The pack's rule puts back what it had not taken (no pack here to do it).
+        assertSame(moved, r.session.active.value)
+        assertEquals(steps, r.session.undoDepth.value)
+        assertEquals(listOf("You can only view OP DK now: moving stopped."), said)
+        r.packs.open.value = pack()
+        advanceUntilIdle()
+        r.drawing.start()
+        r.packs.open.value = pack(viewer = true)
+        advanceUntilIdle()
+        assertNull(r.drawing.draft.value)
+        assertEquals("You can only view OP DK now: the boundary being drawn was not kept.", said.last())
+    }
+
+    @Test
+    fun `when its pack is finished, a route being drawn into its set is not kept, and nothing of it is picked up`() = runTest(dispatcher) {
+        val r = Rig(this)
+        advanceUntilIdle()
+        val said = mutableListOf<String>()
+        backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) { r.model.notices.collect { said += it } }
+        r.routePacks.docs["pack:p:rt-1"] = app.ezpztac.model.RouteSet(id = "pack:p:rt-1", name = "OP DK INGRESS", routes = emptyList())
+        r.packs.open.value = pack()
+        r.routeSession.open("pack:p:rt-1")
+        advanceUntilIdle()
+        assertNull(r.sketching.start())
+        r.packs.open.value = pack(finished = true)
+        advanceUntilIdle()
+        assertNull(r.sketching.draft.value)
+        assertEquals(listOf("OP DK was finished: the route being drawn was not kept."), said)
+    }
+
+    @Test
+    fun `when its pack is finished, a point of its route set being moved stops where it is, its elevation not touched again`() = runTest(dispatcher) {
+        val r = Rig(this)
+        advanceUntilIdle()
+        val said = mutableListOf<String>()
+        backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) { r.model.notices.collect { said += it } }
+        val line = route("r1", point("p1", here), point("p2", north)).copy(elevations = mapOf("p1" to 1200.0, "p2" to 1300.0))
+        r.routePacks.docs["pack:p:rt-1"] = app.ezpztac.model.RouteSet(id = "pack:p:rt-1", name = "OP DK INGRESS", routes = listOf(line))
+        r.packs.open.value = pack()
+        r.routeSession.open("pack:p:rt-1")
+        advanceUntilIdle()
+        assertTrue(r.model.dragStarted(here, view(), touchRadiusPx = 24.0))
+        assertEquals("the point is held as a tap holds it", "p1", r.routeSelection.held.value?.pointId)
+        r.model.dragMoved(LatLon(34.7840, -84.0822))
+        val moved = r.routeSession.active.value
+        assertEquals(mapOf("p2" to 1300.0), moved!!.routes.single().elevations)              // moving forgot the old place's ground
+        r.packs.open.value = pack(finished = true)
+        advanceUntilIdle()
+        assertNull(r.mapDragActive())
+        assertSame("no edit of its own: moving back would not bring the elevation back either", moved, r.routeSession.active.value)
+        assertEquals(listOf("OP DK was finished: moving stopped."), said)
+    }
+
+    @Test
+    fun `when its pack is finished, the analysis of its open LZ-PZ stops, and nothing of it is put on the LZ-PZ`() = runTest(dispatcher) {
+        val r = Rig(this)
+        advanceUntilIdle()
+        val said = mutableListOf<String>()
+        backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) { r.model.notices.collect { said += it } }
+        packLz(r)
+        val answer = kotlinx.coroutines.CompletableDeferred<FieldAnalysis>()
+        r.server.field = answer
+        r.analysis.analyze("pack:p:lz-1")
+        advanceUntilIdle()
+        assertTrue(r.analysis.status.value is AnalysisStatus.Running)
+        val before = r.session.active.value
+        r.packs.open.value = pack(finished = true)
+        advanceUntilIdle()
+        assertEquals(AnalysisStatus.Idle, r.analysis.status.value)
+        assertEquals(listOf("OP DK was finished: the analysis was stopped."), said)
+        answer.complete(FieldAnalysis("success", listOf(listOf(34.0, -84.0), listOf(34.1, -84.0), listOf(34.1, -84.1)), "1200", ""))
+        advanceUntilIdle()
+        assertSame(before, r.session.active.value)
+        assertTrue(r.server.slopeCalls.none { it.firstOrNull() == LatLon(34.0, -84.0) })       // and its slope is not asked for once the pack is read-only
+    }
+
+    @Test
+    fun `when its pack is finished, an analysis of one of its LZ-PZs that is no longer open stops too, whatever is open or not`() = runTest(dispatcher) {
+        val r = Rig(this)
+        advanceUntilIdle()
+        val said = mutableListOf<String>()
+        backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) { r.model.notices.collect { said += it } }
+        packLz(r)
+        r.lzPacks.docs["pack:p:lz-2"] = r.lzPacks.docs.getValue("pack:p:lz-1").copy(id = "pack:p:lz-2")
+        r.server.field = kotlinx.coroutines.CompletableDeferred()
+        r.analysis.analyze("pack:p:lz-1")
+        r.session.open("pack:p:lz-2")                                                           // the analysis goes on for the one it was asked for
+        advanceUntilIdle()
+        assertEquals("pack:p:lz-1", (r.analysis.status.value as AnalysisStatus.Running).diagramId)
+        r.packs.open.value = pack(finished = true)
+        advanceUntilIdle()
+        assertEquals(AnalysisStatus.Idle, r.analysis.status.value)
+        assertEquals(listOf("OP DK was finished: the analysis was stopped."), said)
+        // And with nothing open at all.
+        r.packs.open.value = pack()
+        advanceUntilIdle()
+        r.analysis.analyze("pack:p:lz-1")
+        r.session.close()
+        advanceUntilIdle()
+        assertTrue(r.analysis.status.value is AnalysisStatus.Running)
+        r.packs.open.value = pack(viewer = true)
+        advanceUntilIdle()
+        assertEquals(AnalysisStatus.Idle, r.analysis.status.value)
+        assertEquals("You can only view OP DK now: the analysis was stopped.", said.last())
+    }
+
+    @Test
+    fun `an analysis of the person's own LZ-PZ goes on when a pack is finished`() = runTest(dispatcher) {
+        val r = Rig(this)
+        advanceUntilIdle()
+        val own = r.analysed()
+        r.packs.open.value = pack()
+        r.server.field = kotlinx.coroutines.CompletableDeferred()
+        r.analysis.analyze(own)
+        advanceUntilIdle()
+        r.packs.open.value = pack(finished = true)
+        advanceUntilIdle()
+        assertTrue(r.analysis.status.value is AnalysisStatus.Running)
+    }
+
+    @Test
+    fun `the person's own LZ-PZ is never locked by a pack, and nothing is said when nothing was under way`() = runTest(dispatcher) {
+        val r = Rig(this)
+        advanceUntilIdle()
+        val said = mutableListOf<String>()
+        backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) { r.model.notices.collect { said += it } }
+        r.session.open(r.analysed())
+        r.session.edit("Place PZ marker") { DiagramOps.upsertGraphic(it, "pzMarkers", pzMarker("pz-1")) }
+        r.packs.open.value = pack(finished = true)
+        advanceUntilIdle()
+        assertFalse(r.model.scene.value.locked)
+        assertTrue(r.model.dragStarted(LatLon(34.7838, -84.0822), view(), touchRadiusPx = 24.0))
+        assertTrue(said.isEmpty())
+    }
+
+    // -- Presence: where this person points, and everyone else's pointers (P2e) ------------------------------------------------------
+
+    @Test
+    fun `this person points where the crosshair is, and with the finger while it moves something`() = runTest(dispatcher) {
+        val r = Rig(this)
+        advanceUntilIdle()
+        r.session.open(r.analysed())
+        r.session.edit("Place PZ marker") { DiagramOps.upsertGraphic(it, "pzMarkers", pzMarker("pz-1")) }
+        advanceUntilIdle()
+        r.model.cameraAt(LatLon(34.70, -84.10), byHand = true)
+        assertEquals(LatLon(34.70, -84.10), r.packs.pointed.last())
+        assertTrue(r.model.dragStarted(LatLon(34.7838, -84.0822), view(), touchRadiusPx = 24.0))
+        r.model.dragMoved(LatLon(34.7900, -84.0822))
+        assertEquals("the finger, while it moves something", LatLon(34.7900, -84.0822), r.packs.pointed.last())
+        r.model.cameraAt(LatLon(34.71, -84.10), byHand = true)                                   // the map moving under a drag is not the pointer
+        assertEquals(LatLon(34.7900, -84.0822), r.packs.pointed.last())
+        r.model.dragEnded(LatLon(34.7910, -84.0822))
+        assertEquals("the crosshair again", LatLon(34.71, -84.10), r.packs.pointed.last())
+        advanceUntilIdle()                                                                      // the map's scene has the marker where it was put
+        val marker = r.session.active.value!!.graphics.pzMarkers.single() as JsonObject
+        val now = LatLon((marker["lat"] as JsonPrimitive).content.toDouble(), (marker["lon"] as JsonPrimitive).content.toDouble())
+        assertTrue(r.model.dragStarted(now, view(now), touchRadiusPx = 24.0))
+        r.model.dragMoved(LatLon(now.lat + 0.001, now.lon))
+        assertEquals(LatLon(now.lat + 0.001, now.lon), r.packs.pointed.last())
+        r.model.dragCancelled()
+        assertEquals(LatLon(34.71, -84.10), r.packs.pointed.last())
+    }
+
+    @Test
+    fun `where the app takes the map by itself is never the pointer, and a covered map points nowhere`() = runTest(dispatcher) {
+        val r = Rig(this)
+        advanceUntilIdle()
+        r.model.cameraAt(LatLon(34.70, -84.10), byHand = false)                                  // the view put back at launch
+        assertNull(r.packs.pointed.last())
+        r.model.cameraAt(LatLon(34.72, -84.12), byHand = true)
+        assertEquals(LatLon(34.72, -84.12), r.packs.pointed.last())
+        r.model.cameraAt(LatLon(34.720004, -84.120004), byHand = false)                          // the sheet settling keeps what is under the crosshair
+        assertEquals(LatLon(34.720004, -84.120004), r.packs.pointed.last())
+        r.model.cameraAt(LatLon(34.90, -84.30), byHand = false)                                  // a flight to the GPS fix
+        assertNull("the device's own position is never shared as the pointer", r.packs.pointed.last())
+        r.model.cameraAt(LatLon(34.91, -84.30), byHand = true)
+        assertEquals(LatLon(34.91, -84.30), r.packs.pointed.last())
+        r.model.mapCovered(true)                                                                  // the Library over the map
+        assertNull(r.packs.pointed.last())
+        r.model.cameraAt(LatLon(34.92, -84.30), byHand = true)
+        assertNull("nor while it is covered", r.packs.pointed.last())
+        r.model.mapCovered(false)
+        assertEquals(LatLon(34.92, -84.30), r.packs.pointed.last())
+        // A pack opening: where the person was looking before is not its to hear, until they move the map again.
+        r.packs.open.value = pack()
+        advanceUntilIdle()
+        assertNull(r.packs.pointed.last())
+        r.model.cameraAt(LatLon(34.93, -84.30), byHand = true)
+        assertEquals(LatLon(34.93, -84.30), r.packs.pointed.last())
+    }
+
+    private fun here(session: String, id: Int?, name: String?, at: kotlinx.serialization.json.JsonElement?) = kotlinx.serialization.json.buildJsonObject {
+        put("session", session)
+        if (id != null) put("user_id", id) else put("user_id", kotlinx.serialization.json.JsonNull)
+        if (name != null) put("name", name)
+        put("focus", kotlinx.serialization.json.buildJsonObject { if (at != null) put("at", at) })
+    }
+
+    private fun at(vararg values: Any) = kotlinx.serialization.json.JsonArray(
+        values.map { if (it is String) JsonPrimitive(it) else JsonPrimitive(it as Number) },
+    )
+
+    @Test
+    fun `everyone else pointing somewhere is drawn, named and in their colour, and this person and a pointer that is not one are not`() = runTest(dispatcher) {
+        val r = Rig(this)
+        advanceUntilIdle()
+        val people = listOf(
+            here("s-1", 1, "Colin McFadden", at(34.7, -84.1)),                                        // this person (the session's me)
+            here("s-2", 2, "Sam Bell", at(34.71, -84.11)),
+            here("s-3", 3, "Jess Reed", at(34.72, -84.12)),
+            here("s-3b", 3, "Jess Reed", at(34.73, -84.13)),                                          // her other device: a pointer of its own
+            here("s-4", 4, "Kim Lee", null),                                                           // here, pointing nowhere
+            here("s-5", 5, "Ann Ray", at("34.7", "-84.1")),                                           // not numbers
+            here("s-6", 6, "Bo Day", at(34.7, -84.1, 0)),                                             // not a place
+            here("s-7", null, null, at(34.74, -84.14)),                                               // nobody named
+        )
+        r.packs.open.value = pack().let { it.copy(people = people) }
+        advanceUntilIdle()
+        val pointers = r.model.pointers.value
+        assertEquals(listOf("s-2", "s-3", "s-3b", "s-7"), pointers.map { it.key })
+        assertEquals(listOf("Sam B.", "Jess R.", "Jess R.", "Someone"), pointers.map { it.label })
+        assertEquals(LatLon(34.71, -84.11), pointers.first().at)
+        assertEquals(app.ezpztac.map.PersonColors.of("2"), pointers.first().color)
+        assertEquals("by the name when there is no id", app.ezpztac.map.PersonColors.of(""), pointers.last().color)
+        r.packs.open.value = null
+        advanceUntilIdle()
+        assertTrue(r.model.pointers.value.isEmpty())
+    }
+
+    @Test
+    fun `a cancelled drag puts the graphic back`() = runTest(dispatcher) {
+        val r = Rig(this)
+        advanceUntilIdle()
+        r.session.open(r.analysed())
+        r.session.edit("Place PZ marker") { DiagramOps.upsertGraphic(it, "pzMarkers", pzMarker("pz-1")) }
+        advanceUntilIdle()
+        val before = r.session.undoDepth.value
+        r.model.dragStarted(LatLon(34.7838, -84.0822), view(), touchRadiusPx = 24.0)
+        r.model.dragMoved(LatLon(34.7900, -84.0822))
+        r.model.dragCancelled()
+        val back = r.session.active.value!!.graphics.pzMarkers.single() as JsonObject
+        assertEquals(34.7838, (back["lat"] as JsonPrimitive).content.toDouble(), 1e-9)
+        assertEquals(before, r.session.undoDepth.value)
+    }
+
+    @Test
+    fun `releasing what is held puts down a graphic, a threat and a route point, and keeps the route`() = runTest(dispatcher) {
+        val r = Rig(this)
+        advanceUntilIdle()
+        r.session.open(r.analysed())
+        r.session.edit("Place PZ marker") { DiagramOps.upsertGraphic(it, "pzMarkers", pzMarker("pz-1")) }
+        advanceUntilIdle()
+        r.model.mapTapped(LatLon(34.7838, -84.0822), view(), touchRadiusPx = 24.0)
+        r.routeSelection.select("route", "point")
+        r.threatSelection.select("t")
+        r.model.releaseHeld()
+        assertNull(r.selection.selected.value)
+        assertNull(r.threatSelection.held.value)
+        assertEquals(RouteHeld("route", null), r.routeSelection.held.value)
+    }
+
+    // -- Terrain masks on the map ---------------------------------------------------------------------------------------
+
+    private fun sa8(lat: Double = 34.7838, lon: Double = -84.0822) = Threat("SA-8", "SHGPEWRR------", lat, lon, "", "SOF", radars = Radars.defaultPair())
+
+    @Test
+    fun `a terrain mask is on the map only after it is asked for, only for as long as the threat has not moved, and is gone when hidden`() = runTest(dispatcher) {
+        val r = Rig(this)
+        advanceUntilIdle()
+        val id = r.threats.add(sa8())
+        advanceUntilIdle()
+        assertTrue(r.model.threatScene.value.masks.isEmpty())                                   // making a threat asks for nothing
+        assertTrue(r.maskApi.asked.isEmpty())
+
+        r.masks.request(id); advanceUntilIdle()
+        val masks = r.model.threatScene.value.masks
+        assertEquals(listOf("$id-0", "$id-1"), masks.map { it.id })
+        assertEquals(34.0, masks.first().south, 0.0)
+        assertEquals(-84.0, masks.first().east, 0.0)
+
+        r.threats.move(id, 34.79, -84.0822); advanceUntilIdle()                                  // moved: it is not what this threat sees now
+        assertTrue(r.model.threatScene.value.masks.isEmpty())
+        assertEquals(1, r.maskApi.asked.size)                                                    // and nothing asked again by itself
+
+        r.masks.request(id); advanceUntilIdle()
+        assertEquals(2, r.model.threatScene.value.masks.size)
+        r.masks.hide(id); advanceUntilIdle()
+        assertTrue(r.model.threatScene.value.masks.isEmpty())
+    }
+
+    @Test
+    fun `a hidden threat's mask is not drawn`() = runTest(dispatcher) {
+        val r = Rig(this)
+        advanceUntilIdle()
+        val id = r.threats.add(sa8())
+        r.masks.request(id); advanceUntilIdle()
+        r.threats.setVisible(id, false); advanceUntilIdle()
+        assertTrue(r.model.threatScene.value.masks.isEmpty())
+    }
+
+    @Test
+    fun `the slope heat map can be turned off and on without measuring it again, and has a button only once it is measured`() = runTest(dispatcher) {
+        val r = Rig(this)
+        advanceUntilIdle()
+        assertEquals(null, r.model.slopeToggle.value)                                          // nothing open, nothing to toggle
+        r.session.open(r.analysed())
+        advanceUntilIdle()
+        assertEquals(SlopeToggleUi(shown = true), r.model.slopeToggle.value)
+        assertTrue(r.model.scene.value.slope != null)
+
+        r.model.toggleSlope(); advanceUntilIdle()
+        assertEquals(null, r.model.scene.value.slope)                                          // not drawn
+        assertEquals(SlopeToggleUi(shown = false), r.model.slopeToggle.value)                  // but the button is still there to bring it back
+        r.model.toggleSlope(); advanceUntilIdle()
+        assertTrue(r.model.scene.value.slope != null)
+        assertEquals(1, r.server.slopeCalls.size)                                              // turning it off and on measured nothing
+    }
+
+    // -- A planning tool's mode has the map's taps (S3) ------------------------------------------------------------------------
+
+    @Test
+    fun `while a tool's mode is on a tap places its graphic, even on another graphic, and holds nothing`() = runTest(dispatcher) {
+        val r = Rig(this)
+        advanceUntilIdle()
+        r.session.open(r.analysed())
+        r.session.edit("Place PZ marker") { DiagramOps.upsertGraphic(it, "pzMarkers", pzMarker("pz-1")) }
+        advanceUntilIdle()
+        assertNull(r.placement.begin(PlaceTool.HELICOPTER))
+        advanceUntilIdle()
+        assertTrue(r.model.isDrawing.value)                                                     // the sheet goes down and the held bar hides
+        r.model.mapTapped(LatLon(34.7838, -84.0822), view(), touchRadiusPx = 24.0)             // right on the PZ marker
+        advanceUntilIdle()
+        assertEquals(null, r.selection.selected.value)
+        assertEquals(1, r.session.active.value!!.graphics.helicopters.size)
+        assertFalse(r.model.dragStarted(LatLon(34.7838, -84.0822), view(), touchRadiusPx = 24.0))   // a long press picks nothing up either
+        r.placement.finish()
+        advanceUntilIdle()
+        assertFalse(r.model.isDrawing.value)
+        r.model.mapTapped(LatLon(34.7838, -84.0822), view(), touchRadiusPx = 24.0)             // and once it is over, a tap holds again:
+        assertEquals("helicopters", r.selection.selected.value?.collection)                      // the helicopter just put on top of the marker
+    }
+
+    @Test
+    fun `a tool's mode ends when another LZ-PZ opens, and when the open one closes`() = runTest(dispatcher) {
+        val r = Rig(this)
+        advanceUntilIdle()
+        r.session.open(r.analysed())
+        advanceUntilIdle()
+        r.placement.begin(PlaceTool.PZ_MARKER)
+        r.session.open(r.analysed())                                                             // another one
+        advanceUntilIdle()
+        assertNull(r.placement.placing.value)
+        r.placement.begin(PlaceTool.PZ_MARKER)
+        r.session.close()
+        advanceUntilIdle()
+        assertNull(r.placement.placing.value)
+    }
+
+    // -- The held bar's options go by what the bar shows (the review of S5) ---------------------------------------------------------
+
+    @Test
+    fun `the held bar's options are for what it shows, a drawn threat before a route point or a corner`() = runTest(dispatcher) {
+        val r = Rig(this)
+        advanceUntilIdle()
+        val id = r.threats.add(app.ezpztac.model.Threat("SA-6", "SHGPEWRR------", 34.5, -84.5, "", "SOF", radars = app.ezpztac.model.Radars.defaultPair()))
+        r.routeSelection.select("r1", "p2")
+        r.threatSelection.select(id)
+        assertEquals(Panel.Threats, r.model.heldPanel())                                       // the bar shows the threat
+        r.threats.setVisible(id, false)
+        assertEquals(Panel.Routes, r.model.heldPanel())                                        // a hidden threat is not shown, so the route point is
+        r.threats.remove(id)
+        assertEquals(Panel.Routes, r.model.heldPanel())                                        // nor is one that is gone
+    }
+
+    @Test
+    fun `a corner held beside a drawn threat gives the threat's options, as the bar shows the threat`() = runTest(dispatcher) {
+        val r = Rig(this)
+        advanceUntilIdle()
+        val id = r.threats.add(app.ezpztac.model.Threat("SA-6", "SHGPEWRR------", 34.5, -84.5, "", "SOF", radars = app.ezpztac.model.Radars.defaultPair()))
+        r.corners.select(app.ezpztac.model.BoundaryCornerRef(false, 0))
+        assertEquals(Panel.Lz, r.model.heldPanel())
+        r.threatSelection.select(id)
+        assertEquals(Panel.Threats, r.model.heldPanel())
+    }
+
+    @Test
+    fun `a finger's roll under the slop moves nothing, and lifting there leaves no edit at all`() = runTest(dispatcher) {
+        val r = Rig(this)
+        advanceUntilIdle()
+        val line = route("r1", point("p1", here), point("p2", north)).copy(elevations = mapOf("p1" to 1200.0, "p2" to 1300.0))
+        r.routePacks.docs["pack:p:rt-1"] = app.ezpztac.model.RouteSet(id = "pack:p:rt-1", name = "OP DK INGRESS", routes = listOf(line))
+        r.packs.open.value = pack()
+        r.routeSession.open("pack:p:rt-1")
+        advanceUntilIdle()
+        val before = r.routeSession.active.value
+        val steps = r.routeSession.undoDepth.value
+        assertTrue(r.model.dragStarted(here, view(), touchRadiusPx = 24.0))
+        val rolled = LatLon(here.lat + 0.00001, here.lon)                                       // about 4 px at zoom 18: a finger's roll, under the 8 px slop
+        r.model.dragMoved(rolled)
+        r.model.dragEnded(rolled)
+        advanceUntilIdle()
+        assertEquals("p1", r.routeSelection.held.value?.pointId)
+        assertSame("no edit: the point keeps its fetched ground", before, r.routeSession.active.value)
+        assertEquals(steps, r.routeSession.undoDepth.value)
+    }
+
+    @Test
+    fun `in a finished pack the person's own threat under one of its graphics is still picked up`() = runTest(dispatcher) {
+        val r = Rig(this)
+        advanceUntilIdle()
+        packLz(r)
+        val id = r.threat(LatLon(34.7838, -84.0822))
+        r.packs.open.value = pack(finished = true)
+        advanceUntilIdle()
+        assertTrue(r.model.dragStarted(LatLon(34.7838, -84.0822), view(), touchRadiusPx = 24.0))
+        assertEquals(app.ezpztac.model.DragTarget.Threat(id), r.mapDragActive())
+        assertEquals(id, r.threatSelection.held.value)
+    }
+}

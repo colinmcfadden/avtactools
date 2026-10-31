@@ -2,9 +2,9 @@ import { act, renderHook, waitFor } from "@testing-library/react";
 import api from "../auth/api";
 import { releaseAbandonedBuilds, useLidarTileset, watcherId } from "./useLidarTileset";
 
-jest.mock("../auth/api", () => ({
+vi.mock("../auth/api", () => ({
   __esModule: true,
-  default: { get: jest.fn(), post: jest.fn(), delete: jest.fn() },
+  default: { get: vi.fn(), post: vi.fn(), delete: vi.fn() },
 }));
 
 const TARGET = { lat: 34.783817, lon: -84.08219 };
@@ -21,12 +21,12 @@ const missing = (canBuild) => ({
 // Let pending promise callbacks run, then move the poll clock on.
 const advance = async (ms) => {
   await act(async () => {
-    jest.advanceTimersByTime(ms);
+    vi.advanceTimersByTime(ms);
   });
 };
 
 beforeEach(() => {
-  jest.useFakeTimers();
+  vi.useFakeTimers();
   api.get.mockReset();
   api.post.mockReset();
   api.delete.mockReset();
@@ -35,7 +35,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
-  jest.useRealTimers();
+  vi.useRealTimers();
 });
 
 const route = ({ resolve, build }) => {
@@ -55,6 +55,36 @@ it("opens straight onto a tileset that already exists", async () => {
   expect(result.current.url).toBe(DONE.url);
   expect(api.post).not.toHaveBeenCalledWith("/lidar/build", expect.anything(),
                                             expect.anything());
+});
+
+const FRAME = { ...TARGET, radius_m: 500, height_m: 371.2 };
+const STREAMED = { data: { key: KEY, available: true, streamed: true, contextUrl: null,
+                           url: `/lidar/tilesets/${KEY}/tileset.json`, frame: FRAME } };
+
+it("asks for a stream only when told, and only of resolve", async () => {
+  route({ resolve: missing(true), build: { data: { key: KEY, state: "queued", stage: "waiting" } } });
+  renderHook(() => useLidarTileset({ ...TARGET, stream: true }));
+  await waitFor(() => expect(api.post).toHaveBeenCalledWith("/lidar/build", expect.anything(), expect.anything()));
+  const [, resolveBody] = api.post.mock.calls.find(([path]) => path === "/lidar/resolve");
+  const [, buildBody] = api.post.mock.calls.find(([path]) => path === "/lidar/build");
+  expect(resolveBody).toEqual({ ...TARGET, stream: true });
+  expect(buildBody).not.toHaveProperty("stream");
+});
+
+it("does not ask for a stream unless told", async () => {
+  route({ resolve: { data: { ...DONE, available: true } } });
+  renderHook(() => useLidarTileset(TARGET));
+  await waitFor(() => expect(api.post).toHaveBeenCalled());
+  expect(api.post.mock.calls[0][1]).toEqual(TARGET);
+});
+
+it("opens a streamed survey with where to look", async () => {
+  route({ resolve: STREAMED });
+  const { result } = renderHook(() => useLidarTileset({ ...TARGET, stream: true }));
+  await waitFor(() => expect(result.current.state).toBe("available"));
+  expect(result.current.streamed).toBe(true);
+  expect(result.current.frame).toEqual(FRAME);
+  expect(api.post).not.toHaveBeenCalledWith("/lidar/build", expect.anything(), expect.anything());
 });
 
 it("builds a missing tileset and opens it when the build finishes", async () => {

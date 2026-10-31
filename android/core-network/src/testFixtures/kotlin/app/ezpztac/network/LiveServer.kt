@@ -1,0 +1,146 @@
+package app.ezpztac.network
+
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.int
+import kotlinx.serialization.json.jsonArray
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
+import kotlinx.serialization.json.put
+import okhttp3.MediaType.Companion.toMediaType
+import okhttp3.OkHttpClient
+import okhttp3.Request
+import okhttp3.RequestBody.Companion.toRequestBody
+import java.io.File
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicReference
+import kotlin.concurrent.thread
+
+/**
+ * The real Flask server (`backend/tests/live_server.py`) in a child process, for tests that want the actual
+ * routes and token rotation behind a real socket. Needs a Python with the server's packages: set
+ * `EZPZ_LIVE_PYTHON` to it. Without that, [startOrNull] returns null and the tests that use it are skipped.
+ */
+public class LiveServer private constructor(private val process: Process, public val port: Int) : AutoCloseable {
+    public val baseUrl: String get() = "http://127.0.0.1:$port"
+
+    private val http = OkHttpClient.Builder().callTimeout(15, TimeUnit.SECONDS).build()
+    private val json = "application/json".toMediaType()
+
+    private fun post(path: String, body: String): String {
+        val request = Request.Builder().url("$baseUrl$path").post(body.toRequestBody(json)).build()
+        http.newCall(request).execute().use { response ->
+            check(response.isSuccessful) { "POST $path answered ${response.code}: ${response.body?.string()}" }
+            return response.body!!.string()
+        }
+    }
+
+    /**
+     * A verified account, and its id. [approved] false leaves it outside the `.mil` / approval gate. [features] are its entitlements
+     * as an admin would store them: mission packs are off unless ticked (`"mission_packs" to true`). [name] is what a pack's log and
+     * its members list call them.
+     */
+    public fun makeAccount(
+        email: String,
+        password: String = PASSWORD,
+        approved: Boolean = true,
+        features: Map<String, Boolean>? = null,
+        name: String? = null,
+    ): Int {
+        val body = buildJsonObject {
+            put("email", email)
+            put("password", password)
+            put("approved", approved)
+            if (features != null) put("features", JsonObject(features.mapValues { JsonPrimitive(it.value) }))
+            if (name != null) put("name", name)
+        }
+        return ApiJson.parseToJsonElement(post("/__test__/account", body.toString())).jsonObject.getValue("id").jsonPrimitive.int
+    }
+
+    /**
+     * The newest secret the real routes "emailed": a link token for [kind] `verify` or `reset` sent to [to], or a `.mil` code for `mil`.
+     * The server captures mail instead of sending it, and everything up to that call is the production route.
+     */
+    public fun emailed(kind: String, to: String = ""): String {
+        val request = Request.Builder().url("$baseUrl/__test__/email?kind=$kind&to=${java.net.URLEncoder.encode(to, "UTF-8")}").get().build()
+        http.newCall(request).execute().use { response ->
+            check(response.isSuccessful) { "nothing was emailed ($kind, $to): ${response.code}" }
+            return Regex("\"secret\":\\s*\"([^\"]+)\"").find(response.body!!.string())!!.groupValues[1]
+        }
+    }
+
+    /** Forgets the sign-in rate limiter's counts: every client in a test comes from one address, and signs in often. */
+    public fun clearRateLimits() {
+        post("/__test__/clear-rate-limits", "{}")
+    }
+
+    /** Moves every spent refresh token this many seconds into the past: time passing, for the 30 s grace period. */
+    public fun ageSpentRefreshTokens(seconds: Int) {
+        post("/__test__/age-refresh", """{"seconds":$seconds}""")
+    }
+
+    /** Moves every refresh token's times (made, spent, expires) this many days into the past: days passing between uses of a device. */
+    public fun ageSessions(days: Int) {
+        post("/__test__/age-sessions", """{"days":$days}""")
+    }
+
+    /** Runs every point-cloud build queued, as the build service's worker would; each puts the 3D view's fixture tileset in place. Their keys. */
+    public fun runLidarBuilds(): List<String> =
+        ApiJson.parseToJsonElement(post("/__test__/lidar/run", "{}")).jsonObject.getValue("built").jsonArray.map { it.jsonPrimitive.content }
+
+    /** Moves the build service's clock on [seconds] and drops what nobody has asked after since (a build nobody waits for goes after 90 s). */
+    public fun lidarLater(seconds: Int) {
+        post("/__test__/lidar/later", """{"seconds":$seconds}""")
+    }
+
+    override fun close() {
+        runCatching { post("/__test__/stop", "{}") }
+        if (!process.waitFor(5, TimeUnit.SECONDS)) process.destroyForcibly()
+        http.dispatcher.executorService.shutdown()
+    }
+
+    public companion object {
+        public const val PASSWORD = "a secure flight password"
+
+        /** True when the live tests can run here. */
+        public val available: Boolean get() = !System.getenv("EZPZ_LIVE_PYTHON").isNullOrBlank()
+
+        public fun startOrNull(accessTokenSeconds: Int = 2): LiveServer? {
+            val python = System.getenv("EZPZ_LIVE_PYTHON")?.takeIf { it.isNotBlank() } ?: return null
+            val contracts = File(System.getProperty("ezpz.contracts") ?: error("ezpz.contracts is not set"))
+            val backend = File(contracts.parentFile.parentFile, "backend")
+            val script = File(backend, "tests/live_server.py")
+            check(script.isFile) { "no live server at $script" }
+
+            val process = ProcessBuilder(python, "-B", script.path)
+                .directory(backend)
+                .redirectErrorStream(true)
+                .apply {
+                    environment()["EZPZ_ACCESS_TOKEN_SECONDS"] = accessTokenSeconds.toString()
+                    environment()["PYTHONUNBUFFERED"] = "1"
+                    environment()["PYTHONDONTWRITEBYTECODE"] = "1"
+                    // A developer's own setting would hand every pack a live stream that is not running here: the tests poll the log.
+                    environment().remove("REALTIME_PUBLIC_URL")
+                }
+                .start()
+
+            val port = AtomicReference<Int?>()
+            val ready = CountDownLatch(1)
+            val output = StringBuffer()
+            thread(isDaemon = true, name = "live-server-output") {
+                process.inputStream.bufferedReader().forEachLine { line ->
+                    output.append(line).append('\n')
+                    if (line.startsWith("READY ")) { port.set(line.removePrefix("READY ").trim().toInt()); ready.countDown() }
+                }
+                ready.countDown()                                                    // the process ended
+            }
+            if (!ready.await(90, TimeUnit.SECONDS) || port.get() == null) {
+                process.destroyForcibly()
+                error("The live server did not start:\n$output")
+            }
+            return LiveServer(process, port.get()!!)
+        }
+    }
+}

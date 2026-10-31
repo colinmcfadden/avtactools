@@ -8,11 +8,18 @@ const PZMarker = ({ data, updatePZMarker, deletePZMarker }) => {
   const anchorMarkerRef = useRef(null);
   const tipMarkerRef = useRef(null);
   const latestData = useRef(data);
+  // The Leaflet handlers are bound once, so they read the latest handlers from here.
+  const handlers = useRef({ updatePZMarker, deletePZMarker });
   const [svgPath, setSvgPath] = useState("");
+  // No updatePZMarker (a read-only Mission Pack): it is shown, but cannot be moved, aimed or deleted.
+  const locked = !updatePZMarker;
 
   useEffect(() => {
     latestData.current = data;
   }, [data]);
+  useEffect(() => {
+    handlers.current = { updatePZMarker, deletePZMarker };
+  }, [updatePZMarker, deletePZMarker]);
 
   // --- HELPER: ENCODE SVG TO DATA URI ---
   const svgToDataUri = (innerContent) => {
@@ -89,9 +96,9 @@ const PZMarker = ({ data, updatePZMarker, deletePZMarker }) => {
             
             <div class="pz-anchor-control">
                 <span class="pz-base-circle"></span>
-                <div class="pz-move-control-wrap">
+                ${locked ? "" : `<div class="pz-move-control-wrap">
                     ${mapObjectControlMarkup({ type: "drag", title: "Drag to move PZ marker", tone: "danger", className: "pz-move-control" })}
-                </div>
+                </div>`}
             </div>
         </div>`;
   };
@@ -137,6 +144,7 @@ const PZMarker = ({ data, updatePZMarker, deletePZMarker }) => {
     // --- HOVER LOGIC ---
     let isHovering = false;
     const showHandle = () => {
+      if (!handlers.current.updatePZMarker) return; // nothing to aim it with
       isHovering = true;
       tip.setOpacity(1);
     };
@@ -152,6 +160,7 @@ const PZMarker = ({ data, updatePZMarker, deletePZMarker }) => {
     tip.on("mouseover", showHandle);
     tip.on("mouseout", hideHandle);
     anchor.on("click", () => {
+      if (!handlers.current.updatePZMarker) return;
       isHovering = !isHovering;
       tip.setOpacity(isHovering ? 1 : 0);
     });
@@ -181,7 +190,7 @@ const PZMarker = ({ data, updatePZMarker, deletePZMarker }) => {
       const currentData = latestData.current;
       const dLat = newAnchor.lat - currentData.lat;
       const dLon = newAnchor.lng - currentData.lon;
-      updatePZMarker(data.id, {
+      handlers.current.updatePZMarker?.(data.id, {
         lat: newAnchor.lat,
         lon: newAnchor.lng,
         tipLat: (currentData.tipLat || currentData.lat) + dLat,
@@ -218,15 +227,18 @@ const PZMarker = ({ data, updatePZMarker, deletePZMarker }) => {
     tip.on("dragend", (e) => {
       const finalTip = e.target.getLatLng();
 
-      updatePZMarker(data.id, { tipLat: finalTip.lat, tipLon: finalTip.lng });
+      handlers.current.updatePZMarker?.(data.id, { tipLat: finalTip.lat, tipLon: finalTip.lng });
       
       redrawTip(finalTip);
       if (!isHovering) tip.setOpacity(0);
     });
 
+    // Without deletePZMarker the right-click goes on to the map's own menu.
     anchor.on("contextmenu", (e) => {
+      const { deletePZMarker: remove } = handlers.current;
+      if (!remove) return;
       L.DomEvent.stopPropagation(e);
-      if (window.confirm("Delete this PZ Marker?")) deletePZMarker(data.id);
+      if (window.confirm("Delete this PZ Marker?")) remove(data.id);
     });
 
     return () => {
@@ -247,7 +259,17 @@ const PZMarker = ({ data, updatePZMarker, deletePZMarker }) => {
         }),
       );
     }
-  }, [svgPath]);
+  }, [svgPath, locked]);
+
+  // Dragging only while there is somewhere to put the change.
+  useEffect(() => {
+    [anchorMarkerRef.current, tipMarkerRef.current].forEach((marker) => {
+      if (!marker?.dragging) return;
+      if (locked) marker.dragging.disable();
+      else marker.dragging.enable();
+    });
+    if (locked) tipMarkerRef.current?.setOpacity(0);
+  }, [locked, data.id]);
 
   return null;
 };

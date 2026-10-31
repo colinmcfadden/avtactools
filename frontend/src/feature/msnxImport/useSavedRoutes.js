@@ -11,17 +11,17 @@ import api from "../auth/api";
 export const useSavedRoutes = () => {
   const [savedRoutes, setSavedRoutes] = useState([]);
   const [isLoadingSaved, setIsLoadingSaved] = useState(false);
+  const [savedRoutesError, setSavedRoutesError] = useState(null);
 
   const fetchSavedRoutes = async () => {
     setIsLoadingSaved(true);
     try {
       const res = await api.get("/routes");
       setSavedRoutes(res.data);
+      setSavedRoutesError(null);
     } catch (err) {
-      // 401s are handled (alert + sign-out) by the api interceptor.
-      if (err.response?.status !== 401) {
-        alert("Couldn't load saved routes: " + err.message);
-      }
+      // 401s are handled (sign-out) by the api interceptor; anything else is shown where the list is.
+      if (err.response?.status !== 401) setSavedRoutesError(err);
     } finally {
       setIsLoadingSaved(false);
     }
@@ -63,13 +63,14 @@ export const useSavedRoutes = () => {
     return res.data;
   };
 
-  const updateSketch = async (id, routes) => {
-    const res = await api.put(`/routes/${id}`, sketchForm("", routes));
+  /** `name` renames the saved record too; without it the name stays as it is. */
+  const updateSketch = async (id, routes, name = "") => {
+    const res = await api.put(`/routes/${id}`, sketchForm(name, routes));
     return res.data;
   };
 
-  const updateMission = async (id, routes, msnxBlob, fileName) => {
-    const res = await api.put(`/routes/${id}`, missionForm("", routes, msnxBlob, fileName));
+  const updateMission = async (id, routes, msnxBlob, fileName, name = "") => {
+    const res = await api.put(`/routes/${id}`, missionForm(name, routes, msnxBlob, fileName));
     return res.data;
   };
 
@@ -93,6 +94,7 @@ export const useSavedRoutes = () => {
   return {
     savedRoutes,
     isLoadingSaved,
+    savedRoutesError,
     fetchSavedRoutes,
     saveSketch,
     saveMission,

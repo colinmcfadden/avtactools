@@ -6,53 +6,41 @@ import {
   centerSpacingM,
   tipClearanceM,
 } from "../feature/aircraft/aircraftProfiles";
+import { landingHeadingOf, slopeCallFor } from "../feature/terrain/slopeCall";
+import { slopeProfileFor } from "../feature/terrain/groundProfile";
+import SlopeProfile from "../feature/terrain/SlopeProfile";
+import { slopeWindFor } from "../feature/weather/useWeather";
 
-const MissionSummary = ({ detectedLZ, terrainData, targetLocation, mapData, setActiveNotams, winds, loadingWeather, aircraftProfile }) => {
+/**
+ * Area (square feet, rounded) and how many aircraft fit in a landing zone. Capacity is a conservative square-grid estimate using the
+ * selected aircraft's own spacing, so a Chinook LZ holds fewer than a Black Hawk one. Pure, and exported so the native apps can be held
+ * to it (contracts/fixtures/planning/summary.json).
+ */
+export const lzAreaAndCapacity = (detectedLZ, profile = FALLBACK_PROFILE) => {
+  if (!detectedLZ) return { area: 0, heloCount: 0 };
+
+  const areaSqFt = getPolygonArea(detectedLZ);
+  const heloCount = capacityForArea(areaSqFt, profile);
+
+  return {
+    area: Math.round(areaSqFt),
+    heloCount: Math.max(0, heloCount),
+  };
+};
+
+const MissionSummary = ({
+  detectedLZ, terrainData, targetLocation, mapData, setActiveNotams, winds, loadingWeather, aircraftProfile, landingHdg,
+}) => {
   const profile = aircraftProfile || FALLBACK_PROFILE;
 
   // 1. CALCULATE AREA & CAPACITY
-  const stats = useMemo(() => {
-    if (!detectedLZ) return { area: 0, heloCount: 0 };
+  const stats = useMemo(() => lzAreaAndCapacity(detectedLZ, profile), [detectedLZ, profile]);
 
-    // 1. Get total area in SQUARE FEET
-    const areaSqFt = getPolygonArea(detectedLZ);
-
-    // Capacity is a conservative square-grid estimate using the selected
-    // aircraft's own spacing, so a Chinook LZ holds fewer than a Black Hawk one.
-    const heloCount = capacityForArea(areaSqFt, profile);
-
-    return {
-        area: Math.round(areaSqFt),
-        heloCount: Math.max(0, heloCount)
-    };
-  }, [detectedLZ, profile]);
-
-  // 2. SLOPES
-  const slopeStatus = useMemo(() => {
-    if (!terrainData?.stats)
-      return { className: "status-safe", label: "NO DATA", max: 0 };
-
-    const maxSlope = terrainData.stats.maxDeg;
-    const directional = terrainData.directional;
-
-    if (directional) {
-      const exceedsUh60Limit =
-        directional.noseHighMaxDeg >= 6 ||
-        directional.noseLowMaxDeg >= 15 ||
-        directional.crossSlopeMaxDeg >= 15;
-      if (exceedsUh60Limit)
-        return { className: "status-danger", label: "LIMIT EXCEEDED", max: maxSlope };
-    }
-
-    // A general slope magnitude is useful context, but the UH-60 limits are
-    // directional. Require a landing heading before treating it as a limit call.
-    if (!directional && maxSlope >= 15)
-      return { className: "status-warning", label: "HEADING REQUIRED", max: maxSlope };
-    if (maxSlope > 10)
-      return { className: "status-warning", label: "CAUTION", max: maxSlope };
-    
-    return { className: "status-safe", label: "LANDING", max: maxSlope };
-  }, [terrainData]);
+  // 2. SLOPES: judged at the landing doghouse's heading, with the limits reduced for this LZ/PZ's steady wind (the report the tiles below show)
+  const wind = slopeWindFor(winds, targetLocation);
+  const slopeStatus = useMemo(() => slopeCallFor(terrainData, { landingHdg, wind }), [terrainData, landingHdg, wind]);
+  // The ground along and across the same landing heading: the approach, the LZ and the departure.
+  const groundProfile = useMemo(() => slopeProfileFor(terrainData?.profiles, landingHeadingOf(landingHdg)), [terrainData, landingHdg]);
 
   if (!detectedLZ) return null;
 
@@ -89,7 +77,12 @@ const MissionSummary = ({ detectedLZ, terrainData, targetLocation, mapData, setA
             <span>MAX TERRAIN SLOPE</span>
         </div>
         <div className="slope-main-text">{slopeStatus.max.toFixed(1)}°</div>
+        {slopeStatus.lines.map((line) => (
+          <div key={line} className="slope-advice">{line}</div>
+        ))}
       </div>
+
+      <SlopeProfile profile={groundProfile} />
 
       {/* --- ROW 3: WEATHER TRIO (Span 2 each) --- */}
       

@@ -25,6 +25,8 @@ dist/
 
 # --- PYTHON / FLASK SPECIFIC ---
 *.db
+# The SQLite files the contract tests read are test fixtures, not data: a clean checkout (CI) needs them.
+!contracts/fixtures/sqlite/*.db
 instance/
 .pytest_cache/
 .coverage
@@ -66,3 +68,23 @@ LZ_Map_Layer_*
 # collection tile index are both regenerated on demand.
 usgs_ept_coverage.geojson
 tile_index.json
+
+# --- ANDROID / GRADLE ---
+# Build output (build/ is ignored above), the Gradle cache, and per-machine files.
+.gradle/
+.kotlin/
+android/local.properties
+# Android Studio writes the JDK that runs Gradle here ("updateDaemonJvm"); which JDK that is, is each machine's own
+# choice (android/gradle.properties says so), and CI's JDK 21 would otherwise be made to fetch another one.
+android/gradle/gradle-daemon-jvm.properties
+*.iml
+# Signing material never goes in the repository (docs/NATIVE_APPS_PLAN.md, "Signing and delivery").
+*.jks
+*.keystore
+*.p12
+
+# --- NATIVE DESIGN HANDOFF ---
+# The screens themselves (82 screenshots, ~25 MB, and their HTML sources) stay local: the Design canvas is the
+# original (docs/native-design/README.md). The README, outlines and tokens are committed.
+/docs/native-design/png/
+/docs/native-design/screens/

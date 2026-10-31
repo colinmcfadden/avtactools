@@ -15,12 +15,14 @@ export const useLocalPoints = () => {
   const [pointSets, setPointSets] = useState([]);
   const [savedPointSets, setSavedPointSets] = useState([]);
   const [isLoadingSavedSets, setIsLoadingSavedSets] = useState(false);
+  const [savedSetsError, setSavedSetsError] = useState(null);
 
-  const importLpsFile = async (file) => {
+  /** `name` names the set (the review dialog lets the person change it); else the file's own name. */
+  const importLpsFile = async (file, { name } = {}) => {
     const parsed = await parseLpsFile(file);
     const set = {
       id: generateId("lps"),
-      name: parsed.name,
+      name: name || parsed.name,
       color: nextRouteColor(),
       visible: true,
       savedId: null,
@@ -47,19 +49,22 @@ export const useLocalPoints = () => {
     try {
       const res = await api.get("/pointsets");
       setSavedPointSets(res.data);
+      setSavedSetsError(null);
     } catch (err) {
-      // 401s are handled (alert + sign-out) by the api interceptor.
-      if (err.response?.status !== 401) {
-        alert("Couldn't load saved point sets: " + err.message);
-      }
+      // 401s are handled (sign-out) by the api interceptor; anything else is shown where the list is.
+      if (err.response?.status !== 401) setSavedSetsError(err);
     } finally {
       setIsLoadingSavedSets(false);
     }
   };
 
-  /** Saves a loaded set; overwrites its linked cloud record when one exists. */
-  const savePointSet = async (setId) => {
-    const set = pointSets.find((s) => s.id === setId);
+  /**
+   * Saves a loaded set; overwrites its linked cloud record when one exists. Takes the set itself as
+   * well as its id, so a set imported a moment ago (not yet in this render's state) can be saved.
+   */
+  const savePointSet = async (setOrId) => {
+    const setId = typeof setOrId === "object" ? setOrId?.id : setOrId;
+    const set = typeof setOrId === "object" ? setOrId : pointSets.find((s) => s.id === setId);
     if (!set) return null;
 
     const payload = { name: set.name, points: set.points };
@@ -117,6 +122,7 @@ export const useLocalPoints = () => {
     removePointSet,
     savedPointSets,
     isLoadingSavedSets,
+    savedSetsError,
     fetchSavedPointSets,
     savePointSet,
     loadSavedPointSet,

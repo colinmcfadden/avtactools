@@ -1,0 +1,100 @@
+/* The slope profile (SlopeProfile): the ground along and across the landing heading, under the slope tile. */
+.slope-profile-block {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+
+/* Its button is drawn as the redesign's dropdowns are (shell.css, .shell-topbar__button and the workspace switcher): bordered, on the
+   panel's surface, its words in sentence case, a chevron on its right that says which way it will go. */
+.slope-profile__toggle {
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  width: 100%;
+  height: 34px;
+  margin: 0;
+  padding: 0 10px;
+  background: var(--surface-2, #1a1e25);
+  border: 1px solid var(--hairline-strong, rgba(255, 255, 255, 0.16));
+  border-radius: 8px;
+  color: var(--ff-text-main, #e7eaee);
+  font-family: inherit;
+  font-size: 12.5px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.12s ease, border-color 0.12s ease;
+}
+.slope-profile__toggle:hover { background: var(--surface-3, #21262f); }
+.slope-profile__toggle:focus-visible { outline: 2px solid var(--ff-accent, #5aa7d4); outline-offset: 2px; }
+.slope-profile-block--open .slope-profile__toggle { border-color: rgba(255, 255, 255, 0.24); }
+.slope-profile__toggle-label { flex: 1; min-width: 0; text-align: left; }
+.slope-profile__toggle-unit { color: var(--ff-text-muted, #97a0ab); font-weight: 500; }
+
+/* Open, the graphs: a box under the button, as the summary's tiles are. */
+.slope-profile__body {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 4px;
+  padding: 6px 8px;
+}
+
+.slope-profile {
+  margin: 0;
+}
+
+.slope-profile__words {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--ff-text-main, #f3f4f6);
+  line-height: 1.3;
+  margin-bottom: 2px;
+}
+
+/* The chart: a gutter of heights on the left, the plot beside it (so no label sits on the ground or under the helicopter). */
+.slope-profile__chart { display: flex; gap: 4px; }
+.slope-profile__gutter { position: relative; flex: 0 0 30px; height: 86px; }
+.slope-profile__plot { position: relative; flex: 1; min-width: 0; }
+
+.slope-profile__graph {
+  display: block;
+  width: 100%;
+  height: 86px;
+}
+
+/* The helicopter: the app's accent with a dark edge, so it reads over the ground's fill and the LZ's band alike. */
+.slope-profile__heli {
+  position: absolute;
+  display: block;
+  fill: var(--ff-accent, #5aa7d4);
+  stroke: rgba(10, 12, 16, 0.75);
+  stroke-width: 0.5;
+  stroke-linejoin: round;
+  pointer-events: none;
+}
+
+.slope-profile__lz { fill: rgba(255, 176, 32, 0.18); stroke: rgba(255, 176, 32, 0.7); stroke-width: 1; stroke-dasharray: 3 2; vector-effect: non-scaling-stroke; }
+.slope-profile__ground { fill: rgba(148, 163, 184, 0.22); stroke: none; }
+.slope-profile__line { fill: none; stroke: var(--ff-text-main, #f3f4f6); stroke-width: 1.75; vector-effect: non-scaling-stroke; stroke-linejoin: round; }
+.slope-profile--across .slope-profile__line { stroke-width: 1.25; stroke-dasharray: 4 2; }
+
+/* The height axis: the top and bottom of what the graph spans, in the gutter, level with the lines they name. */
+.slope-profile__axis {
+  position: absolute;
+  right: 0;
+  font-size: 9px;
+  line-height: 10px;
+  color: var(--ff-text-muted, #9ca3af);
+  pointer-events: none;
+}
+
+.slope-profile__ends {
+  margin-left: 34px;
+  display: flex;
+  justify-content: space-between;
+  font-size: 9px;
+  color: var(--ff-text-muted, #9ca3af);
+}

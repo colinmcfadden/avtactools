@@ -1,0 +1,214 @@
+package app.ezpztac.map
+
+import app.ezpztac.model.BoundaryCornerRef
+import app.ezpztac.model.Diagram
+import app.ezpztac.model.DiagramAnalysis
+import app.ezpztac.model.DiagramStatus
+import app.ezpztac.model.DiagramTarget
+import app.ezpztac.model.DiagramView
+import app.ezpztac.model.LatLon
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonNull
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.boolean
+import kotlinx.serialization.json.double
+import kotlinx.serialization.json.int
+import kotlinx.serialization.json.jsonArray
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
+import org.junit.Test
+
+class LzSceneTest {
+    private fun ring(vararg points: Pair<Double, Double>) = JsonArray(points.map { (a, b) -> JsonArray(listOf(JsonPrimitive(a), JsonPrimitive(b))) })
+
+    private fun diagram(target: DiagramTarget? = DiagramTarget(34.78, -84.08, "16S GD 1 2"), analysis: DiagramAnalysis = DiagramAnalysis(), view: DiagramView = DiagramView()) = Diagram(
+        id = "d", createdAt = "t", updatedAt = "t", status = DiagramStatus.TARGETED, target = target, analysis = analysis, view = view,
+    )
+
+    private fun features(scene: LzScene) = Json.parseToJsonElement(scene.geoJson()).jsonObject.getValue("features").jsonArray.map { it.jsonObject }
+    private fun role(f: JsonObject) = f.getValue("properties").jsonObject.getValue("role").jsonPrimitive.content
+    private fun geometry(f: JsonObject) = f.getValue("geometry").jsonObject
+
+    @Test
+    fun `nothing open draws nothing`() {
+        assertTrue(LzScene.of(null).isEmpty)
+        assertEquals(emptyList<JsonObject>(), features(LzScene.EMPTY))
+        assertEquals("FeatureCollection", Json.parseToJsonElement(LzScene.EMPTY.geoJson()).jsonObject.getValue("type").jsonPrimitive.content)
+    }
+
+    @Test
+    fun `a targeted diagram draws its target, longitude first`() {
+        val scene = LzScene.of(diagram())
+        assertEquals(LatLon(34.78, -84.08), scene.target)
+        val target = features(scene).single()
+        assertEquals("target", role(target))
+        assertEquals("Point", geometry(target).getValue("type").jsonPrimitive.content)
+        assertEquals(listOf(-84.08, 34.78), geometry(target).getValue("coordinates").jsonArray.map { it.jsonPrimitive.content.toDouble() })
+    }
+
+    @Test
+    fun `a draft with no target has no target to draw`() {
+        assertNull(LzScene.of(diagram(target = null)).target)
+    }
+
+    @Test
+    fun `the analysis boundary is a closed polygon in GeoJSON order`() {
+        val analysis = DiagramAnalysis(detectedLZ = ring(34.71 to -84.09, 34.71 to -84.01, 34.79 to -84.01))
+        val scene = LzScene.of(diagram(analysis = analysis))
+        assertEquals(3, scene.boundary.size)                                               // not closed in the scene...
+        val polygon = features(scene).single { role(it) == "boundary" }
+        val coordinates = geometry(polygon).getValue("coordinates").jsonArray.single().jsonArray
+        assertEquals(4, coordinates.size)                                                  // ...but closed on the way out
+        assertEquals(coordinates.first(), coordinates.last())
+        assertEquals(listOf(-84.09, 34.71), coordinates.first().jsonArray.map { it.jsonPrimitive.content.toDouble() })
+    }
+
+    @Test
+    fun `two points are not a boundary`() {
+        val scene = LzScene.of(diagram(analysis = DiagramAnalysis(detectedLZ = ring(34.7 to -84.1, 34.8 to -84.0))))
+        assertEquals(emptyList<LatLon>(), scene.boundary)
+        assertEquals(listOf("target"), features(scene).map(::role))
+    }
+
+    @Test
+    fun `a boundary being drawn is a line until it has three points`() {
+        val line = LzScene.of(diagram(analysis = DiagramAnalysis(customLZ = ring(34.7 to -84.1, 34.8 to -84.0))))
+        val drawn = features(line).single { role(it) == "drawn" }
+        assertEquals("LineString", geometry(drawn).getValue("type").jsonPrimitive.content)
+
+        val polygon = LzScene.of(diagram(analysis = DiagramAnalysis(customLZ = ring(34.7 to -84.1, 34.8 to -84.0, 34.8 to -84.1))))
+        assertEquals("Polygon", geometry(features(polygon).single { role(it) == "drawn" }).getValue("type").jsonPrimitive.content)
+
+        assertEquals(emptyList<LatLon>(), LzScene.of(diagram(analysis = DiagramAnalysis(customLZ = ring(34.7 to -84.1)))).drawn)
+    }
+
+    // -- The LZ box hidden (the diagram's view, the web's *LZ Box*) ---------------------------------------------------
+
+    private val detected = DiagramAnalysis(detectedLZ = ring(34.71 to -84.09, 34.71 to -84.01, 34.79 to -84.01))
+    private val hidden = DiagramView(showLZOutline = false)
+
+    @Test
+    fun `an outline the view hides is not drawn, nor its corners, and is still the scene's boundary`() {
+        val scene = LzScene.of(diagram(analysis = detected, view = hidden))
+        assertEquals(false, scene.boundaryShown)
+        assertEquals(3, scene.boundary.size)                                                          // still the diagram's: measured, saved, kept
+        assertEquals(listOf("target"), features(scene).map(::role))
+        val shown = LzScene.of(diagram(analysis = detected))
+        assertEquals(true, shown.boundaryShown)
+        assertEquals(listOf("boundary", "corner", "corner", "corner", "target"), features(shown).map(::role))
+    }
+
+    @Test
+    fun `while a corner of it is held its corners are drawn, the held one marked, and the outline still is not`() {
+        val held = LzScene.of(diagram(analysis = detected, view = hidden), heldCorner = BoundaryCornerRef(false, 1))
+        assertEquals(true, held.boundaryCornersShown)
+        assertEquals(listOf("corner", "corner", "corner", "target"), features(held).map(::role))
+        assertEquals(listOf(false, true, false), features(held).filter { role(it) == "corner" }.map { it.getValue("properties").jsonObject.getValue("held").jsonPrimitive.boolean })
+        // A corner of the boundary drawn by hand is not one of the analysis boundary's.
+        assertEquals(false, LzScene.of(diagram(analysis = detected, view = hidden), heldCorner = BoundaryCornerRef(true, 1)).boundaryCornersShown)
+    }
+
+    @Test
+    fun `a boundary drawn by hand, and one being drawn, are drawn whatever the view says, as on the web`() {
+        val drawn = LzScene.of(diagram(analysis = DiagramAnalysis(customLZ = ring(34.7 to -84.1, 34.8 to -84.0, 34.8 to -84.1)), view = hidden))
+        assertEquals(listOf("drawn", "corner", "corner", "corner", "target"), features(drawn).map(::role))
+        val drawing = LzScene.of(diagram(analysis = detected, view = hidden), draft = listOf(LatLon(34.70, -84.10), LatLon(34.80, -84.00)))
+        assertEquals(listOf("drawn", "vertex", "vertex", "target"), features(drawing).map(::role))
+    }
+
+    @Test
+    fun `the slope and the graphics are drawn with the outline hidden`() {
+        val slope = SlopeImage(34.7, -84.1, 34.8, -84.0, "data:image/png;base64,AA==")
+        assertEquals(slope, LzScene.of(diagram(analysis = detected, view = hidden), slope).slope)
+    }
+
+    // -- The boundary being drawn ---------------------------------------------------------------------------------
+
+    private val a = LatLon(34.70, -84.10)
+    private val b = LatLon(34.80, -84.00)
+    private val c = LatLon(34.80, -84.10)
+
+    @Test
+    fun `the first point of a boundary being drawn is a dot, with no line yet`() {
+        val scene = LzScene.of(diagram(), draft = listOf(a))
+        assertEquals(listOf(a), scene.draft)
+        assertEquals(listOf("vertex", "target"), features(scene).map(::role))
+        assertEquals(listOf(-84.10, 34.70), geometry(features(scene).first()).getValue("coordinates").jsonArray.map { it.jsonPrimitive.content.toDouble() })
+    }
+
+    @Test
+    fun `a boundary being drawn is an open line with a dot at each point, in the order they were put down`() {
+        val scene = LzScene.of(diagram(), draft = listOf(a, b, c))
+        val line = features(scene).single { role(it) == "drawn" }
+        assertEquals("LineString", geometry(line).getValue("type").jsonPrimitive.content)                 // open: it is not a polygon until finished
+        val coordinates = geometry(line).getValue("coordinates").jsonArray.map { it.jsonArray.map { v -> v.jsonPrimitive.content.toDouble() } }
+        assertEquals(listOf(listOf(-84.10, 34.70), listOf(-84.00, 34.80), listOf(-84.10, 34.80)), coordinates)
+        assertEquals(3, features(scene).count { role(it) == "vertex" })
+    }
+
+    @Test
+    fun `two corners already make a line`() {
+        val scene = LzScene.of(diagram(), draft = listOf(a, b))
+        assertEquals(1, features(scene).count { role(it) == "drawn" })
+        assertEquals(2, features(scene).count { role(it) == "vertex" })
+    }
+
+    @Test
+    fun `a draft is something to draw, and no draft is none`() {
+        assertEquals(false, LzScene(null, emptyList(), emptyList(), null, draft = listOf(a)).isEmpty)
+        assertEquals(true, LzScene(null, emptyList(), emptyList(), null).isEmpty)
+        assertEquals(emptyList<LatLon>(), LzScene.of(diagram()).draft)
+        assertEquals(emptyList<LatLon>(), LzScene.of(null, draft = listOf(a)).draft)                         // nothing open, nothing to draw it on
+    }
+
+    @Test
+    fun `a point that is not a pair of numbers is left out, and a boundary of nothing but rubbish is none`() {
+        val rubbish = JsonArray(listOf(JsonPrimitive("x"), JsonArray(listOf(JsonPrimitive(1))), JsonArray(listOf(JsonPrimitive("a"), JsonPrimitive("b"))), JsonNull))
+        assertEquals(emptyList<LatLon>(), LzScene.of(diagram(analysis = DiagramAnalysis(detectedLZ = rubbish))).boundary)
+        val mixed = JsonArray(ring(34.7 to -84.1, 34.7 to -84.0, 34.8 to -84.0) + JsonPrimitive("junk"))
+        assertEquals(3, LzScene.of(diagram(analysis = DiagramAnalysis(detectedLZ = mixed))).boundary.size)
+        assertEquals(emptyList<LatLon>(), LzScene.of(diagram(analysis = DiagramAnalysis(detectedLZ = JsonPrimitive("nope")))).boundary)
+    }
+
+    @Test
+    fun `the slope raster is carried as it is and is not part of the vector layer`() {
+        val slope = SlopeImage(34.7, -84.1, 34.8, -84.0, "data:image/png;base64,AA==")
+        val scene = LzScene.of(diagram(), slope)
+        assertEquals(slope, scene.slope)
+        assertTrue(!scene.geoJson().contains("base64"))
+    }
+
+    @Test
+    fun `the slope map's contours are GeoJSON lines carrying whether they are major and inside, longitude first`() {
+        val a = LatLon(34.78, -84.08)
+        val b = LatLon(34.79, -84.07)
+        val slope = SlopeImage(
+            34.7, -84.1, 34.8, -84.0, "data:image/png;base64,AA==",
+            contours = listOf(
+                ContourPiece(1520, major = false, inside = true, points = listOf(a, b), label = a),
+                ContourPiece(1525, major = true, inside = false, points = listOf(b, a)),
+                ContourPiece(1530, major = false, inside = true, points = listOf(a)),                        // one point is no line
+            ),
+        )
+        val features = Json.parseToJsonElement(slope.contourGeoJson()).jsonObject.getValue("features").jsonArray
+        assertEquals(2, features.size)
+        val first = features[0].jsonObject
+        assertEquals("LineString", first.getValue("geometry").jsonObject.getValue("type").jsonPrimitive.content)
+        assertEquals(
+            listOf(listOf(-84.08, 34.78), listOf(-84.07, 34.79)),
+            first.getValue("geometry").jsonObject.getValue("coordinates").jsonArray.map { p -> p.jsonArray.map { it.jsonPrimitive.double } },
+        )
+        val props = features.map { it.jsonObject.getValue("properties").jsonObject }
+        assertEquals(listOf(false, true), props.map { it.getValue("major").jsonPrimitive.boolean })
+        assertEquals(listOf(true, false), props.map { it.getValue("inside").jsonPrimitive.boolean })
+        assertEquals(listOf(1520, 1525), props.map { it.getValue("elevationFt").jsonPrimitive.int })
+        val none = Json.parseToJsonElement(SlopeImage.NO_CONTOURS).jsonObject.getValue("features").jsonArray
+        assertEquals(0, none.size)
+        assertEquals(none, Json.parseToJsonElement(slope.copy(contours = emptyList()).contourGeoJson()).jsonObject.getValue("features").jsonArray)
+    }
+}

@@ -10,8 +10,8 @@ import "./viewer3d.css";
 // Where builds are run, and the downloaded survey to read. Configured because
 // they differ per deployment: a workstation checkout on Windows, or the server
 // that holds both the LiDAR and the tilesets it serves.
-const BUILD_CWD = process.env.REACT_APP_LIDAR_BUILD_CWD || "/opt/avtactools";
-const BUILD_COLLECTION = process.env.REACT_APP_LIDAR_COLLECTION || "";
+const BUILD_CWD = import.meta.env.VITE_LIDAR_BUILD_CWD || "/opt/avtactools";
+const BUILD_COLLECTION = import.meta.env.VITE_LIDAR_COLLECTION || "";
 
 // The build service's stage names, as a crew member would want to read them.
 const STAGE_LABELS = {
@@ -63,7 +63,7 @@ const Lz3DWindow = ({ label, lat, lon, radiusM, saved = false,
                          [importedRoutes, sketchedRoutes]);
   const { scene: routeScene } = useRouteScene(routes);
   const { state, url, contextUrl, target, error, refresh, stage, position,
-          elapsedS, buildFailed } = useLidarTileset({ lat, lon, radiusM, keep: saved });
+          elapsedS, buildFailed, frame } = useLidarTileset({ lat, lon, radiusM, keep: saved, stream: true });
   // The service's own count wins once it reports one, so reopening the window
   // mid-build shows the real time rather than restarting at 0:00.
   const elapsed = Math.max(useBuildClock(state === "building", target?.lat),
@@ -117,7 +117,7 @@ const Lz3DWindow = ({ label, lat, lon, radiusM, saved = false,
 
         <div className="lz3d-window__body">
           {state === "available" && (
-            <Viewer3D tilesetUrl={url} contextUrl={contextUrl} routeScene={routeScene} />
+            <Viewer3D tilesetUrl={url} contextUrl={contextUrl} frame={frame} routeScene={routeScene} />
           )}
 
           {state === "available" && hasTerrain === false && (

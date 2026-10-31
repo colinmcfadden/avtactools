@@ -109,3 +109,29 @@ def validate_email_configuration(environ):
             'EMAIL_FROM must use a verified Resend sending domain in production '
             f'({PRODUCTION_SIGNALS} is set)'
         )
+
+
+def google_client_ids(environ, config=None):
+    """Every Google OAuth client ID whose ID tokens this server accepts.
+
+    An ID token's audience is the client ID of the app that asked Google for it,
+    so the web app, the Android app and the iOS app each present a different one.
+    ``GOOGLE_CLIENT_ID`` (the web's, as before) and the comma-separated
+    ``GOOGLE_CLIENT_IDS`` are both read, de-duplicated, in that order.
+
+    The result is always a list that the caller must pass as the audience. An
+    empty list means Google sign-in is not configured; it must never be turned
+    into ``None``, which google-auth reads as "do not check the audience".
+    """
+    config = config or {}
+    found = []
+
+    def add(value):
+        for part in str(value or '').split(','):
+            part = part.strip()
+            if part and part not in found:
+                found.append(part)
+
+    add(config.get('GOOGLE_CLIENT_ID') or environ.get('GOOGLE_CLIENT_ID'))
+    add(config.get('GOOGLE_CLIENT_IDS') or environ.get('GOOGLE_CLIENT_IDS'))
+    return found

@@ -1,0 +1,453 @@
+package app.ezpztac.missionpacks
+
+import app.ezpztac.model.Diagram
+import app.ezpztac.model.DiagramNormalizer
+import app.ezpztac.model.DiagramView
+import app.ezpztac.model.RouteSet
+import app.ezpztac.model.RouteSets
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.JsonNull
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.contentOrNull
+import kotlinx.serialization.json.jsonObject
+import java.util.Collections
+import java.util.IdentityHashMap
+
+/**
+ * What a kind of pack item is to an editor here: how an item becomes the document the editor works on ([fromItem]), and how that
+ * document is the item's data again ([docOf]), keeping out what is each person's own ([ownOf]: kept on the device, never in the pack).
+ * The web has one hook per kind (usePackLz, usePackRoutes); these are their pure halves.
+ *
+ * A document's shape is the item's data as the editor gives it back. An item's [currentShape] is the shape of the document made from
+ * it, so an editor's document and the item's shape can never disagree: an item opened and not changed sends nothing.
+ */
+public interface PackKind<D : Any> {
+    /** The item kind: `lz` or `route`. */
+    public val kind: String
+
+    /** The shared part of an item's raw data (the web's `shared`), which [PackEdit]'s reshape starts from. */
+    public fun shared(data: JsonElement?): JsonElement
+
+    /** The document an editor works on for [item], under the editor's id [localId], with this person's own fields [own] (or the defaults). */
+    public fun fromItem(localId: String, item: PackItemView, own: JsonObject?): D
+
+    /**
+     * [document] as its item's data: its shape. [carryFrom] is the item's data as the pack had it when the editor was last in step with
+     * it, which keeps what this version cannot hold.
+     */
+    public fun docOf(document: D, carryFrom: JsonElement?): JsonElement
+
+    /** Today's shape of [item]: what [PackEdit]'s reshape brings the pack's data to before an editor's first change to it. */
+    public fun currentShape(localId: String, item: PackItemView): JsonElement = docOf(fromItem(localId, item, null), item.data)
+
+    public fun nameOf(document: D): String
+
+    /** This person's own fields of [document]: kept on the device beside the pack, never sent. */
+    public fun ownOf(document: D): JsonObject
+
+    /** [document] with the content [shared] (a shape) and [name], keeping its own fields and its identity. */
+    public fun withShared(document: D, shared: JsonElement, name: String): D
+
+    /** The history's sentence for a change from [before] to [after], two of this kind's shapes. */
+    public fun describe(before: JsonElement?, after: JsonElement?, name: String?, actor: String?): String
+
+    /**
+     * [ops], a change that makes a shape of this kind into [after] (what this person sends, or someone else's change laid over this person's
+     * versions), with each value that is one to a person kept whole: an operation that changes some of its fields carries the rest as [after]
+     * has them, so two people's changes never leave it half one's and half the other's; and what is several settings sent as one object, each
+     * setting on its own, so neither person's is lost under the other's. The operations as they are by default; a route point's place, a plan's
+     * altitude, speed and wind, and a point's own values are a route set's ([RoutePackKind]), a planning graphic's place, the target and what an
+     * analysis found an LZ/PZ's ([LzPackKind]).
+     */
+    public fun keepWhole(ops: List<JsonObject>, after: JsonElement?): List<JsonObject> = ops
+}
+
+/**
+ * A value that is one to a person, whose fields an editor changes together: the [fields] of the object an operation's path names, wherever [at] says
+ * the path is one. Each field of a patch stands on its own in the pack (the later on each), so a patch that changed some of them would let a change made
+ * elsewhere meanwhile leave the value half one person's and half the other's, where nobody put it ([keptWhole]).
+ */
+internal class WholeValue(val fields: List<String>, val at: (JsonArray) -> Boolean)
+
+/**
+ * [ops] with each patch that changes some of the fields of one of [wholes] carrying the rest of them as [after] (the document they make) has them, after
+ * its own, in the value's order; a field [after] does not hold is left out. Any other operation as it is.
+ */
+internal fun keptWhole(ops: List<JsonObject>, after: JsonElement?, wholes: List<WholeValue>): List<JsonObject> = ops.map { op ->
+    val value = op["value"] as? JsonObject
+    val path = op["path"] as? JsonArray
+    if ((op["type"] as? JsonPrimitive)?.content != "patch" || value == null || path == null) return@map op
+    val whole = wholes.firstOrNull { it.at(path) } ?: return@map op
+    val missing = whole.fields.filter { it !in value }
+    if (missing.isEmpty() || missing.size == whole.fields.size) return@map op
+    val target = path.fold<JsonElement, JsonElement?>(after) { at, segment -> stepInto(at, segment) } as? JsonObject ?: return@map op
+    val rest = missing.mapNotNull { field -> target[field]?.takeUnless { it is JsonNull }?.let { field to it } }
+    if (rest.isEmpty()) return@map op
+    JsonObject(LinkedHashMap(op).apply { put("value", JsonObject(LinkedHashMap(value).apply { rest.forEach { (field, it) -> put(field, it) } })) })
+}
+
+/** One step along an operation's path, as [PackOps] takes it: an object's field (none when it is null), or a list's element by id. */
+internal fun stepInto(node: JsonElement?, segment: JsonElement): JsonElement? = when (segment) {
+    is JsonObject -> (node as? JsonArray)?.firstOrNull { it is JsonObject && "id" in it && Js.strictEquals(it["id"], segment["id"]) }
+    else -> (node as? JsonObject)?.get((segment as JsonPrimitive).content)?.takeUnless { it is JsonNull }
+}
+
+/** Whether [segment] of an operation's path is the field [name]. */
+internal fun isField(segment: JsonElement, name: String): Boolean = segment is JsonPrimitive && segment.isString && segment.content == name
+
+/**
+ * An LZ/PZ item as a [Diagram] (usePackLz). Each person's own fields are the view (base map, LZ outline, slope map); the times and
+ * whether it is dirty are the document's and are never in the pack either. A diagram holds every field the web's shape has, so its shape
+ * is [PackLz.lzItemData], with the fields a newer version wrote put back from the pack's data ([PackLz.carryUnknown]).
+ */
+public class LzPackKind(private val env: DiagramNormalizer.Environment = DiagramNormalizer.Environment()) : PackKind<Diagram> {
+    override val kind: String = "lz"
+
+    private val json = Json { encodeDefaults = true }
+
+    override fun shared(data: JsonElement?): JsonElement = PackLz.sharedLzData(data)
+
+    override fun fromItem(localId: String, item: PackItemView, own: JsonObject?): Diagram {
+        val diagram = PackLz.lzDiagramFromItem(localId, item, env)
+        val view = own?.get("view") ?: return diagram
+        return diagram.copy(view = viewOf(diagram, view))
+    }
+
+    override fun docOf(document: Diagram, carryFrom: JsonElement?): JsonElement = PackLz.carryUnknown(carryFrom, PackLz.lzItemData(document))
+
+    override fun nameOf(document: Diagram): String = document.name
+
+    override fun ownOf(document: Diagram): JsonObject =
+        JsonObject(mapOf("view" to json.encodeToJsonElement(DiagramView.serializer(), document.view)))
+
+    override fun withShared(document: Diagram, shared: JsonElement, name: String): Diagram {
+        val input = Js.spread(shared)
+        input["id"] = JsonPrimitive(document.id)
+        input["name"] = JsonPrimitive(name)
+        val options = DiagramNormalizer.Options(
+            savedId = document.savedId,
+            dirty = document.dirty,
+            createdAt = document.createdAt,
+            updatedAt = document.updatedAt,
+        )
+        // A shape has no view of its own, so the document's is kept: what someone else changed is never how this person sees it.
+        return DiagramNormalizer.normalize(JsonObject(input), options, env).copy(view = document.view)
+    }
+
+    override fun describe(before: JsonElement?, after: JsonElement?, name: String?, actor: String?): String =
+        PackLz.describeLzChange(before, after, name, actor)
+
+    /**
+     * A planning graphic's place is one value, and so is the target: a patch that moves one in one direction only (each arrow of the nudge pad changes one
+     * coordinate) carries the rest of it as [after] has it, so a move north here and a move east elsewhere leave it where one of the two put it, never at
+     * this latitude and the other's longitude. A PZ marker's anchor and tip are one value, not two: its tip is a place, put where its reach and bearing
+     * from the anchor say, so a turn (the tip alone) kept apart from a move (anchor and tip) could leave the arrow from the moved anchor to a tip set for
+     * the old one, a length and direction nobody gave it; together, the later stands whole. A sector's corners and a boundary's are lists without ids,
+     * which [PackDiff] sends whole already. The web drags a graphic, which changes both coordinates; it turns a PZ marker by its tip alone.
+     *
+     * What an analysis found is one value too ([analysisWhole]): its boundary, its results, the grid's elevation and the position in words.
+     */
+    override fun keepWhole(ops: List<JsonObject>, after: JsonElement?): List<JsonObject> = analysisWhole(keptWhole(ops, after, WHOLES), after)
+
+    // The view kept on the device, read as the web reads one (a value it does not understand is the default), without the clock.
+    private fun viewOf(diagram: Diagram, view: JsonElement): DiagramView = DiagramNormalizer.normalize(
+        JsonObject(mapOf("view" to view)),
+        DiagramNormalizer.Options(id = diagram.id, createdAt = diagram.createdAt, updatedAt = diagram.updatedAt),
+        env,
+    ).view
+
+    private companion object {
+        // The graphics a place is all there is to: `lat` and `lon`.
+        private val PLACED = setOf("helicopters", "goArounds", "doghouses", "units")
+
+        // `["graphics", collection, {id}]`: a graphic of a collection [collection] accepts.
+        private fun isGraphic(path: JsonArray, collection: (String) -> Boolean): Boolean =
+            path.size == 3 && isField(path[0], "graphics") && path[2] is JsonObject &&
+                (path[1] as? JsonPrimitive)?.takeIf { it.isString }?.content?.let(collection) == true
+
+        val WHOLES = listOf(
+            WholeValue(listOf("lat", "lon", "mgrs")) { path -> path.size == 1 && isField(path[0], "target") },
+            WholeValue(listOf("lat", "lon", "tipLat", "tipLon")) { path -> isGraphic(path) { it == "pzMarkers" } },
+            WholeValue(listOf("lat", "lon")) { path -> isGraphic(path) { it in PLACED } },
+        )
+
+        // What one analysis finds, or a corner deleted from what it found: its boundary, its results, the grid's elevation and the position in words.
+        private val RESULT = listOf("detectedLZ", "results", "gridElevation", "latLong")
+
+        private val ANALYSIS = JsonArray(listOf(JsonPrimitive("analysis")))
+
+        private fun pathOf(op: JsonObject): JsonArray? = op["path"] as? JsonArray
+
+        // A patch of the analysis itself.
+        private fun atAnalysis(op: JsonObject): Boolean =
+            (op["type"] as? JsonPrimitive)?.content == "patch" && pathOf(op)?.let { it.size == 1 && isField(it[0], "analysis") } == true
+
+        // An operation inside one of the result's fields: [PackDiff] follows the results into their object.
+        private fun insideResult(op: JsonObject): Boolean =
+            pathOf(op)?.let { p -> p.size >= 2 && isField(p[0], "analysis") && RESULT.any { isField(p[1], it) } } == true
+
+        /**
+         * [ops] with what an analysis found sent whole: when any of [RESULT] changed, one patch of the analysis carries all four as [after] has them (null
+         * included: no results is a value), in the place of the analysis's own patch (whose other fields it keeps, a drawn boundary cleared with it) or of the
+         * first operation inside the results, which go. [PackDiff] sends only the fields that changed, so two analyses at once, of two boundaries, would
+         * leave the later one's boundary with whatever of the earlier one's results it happened not to change: results measured for another boundary.
+         */
+        fun analysisWhole(ops: List<JsonObject>, after: JsonElement?): List<JsonObject> {
+            val analysis = (after as? JsonObject)?.get("analysis") as? JsonObject ?: return ops
+            val touches = { op: JsonObject -> insideResult(op) || (atAnalysis(op) && (op["value"] as? JsonObject)?.keys?.any { it in RESULT } == true) }
+            if (ops.none(touches)) return ops
+            val anchor = ops.indexOfFirst { atAnalysis(it) }.takeIf { it >= 0 } ?: ops.indexOfFirst(touches)
+            val own = ops[anchor].takeIf(::atAnalysis)?.get("value") as? JsonObject
+            val value = LinkedHashMap<String, JsonElement>(own ?: emptyMap())
+            RESULT.forEach { value[it] = analysis[it] ?: JsonNull }
+            // The operation's own fields (its item, its sentence) stay; it becomes the patch of the analysis.
+            val merged = JsonObject(
+                LinkedHashMap(ops[anchor]).apply {
+                    remove("after")
+                    put("type", JsonPrimitive("patch"))
+                    put("path", ANALYSIS)
+                    put("value", JsonObject(value))
+                },
+            )
+            return ops.mapIndexedNotNull { i, op ->
+                when {
+                    i == anchor -> merged
+                    insideResult(op) -> null
+                    else -> op
+                }
+            }
+        }
+    }
+}
+
+/**
+ * A route set item as a [RouteSet] (usePackRoutes). Each person's own field is which routes they have hidden, by id.
+ *
+ * A [RouteSet]'s routes are typed, and the types cannot hold everything a pack's set can (a plan whose altitude is null, a colour that
+ * is a number, a route with no id): read and written again they would change, and that change would be sent for everyone. So the
+ * shape is worked out on the JSON ([PackRoutes.routeShape]), and a document's shape is the shape of the data it was made from with the
+ * editor's own changes laid over it: the difference between that data read as types and the document, as the operations [PackDiff]
+ * makes, applied to the JSON. What the editor did not change goes back exactly as it came. A route the types cannot read stays in the
+ * set, where it stands, and the editor leaves it alone; unless the editor's document still has a version of it from before the pack's took
+ * that form, which is then measured as the pack has it, so a change to it goes as operations at it.
+ *
+ * A route is never written beside another with its id. Once it was: the types could not read a route with a null in its ground
+ * elevations (a point moved off its fetched ground sends the ground that went as null), so the editor's own copy of it was taken for a new
+ * route, and the set went whole with the route in it twice, each person's later moves landing on a different copy (2026-10-13).
+ *
+ * Two things are written from the types, because nothing else can carry the change:
+ *  - where the types filled in what the data lacks (a plan's altitude, airspeed or per-point values that are null are read as the
+ *    defaults), a change inside it is sent as the editor's whole value of the field the data lacks, at the nearest object it has;
+ *  - where the routes are not a list the operations can address (two with one id, in the pack's set or the editor's), they go whole: each
+ *    route the editor did not change as it came, each left alone in its place, and the rest from the types.
+ */
+public object RoutePackKind : PackKind<RouteSet> {
+    override val kind: String = "route"
+
+    private const val OWN_HIDDEN = "hidden"
+
+    override fun shared(data: JsonElement?): JsonElement = PackRoutes.sharedRouteData(data)
+
+    override fun fromItem(localId: String, item: PackItemView, own: JsonObject?): RouteSet {
+        val hidden = (own?.get(OWN_HIDDEN) as? JsonArray).orEmpty().mapNotNull { (it as? JsonPrimitive)?.takeIf { p -> p.isString }?.contentOrNull }.toSet()
+        val set = RouteSets.parse(localId, null, item.name, PackRoutes.routeShape(item.data))
+        return withHidden(set, hidden)
+    }
+
+    override fun docOf(document: RouteSet, carryFrom: JsonElement?): JsonElement {
+        val shape = PackRoutes.routeShape(carryFrom)
+        val read = RouteSets.parse(document.id, null, document.name, shape)
+        val after = typed(document)
+        val measured = measuredAgainst(shape, read, after)
+        val before = JsonObject(mapOf("routes" to JsonArray(measured.map { it.version })))
+        if (PackDiff.sameData(before, after)) return shape
+        // Two routes with one id: an operation addressed by it reaches the first, whichever of them the editor changed, so they go whole.
+        if (!addressable(shape)) return wholeRoutes(shape, measured, after)
+        var data: JsonElement = shape
+        for (op in PackDiff.diffData(before, after)) {
+            // An operation on the set itself is on its routes, which are then not a list it can address: they go whole. Any other is
+            // never dropped: one that does not apply to the JSON is made coarser until it does.
+            val next = if ((op.getValue("path") as JsonArray).isEmpty()) null else applied(data, op) ?: coarsened(data, op, after)?.let { applied(data, it) }
+            data = next ?: return wholeRoutes(shape, measured, after)
+        }
+        return data
+    }
+
+    override fun nameOf(document: RouteSet): String = document.name
+
+    override fun ownOf(document: RouteSet): JsonObject =
+        JsonObject(mapOf(OWN_HIDDEN to JsonArray(document.routes.filterNot { it.visible }.map { JsonPrimitive(it.id) })))
+
+    override fun withShared(document: RouteSet, shared: JsonElement, name: String): RouteSet {
+        val hidden = document.routes.filterNot { it.visible }.mapTo(HashSet()) { it.id }
+        val set = RouteSets.parse(document.id, document.savedId, name, PackRoutes.routeShape(shared))
+        return withHidden(set, hidden)
+    }
+
+    override fun describe(before: JsonElement?, after: JsonElement?, name: String?, actor: String?): String =
+        PackRoutes.describeRouteChange(before, after, name, actor)
+
+    /**
+     * A point's place is one value: a patch that moves a point of a route in one direction only (each arrow of the nudge pad changes one coordinate)
+     * carries the other coordinate too, as [after] has it. Each field of a patch stands on its own in the pack, the later on each, so a move north here and
+     * a move to a typed grid there would otherwise leave the point at the grid's longitude and this latitude: where nobody put it. The web moves a point by
+     * dragging it, which changes both.
+     *
+     * So is each of a plan's altitude (its number and what it is measured from), speed (its number and kind) and wind (its direction and speed), the
+     * route's and each point's: the route's plan applies them together, and 500 typed here with MSL chosen there would otherwise leave 500 MSL, which
+     * nobody gave. The web sends only the part that changed.
+     *
+     * A point's own values are each their own setting, though: one given to a point that had none ([pointValuesApart]).
+     */
+    override fun keepWhole(ops: List<JsonObject>, after: JsonElement?): List<JsonObject> = pointValuesApart(keptWhole(ops, after, WHOLES))
+
+    // `["routes", {id}, "points", {id}]`: a point of a route.
+    private fun isPointPath(path: JsonArray): Boolean =
+        path.size == 4 && isField(path[0], "routes") && path[1] is JsonObject && isField(path[2], "points") && path[3] is JsonObject
+
+    // `["routes", {id}, "plan", ...]`, [size] long: inside a route's plan.
+    private fun inPlan(path: JsonArray, size: Int): Boolean =
+        path.size == size && isField(path[0], "routes") && path[1] is JsonObject && isField(path[2], "plan")
+
+    // `["routes", {id}, "plan", name]` or `["routes", {id}, "plan", "perPoint", point, name]`: one of a route's plan values, or one of a point's own.
+    private fun isPlanValue(path: JsonArray, name: String): Boolean =
+        (inPlan(path, 4) && isField(path[3], name)) || (inPlan(path, 6) && isField(path[3], "perPoint") && Js.isString(path[4]) && isField(path[5], name))
+
+    // `["routes", {id}, "plan", "perPoint"]`: a route's points' own values.
+    private fun isPerPoint(path: JsonArray): Boolean = inPlan(path, 4) && isField(path[3], "perPoint")
+
+    private val WHOLES = listOf(
+        WholeValue(listOf("lat", "lon"), ::isPointPath),
+        WholeValue(listOf("value", "ref")) { isPlanValue(it, "altitude") },
+        WholeValue(listOf("value", "type")) { isPlanValue(it, "airspeed") },
+        WholeValue(listOf("dirTrue", "speedKts")) { isPlanValue(it, "wind") },
+    )
+
+    /**
+     * [ops] with the values given to a point that had none of its own sent as the settings they are: a patch of a route's `perPoint` gives such a point its
+     * entry whole (an object where there was none), and the later of two people giving one point its first values at once (an altitude here, a wind there)
+     * would replace the other's entry, and lose what they set. Each value of a new entry goes instead as a `set` of its own, which makes the entry where the
+     * pack has none and leaves the rest of one it has. What else the patch carries (an entry that went, sent as null) goes as it was.
+     */
+    private fun pointValuesApart(ops: List<JsonObject>): List<JsonObject> = ops.flatMap { op ->
+        val path = op["path"] as? JsonArray
+        val value = op["value"] as? JsonObject
+        if ((op["type"] as? JsonPrimitive)?.content != "patch" || path == null || value == null || !isPerPoint(path)) return@flatMap listOf(op)
+        // An entry with nothing in it would make nothing: it goes as it is.
+        val entries = value.filterValues { it is JsonObject && it.isNotEmpty() }
+        if (entries.isEmpty()) return@flatMap listOf(op)
+        val rest = value.filterKeys { it !in entries }
+        val kept = if (rest.isEmpty()) emptyList() else listOf(JsonObject(LinkedHashMap(op).apply { put("value", JsonObject(rest)) }))
+        kept + entries.flatMap { (point, entry) ->
+            (entry as JsonObject).map { (field, it) ->
+                // The operation's own fields (its item, its sentence) stay.
+                JsonObject(
+                    LinkedHashMap(op).apply {
+                        put("type", JsonPrimitive("set"))
+                        put("path", JsonArray(path + JsonPrimitive(point) + JsonPrimitive(field)))
+                        put("value", it)
+                    },
+                )
+            }
+        }
+    }
+
+    private const val SET = "set"
+
+    // [data] with [op] applied, or null when it does not apply.
+    private fun applied(data: JsonElement, op: JsonObject): JsonElement? {
+        val result = PackOps.apply(mapOf(SET to PackItemState(kind, "", data, deleted = false)), JsonObject(op + ("item" to JsonPrimitive(SET))))
+        return if (result.status == OpStatus.APPLIED) result.items.getValue(SET).data else null
+    }
+
+    /**
+     * [op], which does not apply to [data], as a patch that does: at the deepest object on its way that [data] has, setting the next field
+     * to the editor's whole value of it ([after]). That field is one the data has as null or not at all, or a list without the element
+     * the change is in. Null when that object is the set itself.
+     */
+    private fun coarsened(data: JsonElement, op: JsonObject, after: JsonElement): JsonObject? {
+        val path = (op.getValue("path") as JsonArray).let { if ((op["type"] as? JsonPrimitive)?.content == "remove") it.dropLast(1) else it.toList() }
+        var node: JsonElement? = data
+        var deepest = -1
+        for ((depth, segment) in path.withIndex()) {
+            if (node is JsonObject && segment is JsonPrimitive) deepest = depth
+            node = stepInto(node, segment) ?: break
+        }
+        if (deepest < 1) return null
+        val value = path.subList(0, deepest + 1).fold<JsonElement, JsonElement?>(after) { at, segment -> stepInto(at, segment) } ?: return null
+        val field = JsonObject(mapOf((path[deepest] as JsonPrimitive).content to value))
+        return JsonObject(linkedMapOf("type" to JsonPrimitive("patch"), "path" to JsonArray(path.subList(0, deepest)), "value" to field))
+    }
+
+    /** A route of the pack's set that the editor's routes are measured against: [json] as the pack has it, and [version], what it is compared as. */
+    private class Measured(val json: JsonElement, val version: JsonElement)
+
+    /**
+     * The routes of the pack's set ([shape]) that the editor's ([after]) are measured against, in their order: each the types read, as they write it; and
+     * one they cannot read only when the editor has a route with its id and the pack has no route with it that they can (the editor's document was made
+     * before the pack's route took a form this version cannot read), as the pack has it. Measured as the types read it there, the editor's route would be a
+     * new one, and be written beside the pack's with the same id; measured as the pack has it, a change to it goes as operations at it. Every other route
+     * the types cannot read is left alone.
+     */
+    private fun measuredAgainst(shape: JsonObject, read: RouteSet, after: JsonObject): List<Measured> {
+        val unreadable = Collections.newSetFromMap(IdentityHashMap<JsonElement, Boolean>()).apply { addAll(read.unreadable) }
+        val readableIds = read.routes.mapTo(HashSet()) { it.id }
+        val editorIds = (after.getValue("routes") as JsonArray).mapNotNullTo(HashSet()) { textId(it) }
+        // Each route the types read, as they wrote it, in the order the pack has them.
+        val typed = (typed(read).getValue("routes") as JsonArray).iterator()
+        val measured = ArrayList<Measured>()
+        val taken = HashSet<String>()
+        for (route in shape.getValue("routes") as JsonArray) {
+            if (route !in unreadable) {
+                measured += Measured(route, typed.next())
+                continue
+            }
+            val id = textId(route) ?: continue
+            if (id in editorIds && id !in readableIds && taken.add(id)) measured += Measured(route, route)
+        }
+        return measured
+    }
+
+    // The id of [route] when it is text, as every route the types can read has one.
+    private fun textId(route: JsonElement): String? = ((route as? JsonObject)?.get("id") as? JsonPrimitive)?.takeIf { it.isString }?.content
+
+    // Whether no two routes of the pack's set share an id: an operation finds a route by its id, and takes the first that has it.
+    private fun addressable(shape: JsonObject): Boolean {
+        val seen = HashSet<String>()
+        return (shape.getValue("routes") as JsonArray).all { route ->
+            val id = (route as? JsonObject)?.get("id")?.takeIf(Js::isId) ?: return@all true
+            seen.add(Js.idKey(id))
+        }
+    }
+
+    // The set with the editor's routes written whole, in the places of the routes they were measured against (any more follow): one the editor did not
+    // change goes back as it came, wherever it now stands, and one left alone (the types could not read it) keeps its place. Each of the editor's routes is
+    // written once, and one left alone has an id none of them has (or one the set already held twice), so no route is ever written a second time.
+    private fun wholeRoutes(shape: JsonObject, measured: List<Measured>, after: JsonObject): JsonObject {
+        val places = Collections.newSetFromMap(IdentityHashMap<JsonElement, Boolean>()).apply { measured.forEach { add(it.json) } }
+        val came = measured.toMutableList()
+        val mine = (after.getValue("routes") as JsonArray).map { edited ->
+            val same = came.indexOfFirst { PackDiff.sameData(it.version, edited) }
+            if (same < 0) edited else came.removeAt(same).json
+        }.iterator()
+        val routes = ArrayList<JsonElement>()
+        for (route in shape.getValue("routes") as JsonArray) {
+            if (route !in places) routes += route else if (mine.hasNext()) routes += mine.next()
+        }
+        mine.forEachRemaining { routes += it }
+        return JsonObject(LinkedHashMap(shape).apply { put("routes", JsonArray(routes)) })
+    }
+
+    private fun withHidden(set: RouteSet, hidden: Set<String>): RouteSet =
+        if (hidden.isEmpty()) set else set.copy(routes = set.routes.map { if (it.id in hidden) it.copy(visible = false) else it })
+
+    // The routes the types could read, as they write them, without each person's own fields: what an editor's change is measured on.
+    private fun typed(set: RouteSet): JsonObject {
+        val written = RouteSets.serialize(set.copy(extras = JsonObject(emptyMap()), unreadable = emptyList())).getValue("routes") as JsonArray
+        val routes = written.map { route -> JsonObject(route.jsonObject - PackRoutes.OWN_ROUTE_FIELDS.toSet()) }
+        return JsonObject(mapOf("routes" to JsonArray(routes)))
+    }
+}

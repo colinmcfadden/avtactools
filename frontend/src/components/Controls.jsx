@@ -2,22 +2,39 @@ import React, { useEffect, useRef, useState } from "react";
 import MissionSummary from "./MissionSummary";
 import AircraftPicker from "../feature/aircraft/AircraftPicker";
 import CoordinateHint from "./CoordinateHint";
+import SlopeOpacityControl from "../feature/terrain/SlopeOpacityControl";
+import { SLOPE_OPACITY } from "../feature/terrain/slopeOpacity";
 import "../feature/aircraft/aircraft.css";
 import { UNIT_TYPES } from "../feature/unit/UnitIcons";
 import { symbolDataUri } from "../feature/symbols/milsym";
 import packageJson from "../../package.json";
+
+/**
+ * What the active LZ/PZ needs next, or what it allows once analysed: the title of a control that is off, so
+ * it says why without a line of text under every button. Where the person may not change it (a finished
+ * Mission Pack, or a viewer of one) the tools stay off, so it does not say they are unlocked.
+ */
+export const diagramReadiness = ({ hasTarget, analyzed, editable = true }) =>
+  !hasTarget
+    ? "Set a target on the map to initialize an LZ/PZ diagram."
+    : !analyzed
+      ? "Target set. Analyze the LZ to unlock planning graphics, export, and save."
+      : editable
+        ? "Analyzed. Planning graphics, export and save are unlocked."
+        : "Analyzed. Read-only here: viewing and export still work.";
 
 const Controls = ({
   aircraftProfiles,
   activeAircraftProfile,
   onSelectAircraft,
   onManageAircraft,
-  onImportMsnx,
   isSketching,
   toggleRouteSketch,
   addHelo,
   showHeatmap,
   setShowHeatmap,
+  slopeOpacity,
+  setSlopeOpacity,
   terrainData,
   addGoAround,
   targetLocation,
@@ -48,12 +65,17 @@ const Controls = ({
   setActiveNotams,
   winds,
   loadingWeather,
+  // The flight data's landing heading (the landing doghouse's), which the slope tile judges.
+  landingHdg,
   // Diagram lifecycle controls. They intentionally default to the legacy
   // behavior so Controls can still be used outside the diagram workspace.
   canAnalyze: canAnalyzeProp,
   canDrawBoundary: canDrawBoundaryProp,
   canUseDiagramTools: canUseDiagramToolsProp,
   canSaveDiagram: canSaveDiagramProp,
+  // Exporting a card changes nothing, so it needs an analysed LZ/PZ but not the right to edit it (a
+  // finished Mission Pack, or a viewer of one, can still export).
+  canExport: canExportProp,
   diagramStatus,
   diagramReadinessText,
   readinessText,
@@ -65,7 +87,6 @@ const Controls = ({
 }) => {
   const can = (key) => features[key] !== false;
   const [showUnitMenu, setShowUnitMenu] = useState(false);
-  const msnxInputRef = useRef(null);
 
   // Collapsed rail: the MGRS input is too narrow to use inline, so a search
   // icon pops out a floating (fixed-position, escaping the panel's clip) input.
@@ -93,6 +114,7 @@ const Controls = ({
     canDrawBoundaryProp !== undefined ||
     canUseDiagramToolsProp !== undefined ||
     canSaveDiagramProp !== undefined ||
+    canExportProp !== undefined ||
     Boolean(diagramStatus) ||
     Boolean(diagramReadinessText) ||
     Boolean(readinessText);
@@ -101,7 +123,7 @@ const Controls = ({
   const canDrawBoundary = canDrawBoundaryProp ?? true;
   const canUseDiagramTools = canUseDiagramToolsProp ?? true;
   const canSaveDiagram = canSaveDiagramProp ?? canUseDiagramTools;
-  const canExport = canUseDiagramTools && canSaveDiagram;
+  const canExport = canExportProp ?? (canUseDiagramTools && canSaveDiagram);
   const readinessMessage =
     diagramReadinessText ??
     readinessText ??
@@ -113,11 +135,8 @@ const Controls = ({
         ? "Analyze the LZ to unlock planning tools."
         : null);
   const analysisEnabled = Boolean(targetLocation) && canAnalyze;
+  const analyzed = diagramStatus === "analyzed";
   const showAnalyzeAction = hasLifecycleProps || legacyCanAnalyze;
-  const diagramStatusLabel =
-    typeof diagramStatus === "string" && diagramStatus.length > 0
-      ? diagramStatus.replace(/[-_]/g, " ").toUpperCase()
-      : "PLAN";
 
   useEffect(() => {
     if (!canUseDiagramTools) {
@@ -152,14 +171,6 @@ const Controls = ({
       document.removeEventListener("keydown", onKey);
     };
   }, [showMgrsPopout]);
-
-  const handleMsnxFileChange = (e) => {
-    const file = e.target.files[0];
-    if (file) {
-      onImportMsnx(file);
-    }
-    e.target.value = "";
-  };
 
   const pzButtonSvg = (
     <svg
@@ -318,6 +329,7 @@ const Controls = ({
               setActiveNotams={setActiveNotams}
               winds={winds}
               loadingWeather={loadingWeather}
+              landingHdg={landingHdg}
             />
           </div>
 
@@ -332,27 +344,14 @@ const Controls = ({
                 title={
                   !analysisEnabled
                     ? readinessMessage || "Set a target on the map before analyzing the LZ."
-                    : "Analyze the active LZ/PZ diagram"
+                    : analyzed
+                      ? "Analyze the active LZ/PZ diagram again"
+                      : "Analyze the active LZ/PZ diagram"
                 }
                 className={`ff-action-btn ff-btn primary ${!analysisEnabled ? "disabled" : ""}`}
               >
-                Analyze the LZ
+                {analyzed ? "Re-analyze" : "Analyze the LZ"}
               </button>
-            </div>
-          )}
-
-          {readinessMessage && (
-            <div
-              className="ff-readiness-text"
-              role="status"
-              style={{
-                color: "#9fb0c8",
-                fontSize: "0.76rem",
-                lineHeight: 1.35,
-                marginTop: "0.65rem",
-              }}
-            >
-              {readinessMessage}
             </div>
           )}
 
@@ -381,6 +380,10 @@ const Controls = ({
               <span>LZ Box</span>
             </div>
           </div>
+          {/* How opaque the slope map is drawn, while it is (this browser's setting, never the plan's). */}
+          {showHeatmap && terrainData?.overlay && setSlopeOpacity && (
+            <SlopeOpacityControl value={slopeOpacity ?? SLOPE_OPACITY.DEFAULT} onChange={setSlopeOpacity} />
+          )}
           {terrainData?.stats && (
             <div className="ff-stat-block">
               <div className="stat-row">
@@ -602,12 +605,11 @@ const Controls = ({
         </div>
         )}
 
-        {/* Routes */}
-        {(can("routes") || can("msnx_import")) && (
+        {/* Routes. Mission files come in through the Import menu, which reviews them first. */}
+        {can("routes") && (
         <div className="ff-card ff-card-routes">
-          <div className="ff-card-header">Routes (.msnx)</div>
+          <div className="ff-card-header">Routes</div>
           <div className="tool-grid">
-            {can("routes") && (
             <button
               onClick={toggleRouteSketch}
               className={`ff-tool-btn ${isSketching ? "active" : ""}`}
@@ -634,37 +636,7 @@ const Controls = ({
                 {isSketching ? "End Route" : "Route"}
               </span>
             </button>
-            )}
-
-            {can("msnx_import") && (
-            <button
-              onClick={() => msnxInputRef.current?.click()}
-              className="ff-tool-btn"
-              title="Import a .msnx mission file"
-            >
-              <svg
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="2"
-                width="24"
-                height="24"
-              >
-                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
-                <polyline points="17 8 12 3 7 8" />
-                <line x1="12" y1="3" x2="12" y2="15" />
-              </svg>
-              <span className="btn-label">Import MSNX</span>
-            </button>
-            )}
           </div>
-          <input
-            ref={msnxInputRef}
-            type="file"
-            accept=".msnx"
-            style={{ display: "none" }}
-            onChange={handleMsnxFileChange}
-          />
         </div>
         )}
 

@@ -193,6 +193,79 @@ def send_password_changed_email(user):
     )
 
 
+def _invite_link(raw_token):
+    return f"{_frontend_url()}/?{urlencode({'invite': raw_token})}"
+
+
+def send_pack_invite_email(to, inviter_name, pack_name, raw_token, has_account):
+    """An invitation to a mission pack. Says only the pack's name: nothing in it."""
+    link = _invite_link(raw_token)
+    who = inviter_name or "Someone"
+    first_step = (
+        "Sign in to EZ-PZ to accept it."
+        if has_account
+        else "Create an EZ-PZ account with this address. Once it is verified and "
+        "cleared for military access, the invitation will be waiting."
+    )
+    return send_email(
+        to,
+        f"{who} invited you to {pack_name} on EZ-PZ",
+        (
+            f"{who} invited you to the mission pack \"{pack_name}\" on EZ-PZ.\n\n"
+            f"{first_step}\n{link}\n\n"
+            "The invitation expires in 14 days. If you were not expecting it, you "
+            "can ignore this message."
+        ),
+        (
+            f"<p>{html.escape(who)} invited you to the mission pack "
+            f"<strong>{html.escape(pack_name)}</strong> on EZ-PZ.</p>"
+            f"<p>{html.escape(first_step)}</p>"
+            f'<p><a href="{html.escape(link, quote=True)}">Open the invitation</a></p>'
+            "<p>The invitation expires in 14 days. If you were not expecting it, "
+            "you can ignore this message.</p>"
+        ),
+    )
+
+
+def send_team_invite_email(to, inviter_name, team_name, raw_token):
+    link = _invite_link(raw_token)
+    who = inviter_name or "Someone"
+    return send_email(
+        to,
+        f"{who} invited you to join {team_name} on EZ-PZ",
+        (
+            f"{who} invited you to join the team \"{team_name}\" on EZ-PZ.\n\n"
+            f"Sign in (or create an account with this address) to accept:\n{link}\n\n"
+            "The invitation expires in 14 days."
+        ),
+        (
+            f"<p>{html.escape(who)} invited you to join the team "
+            f"<strong>{html.escape(team_name)}</strong> on EZ-PZ.</p>"
+            f'<p><a href="{html.escape(link, quote=True)}">Open the invitation</a></p>'
+            "<p>The invitation expires in 14 days.</p>"
+        ),
+    )
+
+
+def send_pack_added_email(user, adder_name, pack_name):
+    who = adder_name or "Someone"
+    safe_name = html.escape(user.name or "there")
+    return send_email(
+        user.email,
+        f"{who} added you to {pack_name} on EZ-PZ",
+        (
+            f"Hello {user.name or 'there'},\n\n"
+            f"{who} added you to the mission pack \"{pack_name}\". It is in your "
+            f"list of packs in EZ-PZ:\n{_frontend_url()}/"
+        ),
+        (
+            f"<p>Hello {safe_name},</p>"
+            f"<p>{html.escape(who)} added you to the mission pack "
+            f"<strong>{html.escape(pack_name)}</strong>. It is in your list of packs in EZ-PZ.</p>"
+        ),
+    )
+
+
 def send_new_account_notification(user):
     recipient = os.environ.get("NEW_ACCOUNT_NOTIFY_EMAIL", "").strip()
     if not recipient:

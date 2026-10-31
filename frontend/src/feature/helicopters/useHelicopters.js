@@ -8,6 +8,87 @@ import {
 } from "../aircraft/aircraftProfiles";
 
 /**
+ * Where a new aircraft goes: the target, nudged east in steps of 0.0001 degrees until it is clear of every aircraft already down,
+ * respecting the separation each pair actually requires (the stricter of the two tip clearances, from each aircraft's own rotor).
+ * Gives up after 50 nudges and places it where it has got to. Pure, and exported so the native apps can be held to it
+ * (contracts/fixtures/planning/graphics.json).
+ */
+export const placeHelicopter = ({ target, helicopters, activeProfile, resolveProfile, id }) => {
+  let finalLat = target[0];
+  let finalLon = target[1];
+  let isClear = false;
+  let attempts = 0;
+  const offsetStep = 0.0001;
+
+  while (!isClear && attempts < 50) {
+    isClear = true;
+    for (const helicopter of helicopters) {
+      const distance = getDistanceFeet(finalLat, finalLon, helicopter.lat, helicopter.lon);
+      const { minCenterDistanceFt } = pairSeparation(activeProfile, resolveProfile(helicopter));
+      if (distance < minCenterDistanceFt) {
+        isClear = false;
+        finalLon += offsetStep;
+        break;
+      }
+    }
+    attempts += 1;
+  }
+
+  return {
+    id,
+    lat: finalLat,
+    lon: finalLon,
+    rotation: 0,
+    type: "helo",
+    // Recorded by slug so the aircraft keeps its identity across databases
+    // and after the master list is renumbered.
+    profileId: activeProfile?.slug || FALLBACK_PROFILE.slug,
+  };
+};
+
+/**
+ * Every pair of aircraft whose rotor tips are closer than the stricter of their two clearances, in the order the pairs are met, with
+ * the message shown for each. Names the platforms when they differ so it is obvious which requirement drives the alert.
+ */
+export const separationAlerts = (helicopters, resolveProfile) => {
+  const alerts = [];
+
+  for (let index = 0; index < helicopters.length; index += 1) {
+    for (let comparisonIndex = index + 1; comparisonIndex < helicopters.length; comparisonIndex += 1) {
+      const firstHelicopter = helicopters[index];
+      const secondHelicopter = helicopters[comparisonIndex];
+      const firstProfile = resolveProfile(firstHelicopter);
+      const secondProfile = resolveProfile(secondHelicopter);
+      const centerDistance = getDistanceFeet(
+        firstHelicopter.lat,
+        firstHelicopter.lon,
+        secondHelicopter.lat,
+        secondHelicopter.lon,
+      );
+      const gap = edgeGapFt(centerDistance, firstProfile, secondProfile);
+      const { requiredClearanceFt } = pairSeparation(firstProfile, secondProfile);
+
+      if (gap < requiredClearanceFt) {
+        const displayDistance = Math.max(0, Math.round(gap));
+        const pair =
+          firstProfile.slug === secondProfile.slug
+            ? firstProfile.designation
+            : `${firstProfile.designation}/${secondProfile.designation}`;
+        alerts.push({
+          id: `${firstHelicopter.id}-${secondHelicopter.id}`,
+          message:
+            `Separation Alert (${pair}): Rotor edges are only ${displayDistance} ft apart ` +
+            `(Min: ${Math.round(requiredClearanceFt)} ft / ` +
+            `${Math.round(Math.max(firstProfile.rotor_tip_clearance_m, secondProfile.rotor_tip_clearance_m))} m).`,
+        });
+      }
+    }
+  }
+
+  return alerts;
+};
+
+/**
  * Placed aircraft and their separation alerts.
  *
  * Each aircraft stores the profile it was placed with (`profileId`, a slug), so
@@ -52,46 +133,13 @@ export const useHelicopters = (targetLocation, options = {}) => {
       return;
     }
 
-    let finalLat = targetLocation[0];
-    let finalLon = targetLocation[1];
-    let isClear = false;
-    let attempts = 0;
-    const offsetStep = 0.0001;
-
-    // Nudge the new aircraft clear of anything already down, respecting the
-    // separation each existing pair actually requires.
-    while (!isClear && attempts < 50) {
-      isClear = true;
-      for (const helicopter of helicopterList) {
-        const distance = getDistanceFeet(
-          finalLat,
-          finalLon,
-          helicopter.lat,
-          helicopter.lon,
-        );
-        const { minCenterDistanceFt } = pairSeparation(
-          activeProfile,
-          resolveProfile(helicopter),
-        );
-        if (distance < minCenterDistanceFt) {
-          isClear = false;
-          finalLon += offsetStep;
-          break;
-        }
-      }
-      attempts += 1;
-    }
-
-    const newHelo = {
+    const newHelo = placeHelicopter({
+      target: targetLocation,
+      helicopters: helicopterList,
+      activeProfile,
+      resolveProfile,
       id: Date.now(),
-      lat: finalLat,
-      lon: finalLon,
-      rotation: 0,
-      type: "helo",
-      // Recorded by slug so the aircraft keeps its identity across databases
-      // and after the master list is renumbered.
-      profileId: activeProfile?.slug || FALLBACK_PROFILE.slug,
-    };
+    });
 
     setHelicopters((previous) => [
       ...(Array.isArray(previous) ? previous : []),
@@ -116,45 +164,7 @@ export const useHelicopters = (targetLocation, options = {}) => {
   };
 
   useEffect(() => {
-    const alerts = [];
-
-    for (let index = 0; index < helicopterList.length; index += 1) {
-      for (
-        let comparisonIndex = index + 1;
-        comparisonIndex < helicopterList.length;
-        comparisonIndex += 1
-      ) {
-        const firstHelicopter = helicopterList[index];
-        const secondHelicopter = helicopterList[comparisonIndex];
-        const firstProfile = resolveProfile(firstHelicopter);
-        const secondProfile = resolveProfile(secondHelicopter);
-        const centerDistance = getDistanceFeet(
-          firstHelicopter.lat,
-          firstHelicopter.lon,
-          secondHelicopter.lat,
-          secondHelicopter.lon,
-        );
-        const gap = edgeGapFt(centerDistance, firstProfile, secondProfile);
-        const { requiredClearanceFt } = pairSeparation(firstProfile, secondProfile);
-
-        if (gap < requiredClearanceFt) {
-          const displayDistance = Math.max(0, Math.round(gap));
-          // Name the platforms when they differ so it's obvious which
-          // requirement is driving the alert.
-          const pair =
-            firstProfile.slug === secondProfile.slug
-              ? firstProfile.designation
-              : `${firstProfile.designation}/${secondProfile.designation}`;
-          alerts.push({
-            id: `${firstHelicopter.id}-${secondHelicopter.id}`,
-            message:
-              `Separation Alert (${pair}): Rotor edges are only ${displayDistance} ft apart ` +
-              `(Min: ${Math.round(requiredClearanceFt)} ft / ` +
-              `${Math.round(Math.max(firstProfile.rotor_tip_clearance_m, secondProfile.rotor_tip_clearance_m))} m).`,
-          });
-        }
-      }
-    }
+    const alerts = separationAlerts(helicopterList, resolveProfile);
 
     setProximityAlerts((previous) => {
       const unchanged =

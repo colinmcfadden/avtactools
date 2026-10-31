@@ -1,0 +1,4493 @@
+openapi: 3.0.3
+info:
+  title: EZ/PZ API (the parts the native apps call)
+  version: 1.3.0
+  description: |
+    The contract between the Flask API and the web and native clients. It holds
+    the routes the apps call, one at a time as each arrives; a route missing from
+    here is not yet something an app may rely on. `backend/tests/test_openapi_contract.py`
+    fails when a response stops matching, so a server change that would break an
+    installed app shows up as a test failure first.
+
+    `version` above is the **API version**, apart from the product's and each app's.
+    Its major is the promise to installed apps, which stay in the field for months:
+    within one major nothing they read or send stops working. Additive changes (a
+    new route, an optional field) bump the minor. A breaking one (a field removed,
+    retyped or made nullable, a new required input, an enum widened in a response)
+    bumps the major: `contracts/scripts/api_version.py check` compares this file with
+    the branch it merges into and fails until it does, and `bump` writes the version
+    the change calls for. `backend/api_version.py` must agree, and lists the majors
+    the server still serves; `/api/config` sends them, and each client build lists
+    the majors it supports (`ezpz.apiMajors` in `android/gradle.properties`,
+    `frontend/src/apiSupport.json`).
+
+    Every route is under `/api`. The base URL is the deployment's (the same host
+    the web app uses); it is not part of the spec.
+servers:
+  - url: https://prod-ezpz-api.mcfadd.in
+    description: Self-hosted production (Coolify behind Cloudflare Tunnel)
+  - url: http://127.0.0.1:5000
+    description: Local development
+
+paths:
+  /api/config:
+    get:
+      operationId: getConfig
+      summary: What an app needs before anyone signs in
+      description: |
+        Public: no token. The same answer for everyone, cached for a minute. Apps
+        read it at launch (never on the startup path to a usable map) and again on
+        resume, to learn whether an update is required, whether there is a
+        maintenance notice, which optional services are up, and which Mapbox public
+        token to use, so the token can rotate without an app release.
+      parameters:
+        - $ref: "#/components/parameters/ClientHeader"
+      responses:
+        "200":
+          description: The configuration.
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                example: public, max-age=60
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Config"
+
+  /api/auth/login:
+    post:
+      operationId: login
+      summary: Sign in with email and password
+      description: |
+        A native app (`X-EZPZ-Client` platform `android` or `ios`) also receives a
+        `refresh_token`, which keeps it signed in while the account is active and the
+        device is used at least once in 30 days. The web, when it sends
+        `X-EZPZ-Session: cookie`, receives its refresh token only as an HttpOnly cookie
+        (`ezpz_refresh`, under `/api/auth`), never in the body.
+      parameters:
+        - $ref: "#/components/parameters/ClientHeader"
+        - $ref: "#/components/parameters/SessionHeader"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, password]
+              properties:
+                email: { type: string }
+                password: { type: string }
+      responses:
+        "200":
+          description: Signed in.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TokenResponse"
+        "401":
+          $ref: "#/components/responses/Error"
+        "429":
+          $ref: "#/components/responses/Error"
+
+  /api/auth/google:
+    post:
+      operationId: googleSignIn
+      summary: Sign in with a Google ID token
+      description: |
+        The token's audience must be one of the server's `GOOGLE_CLIENT_IDS` (the
+        web, Android and iOS clients each have their own). Refresh tokens are given
+        as for `/api/auth/login`.
+      parameters:
+        - $ref: "#/components/parameters/ClientHeader"
+        - $ref: "#/components/parameters/SessionHeader"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [token]
+              properties:
+                token: { type: string }
+      responses:
+        "200":
+          description: Signed in.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TokenResponse"
+        "401":
+          $ref: "#/components/responses/Error"
+
+  /api/auth/register:
+    post:
+      operationId: register
+      summary: Start an account with a name and an email address
+      description: |
+        Registration is email-first: no password is chosen until the address is verified, so an
+        existing address cannot be told apart from a new one (the answer is the same, 202). The
+        emailed link opens `?auth=verify&token=...` on the site, which the app takes as a deep link.
+      parameters:
+        - $ref: "#/components/parameters/ClientHeader"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name, email]
+              properties:
+                name: { type: string, maxLength: 120 }
+                email: { type: string }
+      responses:
+        "202":
+          description: Accepted. If the address could be used, a verification link was emailed.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Accepted"
+        "400":
+          $ref: "#/components/responses/Error"
+        "429":
+          $ref: "#/components/responses/Error"
+
+  /api/auth/verify-email:
+    post:
+      operationId: verifyEmail
+      summary: Confirm an address and set the password, with the token from the emailed link
+      parameters:
+        - $ref: "#/components/parameters/ClientHeader"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [token, password]
+              properties:
+                token: { type: string }
+                password: { type: string }
+      responses:
+        "200":
+          description: Verified. The account can sign in.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Done"
+        "400":
+          $ref: "#/components/responses/Error"
+
+  /api/auth/resend-verification:
+    post:
+      operationId: resendVerification
+      summary: Email the verification link again
+      description: Always 202, whether or not the address has a pending account. At most one link a minute, and three an hour.
+      parameters:
+        - $ref: "#/components/parameters/ClientHeader"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email]
+              properties:
+                email: { type: string }
+      responses:
+        "202":
+          description: Accepted.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Accepted"
+        "429":
+          $ref: "#/components/responses/Error"
+
+  /api/auth/forgot-password:
+    post:
+      operationId: forgotPassword
+      summary: Email a password reset link
+      description: Always 202, whether or not the address has an account.
+      parameters:
+        - $ref: "#/components/parameters/ClientHeader"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email]
+              properties:
+                email: { type: string }
+      responses:
+        "202":
+          description: Accepted.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Accepted"
+        "429":
+          $ref: "#/components/responses/Error"
+
+  /api/auth/reset-password:
+    post:
+      operationId: resetPassword
+      summary: Set a new password with the token from the emailed link
+      description: Ends every other session of the account (the session version is bumped).
+      parameters:
+        - $ref: "#/components/parameters/ClientHeader"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [token, password]
+              properties:
+                token: { type: string }
+                password: { type: string }
+      responses:
+        "200":
+          description: Changed.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Done"
+        "400":
+          $ref: "#/components/responses/Error"
+        "429":
+          $ref: "#/components/responses/Error"
+
+  /api/auth/mil/request:
+    post:
+      operationId: milRequest
+      summary: Email a code to a .mil address, to clear the affiliation gate
+      description: |
+        Any `.mil` address clears the gate. The code lives 30 minutes, and a new request spends the
+        last one. Until its code is entered the address only waits: the account is not trusted with
+        it (an emailed invitation does not reach it there), and an account already cleared stays
+        cleared with the address it confirmed. A `.mil` address clears one account only (409 if it is
+        already verified elsewhere). This route and `/mil/verify` are reachable by a signed-in account
+        that has not cleared the gate.
+      security:
+        - bearer: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email]
+              properties:
+                email: { type: string }
+      responses:
+        "202":
+          description: A code was emailed.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Done"
+        "400":
+          $ref: "#/components/responses/Error"
+        "409":
+          $ref: "#/components/responses/Error"
+        "429":
+          $ref: "#/components/responses/Error"
+
+  /api/auth/mil/verify:
+    post:
+      operationId: milVerify
+      summary: Confirm the emailed code
+      description: |
+        The code proves the address it was sent to, the one asked for last, which becomes the
+        account's `mil_email`. 409 if another account has verified that address meanwhile, or signs
+        in with it and has proven it.
+      security:
+        - bearer: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [code]
+              properties:
+                code: { type: string }
+      responses:
+        "200":
+          description: Cleared. `user.access_ok` is now true.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [status, user]
+                properties:
+                  status: { type: string, enum: [success] }
+                  user:
+                    $ref: "#/components/schemas/User"
+        "400":
+          $ref: "#/components/responses/Error"
+        "409":
+          $ref: "#/components/responses/Error"
+        "429":
+          $ref: "#/components/responses/Error"
+
+  /api/auth/refresh:
+    post:
+      operationId: refresh
+      summary: Swap a refresh token for a new access token and the next refresh token
+      description: |
+        The refresh token is spent: use the new one. If a response is lost, repeating
+        the same request within 30 seconds is safe and is answered again. After that, a
+        spent token coming back signs the device out (`refresh_reuse_detected`): it
+        looks like a copy. A password reset, a suspension or deletion of the account,
+        a sign-out from another device, and 30 days without a refresh all end the
+        session; the answer is 401 (403 `account_unavailable` for a suspension) and the
+        app must ask the user to sign in. There is no other limit: a session in use has
+        no end. (A server before API 1.2 also ended one 180 days after sign-in,
+        `refresh_expired`.)
+
+        A native app sends `refresh_token` in the body and is answered with the next
+        one. The web sends no body token but `X-EZPZ-Session: cookie` and its
+        `ezpz_refresh` cookie, and is answered with a 15-minute access token and the
+        next refresh token as the cookie. Without the header the cookie is not read, which
+        is what keeps a page on another site from spending it. A token is refreshed only
+        the way it was issued. With the header and no cookie the answer is 401
+        `refresh_cookie_missing`: this browser does not keep the cookie.
+      parameters:
+        - $ref: "#/components/parameters/SessionHeader"
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                refresh_token: { type: string, description: A native app's token. The web sends none. }
+      responses:
+        "200":
+          description: A new access token and the next refresh token.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TokenResponse"
+        "401":
+          $ref: "#/components/responses/Error"
+        "403":
+          $ref: "#/components/responses/Error"
+
+  /api/auth/logout:
+    post:
+      operationId: logout
+      summary: End this device's session
+      description: A web session's `ezpz_refresh` cookie, when it is sent, is cleared too.
+      security:
+        - bearer: []
+      responses:
+        "200":
+          description: Signed out. The access token stops working at once.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [status]
+                properties:
+                  status: { type: string, enum: [success] }
+
+  /api/auth/sessions:
+    get:
+      operationId: listSessions
+      summary: The user's signed-in devices
+      security:
+        - bearer: []
+      responses:
+        "200":
+          description: Devices that are still signed in.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [sessions]
+                properties:
+                  sessions:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/Session"
+
+  /api/auth/sessions/{id}:
+    delete:
+      operationId: revokeSession
+      summary: Sign one of the user's devices out
+      description: Its access token stops working at once. 404 for a session that is not the caller's.
+      security:
+        - bearer: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: Signed out.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [status]
+                properties:
+                  status: { type: string, enum: [success] }
+        "404":
+          $ref: "#/components/responses/Error"
+
+  /api/auth/me:
+    get:
+      operationId: me
+      summary: The signed-in user
+      security:
+        - bearer: []
+      responses:
+        "200":
+          description: The user.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/User"
+    delete:
+      operationId: deleteAccount
+      summary: Delete the account and everything saved under it
+      description: |
+        Required by the app stores. Irreversible. The body must carry `confirm: "DELETE"`
+        and proof of ownership now: the `password`, or for a Google-only account a fresh
+        Google ID token as `google_token`. A token alone is not proof. The super-admin
+        account cannot be deleted (403 `super_admin_protected`).
+      security:
+        - bearer: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [confirm]
+              properties:
+                confirm: { type: string, enum: [DELETE] }
+                password: { type: string }
+                google_token: { type: string }
+      responses:
+        "200":
+          description: Deleted.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [status, message]
+                properties:
+                  status: { type: string, enum: [success] }
+                  message: { type: string }
+        "400":
+          $ref: "#/components/responses/Error"
+        "401":
+          $ref: "#/components/responses/Error"
+        "403":
+          $ref: "#/components/responses/Error"
+
+  /api/sync/changes:
+    get:
+      operationId: syncChanges
+      summary: Everything of the caller's that changed after a cursor, deletions included
+      description: |
+        How a device catches up. Send `since=0` the first time; keep the returned
+        `cursor` and send it back as `since` next time. While `has_more` is true, ask
+        again at once. The order is a per-user counter, not a timestamp, so a change
+        is never skipped and none is returned twice, even for edits that race.
+
+        A deleted record arrives as a tombstone (`deleted: true`, empty `data`); the
+        identity (`client_uuid`) survives so the device knows which local record to
+        remove. Never cached.
+      security:
+        - bearer: []
+      parameters:
+        - name: since
+          in: query
+          schema: { type: integer, minimum: 0, default: 0 }
+        - name: limit
+          in: query
+          description: Page size, 1 to 500. A larger request is clamped.
+          schema: { type: integer, minimum: 1, default: 100 }
+      responses:
+        "200":
+          description: A page of changes, oldest first.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ChangeFeed"
+        "400":
+          $ref: "#/components/responses/SimpleError"
+
+  /api/lz:
+    get:
+      operationId: listLzs
+      summary: The caller's saved LZs (summaries, without deleted ones)
+      security:
+        - bearer: []
+      responses:
+        "200":
+          description: Summaries, newest edit first.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/LzSummary"
+    post:
+      operationId: createLz
+      summary: Save an LZ
+      description: |
+        Send `client_uuid`, a UUID the device chose, so a retry after a lost response
+        returns the first record (200) instead of making a second (201).
+      security:
+        - bearer: []
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name, lz_data]
+              properties:
+                name: { type: string }
+                lz_data: { description: "The diagram document (schema 2).", type: object }
+                client_uuid: { type: string }
+      responses:
+        "201":
+          description: Created.
+          headers:
+            ETag: { $ref: "#/components/headers/ETag" }
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LzSummary"
+        "200":
+          description: A record with this `client_uuid` already existed; here it is.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LzSummary"
+        "400":
+          $ref: "#/components/responses/SimpleError"
+
+  /api/lz/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema: { type: integer }
+    get:
+      operationId: getLz
+      summary: One saved LZ, with its diagram
+      security:
+        - bearer: []
+      responses:
+        "200":
+          description: The record.
+          headers:
+            ETag: { $ref: "#/components/headers/ETag" }
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LzFull"
+        "404":
+          $ref: "#/components/responses/SimpleError"
+    put:
+      operationId: updateLz
+      summary: Edit a saved LZ
+      description: |
+        Send `If-Match: "<revision>"` with the revision the edit was based on. If the
+        server has moved on, nothing is overwritten and the server's copy comes back
+        with 409 (`revision_conflict`): keep the local one beside it for the user to
+        resolve. Without `If-Match` the last writer wins, as the web app always has.
+        A retry carrying the same `Idempotency-Key` is recognised and answered, not
+        refused as a conflict with itself.
+      security:
+        - bearer: []
+      parameters:
+        - $ref: "#/components/parameters/IfMatch"
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name: { type: string }
+                lz_data: { type: object }
+      responses:
+        "200":
+          description: Saved (or recognised as a retry).
+          headers:
+            ETag: { $ref: "#/components/headers/ETag" }
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LzSummary"
+        "400":
+          $ref: "#/components/responses/SimpleError"
+        "404":
+          $ref: "#/components/responses/SimpleError"
+        "409":
+          $ref: "#/components/responses/Conflict"
+    delete:
+      operationId: deleteLz
+      summary: Delete a saved LZ
+      description: |
+        Leaves a tombstone, with the content gone, so devices learn of the deletion
+        through `/api/sync/changes`. Deleting twice is not an error. A stale
+        `If-Match` is a 409 and deletes nothing.
+      security:
+        - bearer: []
+      parameters:
+        - $ref: "#/components/parameters/IfMatch"
+        - $ref: "#/components/parameters/IdempotencyKey"
+      responses:
+        "200":
+          description: Deleted.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [status]
+                properties:
+                  status: { type: string, enum: [deleted] }
+                  revision: { type: integer }
+        "404":
+          $ref: "#/components/responses/SimpleError"
+        "409":
+          $ref: "#/components/responses/Conflict"
+
+  /api/routes:
+    get:
+      operationId: listRoutes
+      summary: The caller's saved routes (summaries, without deleted ones)
+      security:
+        - bearer: []
+      responses:
+        "200":
+          description: Summaries, newest edit first.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/RouteSummary"
+    post:
+      operationId: createRoute
+      summary: Save a set of sketched routes
+      description: |
+        `multipart/form-data`, as the web sends it: `name`, `route_data` (a JSON document, as text) and
+        `kind` (`sketch`, the default). A `mission` save also needs the `msnx` file part, which the apps
+        do not send yet. Send `client_uuid`, a UUID the device chose, so a retry after a lost response
+        returns the first record (200) instead of making a second (201).
+      security:
+        - bearer: []
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [name, route_data]
+              properties:
+                name: { type: string }
+                kind: { type: string, enum: [sketch, mission] }
+                route_data: { type: string, description: "A JSON document: `{ version: 1, routes: [...] }`, the sketched routes (see contracts/fixtures/routes)." }
+                client_uuid: { type: string }
+                msnx: { type: string, format: binary, description: "Mission saves only." }
+      responses:
+        "201":
+          description: Created.
+          headers:
+            ETag: { $ref: "#/components/headers/ETag" }
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RouteSummary"
+        "200":
+          description: A record with this `client_uuid` already existed; here it is.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RouteSummary"
+        "400":
+          $ref: "#/components/responses/SimpleError"
+
+  /api/routes/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema: { type: integer }
+    get:
+      operationId: getRoute
+      summary: One saved route set, with its routes
+      security:
+        - bearer: []
+      responses:
+        "200":
+          description: The record.
+          headers:
+            ETag: { $ref: "#/components/headers/ETag" }
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RouteFull"
+        "404":
+          $ref: "#/components/responses/SimpleError"
+    put:
+      operationId: updateRoute
+      summary: Edit a saved route set
+      description: |
+        `multipart/form-data` with the same fields as a create; only what is sent is changed, and the kind is
+        fixed at creation. Send `If-Match: "<revision>"` with the revision the edit was based on: if the server
+        has moved on, nothing is overwritten and the server's copy comes back with 409 (`revision_conflict`).
+        Without `If-Match` the last writer wins, as the web app always has.
+      security:
+        - bearer: []
+      parameters:
+        - $ref: "#/components/parameters/IfMatch"
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              properties:
+                name: { type: string }
+                route_data: { type: string }
+                msnx: { type: string, format: binary }
+      responses:
+        "200":
+          description: Saved (or recognised as a retry).
+          headers:
+            ETag: { $ref: "#/components/headers/ETag" }
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RouteSummary"
+        "400":
+          $ref: "#/components/responses/SimpleError"
+        "404":
+          $ref: "#/components/responses/SimpleError"
+        "409":
+          $ref: "#/components/responses/RouteConflict"
+    delete:
+      operationId: deleteRoute
+      summary: Delete a saved route set
+      description: |
+        Leaves a tombstone, with the content (and the mission file) gone, so devices learn of the deletion
+        through `/api/sync/changes`. Deleting twice is not an error. A stale `If-Match` is a 409 and deletes nothing.
+      security:
+        - bearer: []
+      parameters:
+        - $ref: "#/components/parameters/IfMatch"
+        - $ref: "#/components/parameters/IdempotencyKey"
+      responses:
+        "200":
+          description: Deleted.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [status]
+                properties:
+                  status: { type: string, enum: [deleted] }
+                  revision: { type: integer }
+        "404":
+          $ref: "#/components/responses/SimpleError"
+        "409":
+          $ref: "#/components/responses/RouteConflict"
+
+  /api/pointsets:
+    get:
+      operationId: listPointSets
+      summary: The caller's saved local point sets (summaries, without deleted ones)
+      security:
+        - bearer: []
+      responses:
+        "200":
+          description: Summaries, newest edit first.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/PointSetSummary"
+    post:
+      operationId: createPointSet
+      summary: Save a set of local points
+      description: |
+        A set has at least one point. Send `client_uuid`, a UUID the device chose, so a retry after a lost
+        response returns the first record (200) instead of making a second (201). The colour and whether a
+        set is shown on the map are not saved: each device keeps its own.
+      security:
+        - bearer: []
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name, points]
+              properties:
+                name: { type: string }
+                points: { $ref: "#/components/schemas/PointList" }
+                client_uuid: { type: string }
+      responses:
+        "201":
+          description: Created.
+          headers:
+            ETag: { $ref: "#/components/headers/ETag" }
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PointSetSummary"
+        "200":
+          description: A record with this `client_uuid` already existed; here it is.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PointSetSummary"
+        "400":
+          $ref: "#/components/responses/SimpleError"
+
+  /api/pointsets/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema: { type: integer }
+    get:
+      operationId: getPointSet
+      summary: One saved point set, with its points
+      security:
+        - bearer: []
+      responses:
+        "200":
+          description: The record.
+          headers:
+            ETag: { $ref: "#/components/headers/ETag" }
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PointSetFull"
+        "404":
+          $ref: "#/components/responses/SimpleError"
+    put:
+      operationId: updatePointSet
+      summary: Edit a saved point set
+      description: |
+        Only what is sent is changed (a name or points that are empty are ignored). Send `If-Match: "<revision>"`
+        with the revision the edit was based on: if the server has moved on, nothing is overwritten and the
+        server's copy comes back with 409 (`revision_conflict`). Without `If-Match` the last writer wins, as the
+        web app always has.
+      security:
+        - bearer: []
+      parameters:
+        - $ref: "#/components/parameters/IfMatch"
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name: { type: string }
+                points: { $ref: "#/components/schemas/PointList" }
+      responses:
+        "200":
+          description: Saved (or recognised as a retry).
+          headers:
+            ETag: { $ref: "#/components/headers/ETag" }
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PointSetSummary"
+        "404":
+          $ref: "#/components/responses/SimpleError"
+        "409":
+          $ref: "#/components/responses/PointSetConflict"
+    delete:
+      operationId: deletePointSet
+      summary: Delete a saved point set
+      description: |
+        Leaves a tombstone, with the points gone, so devices learn of the deletion through
+        `/api/sync/changes`. Deleting twice is not an error. A stale `If-Match` is a 409 and deletes nothing.
+      security:
+        - bearer: []
+      parameters:
+        - $ref: "#/components/parameters/IfMatch"
+        - $ref: "#/components/parameters/IdempotencyKey"
+      responses:
+        "200":
+          description: Deleted.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [status]
+                properties:
+                  status: { type: string, enum: [deleted] }
+                  revision: { type: integer }
+        "404":
+          $ref: "#/components/responses/SimpleError"
+        "409":
+          $ref: "#/components/responses/PointSetConflict"
+
+  /api/briefs:
+    get:
+      operationId: listBriefs
+      summary: The caller's saved mission briefs (summaries, without deleted ones)
+      description: |
+        A brief kept in the Library, outside a mission pack (docs/MISSION_BRIEF.md §3). Every `/api/briefs` route needs
+        the `mission_brief` entitlement and answers 403 `feature_disabled` without it; a create or an edit needs
+        `cloud_save` too.
+      security:
+        - bearer: []
+      responses:
+        "200":
+          description: Summaries, newest edit first.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/BriefSummary"
+    post:
+      operationId: createBrief
+      summary: Save a mission brief
+      description: |
+        As `POST /api/lz`: send `client_uuid`, a UUID the device chose, so a retry after a lost response returns the
+        first record (200) instead of making a second (201). `data` is the brief document; the server does not look
+        inside it.
+      security:
+        - bearer: []
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name, data]
+              properties:
+                name: { type: string, minLength: 1, maxLength: 100 }
+                data: { description: "The brief document (docs/MISSION_BRIEF.md §2.2).", type: object }
+                client_uuid: { type: string }
+      responses:
+        "201":
+          description: Created.
+          headers:
+            ETag: { $ref: "#/components/headers/ETag" }
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BriefSummary"
+        "200":
+          description: A record with this `client_uuid` already existed; here it is.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BriefSummary"
+        "400":
+          $ref: "#/components/responses/SimpleError"
+
+  /api/briefs/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema: { type: integer }
+    get:
+      operationId: getBrief
+      summary: One saved mission brief, with its document
+      security:
+        - bearer: []
+      responses:
+        "200":
+          description: The record.
+          headers:
+            ETag: { $ref: "#/components/headers/ETag" }
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BriefFull"
+        "404":
+          $ref: "#/components/responses/SimpleError"
+    put:
+      operationId: updateBrief
+      summary: Edit a saved mission brief
+      description: |
+        As `PUT /api/lz/{id}`: send `If-Match: "<revision>"`; a server that has moved on overwrites nothing and answers
+        409 with its copy. Without `If-Match` the last writer wins. A retry with the same `Idempotency-Key` is answered,
+        not refused. Only what is sent changes.
+      security:
+        - bearer: []
+      parameters:
+        - $ref: "#/components/parameters/IfMatch"
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name: { type: string, minLength: 1, maxLength: 100 }
+                data: { type: object }
+      responses:
+        "200":
+          description: Saved (or recognised as a retry, which answers the whole record).
+          headers:
+            ETag: { $ref: "#/components/headers/ETag" }
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BriefSummary"
+        "400":
+          $ref: "#/components/responses/SimpleError"
+        "404":
+          $ref: "#/components/responses/SimpleError"
+        "409":
+          $ref: "#/components/responses/BriefConflict"
+    delete:
+      operationId: deleteBrief
+      summary: Delete a saved mission brief
+      description: |
+        Leaves a tombstone, with the content gone, so devices learn of the deletion through `/api/sync/changes`.
+        Deleting twice is not an error. A stale `If-Match` is a 409 and deletes nothing.
+      security:
+        - bearer: []
+      parameters:
+        - $ref: "#/components/parameters/IfMatch"
+        - $ref: "#/components/parameters/IdempotencyKey"
+      responses:
+        "200":
+          description: Deleted.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [status]
+                properties:
+                  status: { type: string, enum: [deleted] }
+                  revision: { type: integer }
+        "404":
+          $ref: "#/components/responses/SimpleError"
+        "409":
+          $ref: "#/components/responses/BriefConflict"
+
+  /api/brief/pdf:
+    post:
+      operationId: printBrief
+      summary: Print a mission brief as a PDF
+      description: |
+        The brief the client compiled (compileBrief's model: docs/MISSION_BRIEF.md §2.3) laid out as pages and printed
+        by Gotenberg on the server (§2.7): its figures drawn from the model's geometry over the base map
+        `options.figureMap` names, on the paper `options.paper` names. Its strip charts (`model.strips`, each with the MGRS
+        grid the client adds as `grid`) are drawn turned course up on the map `options.stripMap` names; a strip that is
+        not the printed 5.5 by 21.5 cm at its scale, or will not draw, is left out. Nothing is kept: neither the model nor
+        the PDF.
+        Needs `mission_brief`. A heavy request: other work on the server waits for it.
+      security:
+        - bearer: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [model]
+              properties:
+                model: { description: "The compiled brief (format ezpz-brief-model).", type: object }
+      responses:
+        "200":
+          description: The PDF, as an attachment.
+          content:
+            application/pdf:
+              schema: { type: string, format: binary }
+        "400":
+          description: "`invalid_brief`: the body is not a brief model."
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SimpleError" }
+        "403":
+          description: "`feature_disabled`."
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SimpleError" }
+        "413":
+          description: "`too_large`: more than 4 MB."
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SimpleError" }
+        "502":
+          description: "`pdf_failed`: Gotenberg did not print it."
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SimpleError" }
+        "503":
+          description: "`pdf_unavailable`: this server has no Gotenberg (`GOTENBERG_URL`)."
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SimpleError" }
+  /api/weather:
+    get:
+      operationId: weather
+      summary: "The weather at a position, from the nearest station's report and the NOTAMs around it"
+      description: |
+        Looks up the nearest METAR within a degree or so of the position and the FAA NOTAMs within 10 nm. The services behind it are other people's, so
+        the answer is **always 200** with what could be had: when no station answers, `station_id` is `TIMEOUT`, the numbers are null and `pressure` is
+        `"--"`; when the NOTAM search is down, `notams` is a sentence instead of an object. A caller shows both without treating them as errors.
+
+        With `at`, a planned time (a brief's, docs/MISSION_BRIEF.md §2.5), the answer is for then: a time more than 30 minutes ahead is answered
+        from the nearest TAF with a period covering it (`kind: "forecast"`, its station in `station_id`, the period in `valid_from` and
+        `valid_to`, and no temperature, dew point or METAR, which a TAF does not give); a time sooner, in the past, or that no TAF nearby covers,
+        from the latest METAR as without `at` (`kind: "observation"`, with the report's time in `observed`). The NOTAMs are those in force now
+        either way. Without `at` the answer is exactly as it always was, with none of these fields.
+      security:
+        - bearer: []
+      parameters:
+        - name: lat
+          in: query
+          required: true
+          schema: { type: number }
+        - name: lng
+          in: query
+          required: true
+          schema: { type: number }
+        - name: at
+          in: query
+          required: false
+          description: An ISO 8601 time, e.g. `2026-10-16T14:30:00Z`; one without an offset is UTC. Anything else is 400 `invalid_at`.
+          schema: { type: string, maxLength: 40 }
+      responses:
+        "200":
+          description: The report.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WeatherReport"
+        "400":
+          $ref: "#/components/responses/SimpleError"
+        "500":
+          $ref: "#/components/responses/SimpleError"
+
+  /api/aircraft-profiles:
+    get:
+      operationId: listAircraftProfiles
+      summary: The master aircraft list, then the caller's own profiles
+      description: |
+        Active master profiles (`is_system: true`, the admin's list) followed by the
+        caller's own live profiles. Only the caller's own carry `client_uuid` and
+        `revision`: the master list does not sync, so a device refetches it.
+      security:
+        - bearer: []
+      responses:
+        "200":
+          description: Master profiles first, then the caller's.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/AircraftProfile"
+    post:
+      operationId: createAircraftProfile
+      summary: Make a custom aircraft profile
+      description: |
+        Needs the `aircraft_profiles` entitlement. Anything left out takes a default.
+        Send `client_uuid` so a retry after a lost response returns the first profile
+        (200) instead of making a second (201). `perf_source`, `is_active` and
+        `sort_order` are the admin's and are ignored here.
+      security:
+        - bearer: []
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AircraftProfileInput"
+      responses:
+        "201":
+          description: Created.
+          headers:
+            ETag: { $ref: "#/components/headers/ETag" }
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AircraftProfile"
+        "200":
+          description: A profile with this `client_uuid` already existed; here it is.
+          headers:
+            ETag: { $ref: "#/components/headers/ETag" }
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AircraftProfile"
+        "400":
+          $ref: "#/components/responses/AircraftError"
+        "403":
+          $ref: "#/components/responses/SimpleError"
+
+  /api/aircraft-profiles/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema: { type: integer }
+    put:
+      operationId: updateAircraftProfile
+      summary: Edit one of the caller's own profiles
+      description: |
+        Only what is sent changes. `If-Match`, conflicts and `Idempotency-Key` work as
+        they do for a saved LZ. A master profile, or another user's, is a 404.
+      security:
+        - bearer: []
+      parameters:
+        - $ref: "#/components/parameters/IfMatch"
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AircraftProfileInput"
+      responses:
+        "200":
+          description: Saved (or recognised as a retry).
+          headers:
+            ETag: { $ref: "#/components/headers/ETag" }
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AircraftProfile"
+        "400":
+          $ref: "#/components/responses/AircraftError"
+        "403":
+          $ref: "#/components/responses/SimpleError"
+        "404":
+          $ref: "#/components/responses/SimpleError"
+        "409":
+          $ref: "#/components/responses/AircraftConflict"
+    delete:
+      operationId: deleteAircraftProfile
+      summary: Delete one of the caller's own profiles
+      description: |
+        Leaves a tombstone, with the airframe's details and any AMPS bytes gone, so
+        devices learn of the deletion through `/api/sync/changes`. Deleting twice is
+        not an error. A stale `If-Match` is a 409 and deletes nothing.
+      security:
+        - bearer: []
+      parameters:
+        - $ref: "#/components/parameters/IfMatch"
+        - $ref: "#/components/parameters/IdempotencyKey"
+      responses:
+        "200":
+          description: Deleted.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [status]
+                properties:
+                  status: { type: string, enum: [deleted] }
+                  revision: { type: integer }
+        "403":
+          $ref: "#/components/responses/SimpleError"
+        "404":
+          $ref: "#/components/responses/SimpleError"
+        "409":
+          $ref: "#/components/responses/AircraftConflict"
+
+  /api/analyze-field:
+    post:
+      operationId: analyzeField
+      summary: Find the landing area around a target, and the ground elevation there
+      description: |
+        Runs the segmentation model on the satellite tile around `lat`/`lon` and returns the area
+        it finds as a polygon (`suggested_lz`, `[lat, lon]` pairs), with the ground elevation in
+        feet as a string (`"TBD"` when the elevation service could not be reached). One analysis
+        runs at a time on the server, and it can take many seconds: an app shows progress and may
+        stop waiting. A failure is `{status: "error", message}`, a shape of its own that this route
+        has always had.
+      security:
+        - bearer: []
+      parameters:
+        - $ref: "#/components/parameters/ClientHeader"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [lat, lon]
+              properties:
+                lat: { type: number }
+                lon: { type: number }
+      responses:
+        "200":
+          description: An area was found.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FieldAnalysis"
+        "400":
+          $ref: "#/components/responses/FieldError"
+        "500":
+          $ref: "#/components/responses/FieldError"
+
+  /api/terrain-analysis:
+    post:
+      operationId: terrainAnalysis
+      summary: Slope over a landing-zone boundary
+      description: |
+        Slope from the best terrain source that covers the polygon, clipped to it: a transparent
+        banded raster (`overlay`, a PNG data URI) placed at `bounds`, statistics over the polygon,
+        the steepest nose-high, nose-low and cross slope for every whole heading (`byHeading`), and,
+        when a `landingHeading` is given, the nose-high, nose-low and cross-slope summary for that
+        heading against the UH-60 limits in `thresholds`. `directional` is null without a heading.
+        Errors are `{error}`.
+      security:
+        - bearer: []
+      parameters:
+        - $ref: "#/components/parameters/ClientHeader"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [polygon]
+              properties:
+                polygon:
+                  type: array
+                  description: At least three `[lat, lon]` pairs.
+                  items:
+                    type: array
+                    items: { type: number }
+                landingHeading:
+                  type: number
+                  nullable: true
+                  description: Degrees true. Absent or null for no directional summary.
+      responses:
+        "200":
+          description: The analysis.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TerrainAnalysis"
+        "400":
+          $ref: "#/components/responses/SimpleError"
+        "500":
+          $ref: "#/components/responses/SimpleError"
+        "502":
+          $ref: "#/components/responses/SimpleError"
+
+  /api/threat-mask:
+    post:
+      operationId: threatMask
+      summary: What a threat's radars can see over the terrain
+      description: |
+        A viewshed for each radar that asks for a mask (`showMask`), over the open Terrarium elevation tiles: where an aircraft flying at each of the radar's altitude bands (`bands`,
+        those that are `viewable`) is in line of sight of its antenna, with earth curvature and refraction, as a coloured PNG (`png`, a data URI) over `bounds`. A radar that does not ask,
+        or has no viewable band, or sees nothing, has no entry. **The position and radars are used for this one answer and are not kept**: nothing is written, and the app asks only when
+        the person presses the button, since threats are otherwise never sent anywhere. Errors are `{error}`.
+      security:
+        - bearer: []
+      parameters:
+        - $ref: "#/components/parameters/ClientHeader"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [lat, lon, radars]
+              properties:
+                lat: { type: number }
+                lon: { type: number }
+                radars:
+                  type: array
+                  minItems: 1
+                  items:
+                    $ref: "#/components/schemas/ThreatRadar"
+      responses:
+        "200":
+          description: The masks. `radars` is empty when no radar had anything to show.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ThreatMask"
+        "400":
+          $ref: "#/components/responses/SimpleError"
+        "500":
+          $ref: "#/components/responses/SimpleError"
+        "502":
+          $ref: "#/components/responses/SimpleError"
+
+  /api/elevations:
+    post:
+      operationId: elevations
+      summary: Ground elevation at each of a route's points
+      description: |
+        Samples the open Terrarium elevation tiles on the server, in whole feet, one answer for each point in
+        the order sent. A point whose tile could not be read is `null`. A failure while sampling is
+        still a 200 with `error` set and every elevation `null`, which an app treats the same as no
+        answer: planning goes on without ground elevations. No points is an empty list.
+      security:
+        - bearer: []
+      parameters:
+        - $ref: "#/components/parameters/ClientHeader"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [points]
+              properties:
+                points:
+                  type: array
+                  items:
+                    type: object
+                    required: [lat, lon]
+                    properties:
+                      lat: { type: number }
+                      lon: { type: number }
+      responses:
+        "200":
+          description: The elevations.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [elevationsFt]
+                properties:
+                  elevationsFt:
+                    type: array
+                    items: { type: integer, nullable: true }
+                  error:
+                    type: string
+                    description: Set when sampling failed; every elevation is then null.
+        "400":
+          $ref: "#/components/responses/SimpleError"
+
+  /api/route-winds:
+    post:
+      operationId: routeWinds
+      summary: Wind at each of a route's points, from the nearest weather station
+      description: |
+        For each point the nearest station is used. A point wanted more than about 30 minutes from now
+        takes its wind from that station's forecast (`source: TAF`); any other point from the latest
+        observation (`METAR`). A point with no station in reach is left out of `winds`. `time` is an ISO
+        instant in UTC, or absent. `dirTrue` is where the wind blows FROM, 0 when it is variable (then
+        `variable` is true).
+      security:
+        - bearer: []
+      parameters:
+        - $ref: "#/components/parameters/ClientHeader"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [points]
+              properties:
+                points:
+                  type: array
+                  items:
+                    type: object
+                    required: [id, lat, lon]
+                    properties:
+                      id: { type: string }
+                      lat: { type: number }
+                      lon: { type: number }
+                      time: { type: string, nullable: true }
+      responses:
+        "200":
+          description: The winds, by point id.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [winds]
+                properties:
+                  winds:
+                    type: object
+                    additionalProperties:
+                      $ref: "#/components/schemas/PointWind"
+        "500":
+          $ref: "#/components/responses/SimpleError"
+
+  # -- The 3D LZ view (docs/ANDROID_3D_PLAN.md) -------------------------------------------
+  # Coordinates only ever travel in POST bodies. A build's progress and a tileset's files are
+  # addressed by an opaque key, so where an LZ is never lands in a URL or a request log.
+
+  /api/lidar/resolve:
+    post:
+      operationId: lidarResolve
+      summary: The point cloud that covers a place, and whether it is built
+      description: |
+        The key of a built tileset whose area holds the place (nearest centre first), else the key a
+        build of it would have. Built: `available` is true, `url` is the tileset's root and `contextUrl`
+        a thinned ring round it (null when none was built). Both are relative to the API's root, as
+        `/lidar/tilesets/<key>/tileset.json`: the app puts its own base in front (the web's base ends in
+        `/api`, so these must not repeat it). Not built: `available` is false, `canBuild` says whether
+        `POST /api/lidar/build` can do anything on this server, and `target` echoes the caller's own
+        place, so a client can say what to build. `radius_m` is 50 to 2,000 (default 500).
+
+        Streamed (docs/DATA_ADMIN_AND_PREBUILT_3D_PLAN.md, Part C): a client that sends `stream: true`
+        and whose place nothing built covers is answered, where this server streams and USGS has a
+        survey there, with that survey's tileset, `streamed: true` and `frame`. The tileset is a whole
+        survey, a state's octree, so the client opens the view, and its *LZ* button, on `frame` (the
+        caller's place, its radius and the ground's ellipsoidal height there, null where nothing says
+        it), never on the tileset's own sphere. A client that does not send it is answered as before.
+      security:
+        - bearer: []
+      parameters:
+        - $ref: "#/components/parameters/ClientHeader"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/LidarTarget"
+      responses:
+        "200":
+          description: The key, and the tileset's place when it is built.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LidarResolve"
+        "400":
+          $ref: "#/components/responses/SimpleError"
+
+  /api/lidar/build:
+    post:
+      operationId: lidarBuild
+      summary: Ask for a point cloud to be built
+      description: |
+        Idempotent: asking again while a build is queued or running answers that build, and a place
+        already built answers 200 with `state: done` and the tileset's place (as `resolve` gives it).
+        Otherwise the build service queues it and the answer is 202 with the job. `watcher` is an
+        opaque id of whoever waits (`^[A-Za-z0-9_-]{8,64}$`; anything else is dropped): the service
+        drops a build nobody has asked after for 90 s, unless `keep` (a saved LZ/PZ) asks it to finish
+        regardless. Builds someone is watching run first. `radius_m` is 50 to 1,000 here. Without a
+        build service: 503 `builder_not_configured`; the service unreachable: 503 `builder_unavailable`;
+        its queue full: 429 `builder_busy`.
+      security:
+        - bearer: []
+      parameters:
+        - $ref: "#/components/parameters/ClientHeader"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [lat, lon]
+              properties:
+                lat: { type: number }
+                lon: { type: number }
+                radius_m: { type: number, minimum: 50, maximum: 1000 }
+                keep: { type: boolean, description: "Finish the build even once nobody waits for it." }
+                watcher: { type: string }
+      responses:
+        "200":
+          description: The place is built already.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LidarBuild"
+        "202":
+          description: The build, queued or under way.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LidarBuild"
+        "400":
+          $ref: "#/components/responses/SimpleError"
+        "429":
+          $ref: "#/components/responses/SimpleError"
+        "503":
+          $ref: "#/components/responses/SimpleError"
+
+  /api/lidar/build/{key}:
+    get:
+      operationId: lidarBuildStatus
+      summary: How a build is going
+      description: |
+        Asking counts as still waiting for it (polled every 3 s while someone waits). `keep=1` marks it
+        to be finished regardless, as when the LZ/PZ was saved while it built. A build the service has
+        no record of is 404 `no_build` (a restarted service forgets its queue: ask for the build again).
+        Done: `state: done` with the tileset's place.
+      security:
+        - bearer: []
+      parameters:
+        - $ref: "#/components/parameters/ClientHeader"
+        - $ref: "#/components/parameters/LidarKey"
+        - $ref: "#/components/parameters/LidarWatcher"
+        - name: keep
+          in: query
+          required: false
+          schema: { type: string, enum: ["1"] }
+      responses:
+        "200":
+          description: The build.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LidarBuild"
+        "400":
+          $ref: "#/components/responses/SimpleError"
+        "404":
+          $ref: "#/components/responses/SimpleError"
+        "503":
+          $ref: "#/components/responses/SimpleError"
+    delete:
+      operationId: lidarBuildRelease
+      summary: Stop waiting for a build
+      description: |
+        The service drops the build if nobody else is waiting and it was not kept. A build the service
+        never had, or a server without a build service, answers 204. Nothing to read in a 200 that the
+        app needs: it is sent when the view closes and its answer is not waited for.
+      security:
+        - bearer: []
+      parameters:
+        - $ref: "#/components/parameters/ClientHeader"
+        - $ref: "#/components/parameters/LidarKey"
+        - $ref: "#/components/parameters/LidarWatcher"
+      responses:
+        "200":
+          description: The build as it now stands.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LidarBuild"
+        "204":
+          description: Nothing to release.
+        "400":
+          $ref: "#/components/responses/SimpleError"
+        "503":
+          $ref: "#/components/responses/SimpleError"
+
+  /api/lidar/tilesets/{key}/{file}:
+    get:
+      operationId: lidarTilesetFile
+      summary: One file of a tileset, its root or one of its tiles
+      description: |
+        A 3D Tiles 1.0 tileset as py3dtiles 12.1.1 writes it, unchanged (backend/lidar/tiles.py): the
+        root `tileset.json`, and `.pnts` tiles (`POSITION` float32 and `RGB` uint8, in the tile's frame:
+        each tile's `transform`, translation then scale, composed down from the root). `file` is a path
+        inside the tileset and may hold slashes (`points/r0.pnts`, `context/tileset.json`); a tile's
+        `content.uri` is relative to the tileset.json that names it. A file that is not there is 404
+        (Flask's own page, not JSON). Private and cached a week: a key's content never changes.
+
+        A streamed survey (`resolve`'s `streamed`) is written from USGS's own octree: its files are
+        `tileset.json` and `<16 hex>.json` (external tilesets, one every four levels) and `<16 hex>.pnts`,
+        names that say nothing of the place. Tiles have a `region` and `refine: ADD`; its `.pnts` carry
+        `POSITION_QUANTIZED` (with `QUANTIZED_VOLUME_OFFSET` and `QUANTIZED_VOLUME_SCALE`, in WGS84
+        geocentric metres, no `transform`) and `RGB`: first a natural palette, kept an hour
+        (`max-age=3600`), then, once the server has laid USDA NAIP imagery on it in the background,
+        photographic, kept the week. The points never move between the two. A piece is fetched from AWS the
+        first time anyone asks for it: AWS unreachable is 502 `upstream_unavailable`, a server without
+        its geoid grids 503 `geoid_unavailable` (heights would be about 30 m out), and a name never
+        handed out a JSON 404 `not_found`; each is worth asking again later but the last.
+      security:
+        - bearer: []
+      parameters:
+        - $ref: "#/components/parameters/ClientHeader"
+        - $ref: "#/components/parameters/LidarKey"
+        - name: file
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: The file.
+          headers:
+            Cache-Control:
+              schema: { type: string, example: "private, max-age=604800" }
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Tileset"
+            application/octet-stream:
+              schema: { type: string, format: binary }
+        "400":
+          $ref: "#/components/responses/SimpleError"
+        "404":
+          description: No such tileset (`{error}`), no such file in it (Flask's own page, not JSON), or a file it does not serve (`{error}`).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SimpleError"
+        "502":
+          $ref: "#/components/responses/SimpleError"
+        "503":
+          $ref: "#/components/responses/SimpleError"
+
+  /api/terrain/heightmap/{level}/{x}/{y}:
+    get:
+      operationId: terrainHeightmap
+      summary: The ground of one terrain tile, from the local DEMs
+      description: |
+        65 × 65 heights in metres above the WGS84 ellipsoid (the geoid separation added, as the LiDAR's
+        is), little-endian Int16, rows from north to south and each row west to east: 8,450 bytes. The
+        tiling is Cesium's geographic one: two tiles at level 0, each 180° wide, quartered at every
+        level; tile `x` counts from 180° W, `y` from 90° N. A tile no DEM reaches answers 204: no data,
+        never sea level. Levels above 22 are refused.
+      security:
+        - bearer: []
+      parameters:
+        - $ref: "#/components/parameters/ClientHeader"
+        - { name: level, in: path, required: true, schema: { type: integer, minimum: 0, maximum: 22 } }
+        - { name: x, in: path, required: true, schema: { type: integer, minimum: 0 } }
+        - { name: y, in: path, required: true, schema: { type: integer, minimum: 0 } }
+      responses:
+        "200":
+          description: The heights.
+          headers:
+            X-Terrain-Samples:
+              schema: { type: string, example: "65" }
+            Cache-Control:
+              schema: { type: string, example: "private, max-age=604800" }
+          content:
+            application/octet-stream:
+              schema: { type: string, format: binary }
+        "204":
+          description: No DEM reaches this tile.
+        "400":
+          $ref: "#/components/responses/SimpleError"
+
+  /api/terrain/heights:
+    post:
+      operationId: terrainHeights
+      summary: Ground and geoid at points, for placing a route in 3D
+      description: |
+        For each point in the order sent: `groundM`, the ground in metres above the ellipsoid from the
+        same DEMs and correction as the heightmap tiles (null where no DEM covers it, never made up),
+        and `geoidM`, the geoid separation there, which turns an MSL height into one above the
+        ellipsoid (`mslFt × 0.3048 + geoidM`). Not `/api/elevations`, which feeds the route planner and
+        the AMPS export. At most 5,000 points. Never cached: it says where someone means to fly.
+      security:
+        - bearer: []
+      parameters:
+        - $ref: "#/components/parameters/ClientHeader"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [points]
+              properties:
+                points:
+                  type: array
+                  items:
+                    type: object
+                    required: [lat, lon]
+                    properties:
+                      lat: { type: number }
+                      lon: { type: number }
+      responses:
+        "200":
+          description: Heights, one of each for every point.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [groundM, geoidM]
+                properties:
+                  groundM:
+                    type: array
+                    items: { type: number, nullable: true }
+                  geoidM:
+                    type: array
+                    items: { type: number }
+        "400":
+          $ref: "#/components/responses/SimpleError"
+        "503":
+          $ref: "#/components/responses/SimpleError"
+
+  # -- Mission packs (docs/MISSION_PACKS.md) ---------------------------------------------
+  # Every pack route needs the `mission_packs` entitlement (403 `feature_disabled` without it)
+  # and is never cached. A pack the caller is not in is a 404, so its existence is not revealed.
+
+  /api/packs:
+    get:
+      operationId: listPacks
+      summary: The packs the caller is in, directly or through a team, most recently changed first
+      security:
+        - bearer: []
+      responses:
+        "200":
+          description: Summaries.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [packs]
+                properties:
+                  packs:
+                    type: array
+                    items: { $ref: "#/components/schemas/PackSummary" }
+    post:
+      operationId: createPack
+      summary: Make a pack; the caller owns it
+      description: |
+        Send `uuid`, one the device chose, so a retry after a lost response returns the
+        first pack (200) instead of making a second (201). `team_id` shares it with a team
+        the caller is in, whose members then see it as `team_role`.
+      security:
+        - bearer: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name]
+              properties:
+                name: { type: string, maxLength: 100, description: "Trimmed; no control characters." }
+                description: { type: string, maxLength: 2000 }
+                uuid: { type: string }
+                team_id: { type: integer }
+                team_role: { type: string, enum: [editor, viewer] }
+      responses:
+        "201":
+          description: Made.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Pack" }
+        "200":
+          description: The caller already made a pack with this `uuid`; here it is.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Pack" }
+        "400":
+          $ref: "#/components/responses/PackError"
+        "409":
+          $ref: "#/components/responses/PackError"
+
+  /api/packs/{uuid}:
+    parameters:
+      - $ref: "#/components/parameters/PackUuid"
+    get:
+      operationId: getPack
+      summary: The pack with its members and every item, as of `head_seq`
+      description: |
+        A consistent view: the items are exactly as after event `head_seq`. To stay current,
+        replay `GET /api/packs/{uuid}/events?since=<head_seq>` (or the live stream) from here.
+      security:
+        - bearer: []
+      responses:
+        "200":
+          description: The pack.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Pack" }
+        "404":
+          $ref: "#/components/responses/PackError"
+    put:
+      operationId: updatePack
+      summary: Rename or describe the pack (editors), or share it with a team (owner)
+      security:
+        - bearer: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name: { type: string, maxLength: 100 }
+                description: { type: string, maxLength: 2000 }
+                team_id: { type: integer, nullable: true, description: "null stops sharing." }
+                team_role: { type: string, enum: [editor, viewer] }
+      responses:
+        "200":
+          description: The pack after the change.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Pack" }
+        "400":
+          $ref: "#/components/responses/PackError"
+        "403":
+          $ref: "#/components/responses/PackError"
+        "404":
+          $ref: "#/components/responses/PackError"
+        "423":
+          $ref: "#/components/responses/PackError"
+    delete:
+      operationId: deletePack
+      summary: Delete the pack and everything in it (owner)
+      security:
+        - bearer: []
+      responses:
+        "200":
+          description: Deleted.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Status" }
+        "403":
+          $ref: "#/components/responses/PackError"
+        "404":
+          $ref: "#/components/responses/PackError"
+
+  /api/packs/{uuid}/access:
+    parameters:
+      - $ref: "#/components/parameters/PackUuid"
+    get:
+      operationId: packAccess
+      summary: Whether the caller may see the pack, and as whom
+      description: What the live service asks, with the person's own token, before it opens a socket and whenever the pack's membership changes. An app has no need of it.
+      security:
+        - bearer: []
+      responses:
+        "200":
+          description: The caller's place in the pack.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [role, status, head_seq, user]
+                properties:
+                  role: { type: string, enum: [owner, editor, viewer] }
+                  status: { type: string, enum: [active, finished] }
+                  head_seq: { type: integer, minimum: 0 }
+                  user:
+                    type: object
+                    additionalProperties: false
+                    required: [id, name]
+                    properties:
+                      id: { type: integer }
+                      name: { type: string }
+        "404":
+          $ref: "#/components/responses/PackError"
+
+  /api/packs/{uuid}/finish:
+    parameters:
+      - $ref: "#/components/parameters/PackUuid"
+    post:
+      operationId: finishPack
+      summary: Finish the pack (owner). Every edit is then refused with 423, the owner's included
+      security:
+        - bearer: []
+      responses:
+        "200":
+          description: The pack, finished. Finishing a finished pack changes nothing.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Pack" }
+        "403":
+          $ref: "#/components/responses/PackError"
+        "404":
+          $ref: "#/components/responses/PackError"
+
+  /api/packs/{uuid}/reopen:
+    parameters:
+      - $ref: "#/components/parameters/PackUuid"
+    post:
+      operationId: reopenPack
+      summary: Reopen a finished pack (owner)
+      security:
+        - bearer: []
+      responses:
+        "200":
+          description: The pack, active.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Pack" }
+        "403":
+          $ref: "#/components/responses/PackError"
+        "404":
+          $ref: "#/components/responses/PackError"
+
+  /api/packs/{uuid}/duplicate:
+    parameters:
+      - $ref: "#/components/parameters/PackUuid"
+    post:
+      operationId: duplicatePack
+      summary: A new pack owned by the caller, with a copy of every item (works on a finished pack)
+      security:
+        - bearer: []
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name: { type: string, maxLength: 100, description: 'Default: "<name> (copy)".' }
+      responses:
+        "201":
+          description: The new pack.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Pack" }
+        "400":
+          $ref: "#/components/responses/PackError"
+        "404":
+          $ref: "#/components/responses/PackError"
+
+  /api/packs/{uuid}/ops:
+    parameters:
+      - $ref: "#/components/parameters/PackUuid"
+    post:
+      operationId: applyPackOps
+      summary: Apply a batch of edits, in order, each numbered and logged
+      description: |
+        Each operation is applied, or logged as `skipped` when what it edits is gone or in the
+        way; the rules are `contracts/fixtures/packs/ops.json` (and `ops-brief.json`). Each carries a `client_op_id`
+        (printable ASCII, 64 at most): one the pack has seen is answered from the log and not
+        applied again, so a batch whose answer was lost is safe to send again. A malformed
+        operation refuses the whole batch (400 `invalid_op`, with `index` and `reason`) before
+        anything is applied. `item.replace` is the server's own and is refused.
+
+        With `base_seq`, `events` is everything after it (up to 500; `has_more` says there is
+        more), so the client can rebase its unconfirmed edits; without it, just this batch's.
+        Viewers get 403 `pack_read_only`; a finished pack 423 `pack_finished`; an item that
+        would pass 5 MB 413 `item_too_large`. The exception is a batch whose every operation is
+        on a `brief` item (one stored as a brief, or made as one earlier in the batch): briefing
+        is open to every member, viewers included, in every state of the pack. A batch with any
+        other operation in it is refused whole, so send brief edits in batches of their own.
+
+        Those three refusals always carry `taken` (a server from before it sent none: read that
+        as none): the operations of this batch the pack's log already has, the caller's own, in
+        log order, each as its result in a 200 would be; empty when there are none. A batch
+        whose answer was lost and that is refused when it is sent again (the pack finished, the
+        caller made a viewer, or the batch grew by an edit that is too large) may have been
+        taken the first time: what `taken` lists is the pack's and is not to be offered back
+        as the person's own; the rest of the batch was not taken. A 400 carries no `taken`: it
+        is decided from the operations alone, before the pack is looked at, and a batch the
+        pack took is well formed when it is sent again as it was. Someone not in the pack gets
+        a bare 404.
+      security:
+        - bearer: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [ops]
+              properties:
+                base_seq: { type: integer, minimum: 0 }
+                ops:
+                  type: array
+                  description: 1 to 200 operations.
+                  items:
+                    type: object
+                    required: [type, item, client_op_id]
+                    properties:
+                      type: { type: string, enum: [item.create, item.delete, item.rename, set, patch, upsert, insert, remove] }
+                      item: { type: string, pattern: '^[A-Za-z0-9][A-Za-z0-9_.:-]{0,63}$' }
+                      client_op_id: { type: string, maxLength: 64 }
+                      summary: { type: string, description: "The log's sentence for it, e.g. \"Colin moved Chalk 2 on LZ Hawk\". Cut to 300." }
+      responses:
+        "200":
+          description: How each went.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/PackOpsResult" }
+        "400":
+          $ref: "#/components/responses/PackError"
+        "403":
+          $ref: "#/components/responses/PackError"
+        "404":
+          $ref: "#/components/responses/PackError"
+        "413":
+          $ref: "#/components/responses/PackError"
+        "423":
+          $ref: "#/components/responses/PackError"
+
+  /api/packs/{uuid}/events:
+    parameters:
+      - $ref: "#/components/parameters/PackUuid"
+    get:
+      operationId: packEvents
+      summary: The pack's log after a cursor, oldest first
+      description: What a client replays to catch up (keep `cursor`, send it back as `since`), and the History panel's lines.
+      security:
+        - bearer: []
+      parameters:
+        - name: since
+          in: query
+          schema: { type: integer, minimum: 0, default: 0 }
+        - name: limit
+          in: query
+          description: Page size, 1 to 500. A larger request is clamped.
+          schema: { type: integer, minimum: 1, default: 200 }
+      responses:
+        "200":
+          description: A page of events.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/PackEventPage" }
+        "400":
+          $ref: "#/components/responses/PackError"
+        "404":
+          $ref: "#/components/responses/PackError"
+
+  /api/packs/{uuid}/seen:
+    parameters:
+      - $ref: "#/components/parameters/PackUuid"
+    put:
+      operationId: markPackSeen
+      summary: How far the caller has looked in the pack
+      description: |
+        The newest event the caller has seen. It never goes back (an older value changes nothing) and is
+        clamped to `head_seq`. What "changed since you looked" is measured from on every device the person
+        uses (`seen_seq` in the pack), and what a member's "Seen" time is (`seen_at`). Any member, viewers and
+        finished packs included. Not part of the log.
+      security:
+        - bearer: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [seq]
+              properties:
+                seq: { type: integer, minimum: 0 }
+      responses:
+        "200":
+          description: The caller's marker as it now is.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [seen_seq, seen_at]
+                properties:
+                  seen_seq: { type: integer, minimum: 0 }
+                  seen_at: { type: string }
+        "400":
+          $ref: "#/components/responses/PackError"
+        "404":
+          $ref: "#/components/responses/PackError"
+
+  /api/packs/{uuid}/items:
+    parameters:
+      - $ref: "#/components/parameters/PackUuid"
+    post:
+      operationId: copyIntoPack
+      summary: Copy one of the caller's library records into the pack
+      description: |
+        The copy is the pack's; the original is never changed by it. The item remembers its
+        `source` so whoever copied it in can later update it from the original. Sketched routes
+        only: an imported AMPS mission (`kind: mission`) is refused with `mission_not_supported`.
+        Send `item` (the new item's uuid) so a retry returns the first copy (200).
+      security:
+        - bearer: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [source]
+              properties:
+                source:
+                  type: object
+                  required: [kind]
+                  description: The library record, by `id` or by `client_uuid`.
+                  properties:
+                    kind: { type: string, enum: [lz, route, pointset] }
+                    id: { type: integer }
+                    client_uuid: { type: string }
+                item: { type: string }
+                name: { type: string, maxLength: 100 }
+                summary: { type: string }
+      responses:
+        "201":
+          description: Copied in.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/PackItemReply" }
+        "200":
+          description: This copy was already made under this `item`; here it is (`event` is null).
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/PackItemReply" }
+        "400":
+          $ref: "#/components/responses/PackError"
+        "403":
+          $ref: "#/components/responses/PackError"
+        "404":
+          $ref: "#/components/responses/PackError"
+        "409":
+          $ref: "#/components/responses/PackError"
+        "413":
+          $ref: "#/components/responses/PackError"
+        "423":
+          $ref: "#/components/responses/PackError"
+
+  /api/packs/{uuid}/items/{item}:
+    parameters:
+      - $ref: "#/components/parameters/PackUuid"
+      - $ref: "#/components/parameters/PackItemUuid"
+    get:
+      operationId: getPackItem
+      summary: One item, whole
+      security:
+        - bearer: []
+      responses:
+        "200":
+          description: The item.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [item, head_seq]
+                properties:
+                  item: { $ref: "#/components/schemas/PackItem" }
+                  head_seq: { type: integer, minimum: 0 }
+        "404":
+          $ref: "#/components/responses/PackError"
+
+  /api/packs/{uuid}/items/{item}/update-from-original:
+    parameters:
+      - $ref: "#/components/parameters/PackUuid"
+      - $ref: "#/components/parameters/PackItemUuid"
+    post:
+      operationId: updatePackItemFromOriginal
+      summary: Replace a copied item's content with its library original as it is now
+      description: |
+        Only the member who copied it in may (`not_your_original` otherwise): the original is
+        their private record. Logged as an `item.replace` event carrying the new content.
+        `original_gone` (409) when the original has been deleted; `original_unknown` (409) for a
+        copy whose `source.uuid` is null, which cannot say which record it came from.
+      security:
+        - bearer: []
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                summary: { type: string }
+      responses:
+        "200":
+          description: Updated.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/PackItemReply" }
+        "403":
+          $ref: "#/components/responses/PackError"
+        "404":
+          $ref: "#/components/responses/PackError"
+        "409":
+          $ref: "#/components/responses/PackError"
+        "413":
+          $ref: "#/components/responses/PackError"
+        "423":
+          $ref: "#/components/responses/PackError"
+
+  /api/packs/{uuid}/items/{item}/library:
+    parameters:
+      - $ref: "#/components/parameters/PackUuid"
+      - $ref: "#/components/parameters/PackItemUuid"
+    post:
+      operationId: savePackItemToLibrary
+      summary: Save a copy of an item to the caller's own library (any member; works on a finished pack)
+      description: Needs the `cloud_save` entitlement too. The new record syncs like any other.
+      security:
+        - bearer: []
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name: { type: string, maxLength: 100 }
+      responses:
+        "201":
+          description: Saved.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/LibraryCopy" }
+        "400":
+          $ref: "#/components/responses/PackError"
+        "403":
+          $ref: "#/components/responses/PackError"
+        "404":
+          $ref: "#/components/responses/PackError"
+
+  /api/packs/{uuid}/members:
+    parameters:
+      - $ref: "#/components/parameters/PackUuid"
+    post:
+      operationId: addPackMember
+      summary: Add someone who shares a team with the owner (owner). Anyone else is invited by email
+      security:
+        - bearer: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [user_id]
+              properties:
+                user_id: { type: integer }
+                role: { type: string, enum: [editor, viewer], default: editor }
+      responses:
+        "201":
+          description: Added; they are emailed a notice.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/PackMemberReply" }
+        "400":
+          $ref: "#/components/responses/PackError"
+        "403":
+          $ref: "#/components/responses/PackError"
+        "404":
+          $ref: "#/components/responses/PackError"
+        "409":
+          $ref: "#/components/responses/PackError"
+
+  /api/packs/{uuid}/members/{user_id}:
+    parameters:
+      - $ref: "#/components/parameters/PackUuid"
+      - $ref: "#/components/parameters/UserId"
+    put:
+      operationId: changePackMember
+      summary: Change a member's role (owner). `owner` hands the pack over; the old owner stays an editor
+      security:
+        - bearer: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [role]
+              properties:
+                role: { type: string, enum: [owner, editor, viewer] }
+      responses:
+        "200":
+          description: The member now.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/PackMemberReply" }
+        "400":
+          $ref: "#/components/responses/PackError"
+        "403":
+          $ref: "#/components/responses/PackError"
+        "404":
+          $ref: "#/components/responses/PackError"
+        "409":
+          $ref: "#/components/responses/PackError"
+    delete:
+      operationId: removePackMember
+      summary: Remove a member (owner), or leave (yourself). The owner hands the pack over first
+      security:
+        - bearer: []
+      responses:
+        "200":
+          description: Removed.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Status" }
+        "403":
+          $ref: "#/components/responses/PackError"
+        "404":
+          $ref: "#/components/responses/PackError"
+        "409":
+          $ref: "#/components/responses/PackError"
+
+  /api/packs/{uuid}/invites:
+    parameters:
+      - $ref: "#/components/parameters/PackUuid"
+    get:
+      operationId: listPackInvites
+      summary: Invitations not yet answered (owner); an expired one says `expired`
+      security:
+        - bearer: []
+      responses:
+        "200":
+          description: Invitations.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/InviteList" }
+        "403":
+          $ref: "#/components/responses/PackError"
+        "404":
+          $ref: "#/components/responses/PackError"
+    post:
+      operationId: inviteToPack
+      summary: Invite anyone by email (owner)
+      description: |
+        Someone without an account is asked to make one with that address; the invitation waits
+        until they have verified it and cleared the `.mil` gate. Inviting the same address again
+        sends a new link and replaces the old one (200). 30 an hour per person (429).
+      security:
+        - bearer: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email]
+              properties:
+                email: { type: string }
+                role: { type: string, enum: [editor, viewer], default: editor }
+      responses:
+        "201":
+          description: Invited.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/InviteReply" }
+        "200":
+          description: Invited again, with a new link.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/InviteReply" }
+        "400":
+          $ref: "#/components/responses/PackError"
+        "403":
+          $ref: "#/components/responses/PackError"
+        "404":
+          $ref: "#/components/responses/PackError"
+        "409":
+          $ref: "#/components/responses/PackError"
+        "429":
+          $ref: "#/components/responses/PackError"
+
+  /api/packs/{uuid}/invites/{invite_id}:
+    parameters:
+      - $ref: "#/components/parameters/PackUuid"
+      - $ref: "#/components/parameters/InviteId"
+    delete:
+      operationId: revokePackInvite
+      summary: Withdraw an invitation (owner)
+      security:
+        - bearer: []
+      responses:
+        "200":
+          description: Withdrawn.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/InviteOnly" }
+        "403":
+          $ref: "#/components/responses/PackError"
+        "404":
+          $ref: "#/components/responses/PackError"
+
+  /api/packs/{uuid}/invites/{invite_id}/resend:
+    parameters:
+      - $ref: "#/components/parameters/PackUuid"
+      - $ref: "#/components/parameters/InviteId"
+    post:
+      operationId: resendPackInvite
+      summary: Send a new link, good for another 14 days (owner). The old link stops working
+      security:
+        - bearer: []
+      responses:
+        "200":
+          description: Sent.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/InviteReply" }
+        "403":
+          $ref: "#/components/responses/PackError"
+        "404":
+          $ref: "#/components/responses/PackError"
+        "429":
+          $ref: "#/components/responses/PackError"
+
+  /api/teams:
+    get:
+      operationId: listTeams
+      summary: The caller's teams
+      security:
+        - bearer: []
+      responses:
+        "200":
+          description: Teams, by name.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [teams]
+                properties:
+                  teams:
+                    type: array
+                    items: { $ref: "#/components/schemas/TeamSummary" }
+    post:
+      operationId: createTeam
+      summary: Make a team; the caller owns it
+      security:
+        - bearer: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name]
+              properties:
+                name: { type: string, maxLength: 100 }
+      responses:
+        "201":
+          description: Made.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Team" }
+        "400":
+          $ref: "#/components/responses/PackError"
+
+  /api/teams/{id}:
+    parameters:
+      - $ref: "#/components/parameters/TeamId"
+    get:
+      operationId: getTeam
+      summary: A team and its members (members only)
+      security:
+        - bearer: []
+      responses:
+        "200":
+          description: The team.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Team" }
+        "404":
+          $ref: "#/components/responses/PackError"
+    put:
+      operationId: renameTeam
+      summary: Rename a team (owner or admin)
+      security:
+        - bearer: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name]
+              properties:
+                name: { type: string, maxLength: 100 }
+      responses:
+        "200":
+          description: The team.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Team" }
+        "400":
+          $ref: "#/components/responses/PackError"
+        "403":
+          $ref: "#/components/responses/PackError"
+        "404":
+          $ref: "#/components/responses/PackError"
+    delete:
+      operationId: deleteTeam
+      summary: Delete a team (owner). Packs shared with it stop being shared, each saying so in its log
+      security:
+        - bearer: []
+      responses:
+        "200":
+          description: Deleted.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Status" }
+        "403":
+          $ref: "#/components/responses/PackError"
+        "404":
+          $ref: "#/components/responses/PackError"
+
+  /api/teams/{id}/members/{user_id}:
+    parameters:
+      - $ref: "#/components/parameters/TeamId"
+      - $ref: "#/components/parameters/UserId"
+    put:
+      operationId: changeTeamMember
+      summary: Change a member's role (owner). `owner` hands the team over; the old owner becomes an admin
+      security:
+        - bearer: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [role]
+              properties:
+                role: { type: string, enum: [owner, admin, member] }
+      responses:
+        "200":
+          description: The team.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Team" }
+        "400":
+          $ref: "#/components/responses/PackError"
+        "403":
+          $ref: "#/components/responses/PackError"
+        "404":
+          $ref: "#/components/responses/PackError"
+        "409":
+          $ref: "#/components/responses/PackError"
+    delete:
+      operationId: removeTeamMember
+      summary: Leave (yourself), or remove someone (owner; an admin removes members only)
+      security:
+        - bearer: []
+      responses:
+        "200":
+          description: Removed.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Status" }
+        "403":
+          $ref: "#/components/responses/PackError"
+        "404":
+          $ref: "#/components/responses/PackError"
+        "409":
+          $ref: "#/components/responses/PackError"
+
+  /api/teams/{id}/invites:
+    parameters:
+      - $ref: "#/components/parameters/TeamId"
+    get:
+      operationId: listTeamInvites
+      summary: Invitations not yet answered (owner or admin)
+      security:
+        - bearer: []
+      responses:
+        "200":
+          description: Invitations.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/InviteList" }
+        "403":
+          $ref: "#/components/responses/PackError"
+        "404":
+          $ref: "#/components/responses/PackError"
+    post:
+      operationId: inviteToTeam
+      summary: Invite by email, or with no email make a single-use link (owner or admin)
+      description: A link's `token` is in this response only; it is stored hashed and never shown again.
+      security:
+        - bearer: []
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                email: { type: string }
+                role: { type: string, enum: [member, admin], default: member, description: Only the owner gives `admin`. }
+      responses:
+        "201":
+          description: Invited.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/InviteReply" }
+        "400":
+          $ref: "#/components/responses/PackError"
+        "403":
+          $ref: "#/components/responses/PackError"
+        "404":
+          $ref: "#/components/responses/PackError"
+        "409":
+          $ref: "#/components/responses/PackError"
+        "429":
+          $ref: "#/components/responses/PackError"
+
+  /api/teams/{id}/invites/{invite_id}:
+    parameters:
+      - $ref: "#/components/parameters/TeamId"
+      - $ref: "#/components/parameters/InviteId"
+    delete:
+      operationId: revokeTeamInvite
+      summary: Withdraw an invitation (owner or admin)
+      security:
+        - bearer: []
+      responses:
+        "200":
+          description: Withdrawn.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/InviteOnly" }
+        "403":
+          $ref: "#/components/responses/PackError"
+        "404":
+          $ref: "#/components/responses/PackError"
+
+  /api/users/search:
+    get:
+      operationId: searchUsers
+      summary: People who share a team with the caller, by name or sign-in email (20 at most)
+      description: There is no open directory. A `.mil` address someone did not sign in with is never searched or shown.
+      security:
+        - bearer: []
+      parameters:
+        - name: q
+          in: query
+          required: true
+          schema: { type: string, minLength: 2, maxLength: 100 }
+      responses:
+        "200":
+          description: Matches, by name.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [users]
+                properties:
+                  users:
+                    type: array
+                    items: { $ref: "#/components/schemas/UserBrief" }
+        "400":
+          $ref: "#/components/responses/PackError"
+
+  /api/invites:
+    get:
+      operationId: myInvites
+      summary: Invitations waiting for the caller, to their sign-in address or their verified `.mil` one
+      security:
+        - bearer: []
+      responses:
+        "200":
+          description: Pending, unexpired invitations, newest first.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/InviteList" }
+
+  /api/invites/{invite_id}/accept:
+    parameters:
+      - $ref: "#/components/parameters/InviteId"
+    post:
+      operationId: acceptInvite
+      summary: Accept an invitation addressed to the caller
+      security:
+        - bearer: []
+      responses:
+        "200":
+          description: Joined.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/InviteAccepted" }
+        "404":
+          $ref: "#/components/responses/PackError"
+        "410":
+          $ref: "#/components/responses/PackError"
+
+  /api/invites/{invite_id}/decline:
+    parameters:
+      - $ref: "#/components/parameters/InviteId"
+    post:
+      operationId: declineInvite
+      summary: Decline an invitation addressed to the caller
+      security:
+        - bearer: []
+      responses:
+        "200":
+          description: Declined.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/InviteOnly" }
+        "404":
+          $ref: "#/components/responses/PackError"
+        "410":
+          $ref: "#/components/responses/PackError"
+
+  /api/invites/accept:
+    post:
+      operationId: acceptInviteByToken
+      summary: Accept from an emailed or shared link, whatever address the caller signed in with
+      security:
+        - bearer: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [token]
+              properties:
+                token: { type: string, description: "The `invite` query parameter of the link." }
+      responses:
+        "200":
+          description: Joined.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/InviteAccepted" }
+        "404":
+          $ref: "#/components/responses/PackError"
+        "410":
+          $ref: "#/components/responses/PackError"
+
+  /api/notifications:
+    get:
+      operationId: listNotifications
+      summary: What the caller's devices should show, and which groups they want
+      description: |
+        The caller's notifications of the last 30 days that are still so, newest first: an invitation
+        still waiting for them, a pack they are still in (still finished, still theirs), under the names
+        the pack and the team have now. A pack's finish is listed two minutes after it, and not at all if
+        the pack was reopened meanwhile. There is no cursor: a device keeps the ids it has shown, shows
+        those it has not (unless `seen`, or their group is off in `settings`) and takes down any it shows
+        that is seen or no longer listed. A notification names people, packs and teams only, never what a
+        pack holds: it is meant for a lock screen (docs/NOTIFICATIONS.md §6).
+
+        A person without Mission Packs is answered an empty list. Poll with the last `ETag` in
+        `If-None-Match`: nothing new is a 304 with no body.
+      security:
+        - bearer: []
+      parameters:
+        - name: If-None-Match
+          in: header
+          required: false
+          schema: { type: string }
+          description: The `ETag` of the last answer.
+      responses:
+        "200":
+          description: The notifications and the settings.
+          headers:
+            ETag:
+              description: Of this answer; changes whenever anything in it does.
+              schema: { type: string, example: '"5f2b9c0e1d7a4c3b8e6f0a2d4c6b8e10"' }
+            Cache-Control:
+              schema: { type: string, example: "private, no-store" }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/NotificationFeed" }
+        "304":
+          description: Nothing changed since the answer whose `ETag` was sent.
+
+  /api/notifications/seen:
+    post:
+      operationId: markNotificationsSeen
+      summary: Seen on this device, so taken down on every other
+      description: |
+        The caller has seen (or acted on) these. Ids that are not the caller's are passed over; seeing one
+        twice changes nothing.
+      security:
+        - bearer: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [ids]
+              properties:
+                ids:
+                  type: array
+                  maxItems: 200
+                  items: { type: integer }
+      responses:
+        "200":
+          description: The ids asked about that are the caller's, all now seen.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [ids]
+                properties:
+                  ids:
+                    type: array
+                    items: { type: integer }
+        "400":
+          description: "`invalid_ids`: not a list of at most 200 integers."
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SimpleError" }
+
+  /api/notifications/settings:
+    put:
+      operationId: changeNotificationSettings
+      summary: Turn groups of notifications on or off, on every device
+      description: |
+        Any of the groups, each `true` or `false`; those not sent keep what they were. A group this server
+        does not know is passed over: the answer says what holds. An off group's notifications are still
+        listed (an invitation still waits in the switcher) and no device shows them.
+      security:
+        - bearer: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                invitations: { type: boolean }
+                pack_finished: { type: boolean }
+                pack_owner: { type: boolean }
+      responses:
+        "200":
+          description: The settings as they now are.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [settings]
+                properties:
+                  settings: { $ref: "#/components/schemas/NotificationSettings" }
+        "400":
+          description: "`invalid_settings`: a group sent as something other than true or false."
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SimpleError" }
+
+components:
+  parameters:
+    SessionHeader:
+      name: X-EZPZ-Session
+      in: header
+      required: false
+      description: |
+        `cookie`: the web asks for (on sign-in) or uses (on refresh) a session whose
+        refresh token is an HttpOnly, Secure, SameSite=None, Partitioned cookie under
+        `/api/auth`. A custom header, so a page on another site cannot send it without a
+        CORS preflight, which only `CORS_ORIGINS` pass. Ignored for a native app.
+      schema:
+        type: string
+        enum: [cookie]
+    ClientHeader:
+      name: X-EZPZ-Client
+      in: header
+      required: false
+      description: |
+        Which app is calling: `platform/version (build)`, e.g. `android/1.4.0 (212)`.
+        Sent by the native apps on every request. Recorded against sign-ins so the
+        owner can see which versions are in the field. Anything that does not match
+        this shape is ignored, never stored.
+      schema:
+        type: string
+        maxLength: 64
+        pattern: '^(android|ios|web)/\d{1,4}\.\d{1,4}\.\d{1,4}(-[0-9A-Za-z.]{1,20})?( \(\d{1,9}\))?$'
+
+    LidarKey:
+      name: key
+      in: path
+      required: true
+      description: A tileset's or a build's opaque key, as `resolve` and `build` give it; anything else is 400.
+      schema:
+        type: string
+        pattern: '^[0-9a-f]{16}$'
+
+    LidarWatcher:
+      name: watcher
+      in: query
+      required: false
+      description: The waiter's opaque id, as sent with the build (`^[A-Za-z0-9_-]{8,64}$`; anything else is dropped).
+      schema:
+        type: string
+
+    IfMatch:
+      name: If-Match
+      in: header
+      required: false
+      description: |
+        The record's `revision` that this edit was based on, e.g. `"3"` (`*` matches
+        any). A stale one is refused with 409 and nothing is overwritten.
+      schema:
+        type: string
+        pattern: '^(\*|(W/)?"?\d{1,9}"?)$'
+
+    IdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: false
+      description: |
+        A key the device makes up for one write and repeats when it retries it. Printable
+        ASCII, 64 characters at most; anything else is ignored. The write is applied once.
+      schema:
+        type: string
+        maxLength: 64
+
+    PackUuid:
+      name: uuid
+      in: path
+      required: true
+      description: The pack's `uuid`.
+      schema: { type: string, maxLength: 36 }
+
+    PackItemUuid:
+      name: item
+      in: path
+      required: true
+      description: The item's `uuid` within the pack.
+      schema: { type: string, maxLength: 64 }
+
+    UserId:
+      name: user_id
+      in: path
+      required: true
+      schema: { type: integer }
+
+    TeamId:
+      name: id
+      in: path
+      required: true
+      schema: { type: integer }
+
+    InviteId:
+      name: invite_id
+      in: path
+      required: true
+      schema: { type: integer }
+
+  securitySchemes:
+    bearer:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: The `access_token` from sign-in or refresh.
+
+  headers:
+    ETag:
+      description: The record's current `revision`, quoted.
+      schema: { type: string, example: '"3"' }
+
+  responses:
+    SimpleError:
+      description: |
+        An error from the saved-record and sync routes, which predate the auth routes'
+        shape and keep theirs so the web app is undisturbed: `error` is for people, `code`
+        (when present) is stable and meant for the app.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/SimpleError"
+
+    Error:
+      description: An error. `code` is stable and meant for the app; `message` is for people.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+
+    FieldError:
+      description: |
+        A failure of `/api/analyze-field`: `message` is for people. There is no `code`; an app tells
+        "no area here" (400) from "the map data or the model failed" (500) by the status.
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [status, message]
+            properties:
+              status: { type: string, enum: [error] }
+              message: { type: string }
+
+    Conflict:
+      description: |
+        The record changed on the server since the revision the edit was based on.
+        Nothing was overwritten; `server` is the current copy.
+      headers:
+        ETag: { $ref: "#/components/headers/ETag" }
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [error, code, server]
+            properties:
+              error: { type: string }
+              code: { type: string, enum: [revision_conflict] }
+              server:
+                $ref: "#/components/schemas/LzFull"
+
+    RouteConflict:
+      description: |
+        The route set changed on the server since the revision the edit was based on.
+        Nothing was overwritten; `server` is the current copy.
+      headers:
+        ETag: { $ref: "#/components/headers/ETag" }
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [error, code, server]
+            properties:
+              error: { type: string }
+              code: { type: string, enum: [revision_conflict] }
+              server:
+                $ref: "#/components/schemas/RouteFull"
+
+    PointSetConflict:
+      description: |
+        The point set changed on the server since the revision the edit was based on.
+        Nothing was overwritten; `server` is the current copy.
+      headers:
+        ETag: { $ref: "#/components/headers/ETag" }
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [error, code, server]
+            properties:
+              error: { type: string }
+              code: { type: string, enum: [revision_conflict] }
+              server:
+                $ref: "#/components/schemas/PointSetFull"
+
+    BriefConflict:
+      description: |
+        The brief changed on the server since the revision the edit was based on.
+        Nothing was overwritten; `server` is the current copy.
+      headers:
+        ETag: { $ref: "#/components/headers/ETag" }
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [error, code, server]
+            properties:
+              error: { type: string }
+              code: { type: string, enum: [revision_conflict] }
+              server:
+                $ref: "#/components/schemas/BriefFull"
+
+    AircraftConflict:
+      description: |
+        The profile changed on the server since the revision the edit was based on.
+        Nothing was overwritten; `server` is the current copy.
+      headers:
+        ETag: { $ref: "#/components/headers/ETag" }
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [error, code, server]
+            properties:
+              error: { type: string }
+              code: { type: string, enum: [revision_conflict] }
+              server:
+                $ref: "#/components/schemas/AircraftProfile"
+
+    AircraftError:
+      description: Refused. `errors` lists every problem found; `error` is the first.
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [error]
+            properties:
+              error: { type: string }
+              errors: { type: array, items: { type: string } }
+              code: { type: string, enum: [invalid_client_uuid, invalid_if_match] }
+
+    PackError:
+      description: An error from the pack and team routes. `code` is stable and meant for the app.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/PackError"
+
+  schemas:
+    LidarTarget:
+      type: object
+      required: [lat, lon]
+      properties:
+        lat: { type: number }
+        lon: { type: number }
+        radius_m: { type: number, minimum: 50, maximum: 2000 }
+        stream: { type: boolean, description: "This client frames on `frame`: answer a streamed survey where nothing is built." }
+
+    LidarResolve:
+      type: object
+      required: [key, available, url, contextUrl]
+      properties:
+        key: { type: string, pattern: '^[0-9a-f]{16}$' }
+        available: { type: boolean }
+        url: { type: string, nullable: true, description: "The tileset's root, relative to the API's root; null when it is not built." }
+        contextUrl: { type: string, nullable: true, description: "The thinned ring round it, relative to the API's root; null when none was built." }
+        canBuild: { type: boolean, description: "Not built only: whether this server can build it." }
+        target:
+          description: "Not built only: the caller's own place, echoed."
+          type: object
+          required: [lat, lon, radius_m]
+          properties:
+            lat: { type: number }
+            lon: { type: number }
+            radius_m: { type: number }
+        streamed: { type: boolean, description: "Asked for with `stream` only: the tileset is a whole survey, streamed." }
+        frame:
+          description: "Streamed only: where to open the view. The caller's own place, echoed, with the ground's WGS84 ellipsoidal height in metres (null where nothing says it)."
+          type: object
+          required: [lat, lon, radius_m, height_m]
+          properties:
+            lat: { type: number }
+            lon: { type: number }
+            radius_m: { type: number }
+            height_m: { type: number, nullable: true }
+
+    LidarBuild:
+      type: object
+      description: |
+        A build as the service reports it, or a place already built (`state: done` with the tileset's
+        place, and no `stage`). `state` is `queued`, `running`, `done`, `failed` or `cancelled` (dropped
+        because nobody waited); `stage` a word for what it is doing (`waiting`, `starting`, `locating
+        survey`, `processing points`, `building tiles`, `building context`, `done`, `cancelled`; a new
+        one may come, so show what is not known as it is); `position` how many builds are ahead of a
+        queued one; `elapsed_s` how long a started one has run; `error` why one failed.
+      required: [key, state]
+      properties:
+        key: { type: string, pattern: '^[0-9a-f]{16}$' }
+        state: { type: string }
+        stage: { type: string, nullable: true }
+        error: { type: string, nullable: true }
+        position: { type: integer, nullable: true }
+        elapsed_s: { type: integer, nullable: true }
+        available: { type: boolean }
+        url: { type: string, nullable: true }
+        contextUrl: { type: string, nullable: true }
+
+    Tileset:
+      type: object
+      description: |
+        The parts of a 3D Tiles 1.0 tileset.json the apps read (the format is the Open Geospatial
+        Consortium's; this is py3dtiles's use of it). Anything else in it is passed over.
+      required: [asset, geometricError, root]
+      properties:
+        asset:
+          type: object
+          required: [version]
+          properties:
+            version: { type: string }
+        geometricError: { type: number }
+        root:
+          $ref: "#/components/schemas/Tile"
+
+    Tile:
+      type: object
+      description: |
+        `transform` is a column-major 4 × 4 matrix from this tile's frame to its parent's (the root's to
+        WGS84 geocentric metres). `refine` is `ADD` (drawn with its children) or `REPLACE` (drawn until
+        they are); a tile without one refines as its parent does. A `content.uri` ending in `.json` is
+        a tileset of its own.
+      required: [boundingVolume, geometricError]
+      properties:
+        boundingVolume:
+          type: object
+          properties:
+            box: { type: array, items: { type: number }, description: "Centre, then the three half-axes, in the tile's frame." }
+            sphere: { type: array, items: { type: number } }
+            region: { type: array, items: { type: number } }
+        geometricError: { type: number }
+        refine: { type: string, enum: [ADD, REPLACE] }
+        transform: { type: array, items: { type: number } }
+        content:
+          type: object
+          required: [uri]
+          properties:
+            uri: { type: string }
+        children:
+          type: array
+          items:
+            $ref: "#/components/schemas/Tile"
+
+    PointWind:
+      type: object
+      required: [dirTrue, speedKts, variable, station, source, distanceMiles]
+      properties:
+        dirTrue: { type: integer, description: Whole degrees true the wind blows from; 0 when variable. }
+        speedKts: { type: number }
+        variable: { type: boolean }
+        tempC: { type: number, nullable: true, description: The nearest observation's temperature. }
+        station: { type: string, nullable: true }
+        source: { type: string, enum: [METAR, TAF] }
+        distanceMiles: { type: number }
+
+    SimpleError:
+      type: object
+      required: [error]
+      properties:
+        error: { type: string }
+        code:
+          type: string
+          description: "`invalid_client_uuid`, `invalid_if_match`, `invalid_cursor`, `revision_conflict`; for briefs `missing_fields`, `invalid_name`, `invalid_data`; for the weather `invalid_at`; for notifications `invalid_ids`, `invalid_settings`"
+
+    Error:
+      type: object
+      required: [status, message, error]
+      properties:
+        status: { type: string, enum: [error] }
+        message: { type: string }
+        error: { type: string }
+        code:
+          type: string
+          description: |
+            Stable codes include `invalid_credentials`, `invalid_refresh_token`,
+            `refresh_reuse_detected`, `refresh_cookie_missing` (the web asked for a cookie
+            session and sent no cookie), `refresh_expired` (no longer sent: an older
+            server's 180-day limit), `account_unavailable`,
+            `reauthentication_required`, `confirmation_required`, `session_not_found`,
+            `super_admin_protected`, `rate_limited`, `affiliation_required`, `invalid_token`
+            (an emailed link that is invalid, spent or expired), `invalid_code` (a `.mil` code).
+
+    User:
+      type: object
+      required: [id, email, name, role, is_admin, is_active, features, access_ok]
+      properties:
+        id: { type: integer }
+        email: { type: string }
+        name: { type: string }
+        picture: { type: string, nullable: true }
+        email_verified: { type: boolean }
+        account_status: { type: string }
+        has_password: { type: boolean }
+        role: { type: string }
+        is_admin: { type: boolean }
+        is_active: { type: boolean }
+        features:
+          type: object
+          description: Entitlements. A missing key means enabled.
+          additionalProperties: { type: boolean }
+        mil_email: { type: string, nullable: true, description: "The `.mil` address the account confirmed, else the one waiting for its code." }
+        affiliation_verified: { type: boolean }
+        access_ok: { type: boolean, description: Whether the `.mil` / approval gate is cleared. }
+
+    Done:
+      type: object
+      required: [status, message]
+      properties:
+        status: { type: string, enum: [success] }
+        message: { type: string }
+
+    Accepted:
+      type: object
+      required: [status, message]
+      properties:
+        status: { type: string, enum: [success] }
+        message: { type: string }
+        requires_verification: { type: boolean, description: Present on registration. }
+
+    TokenResponse:
+      type: object
+      required: [status, access_token, user]
+      properties:
+        status: { type: string, enum: [success] }
+        access_token: { type: string }
+        refresh_token:
+          type: string
+          description: Native clients only. Spent on use; the response to `/refresh` carries the next one.
+        refresh_expires_in:
+          type: integer
+          description: Seconds a refresh token lives (30 days); each refresh extends it, with no other limit.
+        expires_in:
+          type: integer
+          description: Web cookie sessions only. Seconds the access token lives (a day from a sign-in, 15 minutes from a refresh).
+        session:
+          type: string
+          description: "Web cookie sessions only: `cookie`, the refresh token was set as the `ezpz_refresh` cookie."
+        user:
+          $ref: "#/components/schemas/User"
+
+    Session:
+      type: object
+      additionalProperties: false
+      required: [id, client, created_at, last_active_at, current]
+      properties:
+        id: { type: string }
+        client: { type: string, nullable: true, description: "The app, e.g. `android/1.4.0 (212)`." }
+        created_at: { type: string }
+        last_active_at: { type: string }
+        current: { type: boolean, description: This device. }
+
+    LzSummary:
+      type: object
+      required: [id, name, created_at, updated_at, client_uuid, revision]
+      properties:
+        id: { type: integer }
+        name: { type: string }
+        created_at: { type: string }
+        updated_at: { type: string }
+        client_uuid: { type: string, description: "The record's identity: the device's own if it sent one." }
+        revision: { type: integer, minimum: 1, description: Bumped by every change. }
+
+    LzFull:
+      type: object
+      required: [id, name, created_at, updated_at, client_uuid, revision, lz_data]
+      properties:
+        id: { type: integer }
+        name: { type: string }
+        created_at: { type: string }
+        updated_at: { type: string }
+        client_uuid: { type: string }
+        revision: { type: integer, minimum: 1 }
+        lz_data: { type: object, description: "The diagram document, schema 2 (see contracts/fixtures/workspace)." }
+
+    RouteSummary:
+      type: object
+      required: [id, name, kind, has_file, created_at, updated_at, client_uuid, revision]
+      properties:
+        id: { type: integer }
+        name: { type: string }
+        kind: { type: string, enum: [sketch, mission], description: "A sketch is routes drawn in the app; a mission also holds the AMPS file the web imported." }
+        file_name: { type: string, nullable: true }
+        has_file: { type: boolean }
+        created_at: { type: string }
+        updated_at: { type: string }
+        client_uuid: { type: string }
+        revision: { type: integer, minimum: 1 }
+
+    RouteFull:
+      type: object
+      required: [id, name, kind, has_file, created_at, updated_at, client_uuid, revision, route_data]
+      properties:
+        id: { type: integer }
+        name: { type: string }
+        kind: { type: string, enum: [sketch, mission] }
+        file_name: { type: string, nullable: true }
+        has_file: { type: boolean }
+        created_at: { type: string }
+        updated_at: { type: string }
+        client_uuid: { type: string }
+        revision: { type: integer, minimum: 1 }
+        route_data: { type: object, description: "A sketch's `{ version: 1, routes: [...] }`; a mission's is a display summary." }
+
+    PointList:
+      type: array
+      minItems: 1
+      description: |
+        The points of a local point set as the web keeps them: `{ id, name, description, group, icon, elevationFt, lat, lon }`,
+        read from an AMPS `.LPS` file. The server does not look inside.
+      items: { type: object }
+
+    PointSetSummary:
+      type: object
+      required: [id, name, point_count, created_at, updated_at, client_uuid, revision]
+      properties:
+        id: { type: integer }
+        name: { type: string }
+        point_count: { type: integer, minimum: 0 }
+        created_at: { type: string }
+        updated_at: { type: string }
+        client_uuid: { type: string }
+        revision: { type: integer, minimum: 1 }
+
+    PointSetFull:
+      type: object
+      required: [id, name, point_count, created_at, updated_at, client_uuid, revision, points]
+      properties:
+        id: { type: integer }
+        name: { type: string }
+        point_count: { type: integer, minimum: 0 }
+        created_at: { type: string }
+        updated_at: { type: string }
+        client_uuid: { type: string }
+        revision: { type: integer, minimum: 1 }
+        points: { type: array, items: { type: object } }
+
+    BriefSummary:
+      type: object
+      required: [id, name, created_at, updated_at, client_uuid, revision]
+      properties:
+        id: { type: integer }
+        name: { type: string }
+        created_at: { type: string }
+        updated_at: { type: string }
+        client_uuid: { type: string, description: "The record's identity: the device's own if it sent one." }
+        revision: { type: integer, minimum: 1, description: Bumped by every change. }
+
+    BriefFull:
+      type: object
+      required: [id, name, created_at, updated_at, client_uuid, revision, data]
+      properties:
+        id: { type: integer }
+        name: { type: string }
+        created_at: { type: string }
+        updated_at: { type: string }
+        client_uuid: { type: string }
+        revision: { type: integer, minimum: 1 }
+        data: { type: object, description: "The brief document (docs/MISSION_BRIEF.md §2.2)." }
+
+    WeatherReport:
+      type: object
+      required: [station_id, name, temp_c, dewp_c, wind_spd_kts, wind_dir, wind_gust_kts, vis_sm, pressure, flight_category, raw_metar, distance_miles, notams]
+      properties:
+        station_id: { type: string, description: "The ICAO id, `UNKNOWN` when the report has none, `TIMEOUT` when no station answered." }
+        name: { type: string, description: "The station's name; `AviationWeather API Offline` when none answered." }
+        temp_c: { type: number, nullable: true }
+        dewp_c: { type: number, nullable: true }
+        wind_spd_kts: { type: number, nullable: true }
+        wind_dir: { nullable: true, description: "Degrees true the wind is from, a number; `VRB` (text) for a variable wind; null with no report." }
+        wind_gust_kts: { type: number, nullable: true }
+        vis_sm: { nullable: true, description: "Statute miles: a number, or text such as `10+`; null with no report." }
+        pressure: { description: "Altimeter in inches of mercury, a number rounded to hundredths, or the text `--` when there is none." }
+        flight_category: { type: string, nullable: true, description: "VFR, MVFR, IFR or LIFR. A forecast's is worked out from its ceiling and visibility, null when it gives either not." }
+        raw_metar: { type: string, nullable: true }
+        distance_miles: { type: number, description: "How far the station is from the position, in statute miles; 0 when none answered." }
+        kind: { type: string, enum: [observation, forecast], description: "Only when `at` was sent: what the answer is for that time." }
+        at: { type: string, description: "Only with `at`: the time asked for, as UTC (`2026-10-16T14:30:00Z`)." }
+        observed: { type: string, nullable: true, description: "An observation for `at` only: when the METAR was taken (UTC); null when no station answered." }
+        raw_taf: { type: string, nullable: true, description: "A forecast only: the TAF's text." }
+        issued: { type: string, nullable: true, description: "A forecast only: when the TAF was issued (UTC)." }
+        valid_from: { type: string, nullable: true, description: "A forecast only: the start of the period covering `at` (UTC)." }
+        valid_to: { type: string, nullable: true, description: "A forecast only: the end of that period (UTC)." }
+        notams:
+          description: |
+            An object of lists of NOTAM text by the feature they are about (`{"Obstruction": ["…"]}`, or `{"Clear": ["No active NOTAMs in LZ area."]}` when
+            there are none), or a sentence when the search could not be done (`NOTAM fetch failed.` or `NOTAMs currently unavailable.`).
+
+    AircraftProfile:
+      type: object
+      additionalProperties: false
+      required:
+        - id
+        - slug
+        - name
+        - designation
+        - icon_key
+        - is_system
+        - rotor_diameter_m
+        - rotor_tip_clearance_m
+        - default_airspeed_kts
+        - default_airspeed_type
+        - max_indicated_kts
+        - default_altitude_ft
+        - default_altitude_ref
+        - min_altitude_ft_msl
+        - max_altitude_ft_msl
+        - default_fuel_flow_lb_hr
+        - default_gross_weight_lb
+        - perf_source
+        - amps_vehicle_description
+        - has_template
+        - template_kind
+        - template_name
+        - sort_order
+      description: |
+        An airframe's footprint, planning defaults and AMPS binding. The AMPS bytes
+        themselves are never in this shape (`has_template` says whether there are
+        any); `GET /api/aircraft-profiles/{id}/template` returns them.
+      properties:
+        id: { type: integer }
+        slug: { type: string }
+        name: { type: string }
+        designation: { type: string }
+        icon_key: { type: string }
+        is_system: { type: boolean, description: True for the admin's master list. }
+        rotor_diameter_m: { type: number }
+        rotor_tip_clearance_m: { type: number }
+        default_airspeed_kts: { type: number }
+        default_airspeed_type: { type: string, enum: [ground, indicated, true] }
+        max_indicated_kts: { type: number }
+        default_altitude_ft: { type: number }
+        default_altitude_ref: { type: string, enum: [agl, msl] }
+        min_altitude_ft_msl: { type: number }
+        max_altitude_ft_msl: { type: number }
+        default_fuel_flow_lb_hr: { type: number }
+        default_gross_weight_lb: { type: number }
+        perf_source: { type: string, enum: [vidx, published, custom] }
+        amps_vehicle_description: { type: string, nullable: true }
+        has_template: { type: boolean }
+        template_kind: { type: string, nullable: true, description: "`msnx` or `vidx`." }
+        template_name: { type: string, nullable: true }
+        sort_order: { type: integer }
+        client_uuid: { type: string, description: "The profile's identity. The caller's own profiles only." }
+        revision: { type: integer, minimum: 1, description: "Bumped by every change. The caller's own profiles only." }
+
+    AircraftProfileInput:
+      type: object
+      description: |
+        What a user may set. Anything else is ignored. Numbers are range-checked
+        (rotor 1 to 60 m, speeds 1 to 400 kt, and so on); a minimum altitude above
+        the maximum is refused.
+      properties:
+        client_uuid: { type: string, description: "On create only: a UUID the device chose." }
+        name: { type: string, maxLength: 120 }
+        designation: { type: string, maxLength: 40 }
+        icon_key: { type: string, maxLength: 40 }
+        rotor_diameter_m: { type: number }
+        rotor_tip_clearance_m: { type: number }
+        default_airspeed_kts: { type: number }
+        default_airspeed_type: { type: string, enum: [ground, indicated, true] }
+        max_indicated_kts: { type: number }
+        default_altitude_ft: { type: number }
+        default_altitude_ref: { type: string, enum: [agl, msl] }
+        min_altitude_ft_msl: { type: number }
+        max_altitude_ft_msl: { type: number }
+        default_fuel_flow_lb_hr: { type: number }
+        default_gross_weight_lb: { type: number }
+        amps_vehicle_description: { type: string, maxLength: 200 }
+
+    Change:
+      type: object
+      required: [type, id, client_uuid, revision, deleted, name, seq, data]
+      description: |
+        One changed record. `type` says which collection: `lz`, `route`, `pointset`,
+        `aircraft` (the caller's own profiles; the master list does not sync) or `brief`.
+        A device passes over a `type` it does not know, which a newer server may add.
+        A tombstone has `deleted: true`, an empty `name` and empty `data`. A route also
+        has `kind`, `file_name` and `has_file`; fetch the mission file separately.
+      properties:
+        type: { type: string, enum: [lz, route, pointset, aircraft, brief] }
+        id: { type: integer }
+        client_uuid: { type: string }
+        revision: { type: integer, minimum: 1 }
+        deleted: { type: boolean }
+        name: { type: string }
+        created_at: { type: string, nullable: true }
+        updated_at: { type: string, nullable: true }
+        seq: { type: integer, minimum: 1, description: This change's place in the user's order. }
+        kind: { type: string, description: "Routes only: `sketch` or `mission`." }
+        file_name: { type: string, nullable: true }
+        has_file: { type: boolean }
+        data: { description: "lz_data, route_data, the points, the profile or the brief document, per `type`." }
+
+    ChangeFeed:
+      type: object
+      additionalProperties: false
+      required: [cursor, has_more, changes]
+      properties:
+        cursor: { type: integer, minimum: 0, description: "Send this as `since` next time. Equals `since` when nothing changed." }
+        has_more: { type: boolean, description: Ask again at once. }
+        changes:
+          type: array
+          items:
+            $ref: "#/components/schemas/Change"
+
+    Config:
+      type: object
+      additionalProperties: false
+      required: [configVersion, serverVersion, apiVersion, apiMajors, minAppVersion, maintenance, services, mapbox]
+      properties:
+        configVersion:
+          type: integer
+          minimum: 1
+          description: Bumped when the shape changes in a way an old app cannot read.
+        serverVersion:
+          type: string
+          description: The backend's semantic version (the product's, shared with the web).
+        apiVersion:
+          type: string
+          pattern: '^\d{1,4}\.\d{1,4}\.\d{1,4}$'
+          description: |
+            This spec's `info.version`: the API the server serves now. A server from before
+            it was sent serves API 1.
+        apiMajors:
+          type: array
+          minItems: 1
+          items: { type: integer, minimum: 1 }
+          description: |
+            Every API major the server still answers: the current one, and any kept for apps
+            not yet updated. An app that supports none of them is told to update (or, when
+            the server is the older one, waits for it).
+        minAppVersion:
+          type: object
+          additionalProperties: false
+          required: [android, ios]
+          description: |
+            The oldest app version the server still supports, per platform, as
+            `X.Y.Z`; null means no minimum. An app below it shows "Update required".
+          properties:
+            android:
+              type: string
+              nullable: true
+              pattern: '^\d{1,4}\.\d{1,4}\.\d{1,4}$'
+            ios:
+              type: string
+              nullable: true
+              pattern: '^\d{1,4}\.\d{1,4}\.\d{1,4}$'
+        maintenance:
+          type: object
+          additionalProperties: false
+          required: [active, message]
+          properties:
+            active:
+              type: boolean
+            message:
+              type: string
+              nullable: true
+              maxLength: 500
+        services:
+          type: object
+          additionalProperties: false
+          required: [lidarBuilds, packs]
+          description: Optional services, so the app can hide what is down instead of failing.
+          properties:
+            lidarBuilds:
+              type: boolean
+              description: The 3D point-cloud build service is configured.
+            packs:
+              type: boolean
+              description: The map-pack service (offline maps and terrain for an area; docs/NATIVE_APPS_PLAN.md) is configured. Not built yet. Unrelated to mission packs, the shared containers under /api/packs.
+        mapbox:
+          type: object
+          additionalProperties: false
+          required: [publicToken]
+          properties:
+            publicToken:
+              type: string
+              nullable: true
+              pattern: '^pk\.'
+              description: A *public* Mapbox token only; a secret one is never served.
+
+    FieldAnalysis:
+      type: object
+      required: [status, suggested_lz, elevation, message]
+      properties:
+        status: { type: string, enum: [success] }
+        suggested_lz:
+          type: array
+          description: The polygon of the area found, `[lat, lon]` pairs.
+          items:
+            type: array
+            items: { type: number }
+        elevation:
+          type: string
+          description: Ground elevation in feet (SRTM 30 m), or `TBD` when it could not be had.
+        message: { type: string }
+
+    SlopeStats:
+      type: object
+      required: [maxDeg, p95Deg, areaOver6Pct, areaOver10Pct, areaOver15Pct, sampleCount, sampleAreaM2]
+      properties:
+        maxDeg: { type: number }
+        p95Deg: { type: number }
+        areaOver6Pct: { type: number }
+        areaOver10Pct: { type: number }
+        areaOver15Pct: { type: number }
+        sampleCount: { type: integer }
+        sampleAreaM2: { type: number }
+
+    ThreatRadar:
+      type: object
+      required: [type, rangeNmi]
+      properties:
+        type: { type: integer, description: "0 detection, 1 engagement." }
+        rangeNmi: { type: number }
+        antennaHeightFt: { type: number }
+        aglNotMsl: { type: boolean }
+        showMask: { type: boolean }
+        showRangeRings: { type: boolean }
+        bands:
+          type: array
+          items:
+            type: object
+            required: [altFt]
+            properties:
+              altFt: { type: number }
+              color: { type: string, description: "`#RRGGBB`." }
+              alpha: { type: number }
+              colorIndex: { type: integer }
+              viewable: { type: boolean }
+    ThreatMask:
+      type: object
+      required: [bounds, radars]
+      properties:
+        bounds:
+          type: array
+          description: "`[[south, west], [north, east]]` of every raster."
+          items:
+            type: array
+            items: { type: number }
+        radars:
+          type: array
+          items:
+            type: object
+            required: [type, png]
+            properties:
+              type: { type: integer }
+              png: { type: string, description: "A `data:image/png;base64,` raster over `bounds`, one colour per altitude band, the lowest band on top." }
+    TerrainAnalysis:
+      type: object
+      required: [status, overlay, bounds, source, resolutionM, verticalDatum, stats, directional, byHeading, contours, profiles, thresholds]
+      properties:
+        status: { type: string, enum: [success] }
+        overlay:
+          type: string
+          description: A `data:image/png;base64,` raster over `bounds`, banded by slope and transparent outside the polygon.
+        bounds:
+          type: array
+          description: "`[[south, west], [north, east]]` of the raster."
+          items:
+            type: array
+            items: { type: number }
+        source:
+          type: string
+          description: Which terrain source answered, for example `local_highres_cog` or `terrarium`.
+        resolutionM: { type: number }
+        verticalDatum: { type: string }
+        stats:
+          $ref: "#/components/schemas/SlopeStats"
+        directional:
+          type: object
+          nullable: true
+          description: |
+            Null when no landing heading was sent. Percentages are of the polygon's area that is over
+            the UH-60 limit in `thresholds` for that direction.
+          required: [headingDeg, noseHighMaxDeg, noseLowMaxDeg, crossSlopeMaxDeg, noseHighOverLimitPct, noseLowOverLimitPct, crossSlopeOverLimitPct]
+          properties:
+            headingDeg: { type: number }
+            noseHighMaxDeg: { type: number }
+            noseLowMaxDeg: { type: number }
+            crossSlopeMaxDeg: { type: number }
+            noseHighOverLimitPct: { type: number }
+            noseLowOverLimitPct: { type: number }
+            crossSlopeOverLimitPct: { type: number }
+        byHeading:
+          type: array
+          description: |
+            The steepest slope over the polygon for each whole heading, 0 to 359 in order (360
+            entries), worked out as `directional` is and rounded to 0.1°: nose high is the ground
+            rising ahead (the nose up), nose low the ground falling away (the nose down), and the
+            cross slope is either side. A client judges any landing heading from this without asking
+            again (it applies the wind to the limits itself). Headings are the
+            terrain grid's: true north over the Terrarium tiles, the UTM grid's north over a local
+            DEM. A server from before this field sends none, and a client must keep working without it.
+          items:
+            type: object
+            additionalProperties: false
+            required: [heading, noseHighMaxDeg, noseLowMaxDeg, crossSlopeMaxDeg]
+            properties:
+              heading: { type: integer, minimum: 0, maximum: 359 }
+              noseHighMaxDeg: { type: number, minimum: 0 }
+              noseLowMaxDeg: { type: number, minimum: 0 }
+              crossSlopeMaxDeg: { type: number, minimum: 0 }
+        contours:
+          type: object
+          description: |
+            Contour lines of the ground in the polygon and a 40 m ring round it, so a crew can read its
+            shape: in feet, at `intervalFt` (the finest of 1, 2, 5, 10, 20, 25, 50 and 100 that keeps
+            the ground to about a dozen lines), from the same grid as the slope, lightly smoothed. Each
+            entry of `lines` is one piece of a contour: wholly `inside` the polygon or wholly in the ring
+            outside it (pieces that meet share their joining point), every fifth interval `major`, and
+            the longest inside piece of a height carries a `label` point for its number, placed at least
+            40 m from every other (major heights first), so some minor heights have none. Heights are
+            the source's own (`verticalDatum`). A server from before this field sends none, and a client
+            must keep working without it.
+          additionalProperties: false
+          required: [intervalFt, lines]
+          properties:
+            intervalFt: { type: integer, minimum: 1 }
+            lines:
+              type: array
+              items:
+                type: object
+                additionalProperties: false
+                required: [elevationFt, major, inside, points, label]
+                properties:
+                  elevationFt: { type: integer }
+                  major: { type: boolean }
+                  inside: { type: boolean }
+                  points:
+                    type: array
+                    description: "`[lat, lon]` pairs, two or more; a ring's last is its first."
+                    items:
+                      type: array
+                      items: { type: number }
+                  label:
+                    type: array
+                    nullable: true
+                    description: "`[lat, lon]` where the height's number goes, on this piece; null on every other piece."
+                    items: { type: number }
+        profiles:
+          type: object
+          nullable: true
+          description: |
+            The ground along straight lines through the polygon's middle (`center`, its area centroid), for
+            the slope profile a client draws along and across the landing heading: one line for each
+            heading 0, 2, … 178 (`headingStepDeg`), reaching `halfLengthM` each way (300 m past the
+            polygon's farthest corner), its heights in feet every `stepM` from `halfLengthM` behind the
+            middle (the way the heading points from) to `halfLengthM` ahead, null where the terrain has
+            none; and `lz`, where the line crosses the boundary, in metres from the middle (behind
+            negative), or null. A heading of 180 or more is the opposite line read backwards. Headings
+            are true. Null when no terrain covers the ground round the polygon (a local source must
+            cover it whole). A server from before this field sends none, and a client must keep working
+            without it.
+          additionalProperties: false
+          required: [center, stepM, halfLengthM, headingStepDeg, lines]
+          properties:
+            center:
+              type: array
+              items: { type: number }
+            stepM: { type: number }
+            halfLengthM: { type: number }
+            headingStepDeg: { type: integer }
+            lines:
+              type: array
+              items:
+                type: object
+                additionalProperties: false
+                required: [heading, elevationsFt, lz]
+                properties:
+                  heading: { type: integer, minimum: 0, maximum: 179 }
+                  elevationsFt:
+                    type: array
+                    items: { type: number, nullable: true }
+                  lz:
+                    type: array
+                    nullable: true
+                    items: { type: number }
+        thresholds:
+          type: object
+          required: [bands, uh60]
+          properties:
+            bands:
+              type: array
+              description: The slope band edges in degrees the raster is coloured by.
+              items: { type: number }
+            uh60:
+              type: object
+              required: [noseHigh, noseLow, crossSlope]
+              description: |
+                The UH-60 slope landing limits in degrees with no wind: 15 nose high (nose up), 6
+                nose low (nose down), 15 cross slope. A client reduces them for the wind.
+              properties:
+                noseHigh: { type: number }
+                noseLow: { type: number }
+                crossSlope: { type: number }
+
+    # -- Mission packs -----------------------------------------------------------------------
+
+    Person:
+      type: object
+      additionalProperties: false
+      required: [id, name]
+      properties:
+        id: { type: integer, nullable: true, description: "Null once the account is deleted (the name is kept as it was)." }
+        name: { type: string }
+
+    Status:
+      type: object
+      additionalProperties: false
+      required: [status]
+      properties:
+        status: { type: string, enum: [deleted, removed] }
+
+    PackError:
+      type: object
+      required: [error]
+      description: |
+        `error` is for people; `code` is stable and meant for the app: `pack_not_found`,
+        `pack_read_only` (a viewer), `owner_only`, `pack_finished` (423, with who finished it and
+        when), `invalid_batch`, `invalid_op` (with `index` and the `reason` from
+        contracts/fixtures/packs/ops.json, or `bad_client_op_id`, `bad_summary`), `item_too_large`
+        (413, with `item`), `invalid_name`, `invalid_description`, `invalid_uuid`, `uuid_taken`,
+        `not_in_team`, `invalid_role`, `invalid_source`, `invalid_item`, `source_not_found`,
+        `mission_not_supported`, `unreadable_source`, `item_exists`, `item_not_found`,
+        `not_your_original`, `original_gone`, `original_unknown`, `empty_point_set`, `feature_disabled`,
+        `not_a_teammate`, `already_member`, `member_not_found`, `owner_must_transfer`,
+        `invalid_email`, `invite_not_found`, `invite_gone` / `invite_expired` (410),
+        `rate_limited` (429), `team_not_found`, `team_managers_only`, `invalid_query`.
+      properties:
+        error: { type: string }
+        code: { type: string }
+        index: { type: integer }
+        reason: { type: string }
+        item: { type: string }
+        finished_at: { type: string, nullable: true }
+        finished_by:
+          nullable: true
+          allOf: [{ $ref: "#/components/schemas/Person" }]
+        taken:
+          type: array
+          description: |
+            On `POST /api/packs/{uuid}/ops` only, and always on its 403 `pack_read_only`, 413
+            `item_too_large` and 423 `pack_finished`: the operations of the refused batch the pack
+            already has (the caller's own, in log order, possibly none). They were taken by an
+            earlier send of the batch whose answer was lost; the rest of the batch was not taken.
+          items: { $ref: "#/components/schemas/PackOpResult" }
+
+    PackTeam:
+      type: object
+      additionalProperties: false
+      required: [id, name, member_count, role]
+      properties:
+        id: { type: integer }
+        name: { type: string }
+        member_count: { type: integer, minimum: 0 }
+        role: { type: string, enum: [editor, viewer], description: What the team's members may do in the pack. }
+
+    PackSummary:
+      type: object
+      additionalProperties: false
+      required: [uuid, name, description, status, role, owner, team, head_seq, seen_seq, member_count, audience_count,
+                 item_count, item_counts, finished_at, finished_by, created_at, updated_at]
+      properties:
+        uuid: { type: string }
+        name: { type: string }
+        description: { type: string }
+        status: { type: string, enum: [active, finished], description: "finished: read-only for everyone." }
+        role: { type: string, enum: [owner, editor, viewer], description: The caller's. }
+        owner: { $ref: "#/components/schemas/Person" }
+        team:
+          nullable: true
+          allOf: [{ $ref: "#/components/schemas/PackTeam" }]
+        head_seq: { type: integer, minimum: 0, description: The number of the pack's latest event. }
+        seen_seq: { type: integer, minimum: 0, description: "The newest event the caller has seen (PUT .../seen); 0 if never." }
+        member_count: { type: integer, minimum: 0, description: "Members in their own right, not counting a shared team." }
+        audience_count:
+          type: integer
+          minimum: 0
+          description: "Everyone who can open the pack, each once: its members and the members of the team it is shared with."
+        item_count: { type: integer, minimum: 0 }
+        item_counts: { $ref: "#/components/schemas/PackItemCounts" }
+        finished_at: { type: string, nullable: true }
+        finished_by:
+          nullable: true
+          allOf: [{ $ref: "#/components/schemas/Person" }]
+        created_at: { type: string }
+        updated_at: { type: string }
+
+    Pack:
+      type: object
+      additionalProperties: false
+      required: [uuid, name, description, status, role, owner, team, head_seq, seen_seq, member_count, audience_count,
+                 item_count, item_counts, finished_at, finished_by, created_at, updated_at, members, items, live_url]
+      description: A PackSummary, with its members and every live item, as of `head_seq`.
+      properties:
+        uuid: { type: string }
+        name: { type: string }
+        description: { type: string }
+        status: { type: string, enum: [active, finished] }
+        role: { type: string, enum: [owner, editor, viewer] }
+        owner: { $ref: "#/components/schemas/Person" }
+        team:
+          nullable: true
+          allOf: [{ $ref: "#/components/schemas/PackTeam" }]
+        head_seq: { type: integer, minimum: 0 }
+        seen_seq: { type: integer, minimum: 0 }
+        member_count: { type: integer, minimum: 0 }
+        audience_count: { type: integer, minimum: 0 }
+        item_count: { type: integer, minimum: 0 }
+        item_counts: { $ref: "#/components/schemas/PackItemCounts" }
+        finished_at: { type: string, nullable: true }
+        finished_by:
+          nullable: true
+          allOf: [{ $ref: "#/components/schemas/Person" }]
+        created_at: { type: string }
+        updated_at: { type: string }
+        members:
+          type: array
+          items: { $ref: "#/components/schemas/PackMember" }
+        items:
+          type: array
+          items: { $ref: "#/components/schemas/PackItem" }
+        live_url:
+          type: string
+          nullable: true
+          pattern: '^wss?://'
+          description: |
+            Where to open the live stream for this pack (docs/MISSION_PACKS.md, "The live stream"). Null when
+            this deployment has no live service: poll `GET /api/packs/{uuid}/events` instead.
+
+    PackItemCounts:
+      type: object
+      additionalProperties: false
+      required: [lz, route, pointset]
+      description: Live items by kind.
+      properties:
+        lz: { type: integer, minimum: 0 }
+        route: { type: integer, minimum: 0 }
+        pointset: { type: integer, minimum: 0 }
+
+    PackMember:
+      type: object
+      additionalProperties: false
+      required: [user_id, name, email, role, added_at, seen_at]
+      properties:
+        user_id: { type: integer }
+        name: { type: string }
+        email: { type: string, description: The sign-in address. }
+        role: { type: string, enum: [owner, editor, viewer] }
+        added_at: { type: string }
+        seen_at: { type: string, nullable: true, description: When they last looked at the pack (PUT .../seen); null if never. }
+
+    PackMemberReply:
+      type: object
+      additionalProperties: false
+      required: [member]
+      properties:
+        member: { $ref: "#/components/schemas/PackMember" }
+
+    PackItem:
+      type: object
+      additionalProperties: false
+      required: [uuid, kind, name, revision, seq, created_by, updated_by, created_at, updated_at, source]
+      properties:
+        uuid: { type: string }
+        kind: { type: string, enum: [lz, route, pointset, brief] }
+        name: { type: string }
+        revision: { type: integer, minimum: 1, description: Bumped by every applied operation. }
+        seq: { type: integer, minimum: 0, description: The event that last changed it. }
+        created_by:
+          nullable: true
+          allOf: [{ $ref: "#/components/schemas/Person" }]
+        updated_by:
+          nullable: true
+          allOf: [{ $ref: "#/components/schemas/Person" }]
+        created_at: { type: string }
+        updated_at: { type: string }
+        source:
+          type: object
+          nullable: true
+          additionalProperties: false
+          description: Where a copy from someone's library came from. Null for an item made in the pack.
+          required: [kind, uuid, revision, original, original_updated_at, pack_changes, last_pack_change]
+          properties:
+            kind: { type: string, enum: [lz, route, pointset] }
+            uuid:
+              type: string
+              nullable: true
+              description: |
+                The original's `client_uuid`. Copying in a record saved before sync gives it one first;
+                null only for a copy made before that was so, which cannot be traced to its original.
+            revision: { type: integer }
+            original:
+              type: string
+              nullable: true
+              enum: [same, changed, deleted]
+              description: |
+                Only for the member who copied it in (the original is their private record); null for
+                everyone else, and for a copy whose `uuid` is null.
+            original_updated_at:
+              type: string
+              nullable: true
+              description: |
+                When the original last changed, while it is `same` or `changed`; null otherwise and for
+                everyone but the member who copied it in.
+            pack_changes:
+              type: integer
+              nullable: true
+              minimum: 0
+              description: |
+                While `original` is `changed`: the edits made to the item's content in the pack since it
+                was copied in or last updated from the original, which updating would replace. Operations
+                sent as one edit (one after another, by one person, with one summary) count once; a rename
+                is not counted, since updating keeps the name. Null otherwise.
+            last_pack_change:
+              type: object
+              nullable: true
+              additionalProperties: false
+              description: The newest of those edits, while `pack_changes` is above 0; null otherwise.
+              required: [actor, summary, created_at]
+              properties:
+                actor:
+                  type: object
+                  additionalProperties: false
+                  required: [id, name]
+                  description: Who made it, as the log has them (id null for a deleted account).
+                  properties:
+                    id: { type: integer, nullable: true }
+                    name: { type: string }
+                summary: { type: string, description: The edit's sentence in the History panel. }
+                created_at: { type: string }
+        data:
+          description: The same JSON the library keeps (lz_data, route_data, or the list of points). Present wherever the item is returned whole.
+
+    PackEvent:
+      type: object
+      additionalProperties: false
+      required: [seq, type, item, actor, summary, status, reason, client_op_id, op, created_at]
+      properties:
+        seq: { type: integer, minimum: 1 }
+        type:
+          type: string
+          description: |
+            An item operation (`item.create`, `item.delete`, `item.rename`, `item.replace`, `set`, `patch`,
+            `upsert`, `insert`, `remove`) or a pack event (`pack.create`, `pack.update`, `pack.share`,
+            `pack.finish`, `pack.reopen`, `pack.transfer`, `member.add`, `member.join`, `member.role`,
+            `member.remove`, `invite.create`, `invite.revoke`). A client applies the first kind with its
+            applier and reads the second for the pack's state; a type it does not know, it skips.
+        item: { type: string, nullable: true }
+        actor:
+          type: object
+          additionalProperties: false
+          required: [id, name]
+          description: "Who made the change; id null for the server's own (name `EZ-PZ`) or a deleted account."
+          properties:
+            id: { type: integer, nullable: true }
+            name: { type: string }
+        summary: { type: string, description: 'The sentence for the History panel, e.g. "Colin moved Chalk 2 on LZ Hawk".' }
+        status: { type: string, enum: [applied, skipped] }
+        reason: { type: string, nullable: true, description: Why it was skipped (contracts/fixtures/packs/ops.json). }
+        client_op_id: { type: string, nullable: true }
+        op:
+          type: object
+          required: [type]
+          description: The operation itself, as applied (without `client_op_id` and `summary`).
+        created_at: { type: string }
+
+    PackOpsResult:
+      type: object
+      additionalProperties: false
+      required: [head_seq, results, events, has_more]
+      properties:
+        head_seq: { type: integer, minimum: 0 }
+        results:
+          type: array
+          description: One per operation sent, in order.
+          items: { $ref: "#/components/schemas/PackOpResult" }
+        events:
+          type: array
+          items: { $ref: "#/components/schemas/PackEvent" }
+        has_more: { type: boolean }
+
+    PackOpResult:
+      type: object
+      additionalProperties: false
+      required: [client_op_id, seq, status, reason]
+      description: How one operation went, as the pack's log has it.
+      properties:
+        client_op_id: { type: string }
+        seq: { type: integer, minimum: 1 }
+        status: { type: string, enum: [applied, skipped] }
+        reason: { type: string, nullable: true, description: "Why it was skipped (contracts/fixtures/packs/ops.json); null when applied." }
+
+    PackEventPage:
+      type: object
+      additionalProperties: false
+      required: [events, cursor, has_more, head_seq]
+      properties:
+        events:
+          type: array
+          items: { $ref: "#/components/schemas/PackEvent" }
+        cursor: { type: integer, minimum: 0, description: Send this as `since` next time. }
+        has_more: { type: boolean }
+        head_seq: { type: integer, minimum: 0 }
+
+    PackItemReply:
+      type: object
+      additionalProperties: false
+      required: [item, event, head_seq]
+      properties:
+        item: { $ref: "#/components/schemas/PackItem" }
+        event:
+          nullable: true
+          allOf: [{ $ref: "#/components/schemas/PackEvent" }]
+        head_seq: { type: integer, minimum: 0 }
+
+    LibraryCopy:
+      type: object
+      additionalProperties: false
+      required: [kind, id, client_uuid, name, revision]
+      properties:
+        kind: { type: string, enum: [lz, route, pointset, brief] }
+        id: { type: integer }
+        client_uuid: { type: string }
+        name: { type: string }
+        revision: { type: integer, minimum: 1 }
+
+    Invite:
+      type: object
+      additionalProperties: false
+      required: [id, email, role, status, invited_by, expires_at, created_at, pack, team]
+      properties:
+        id: { type: integer }
+        email: { type: string, nullable: true, description: "Null for a team's single-use link." }
+        role: { type: string, enum: [editor, viewer, admin, member] }
+        status: { type: string, enum: [pending, accepted, declined, revoked, expired] }
+        invited_by:
+          nullable: true
+          allOf: [{ $ref: "#/components/schemas/Person" }]
+        expires_at: { type: string }
+        created_at: { type: string }
+        pack:
+          type: object
+          nullable: true
+          additionalProperties: false
+          required: [uuid, name]
+          properties:
+            uuid: { type: string }
+            name: { type: string }
+        team:
+          type: object
+          nullable: true
+          additionalProperties: false
+          required: [id, name]
+          properties:
+            id: { type: integer }
+            name: { type: string }
+
+    InviteOnly:
+      type: object
+      additionalProperties: false
+      required: [invite]
+      properties:
+        invite: { $ref: "#/components/schemas/Invite" }
+
+    InviteList:
+      type: object
+      additionalProperties: false
+      required: [invites]
+      properties:
+        invites:
+          type: array
+          items: { $ref: "#/components/schemas/Invite" }
+
+    InviteReply:
+      type: object
+      additionalProperties: false
+      required: [invite]
+      properties:
+        invite: { $ref: "#/components/schemas/Invite" }
+        email_sent: { type: boolean, description: Present for an emailed invitation. }
+        token: { type: string, description: "A team link's token: shown here once, never again." }
+
+    InviteAccepted:
+      type: object
+      additionalProperties: false
+      required: [invite, pack, team]
+      properties:
+        invite: { $ref: "#/components/schemas/Invite" }
+        pack:
+          nullable: true
+          allOf: [{ $ref: "#/components/schemas/PackSummary" }]
+        team:
+          nullable: true
+          allOf: [{ $ref: "#/components/schemas/TeamSummary" }]
+
+    TeamSummary:
+      type: object
+      additionalProperties: false
+      required: [id, name, role, member_count, created_at]
+      properties:
+        id: { type: integer }
+        name: { type: string }
+        role: { type: string, enum: [owner, admin, member], description: The caller's. }
+        member_count: { type: integer, minimum: 1 }
+        created_at: { type: string }
+
+    Team:
+      type: object
+      additionalProperties: false
+      required: [id, name, role, member_count, created_at, members]
+      properties:
+        id: { type: integer }
+        name: { type: string }
+        role: { type: string, enum: [owner, admin, member] }
+        member_count: { type: integer, minimum: 1 }
+        created_at: { type: string }
+        members:
+          type: array
+          items:
+            type: object
+            additionalProperties: false
+            required: [user_id, name, email, role, joined_at]
+            properties:
+              user_id: { type: integer }
+              name: { type: string }
+              email: { type: string }
+              role: { type: string, enum: [owner, admin, member] }
+              joined_at: { type: string }
+
+    NotificationFeed:
+      type: object
+      additionalProperties: false
+      required: [notifications, settings]
+      properties:
+        notifications:
+          type: array
+          items: { $ref: "#/components/schemas/Notification" }
+        settings: { $ref: "#/components/schemas/NotificationSettings" }
+
+    NotificationSettings:
+      type: object
+      additionalProperties: false
+      required: [invitations, pack_finished, pack_owner]
+      description: Each group on or off for the caller, on every device. On unless the person turned it off.
+      properties:
+        invitations: { type: boolean, description: "`pack_invite`, `pack_added`, `team_invite`." }
+        pack_finished: { type: boolean }
+        pack_owner: { type: boolean }
+
+    Notification:
+      type: object
+      additionalProperties: false
+      required: [id, type, group, key, pack, team, actor, invite_id, role, created_at, updated_at, seen, quiet]
+      description: |
+        One thing that happened to the caller. The client makes the words from `type` and the names here;
+        a `type` (or a `group`) it does not know is passed over, so new ones can be added within the major.
+      properties:
+        id: { type: integer }
+        type:
+          type: string
+          description: |
+            `pack_invite` (invited to a pack: `pack`, `actor`, `invite_id`, `role`), `pack_added` (added to a
+            pack by name: `pack`, `actor`, `role`), `team_invite` (invited to a team:
+            `team`, `actor`, `invite_id`, `role`), `pack_finished` (`pack`, `actor`), `pack_owner` (a pack
+            handed to the caller: `pack`, and `actor` unless it came to them from a deleted account).
+        group: { type: string, description: "Which of `settings` it falls under." }
+        key:
+          type: string
+          description: |
+            One thing, one key (`pack_invite:34`, `pack_finished:<uuid>`): a notification with the key of
+            one shown replaces it.
+        pack:
+          type: object
+          nullable: true
+          additionalProperties: false
+          required: [uuid, name]
+          properties:
+            uuid: { type: string }
+            name: { type: string, description: Its name now. }
+        team:
+          type: object
+          nullable: true
+          additionalProperties: false
+          required: [id, name]
+          properties:
+            id: { type: integer }
+            name: { type: string, description: Its name now. }
+        actor:
+          type: object
+          nullable: true
+          additionalProperties: false
+          required: [name]
+          description: Who did it, by the name they had then.
+          properties:
+            name: { type: string }
+        invite_id:
+          type: integer
+          nullable: true
+          description: An invitation's, to accept or decline it (`/api/invites/{invite_id}/accept`). Never its link's token.
+        role: { type: string, nullable: true, description: "The role the invitation offers, or for `pack_added` the one the caller was given." }
+        created_at: { type: string }
+        updated_at: { type: string, description: "Moves when an invitation is sent again; shown again without an alert." }
+        seen: { type: boolean, description: "Seen on one of the caller's devices: shown on none." }
+        quiet:
+          type: boolean
+          description: Past ten in an hour for the caller, so shown without a sound or a banner.
+
+    UserBrief:
+      type: object
+      additionalProperties: false
+      required: [id, name, email]
+      properties:
+        id: { type: integer }
+        name: { type: string }
+        email: { type: string, description: The sign-in address. }

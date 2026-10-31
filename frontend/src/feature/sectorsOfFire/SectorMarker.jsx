@@ -26,6 +26,9 @@ const SectorMarker = ({
 
   const center = getCentroid(data.points);
   const positions = data.points.map((p) => [p.lat, p.lng]);
+  // Without moveSector/updateSectorPoint (a read-only Mission Pack) there are no handles to drag.
+  const movable = Boolean(moveSector);
+  const reshapable = Boolean(updateSectorPoint);
 
   // 3. EVENT HANDLERS
 
@@ -158,6 +161,7 @@ const SectorMarker = ({
             setIsActive((active) => !active);
           },
           contextmenu: (e) => {
+            if (!deleteSector) return; // nothing to delete it with: the map's own menu opens instead
             L.DomEvent.stopPropagation(e);
             if (window.confirm("Delete Sector of Fire?")) deleteSector(data.id);
           },
@@ -167,22 +171,24 @@ const SectorMarker = ({
       {/* DRAG HANDLES: Visibility controlled by opacity */}
       <div style={{ opacity: isActive ? 1 : 0, transition: "opacity 0.2s" }}>
         {/* Center Marker */}
-        <Marker
-          ref={centerRef}
-          position={[center.lat, center.lng]}
-          icon={moveIcon}
-          draggable={true}
-          eventHandlers={{
-            ...centerDragHandlers,
-            mouseover: onMouseEnter,
-            mouseout: onMouseLeave,
-          }}
-          zIndexOffset={1000}
-          opacity={isActive ? 1 : 0} // Leaflet opacity
-        />
+        {movable && (
+          <Marker
+            ref={centerRef}
+            position={[center.lat, center.lng]}
+            icon={moveIcon}
+            draggable={true}
+            eventHandlers={{
+              ...centerDragHandlers,
+              mouseover: onMouseEnter,
+              mouseout: onMouseLeave,
+            }}
+            zIndexOffset={1000}
+            opacity={isActive ? 1 : 0} // Leaflet opacity
+          />
+        )}
 
         {/* Corner Markers */}
-        {data.points.map((point, index) => (
+        {reshapable && data.points.map((point, index) => (
           <Marker
             key={`${data.id}-p${index}`}
             ref={(el) => (cornerRefs.current[index] = el)}

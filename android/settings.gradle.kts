@@ -1,0 +1,80 @@
+pluginManagement {
+    includeBuild("build-logic")
+    repositories {
+        // The Android Gradle Plugin lives on Google's Maven, and a convention plugin from build-logic needs it
+        // to resolve here too, not only in build-logic itself.
+        google {
+            content {
+                includeGroupByRegex("com\\.android.*")
+                includeGroupByRegex("com\\.google\\.android.*")
+                includeGroupByRegex("androidx.*")
+            }
+        }
+        gradlePluginPortal()
+        mavenCentral()
+    }
+}
+
+dependencyResolutionManagement {
+    repositoriesMode = RepositoriesMode.FAIL_ON_PROJECT_REPOS
+    repositories {
+        // Google's Maven (dl.google.com) hosts AndroidX and the Android toolchain. It is restricted to those
+        // groups so a name clash elsewhere can never be satisfied from here, or the other way round.
+        google {
+            content {
+                includeGroupByRegex("com\\.android.*")
+                includeGroupByRegex("com\\.google\\.android.*")
+                includeGroupByRegex("androidx.*")
+            }
+        }
+        mavenCentral()
+    }
+}
+
+rootProject.name = "ezpz-android"
+
+// Pure Kotlin, no Android imports: these run on a plain JVM and are what the
+// golden fixtures in ../contracts exercise (docs/NATIVE_APPS_PLAN.md,
+// "App architecture"). Module names match the planned iOS Swift packages.
+include(":core-model")
+include(":core-geo")
+include(":core-planning")
+include(":core-formats")
+
+// The API client: OkHttp over a plain JVM, so the auth and retry logic is tested here
+// (against a mock server) rather than only on a device.
+include(":core-network")
+
+// Keeping saved LZs and aircraft profiles in step with the server: the outbox, the pull, and conflicts kept
+// side by side. Pure logic over a store interface (Room implements it in the app), so it is tested here.
+include(":core-sync")
+
+// Mission packs (docs/MISSION_PACKS.md): pure, held to contracts/fixtures/packs; not map packs.
+include(":core-missionpacks")
+
+// The 3D LZ view's scene (docs/ANDROID_3D_PLAN.md): pure, held to contracts/fixtures/viewer3d; the GL that draws it is feature-viewer3d's.
+include(":core-scene3d")
+// The mission brief (docs/MISSION_BRIEF.md): its formats, compileBrief and the light data; pure, held to contracts/fixtures/brief.
+include(":core-brief")
+
+// Android Gradle Plugin modules. The domain stays in the core modules above; these hold what needs the Android
+// framework (UI, the database, the app itself). Feature modules never depend on each other, `app` wires them.
+include(":core-designsystem")
+include(":core-data")
+
+// MIL-STD-2525C symbols: pre-rendered presets, and milsymbol in the system JavaScript sandbox for the rest, drawn to bitmaps.
+include(":core-symbols")
+
+// One module per screen family; features never depend on each other, `app` wires them (docs/NATIVE_APPS_PLAN.md).
+include(":feature-auth")
+include(":feature-map")
+include(":feature-workspace")
+include(":feature-packs")                                     // the mission-pack screens (P1-P4)
+include(":feature-viewer3d")                                  // the 3D LZ view (docs/ANDROID_3D_PLAN.md)
+include(":feature-brief")                                     // the mission brief's screens (B8, B9)
+
+// Test support: reads ../contracts/fixtures. Not part of the shipped app.
+include(":core-testing")
+
+// The app. It composes the modules above and wires navigation; nothing depends on it.
+include(":app")
