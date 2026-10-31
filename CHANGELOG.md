@@ -1,3 +1,17 @@
+## [1.7.8](https://github.com/colinmcfadden/avtactools/compare/v1.7.7...v1.7.8) (2026-10-29)
+
+
+### Bug Fixes
+
+* **backend:** write the threat kmz's mask outlines as simple polygons so foreflight opens them ([dae40a0](https://github.com/colinmcfadden/avtactools/commit/dae40a0d7b053dc26e2694ba0fef86d9305a05f9))
+
+## [1.7.7](https://github.com/colinmcfadden/avtactools/compare/v1.7.6...v1.7.7) (2026-10-02)
+
+
+### Bug Fixes
+
+* colour collection point clouds from the right place ([d4dd21b](https://github.com/colinmcfadden/avtactools/commit/d4dd21b571118a05a69dfbcf9e9ad2aa8f988aea))
+
 ## [1.7.6](https://github.com/colinmcfadden/avtactools/compare/v1.7.5...v1.7.6) (2026-10-02)
 
 
