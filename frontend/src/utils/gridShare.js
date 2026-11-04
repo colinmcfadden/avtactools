@@ -18,14 +18,20 @@ export const LABEL_MAX = 60;
 // Control characters and line breaks: a label is one line of the person's own words.
 // eslint-disable-next-line no-control-regex
 const CONTROL = /[\u0000-\u001f\u007f-\u009f\u2028\u2029]/g;
+// Characters that draw nothing but can turn or hide what is around them: the bidirectional marks, embeddings,
+// overrides and isolates, and the zero-width space and word joiner. A label beside a grid could otherwise draw
+// "16S GC 28864 55349" right to left. The joiners emoji and some scripts need (U+200C, U+200D) stay.
+const INVISIBLE = /[\u061c\u200b\u200e\u200f\u202a-\u202e\u2060-\u2064\u2066-\u2069]/g;
 
 /**
- * A label as it is shared: one line, spaces collapsed, at most 60 characters counted as characters (an emoji
- * is one, and is never split), or "" for none.
+ * A label as it is shared: one line, spaces collapsed, nothing that turns or hides text, at most 60 characters
+ * counted as code points (a pair of UTF-16 halves is one, never split, though an emoji joined from several,
+ * a family or a flag, may lose its tail at the cut), or "" for none.
  */
 export const cleanLabel = (label) => {
   const text = String(label ?? "")
     .replace(CONTROL, " ")
+    .replace(INVISIBLE, "")
     // Half of an emoji on its own (a name cut elsewhere) cannot be put in a link: encodeURIComponent throws on it.
     .replace(/[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/g, "")
     .replace(/\s+/g, " ")

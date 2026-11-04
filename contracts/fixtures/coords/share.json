@@ -10,7 +10,9 @@
     {"place":{"mgrs":"31N AA 66021 00000","lat":0,"lon":0,"label":"🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁"},"expected":"🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁\n31N AA 66021 00000\n0.00000° N, 0.00000° E\nhttps://ezpztac.app/#grid=31NAA6602100000&name=%F0%9F%9A%81%F0%9F%9A%81%F0%9F%9A%81%F0%9F%9A%81%F0%9F%9A%81%F0%9F%9A%81%F0%9F%9A%81%F0%9F%9A%81%F0%9F%9A%81%F0%9F%9A%81%F0%9F%9A%81%F0%9F%9A%81%F0%9F%9A%81%F0%9F%9A%81%F0%9F%9A%81%F0%9F%9A%81%F0%9F%9A%81%F0%9F%9A%81%F0%9F%9A%81%F0%9F%9A%81%F0%9F%9A%81%F0%9F%9A%81%F0%9F%9A%81%F0%9F%9A%81%F0%9F%9A%81%F0%9F%9A%81%F0%9F%9A%81%F0%9F%9A%81%F0%9F%9A%81%F0%9F%9A%81%F0%9F%9A%81%F0%9F%9A%81%F0%9F%9A%81%F0%9F%9A%81%F0%9F%9A%81%F0%9F%9A%81%F0%9F%9A%81%F0%9F%9A%81%F0%9F%9A%81%F0%9F%9A%81%F0%9F%9A%81%F0%9F%9A%81%F0%9F%9A%81%F0%9F%9A%81%F0%9F%9A%81%F0%9F%9A%81%F0%9F%9A%81%F0%9F%9A%81%F0%9F%9A%81%F0%9F%9A%81%F0%9F%9A%81%F0%9F%9A%81%F0%9F%9A%81%F0%9F%9A%81%F0%9F%9A%81%F0%9F%9A%81%F0%9F%9A%81%F0%9F%9A%81%F0%9F%9A%81%F0%9F%9A%81"},
     {"place":{"mgrs":"16S GC 28864 55349","lat":33.9,"lon":-84.5,"label":"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx🚁y"},"expected":"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx🚁\n16S GC 28864 55349\n33.90000° N, 84.50000° W\nhttps://ezpztac.app/#grid=16SGC2886455349&name=xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx%F0%9F%9A%81"},
     {"place":{"mgrs":"16S GC 28864 55349","lat":33.9,"lon":-84.5,"label":"half \ud83d emoji"},"expected":"half emoji\n16S GC 28864 55349\n33.90000° N, 84.50000° W\nhttps://ezpztac.app/#grid=16SGC2886455349&name=half%20emoji"},
-    {"place":{"mgrs":"16S GC 28864 55349","lat":33.9,"lon":-84.5,"label":"été 中文 \u0001bell line"},"expected":"été 中文 bell line\n16S GC 28864 55349\n33.90000° N, 84.50000° W\nhttps://ezpztac.app/#grid=16SGC2886455349&name=%C3%A9t%C3%A9%20%E4%B8%AD%E6%96%87%20bell%20line"}
+    {"place":{"mgrs":"16S GC 28864 55349","lat":33.9,"lon":-84.5,"label":"été 中文 \u0001bell line"},"expected":"été 中文 bell line\n16S GC 28864 55349\n33.90000° N, 84.50000° W\nhttps://ezpztac.app/#grid=16SGC2886455349&name=%C3%A9t%C3%A9%20%E4%B8%AD%E6%96%87%20bell%20line"},
+    {"place":{"mgrs":"16S GC 28864 55349","lat":33.9,"lon":-84.5,"label":"‮LZ‬ ⁦HAWK⁩ ​‎؜⁠x"},"expected":"LZ HAWK x\n16S GC 28864 55349\n33.90000° N, 84.50000° W\nhttps://ezpztac.app/#grid=16SGC2886455349&name=LZ%20HAWK%20x"},
+    {"place":{"mgrs":"16S GC 28864 55349","lat":33.9,"lon":-84.5,"label":"👨‍👩‍👧 م‌ن"},"expected":"👨‍👩‍👧 م‌ن\n16S GC 28864 55349\n33.90000° N, 84.50000° W\nhttps://ezpztac.app/#grid=16SGC2886455349&name=%F0%9F%91%A8%E2%80%8D%F0%9F%91%A9%E2%80%8D%F0%9F%91%A7%20%D9%85%E2%80%8C%D9%86"}
   ],
   "gridLink": [
     {"mgrs":"16S GC 28864 55349","label":"LZ HAWK","expected":"https://ezpztac.app/#grid=16SGC2886455349&name=LZ%20HAWK"},
@@ -21,7 +23,9 @@
     {"mgrs":"31N AA 66021 00000","label":"🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁","expected":"https://ezpztac.app/#grid=31NAA6602100000&name=%F0%9F%9A%81%F0%9F%9A%81%F0%9F%9A%81%F0%9F%9A%81%F0%9F%9A%81%F0%9F%9A%81%F0%9F%9A%81%F0%9F%9A%81%F0%9F%9A%81%F0%9F%9A%81%F0%9F%9A%81%F0%9F%9A%81%F0%9F%9A%81%F0%9F%9A%81%F0%9F%9A%81%F0%9F%9A%81%F0%9F%9A%81%F0%9F%9A%81%F0%9F%9A%81%F0%9F%9A%81%F0%9F%9A%81%F0%9F%9A%81%F0%9F%9A%81%F0%9F%9A%81%F0%9F%9A%81%F0%9F%9A%81%F0%9F%9A%81%F0%9F%9A%81%F0%9F%9A%81%F0%9F%9A%81%F0%9F%9A%81%F0%9F%9A%81%F0%9F%9A%81%F0%9F%9A%81%F0%9F%9A%81%F0%9F%9A%81%F0%9F%9A%81%F0%9F%9A%81%F0%9F%9A%81%F0%9F%9A%81%F0%9F%9A%81%F0%9F%9A%81%F0%9F%9A%81%F0%9F%9A%81%F0%9F%9A%81%F0%9F%9A%81%F0%9F%9A%81%F0%9F%9A%81%F0%9F%9A%81%F0%9F%9A%81%F0%9F%9A%81%F0%9F%9A%81%F0%9F%9A%81%F0%9F%9A%81%F0%9F%9A%81%F0%9F%9A%81%F0%9F%9A%81%F0%9F%9A%81%F0%9F%9A%81%F0%9F%9A%81"},
     {"mgrs":"16S GC 28864 55349","label":"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx🚁y","expected":"https://ezpztac.app/#grid=16SGC2886455349&name=xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx%F0%9F%9A%81"},
     {"mgrs":"16S GC 28864 55349","label":"half \ud83d emoji","expected":"https://ezpztac.app/#grid=16SGC2886455349&name=half%20emoji"},
-    {"mgrs":"16S GC 28864 55349","label":"été 中文 \u0001bell line","expected":"https://ezpztac.app/#grid=16SGC2886455349&name=%C3%A9t%C3%A9%20%E4%B8%AD%E6%96%87%20bell%20line"}
+    {"mgrs":"16S GC 28864 55349","label":"été 中文 \u0001bell line","expected":"https://ezpztac.app/#grid=16SGC2886455349&name=%C3%A9t%C3%A9%20%E4%B8%AD%E6%96%87%20bell%20line"},
+    {"mgrs":"16S GC 28864 55349","label":"‮LZ‬ ⁦HAWK⁩ ​‎؜⁠x","expected":"https://ezpztac.app/#grid=16SGC2886455349&name=LZ%20HAWK%20x"},
+    {"mgrs":"16S GC 28864 55349","label":"👨‍👩‍👧 م‌ن","expected":"https://ezpztac.app/#grid=16SGC2886455349&name=%F0%9F%91%A8%E2%80%8D%F0%9F%91%A9%E2%80%8D%F0%9F%91%A7%20%D9%85%E2%80%8C%D9%86"}
   ],
   "cleanLabel": [
     {"label":"LZ HAWK","expected":"LZ HAWK"},
@@ -32,7 +36,9 @@
     {"label":"🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁","expected":"🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁"},
     {"label":"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx🚁y","expected":"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx🚁"},
     {"label":"half \ud83d emoji","expected":"half emoji"},
-    {"label":"été 中文 \u0001bell line","expected":"été 中文 bell line"}
+    {"label":"été 中文 \u0001bell line","expected":"été 中文 bell line"},
+    {"label":"‮LZ‬ ⁦HAWK⁩ ​‎؜⁠x","expected":"LZ HAWK x"},
+    {"label":"👨‍👩‍👧 م‌ن","expected":"👨‍👩‍👧 م‌ن"}
   ],
   "readGridLink": [
     {"hash":"#grid=16SGC2886455349&name=LZ%20HAWK","expected":{"mgrs":"16S GC 28864 55349","lat":33.913724026697224,"lon":-84.52450547388797,"name":"LZ HAWK"}},
@@ -52,6 +58,17 @@
     {"hash":"#grid=11111111111111111111111111111111111111111","expected":null},
     {"hash":"#grid=16SGC2886455349&name=%F0%9F%9A%81%F0%9F%9A%81%F0%9F%9A%81%F0%9F%9A%81%F0%9F%9A%81%F0%9F%9A%81%F0%9F%9A%81%F0%9F%9A%81%F0%9F%9A%81%F0%9F%9A%81%F0%9F%9A%81%F0%9F%9A%81%F0%9F%9A%81%F0%9F%9A%81%F0%9F%9A%81%F0%9F%9A%81%F0%9F%9A%81%F0%9F%9A%81%F0%9F%9A%81%F0%9F%9A%81%F0%9F%9A%81%F0%9F%9A%81%F0%9F%9A%81%F0%9F%9A%81%F0%9F%9A%81%F0%9F%9A%81%F0%9F%9A%81%F0%9F%9A%81%F0%9F%9A%81%F0%9F%9A%81%F0%9F%9A%81%F0%9F%9A%81%F0%9F%9A%81%F0%9F%9A%81%F0%9F%9A%81%F0%9F%9A%81%F0%9F%9A%81%F0%9F%9A%81%F0%9F%9A%81%F0%9F%9A%81%F0%9F%9A%81%F0%9F%9A%81%F0%9F%9A%81%F0%9F%9A%81%F0%9F%9A%81%F0%9F%9A%81%F0%9F%9A%81%F0%9F%9A%81%F0%9F%9A%81%F0%9F%9A%81%F0%9F%9A%81%F0%9F%9A%81%F0%9F%9A%81%F0%9F%9A%81%F0%9F%9A%81%F0%9F%9A%81%F0%9F%9A%81%F0%9F%9A%81%F0%9F%9A%81%F0%9F%9A%81%F0%9F%9A%81%F0%9F%9A%81%F0%9F%9A%81%F0%9F%9A%81%F0%9F%9A%81%F0%9F%9A%81%F0%9F%9A%81%F0%9F%9A%81%F0%9F%9A%81%F0%9F%9A%81","expected":{"mgrs":"16S GC 28864 55349","lat":33.913724026697224,"lon":-84.52450547388797,"name":"🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁"}},
     {"hash":"#grid=16SGC2886455349&name=%E0%A4%A","expected":{"mgrs":"16S GC 28864 55349","lat":33.913724026697224,"lon":-84.52450547388797,"name":"�%A"}},
-    {"hash":"#grid=%E0%A4%A","expected":null}
+    {"hash":"#grid=%E0%A4%A","expected":null},
+    {"hash":"#grid=16SGC2886455349&name=%ED%A0%80x","expected":{"mgrs":"16S GC 28864 55349","lat":33.913724026697224,"lon":-84.52450547388797,"name":"���x"}},
+    {"hash":"#grid=16SGC2886455349&name=%C0%AFx","expected":{"mgrs":"16S GC 28864 55349","lat":33.913724026697224,"lon":-84.52450547388797,"name":"��x"}},
+    {"hash":"#grid=16SGC2886455349&name=%F4%90%80%80x","expected":{"mgrs":"16S GC 28864 55349","lat":33.913724026697224,"lon":-84.52450547388797,"name":"����x"}},
+    {"hash":"#grid=16SGC2886455349&name=%F0%9F%98x","expected":{"mgrs":"16S GC 28864 55349","lat":33.913724026697224,"lon":-84.52450547388797,"name":"�x"}},
+    {"hash":"#grid=16SGC2886455349&name=%E0%80%80x","expected":{"mgrs":"16S GC 28864 55349","lat":33.913724026697224,"lon":-84.52450547388797,"name":"���x"}},
+    {"hash":"#grid=16SGC2886455349&name=%FF%FEx","expected":{"mgrs":"16S GC 28864 55349","lat":33.913724026697224,"lon":-84.52450547388797,"name":"��x"}},
+    {"hash":"#grid=16SGC2886455349&name=%E2%80%AEevil","expected":{"mgrs":"16S GC 28864 55349","lat":33.913724026697224,"lon":-84.52450547388797,"name":"evil"}},
+    {"hash":"#grid=16SGC2886455349&name=50%off","expected":{"mgrs":"16S GC 28864 55349","lat":33.913724026697224,"lon":-84.52450547388797,"name":"50%off"}},
+    {"hash":"#grid=16SGC2886455349&name=LZ|HAWK","expected":{"mgrs":"16S GC 28864 55349","lat":33.913724026697224,"lon":-84.52450547388797,"name":"LZ|HAWK"}},
+    {"hash":"#grid=16S GC 28864 55349&name=a b","expected":{"mgrs":"16S GC 28864 55349","lat":33.913724026697224,"lon":-84.52450547388797,"name":"a b"}},
+    {"hash":"#grid=16SGC2886455349&grid=17SKT2290866214","expected":{"mgrs":"16S GC 28864 55349","lat":33.913724026697224,"lon":-84.52450547388797,"name":""}}
   ]
 }

@@ -192,6 +192,9 @@ const SHARE_PLACES = [
   { mgrs: "16S GC 28864 55349", lat: 33.9, lon: -84.5, label: "x".repeat(59) + "\u{1F681}" + "y" },
   { mgrs: "16S GC 28864 55349", lat: 33.9, lon: -84.5, label: "half \uD83D emoji" },
   { mgrs: "16S GC 28864 55349", lat: 33.9, lon: -84.5, label: "\u00e9t\u00e9 \u4e2d\u6587 \u0001bell\u2028line" },
+  // what turns or hides text is taken out; the joiners an emoji needs stay
+  { mgrs: "16S GC 28864 55349", lat: 33.9, lon: -84.5, label: "\u202eLZ\u202c \u2066HAWK\u2069 \u200b\u200e\u061c\u2060x" },
+  { mgrs: "16S GC 28864 55349", lat: 33.9, lon: -84.5, label: "\u{1F468}\u200d\u{1F469}\u200d\u{1F467} \u0645\u200c\u0646" },
 ];
 
 const LINK_HASHES = [
@@ -199,6 +202,11 @@ const LINK_HASHES = [
   "#grid=16S+GC+2886+5534&name=a+b", "#name=X&grid=16SGC2886455349&extra=1", "#grid=16SGC288645534", "#grid=34.5,-84.1",
   "#grid=34%2084", "#grid=", "#name=only", "", "#", "#grid=16TGC2886455349", "#grid=" + "1".repeat(41),
   "#grid=16SGC2886455349&name=" + "%F0%9F%9A%81".repeat(70), "#grid=16SGC2886455349&name=%E0%A4%A", "#grid=%E0%A4%A",
+  // malformed UTF-8, decoded as WHATWG decodes it: one U+FFFD per maximal subpart
+  "#grid=16SGC2886455349&name=%ED%A0%80x", "#grid=16SGC2886455349&name=%C0%AFx", "#grid=16SGC2886455349&name=%F4%90%80%80x",
+  "#grid=16SGC2886455349&name=%F0%9F%98x", "#grid=16SGC2886455349&name=%E0%80%80x", "#grid=16SGC2886455349&name=%FF%FEx",
+  "#grid=16SGC2886455349&name=%E2%80%AEevil", "#grid=16SGC2886455349&name=50%off", "#grid=16SGC2886455349&name=LZ|HAWK",
+  "#grid=16S GC 28864 55349&name=a b", "#grid=16SGC2886455349&grid=17SKT2290866214",
 ];
 
 const shareFixture = () => ({

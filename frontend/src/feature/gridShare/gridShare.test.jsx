@@ -82,9 +82,10 @@ describe("a grid link", () => {
     expect(win.history.replaceState).not.toHaveBeenCalled();
   });
 
-  it("is let go when its grid does not read as one place", () => {
-    const win = fakeWindow("https://ezpztac.app/#grid=34%2084");
+  it("is said to be unreadable when its grid does not read as one place, then let go", () => {
+    const win = fakeWindow("https://ezpztac.app/#grid=16SGC28864");
     captureGridLink(win);
+    expect(takeGridLink(win)).toEqual({ unread: true });
     expect(takeGridLink(win)).toBeNull();
   });
 });

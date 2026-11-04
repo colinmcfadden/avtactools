@@ -33,7 +33,10 @@ export const captureGridLink = (win = window) => {
   return hash;
 };
 
-/** The grid a link asked for (`{ choice, name }`, utils/gridShare's readGridLink), taken once: null when there is none or it does not read. */
+/**
+ * The grid a link asked for (`{ choice, name }`, utils/gridShare's readGridLink), taken once: null when there is
+ * none, `{ unread: true }` when there was one that does not read as a grid (cut short in a message), so it is said.
+ */
 export const takeGridLink = (win = window) => {
   let hash = memory;
   try {
@@ -43,5 +46,6 @@ export const takeGridLink = (win = window) => {
     // fall back to memory
   }
   memory = null;
-  return hash ? readGridLink(hash) : null;
+  if (!hash) return null;
+  return readGridLink(hash) ?? { unread: true };
 };
