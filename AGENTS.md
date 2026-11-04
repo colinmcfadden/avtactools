@@ -698,7 +698,16 @@ the Android `MgrsConverter`), held to `contracts/fixtures/mgrs/inverse.json`
 in its own zone with them, so a point on a line reads as that line's round value in
 the cursor readout (checked to the metre against PyGeodesy on the live map).
 Digits are truncated, not rounded, and the zone is zero-padded (`05R`), as
-PyGeodesy writes it. Heights are feet in the UI; the backend
+PyGeodesy writes it.
+
+**The target field reads what is typed as it is typed** (`utils/targetReading.js`, `components/TargetField.jsx`; Android's
+`PlaceSearch.read`, held to `contracts/fixtures/coords/reading.json`): a grid at any precision, or a lat/long in any notation
+`coordParse.js` knows (decimal, degrees and minutes, degrees, minutes and seconds, packed; with `° ' "`, primes or nothing; signs or
+N/S/E/W in either order; commas, spaces or slashes), drops down as its grid and its lat/long (`34.54568° N, 84.12346° W`, which the
+field reads back), either of which is chosen to go there. **A pair with no sign or hemisphere anywhere is offered as both of its readings**
+(east as written, and west), nearest the map first, and GO never guesses between them; anything else is a sentence saying what is
+missing (`readCoordinate`'s `problem`). All of it is computed on the device, so GO no longer asks `/api/convert-grid`. Latitude first stays
+the rule (a swapped pair is not offered). Heights are feet in the UI; the backend
 computes in metres and converts at the edges (e.g. `/api/elevations` returns
 `elevationsFt`). AMPS files store metres. Check units at every boundary.
 
@@ -1072,8 +1081,7 @@ simplifying can fold them, so rings are split and re-checked).
   but locally, and `pytest` isn't a declared dependency.
 - Web behaviour the native ports reproduce on purpose, because the web is the
   reference and the fixtures pin it. Each is a candidate to fix on the web
-  *first* (then regenerate the fixtures): `looksLikeCoordinateText("34S")` is
-  false, since its "no other letters" test also matches `E` and `S`;
+  *first* (then regenerate the fixtures):
   a new go-around starts *south* of the target unless its direction is spelled `"N"`, which nothing sends (`left` and `right` are what the
   UI sends; `createGoAround`); a PZ marker is made for a target that is not a position, with NaN fields (the native port refuses);
   `normalizeProfile` gives an empty profile the `generic` icon but no profile the

@@ -13,7 +13,7 @@ contracts/
 ├─ briefs/          the mission brief's formats as data (templates, bindings, constants, standards) — see briefs/README.md
 ├─ fixtures/        golden inputs and expected outputs, one JSON file per domain
 │  ├─ mgrs/         forward.json, inverse.json      reference: PyGeodesy; grid.json: the web
-│  ├─ coords/       parse.json                      reference: the web app
+│  ├─ coords/       parse.json, reading.json        reference: the web app (coordParse.js; targetReading.js, the target field)
 │  ├─ planning/     aircraft.json, route.json, summary.json, graphics.json   reference: the web app
 │  ├─ workspace/    diagram.json, ops.json, doghouses.json   reference: the web app
 │  ├─ routes/       sketch.json, winds.json, handoff.json   reference: the web app (sketchOps, routeWinds, foreflight.js)
@@ -56,6 +56,7 @@ reference is.
 | `mgrs/inverse.json` | — (the web asks the server) | same | `core-geo` |
 | `mgrs/grid.json` | `frontend/src/contracts/mgrsGridFixtures.test.js` | — | `core-geo` (`MgrsGrid`) |
 | `coords/parse.json` | `frontend/src/contracts/webFixtures.test.js` | — | `core-geo` |
+| `coords/reading.json` | `frontend/src/contracts/webFixtures.test.js` | — | `core-geo` (`PlaceSearch.read`, `nearestFirst`, `formatLatLong`) |
 | `planning/*.json` | `frontend/src/contracts/webFixtures.test.js` | — | `core-planning` (`summary.json`: `LzSummary`; `graphics.json`: `PlanningGraphics`) |
 | `workspace/diagram.json` | `frontend/src/contracts/webFixtures.test.js` | — | `core-model` |
 | `brief/compile.json` | `frontend/src/contracts/briefCompileFixtures.test.js` | `backend/tests/test_brief_pdf.py` (prints its first model) | `core-brief` (`CompileBrief`: every case, strictly: null kept apart from absent, numbers in JavaScript's digits, keys in JavaScript's order, the strips' numbers and the slope calls too; `CompileFixtureTest`) |

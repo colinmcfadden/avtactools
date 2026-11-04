@@ -24,6 +24,20 @@
         min-width: 0;
     }
 
+    .mobile-top-search-container .target-field {
+        min-width: 0;
+    }
+
+    /* The field sits between the zoom buttons and the menu, too narrow for a lat/long: the list
+       under it is as wide as the screen allows, centred on it. */
+    .mobile-top-search-container .target-field__drop {
+        left: 50%;
+        right: auto;
+        width: min(320px, calc(100vw - 16px));
+        transform: translateX(-50%);
+        top: calc(100% + 10px);
+    }
+
     .mobile-search-row {
         display: flex;
         align-items: center;

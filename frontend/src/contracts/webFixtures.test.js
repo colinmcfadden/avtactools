@@ -3,7 +3,9 @@ import {
   looksLikeCoordinateText,
   looksLikeMgrs,
   parseCoordinate,
+  readCoordinate,
 } from "../utils/coordParse";
+import { formatLatLong, nearestFirst, readTarget } from "../utils/targetReading";
 import { calculateUH60Capacity } from "../utils/helicopterCapacity";
 import { convertToLatLongString } from "../utils/Helpers";
 import { lzAreaAndCapacity } from "../components/MissionSummary";
@@ -107,6 +109,14 @@ const PARSE_TEXTS = [
   "16S GC", "16sgc2886455349",
   // hemisphere letters after the value, on the equator and the meridian
   "0.5N 0.5E", "0.5S 0.5W", "N0 E0",
+  // more of the ways people type them: no marks, primes with spaces, degree signs on signed values,
+  // slashes, hemispheres apart from their values, hyphens between parts, Unicode spaces
+  "34 32 44.4 84 07 24.4", "34° 32′ 44.4″ N, 84° 07′ 24.4″ W", "34.5457°, -84.1234°", "34.5457/-84.1234",
+  "N 34.5457, W 84.1234", "34-32-44.4N 084-07-24.4W", "34.5457\u00a0-84.1234", "\u200334.5457, -84.1234\u3000",
+  "34 84", "34.5457 84.1234", "34N 84E", "34S 84E", "34.5457 N 84.1234",
+  // why a text is not a pair, which the target field says in words
+  "34", "34.5, -", "34 32 44", "N34 32 44", "1 2 3 4 5 6 7", "34 32 44 84 07 24 12", "3475N 08407W", "200, 34", "34, 200",
+  "W84 E34", "34S", "?", "34.5457, -84.1234 hello",
 ];
 
 const MGRS_TEXTS = [
@@ -119,7 +129,58 @@ const MGRS_TEXTS = [
 const COORDINATE_TEXTS = [
   "34.", "34.5, -", "34.5457, -84.1234", "34N 84W", "34 N", "16S GC 28864 55349",
   "N34", "", "  ", "hello", "34 32 44.4 N", "34°", "W", "N", "34S",
+  "34N 84E", "34S 84E", "E84", "16SG", "16S G", "34NE", "34 84", "34 32 44", " 34 ", "16 S", "16 SG",
 ];
+
+// The target field: what each text is offered as (utils/targetReading.js). Grids at every precision and
+// half typed, coordinates in each notation, the readings of an unsigned pair, and every sentence.
+const READING_TEXTS = [
+  "", "   ",
+  // grids
+  "16S GC 28864 55349", "16sgc2886455349", "16 S GC 28864 55349", "16S GC 2886 5534", "16S GC 288 553", "16S GC 28 55",
+  "16S GC 2 5", "16S GC 1234567890", "4QFJ12345678", "04Q FJ 1234 5678", "18T WL 123 456", "32V MN 12345 67890",
+  "33X VG 12345 67890", "60C VS 12345 12345", "01C AM 12345 12345", "31N AA 66021 00000",
+  // grids half typed or off the map
+  "16", "16S", "16S G", "16SG", "16S GC", "16S GC 2", "16S GC 288", "16S GC 28864 5534", "61S GC 1234", "16S GZ 1234",
+  "16X GC 1234", "16S GC 123456789012",
+  // coordinates
+  "34.5457, -84.1234", "34.5457°N 084.1234°W", "34°32.740'N 084°07.407'W", "34°32'44.4\"N 84°07'24.4\"W",
+  "34 32 44.4 N 84 07 24.4 W", "3432.740N 08407.407W", "343244N 0840724W", "-33.8688, 151.2093", "34.54570° N, 084.12340° W",
+  "34.5457\u00a0-84.1234", "0, 0", "0.000001, -0.000001", "-0.000001, 0.000001", "-80, 10", "84, 10", "-80.0001, 10", "84.0001, 10",
+  // readings to choose from
+  "34 84", "34.5457 84.1234", "34 32 44 84 07 24", "34 32.74 84 07.407", "0.5 0.5", "-34 84", "34 -84", "+34 84",
+  // sentences
+  "3", "34", "34.5, -", "34 32 44", "1 2 3 4 5 6 7", "91, -84", "34, 200", "34 75 N, 84 07 W", "3475N 08407W", "34N 84N",
+  "W84 E34", "Dahlonega", "?", "34S", "34N", "85, 10", "-81, 10",
+];
+
+const NEAR_CASES = [
+  { text: "34 84", near: { lat: 34.5, lon: -84.1 } },
+  { text: "34 84", near: { lat: 30, lon: 80 } },
+  { text: "34 84", near: { lat: 34, lon: 0 } },   // equally far: as typed first
+  { text: "34 84", near: null },
+  { text: "34 179", near: { lat: 34, lon: -178 } },  // across the antimeridian, the east reading is nearer
+  { text: "34 179", near: { lat: 34, lon: 178 } },
+  { text: "34.5457, -84.1234", near: { lat: 0, lon: 0 } },
+];
+
+const readingFixture = () => ({
+  description: "What the target field offers for a text, as frontend/src/utils/targetReading.js reads it: `choices` (each the point, "
+    + "its grid as the target keeps it, its lat/long in words and how the text was read) and a `message` in words. `nearestFirst` "
+    + "orders the choices nearest the map first; `formatLatLong` is the lat/long's words.",
+  generatedBy: GENERATED_BY,
+  toleranceDeg: 1e-9,
+  read: READING_TEXTS.map((text) => ({ text, expected: readTarget(text) })),
+  nearestFirst: NEAR_CASES.map(({ text, near }) => ({
+    text,
+    near,
+    expected: nearestFirst(readTarget(text).choices, near).map((c) => c.latLong),
+  })),
+  formatLatLong: [
+    [34.545678, -84.123456], [-33.8688, 151.2093], [0, 0], [-0.000004, -0.000004], [-0.000005, -0.000005], [-0.000006, 0.000006],
+    [9.5, 9.5], [-90, -180], [90, 180], [1.005, -1.005], [34.999999, -99.999999],
+  ].map(([lat, lon]) => ({ lat, lon, expected: formatLatLong(lat, lon) })),
+});
 
 const coordinateFixture = () => ({
   description: "Free text to a latitude/longitude, as frontend/src/utils/coordParse.js reads it. "
@@ -134,6 +195,12 @@ const coordinateFixture = () => ({
         ? { lat: parsed.lat, lon: parsed.lon, format: parsed.format, label: parsed.label }
         : null,
     };
+  }),
+  // Why a text is or is not a pair (readCoordinate): the problem the target field puts in words, and whether
+  // the text said a side of the equator or meridian (a sign or a hemisphere), without which a longitude may be west.
+  read: PARSE_TEXTS.map((text) => {
+    const { problem, signed } = readCoordinate(text);
+    return problem ? { text, problem } : { text, signed };
   }),
   looksLikeMgrs: MGRS_TEXTS.map((text) => ({ text, expected: looksLikeMgrs(text) })),
   looksLikeCoordinateText: COORDINATE_TEXTS.map((text) => ({
@@ -997,6 +1064,7 @@ const profileFixture = () => ({
 
 describe("web reference fixtures", () => {
   it("coords/parse.json", () => settle("coords/parse.json", coordinateFixture()));
+  it("coords/reading.json", () => settle("coords/reading.json", readingFixture()));
   it("planning/aircraft.json", () => settle("planning/aircraft.json", aircraftFixture()));
   it("planning/route.json", () => settle("planning/route.json", routeFixture()));
   it("workspace/diagram.json", () => settle("workspace/diagram.json", diagramFixture()));

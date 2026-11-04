@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState } from "react";
 import MissionSummary from "./MissionSummary";
 import AircraftPicker from "../feature/aircraft/AircraftPicker";
-import CoordinateHint from "./CoordinateHint";
+import TargetField from "./TargetField";
 import SlopeOpacityControl from "../feature/terrain/SlopeOpacityControl";
 import { SLOPE_OPACITY } from "../feature/terrain/slopeOpacity";
 import "../feature/aircraft/aircraft.css";
@@ -55,7 +55,8 @@ const Controls = ({
   closeMobileMenu,
   gridInput,
   setGridInput,
-  handleSearch,
+  onChooseTarget,
+  targetNear,
   setDetectedLZ,
   setLatLong,
   setGridElevation,
@@ -104,8 +105,8 @@ const Controls = ({
       return !open;
     });
   };
-  const submitMgrs = () => {
-    handleSearch();
+  const chooseFromPopout = (choice) => {
+    onChooseTarget(choice);
     setShowMgrsPopout(false);
   };
 
@@ -265,40 +266,20 @@ const Controls = ({
               style={{ top: mgrsPopoutPos.top, left: mgrsPopoutPos.left }}
             >
               <label className="ff-label">MGRS Target</label>
-              <div className="ff-input-group">
-                <input
-                  className="ff-input"
-                  autoFocus
-                  placeholder="MGRS grid or lat/long"
-                  value={gridInput}
-                  onChange={(e) => setGridInput(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter") submitMgrs();
-                  }}
-                />
-                <button onClick={submitMgrs} className="ff-btn primary">
-                  GO
-                </button>
-              </div>
-              <CoordinateHint value={gridInput} />
+              <TargetField
+                value={gridInput}
+                onChange={setGridInput}
+                onChoose={chooseFromPopout}
+                near={targetNear}
+                autoFocus
+              />
             </div>
           )}
         </div>
       ) : (
         <div className="ff-section search-section">
           <label className="ff-label">MGRS Target</label>
-          <div className="ff-input-group">
-            <input
-              className="ff-input"
-              placeholder="MGRS grid or lat/long"
-              value={gridInput}
-              onChange={(e) => setGridInput(e.target.value)}
-            />
-            <button onClick={handleSearch} className="ff-btn primary">
-              GO
-            </button>
-          </div>
-          <CoordinateHint value={gridInput} />
+          <TargetField value={gridInput} onChange={setGridInput} onChoose={onChooseTarget} near={targetNear} />
         </div>
       )}
 
