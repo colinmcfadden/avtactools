@@ -1,7 +1,8 @@
 # Sending grids to people — plan
 
-Status: **proposed, waiting on the owner's choice** (2026-11-04). Nothing here is built yet. The owner has since said how option 4b's
-notification reads on Android (§3, option 4).
+Status: **decided** (the owner, 2026-11-04): **build options 1 to 4** on the web and Android, and leave out 5 (ATAK). Options 1 to 3
+need no server and go first; option 4's server work is laid out in §7 for the owner to see before it is built. On Android, the
+notification of a grid sent in the app shows the grid (§3, option 4). Nothing here is built yet.
 
 The owner asked to be able to "send grids to people quickly within the application (on both android and web)", and on Android "via other modes
 (like airdrop or bluetooth or something)". This file lays out the ways to do it, what each costs, and a recommendation. §6 lists the questions
@@ -116,7 +117,7 @@ step. An ATAK data package (a zip with a manifest) is the plan's later work for 
 - **Cost:** about a day on Android (and a *Download .kml* on the web). No dependency.
 - **Not verifiable here:** what ATAK makes of it. It wants one try on a device with ATAK installed.
 
-## 4. Recommendation
+## 4. Recommendation (as proposed; the owner chose 1 to 4, §6)
 
 1. **Build options 1 and 3 together first**: the share sheet with *Copy* on both platforms, carrying the text in §1 with its link, and the
    web reading the link. That gives Quick Share and Bluetooth on Android and AirDrop from Apple devices, offline, in about three days, with no
@@ -136,8 +137,119 @@ step. An ATAK data package (a zip with a manifest) is the plan's later work for 
 
 ## 6. Questions for the owner
 
-1. Which options to build, and in what order? (Recommended: 1 and 3, then 2, then 5, then 4.)
+1. ~~Which options to build, and in what order?~~ **Answered: 1 to 4; not 5** (2026-11-04).
 2. For the QR code on Android: **ZXing core** as a dependency, or a **vendored generator**?
 3. Should the shared text include the link at all while Android's verified links are not set up? (It still opens the web app.)
 4. For option 4b, who may receive: teammates only (as the people search is today), or anyone in a pack with you too?
 5. KML or CoT for ATAK, if anyone has seen what their ATAK build does with each?
+
+## 7. Option 4: the server work
+
+What the server needs so that a person can send a grid to someone else in the app, in plain terms. It is **option 4b**: a grid sent to
+named people, apart from any pack. Option 4a (a grid put into the open pack as a one-point point set) needs no server work at all, and
+can come later once Android draws a pack's point sets.
+
+### 7.1 What is kept: one new table
+
+**`shared_grid`**: one row for each person a grid is sent to. A grid sent to three people is three rows, so each recipient's copy
+is read, seen and deleted on its own.
+
+| Column | What it holds |
+|---|---|
+| `id` | the row's number |
+| `send_uuid` | an id the sending device chooses for the send, so a send repeated after a lost answer makes no second copy (unique with `recipient_id`) |
+| `sender_id` | who sent it (a user; see §7.8 for when that account is deleted) |
+| `sender_name` | the sender's name as it was when sent, so the recipient still sees who it came from after the sender's account is gone |
+| `recipient_id` | who it was sent to (a user; deleted with them) |
+| `mgrs` | the grid, as the server writes it: five digits, truncated, zone zero-padded (PyGeodesy, as `/api/convert-grid` does) |
+| `lat`, `lon` | the point, worked out by the server from the grid, never trusted from the client |
+| `label` | optional, the sender's words (an LZ's name), at most 60 characters |
+| `sent_at` | when it was sent |
+| `seen_at` | when the recipient first opened it (null until then) |
+
+An index on `(recipient_id, sent_at)` for the recipient's list. No migration framework is needed: `db.create_all()` makes a new table.
+Nothing else changes in the existing tables.
+
+### 7.2 The routes, and `contracts/openapi.yaml`
+
+| Route | What it does |
+|---|---|
+| `GET /api/grids/recipients?q=` | People the caller may send to (§7.3), by name or sign-in email, as the people search answers: id, name, email |
+| `POST /api/grids/send` | `{send_uuid, recipients: [user ids, 1 to 10], grid, label?}`. The server reads the grid itself (refused 400 `invalid_grid` if it does not read), checks every recipient (403 `not_allowed`, sending to nobody, if any one is not allowed), writes a row and a notification for each, and answers the rows. The same `send_uuid` again answers the same rows |
+| `GET /api/grids/received` | The caller's grids from the last 30 days, newest first: sender's name, grid, lat/long, label, when sent, whether seen. With an `ETag` and a 304 when nothing changed, as the notifications feed has |
+| `POST /api/grids/received/<id>/seen` | Marks one seen (the badge goes; the notification is withdrawn) |
+| `DELETE /api/grids/received/<id>` | The recipient deletes their copy |
+
+All need a sign-in and the affiliation gate, as every route does, and a feature key, **`grid_sharing`**, in `entitlements.DEFAULT_OFF`
+until it has been tried (off for everyone but admins and ticked testers, as `mission_packs` was; launching is taking it out of the list).
+
+**In `contracts/openapi.yaml`**: the five routes, their bodies and their refusals go in under a new tag, *Shared grids*, recorded from the
+real server by `backend/tests/test_network_fixtures.py` like every other route. The notification gains a type, `grid_shared`, and an
+optional `grid` field (§7.4). All of it is **additive** (new routes, a new optional field; the notification's `type` is already a free
+string that clients pass over when they do not know it), so the API's version goes from **1.3.0 to 1.4.0**, a minor. `api_version.py
+check` in CI confirms it, and no app in the field has to update.
+
+### 7.3 Who may send to whom
+
+Only to someone the sender already works with: **someone in a team with them, or in a Mission Pack with them** (any role, the pack not
+deleted). That is the people search's rule (`/api/users/search`, teammates only) widened to pack members, because a pack's members are
+exactly who a crew sends grids to. Nobody can send to a stranger, look an account up by guessing an email, or learn whether an address has an
+account: the recipients route lists only people already in a team or pack with the caller, and `send` refuses anyone else without saying why.
+A suspended or deleted account is never listed and never receives. One cannot send to oneself.
+
+### 7.4 How the recipient hears of it
+
+Through the existing notification outbox (`notify.py`, `docs/NOTIFICATIONS.md`): `send` adds one `grid_shared` notification for each
+recipient in the same transaction as the row, so a send that fails notifies nobody. It collapses by row (`grid_shared:<id>`), is grouped
+under a new setting, **Grids sent to you** (on by default, the recipient may turn it off), and counts toward the existing ten-an-hour cap
+on alerts.
+
+**The words, on Android:** *Sam B. sent you a grid.* and, on a new line, the grid (`16S GC 28864 55349`). A tap opens the app at the point.
+**This is the owner's decision of 2026-11-04 and an exception** to the outbox's rule that a notification names people, packs and teams
+only (`notify.py`'s header, AGENTS.md §4): the grid is the message, it is unclassified, and it shows on the lock screen like every
+notification's words. So the notification row carries the grid in its `fields` (the label and the lat/long do not go in it); `notify.py`'s
+header and AGENTS.md say so. **The web** shows it in the app only, as its notifications do (N3), with the label too.
+
+(*To confirm with the owner:* the session that relayed the owner's choice of options asked that the lock screen name the sender only and
+never the grid, while the owner told this plan's author directly that the grid may show. This plan follows the owner's direct words; if
+the sender only is wanted, the notification simply drops its second line and the row keeps no grid.)
+
+### 7.5 How long a grid is kept
+
+**30 days** from when it was sent, as notifications are (`notify.KEPT_FOR`), whether or not it was seen. The recipient may delete one sooner.
+The clean-up is the outbox's own: a sweep, at most once an hour, from whichever request comes, deletes rows older than that (as
+`notification_routes._sweep` does); nothing else needs scheduling. A grid a recipient saves (as a target, an LZ/PZ, a local point) is theirs
+in their Library and is not touched by the clean-up.
+
+### 7.6 Rate limits
+
+On the existing limiter (`auth_rate_limit.check_rate_limits`, in-process, as the invitation limits are): **at most 10 recipients a send,
+30 sends a minute and 200 recipients an hour** for one sender, refused 429 `rate_limited` with `Retry-After`. Enough to send a grid to a
+whole flight several times over during planning; not enough to flood anyone. The ten-an-hour alert cap means a recipient's phone sounds at
+most ten times an hour whatever is sent.
+
+### 7.7 A recipient with no signal
+
+Nothing is pushed (the owner's decision for notifications: Android polls every 15 minutes, the web asks in the app). A grid sent to someone
+with no signal waits on the server, for 30 days, until their device next reaches it: Android's next poll, or opening the app, shows it then.
+**The sender is told that a send is delivered to the server, not that it was seen**; the sent grid's `seen_at` is the recipient's, not
+shown to the sender in this step. A sender with no signal cannot send through the app at all (the button says so), and is offered the share
+sheet instead (option 1, which works over Quick Share and Bluetooth with no signal). A device that has fetched its received grids keeps them
+on the device (Android in its database, wiped at sign-out), so they can still be opened and flown to with no signal.
+
+### 7.8 Deleting an account
+
+`pack_support.release_account`, which both deletion paths call first, gains one step:
+- **Grids sent to the account being deleted** are deleted, with their notifications (`notify.forget_account` already removes those).
+- **Grids the account sent** stay with their recipients, who may still need them: their `sender_id` is cleared and `sender_name` keeps
+  who it was, as a pack's history keeps the name of someone who left. The 30-day clean-up removes them in time.
+
+`sender_id` therefore has no `ON DELETE` of its own, as `mission_pack.owner_id` has none: `release_account` handles it, and a test
+deletes an account that has sent and received grids.
+
+### 7.9 Size of the work
+
+The server: the table, the five routes, the notification type and setting, the rate limits, `release_account`'s step, the OpenAPI entries
+and recordings, and tests (who may send, idempotency, clean-up, deletion, the 429s): about three days. Then the web (a *Send to…* choice
+beside *Share*, the picker, a received-grids list) and Android (the same, with the notification's words and the received list in Room):
+about two days each.
