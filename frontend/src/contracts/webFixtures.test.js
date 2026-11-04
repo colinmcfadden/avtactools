@@ -6,6 +6,7 @@ import {
   readCoordinate,
 } from "../utils/coordParse";
 import { formatLatLong, nearestFirst, readTarget } from "../utils/targetReading";
+import { cleanLabel, gridLink, readGridLink, shareText } from "../utils/gridShare";
 import { calculateUH60Capacity } from "../utils/helicopterCapacity";
 import { convertToLatLongString } from "../utils/Helpers";
 import { lzAreaAndCapacity } from "../components/MissionSummary";
@@ -179,6 +180,40 @@ const NEAR_CASES = [
   { text: "34 179", near: { lat: 34, lon: 178 } },
   { text: "34.5457, -84.1234", near: { lat: 0, lon: 0 } },
 ];
+
+// A grid sent to someone (utils/gridShare.js, docs/GRID_SHARING.md §1): its text, its link, and what a link reads as.
+const SHARE_PLACES = [
+  { mgrs: "16S GC 28864 55349", lat: 33.913724026697224, lon: -84.52450547388797, label: "LZ HAWK" },
+  { mgrs: "16S GC 28864 55349", lat: 33.913724026697224, lon: -84.52450547388797, label: "" },
+  { mgrs: "16S GC 28864 55349", lat: 33.913724026697224, lon: -84.52450547388797 },
+  { mgrs: "56H LH 34368 50948", lat: -33.8688, lon: 151.2093, label: "  Sydney\n harbour\t& bridge  " },
+  { mgrs: "04Q FJ 1234 5678", lat: 21.30947809186551, lon: -157.91681890577107, label: "PZ #2 / 50% (east) 'A'" },
+  { mgrs: "31N AA 66021 00000", lat: 0, lon: 0, label: "\u{1F681}".repeat(70) },
+  { mgrs: "16S GC 28864 55349", lat: 33.9, lon: -84.5, label: "x".repeat(59) + "\u{1F681}" + "y" },
+  { mgrs: "16S GC 28864 55349", lat: 33.9, lon: -84.5, label: "half \uD83D emoji" },
+  { mgrs: "16S GC 28864 55349", lat: 33.9, lon: -84.5, label: "\u00e9t\u00e9 \u4e2d\u6587 \u0001bell\u2028line" },
+];
+
+const LINK_HASHES = [
+  "#grid=16SGC2886455349&name=LZ%20HAWK", "#grid=16SGC2886455349", "grid=16sgc2886455349", "#grid=16S%20GC%2028864%2055349",
+  "#grid=16S+GC+2886+5534&name=a+b", "#name=X&grid=16SGC2886455349&extra=1", "#grid=16SGC288645534", "#grid=34.5,-84.1",
+  "#grid=34%2084", "#grid=", "#name=only", "", "#", "#grid=16TGC2886455349", "#grid=" + "1".repeat(41),
+  "#grid=16SGC2886455349&name=" + "%F0%9F%9A%81".repeat(70), "#grid=16SGC2886455349&name=%E0%A4%A", "#grid=%E0%A4%A",
+];
+
+const shareFixture = () => ({
+  description: "A grid sent to someone, as frontend/src/utils/gridShare.js makes it: `shareText` (the lines a share sheet, a QR code "
+    + "and a copy carry), `gridLink` (the link that opens EZ/PZ at the grid), `cleanLabel`, and `readGridLink` (what a link's "
+    + "fragment asks for: its grid read as the target field reads it, and its label cleaned; null when it is not one grid).",
+  generatedBy: GENERATED_BY,
+  shareText: SHARE_PLACES.map((place) => ({ place, expected: shareText(place) })),
+  gridLink: SHARE_PLACES.map((place) => ({ mgrs: place.mgrs, label: place.label ?? null, expected: gridLink(place.mgrs, place.label) })),
+  cleanLabel: SHARE_PLACES.map((place) => ({ label: place.label ?? null, expected: cleanLabel(place.label) })),
+  readGridLink: LINK_HASHES.map((hash) => {
+    const read = readGridLink(hash);
+    return { hash, expected: read && { mgrs: read.choice.mgrs, lat: read.choice.lat, lon: read.choice.lon, name: read.name } };
+  }),
+});
 
 const readingFixture = () => ({
   description: "What the target field offers for a text, as frontend/src/utils/targetReading.js reads it: `choices` (each the point, "
@@ -1081,6 +1116,7 @@ const profileFixture = () => ({
 describe("web reference fixtures", () => {
   it("coords/parse.json", () => settle("coords/parse.json", coordinateFixture()));
   it("coords/reading.json", () => settle("coords/reading.json", readingFixture()));
+  it("coords/share.json", () => settle("coords/share.json", shareFixture()));
   it("planning/aircraft.json", () => settle("planning/aircraft.json", aircraftFixture()));
   it("planning/route.json", () => settle("planning/route.json", routeFixture()));
   it("workspace/diagram.json", () => settle("workspace/diagram.json", diagramFixture()));

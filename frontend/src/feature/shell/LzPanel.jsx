@@ -220,6 +220,7 @@ const LzPanel = ({
   onBrowseAll,
   onAddToPack,
   onExportCard,
+  onShareGrid,
   onCollapse,
 }) => {
   const [renamingId, setRenamingId] = useState(null);
@@ -238,6 +239,8 @@ const LzPanel = ({
       { icon: "layers", title: "Add to Mission Pack…", onSelect: () => onAddToPack?.(diagram.id), hidden: Boolean(pack) || !onAddToPack, disabled: diagram.savedId == null, text: diagram.savedId == null ? "Save it first" : undefined },
       // Exporting changes nothing, so it stays in a pack this person cannot change.
       { icon: "download", title: "Export LZ card", onSelect: () => onExportCard?.(diagram.id), hidden: !onExportCard, disabled: diagram.status !== "analyzed" },
+      // Sending its grid changes nothing either: offered wherever it has a target.
+      { icon: "send", title: "Share grid…", onSelect: () => onShareGrid?.(diagram.id), hidden: !onShareGrid || !gridOf(diagram) },
       { divider: true },
       { icon: "x", title: pack ? "Close here" : "Close", text: pack ? "It stays in the pack" : `Takes ${title} out of this session`, onSelect: () => onClose(diagram.id) },
     ];

@@ -45,6 +45,8 @@ import UnitBuilder from "./feature/unit/UnitBuilder";
 import { useLzWorkspace } from "./feature/lzWorkspace/useLzWorkspace";
 import { withLzMeasure } from "./feature/lzMeasure/lzMeasure";
 import CopyGridTitle from "./components/CopyGridTitle";
+import ShareGridDialog from "./feature/gridShare/ShareGridDialog";
+import { takeGridLink } from "./feature/gridShare/gridLinkCapture";
 import Lz3DWindow from "./feature/viewer3d/Lz3DWindow";
 import { releaseAbandonedBuilds } from "./feature/viewer3d/useLidarTileset";
 import { useBuildOnSave } from "./feature/viewer3d/useBuildOnSave";
@@ -1034,6 +1036,40 @@ function App() {
   // Where the map is, so the field offers the nearer of an unsigned pair's readings first.
   const targetNear = useMemo(() => ({ lat: mapCenter[0], lon: mapCenter[1] }), [mapCenter]);
 
+  // A grid to send (docs/GRID_SHARING.md): { mgrs, lat, lon, label? }, shown in the Share dialog.
+  const [shareGrid, setShareGrid] = useState(null);
+  const shareAt = (lat, lon, label) => {
+    const mgrs = toMgrs(lat, lon);
+    if (mgrs) setShareGrid({ mgrs, lat, lon, label });
+  };
+  const shareDiagramGrid = (id) => {
+    const diagram = lzWorkspace.workspace.diagramsById[id];
+    const target = diagram?.target;
+    if (!target || !Number.isFinite(target.lat) || !Number.isFinite(target.lon)) return;
+    setShareGrid({ mgrs: target.mgrs || toMgrs(target.lat, target.lon), lat: target.lat, lon: target.lon, label: diagram.name || "" });
+  };
+
+  // A grid link (#grid=…, taken out of the address in index.jsx): the map goes there and the target field holds it,
+  // with Set as target one tap away. Nothing is made until the person chooses.
+  const [flyTo, setFlyTo] = useState(null);
+  const gridLinkTaken = useRef(false);
+  useEffect(() => {
+    if (gridLinkTaken.current) return;
+    gridLinkTaken.current = true;
+    const link = takeGridLink();
+    if (!link) return;
+    const { choice, name } = link;
+    setGridInput(choice.mgrs);
+    setFlyTo({ lat: choice.lat, lon: choice.lon, key: choice.mgrs });
+    toast({
+      tone: "info",
+      message: `${name ? `${name}, ` : ""}${choice.mgrs}, from a link.`,
+      action: { label: "Set as target", onClick: () => chooseTarget(choice) },
+    });
+    // Once, on the first render signed in.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   // --- The redesign's frame: top bar, dock, Library and imports (docs/MENU_REDESIGN.md) --------
 
   const imports = useImports({
@@ -1496,6 +1532,7 @@ function App() {
           diagramReadinessText={diagramReadinessText}
         />
         <MapView
+          flyTo={flyTo}
           importedRoutes={shownImported}
           onUpdateMsnxPointPosition={mapEdit(updatePointPosition)}
           onInsertMsnxPoint={mapEdit(handleInsertPointContextMenu)}
@@ -1642,6 +1679,7 @@ function App() {
               }
               onBrowseAll={() => openLibrary("lz")}
               onExportCard={feat.exports ? exportCard : undefined}
+              onShareGrid={shareDiagramGrid}
               onCollapse={() => dock.setCollapsed(true)}
             />
           )}
@@ -1733,6 +1771,8 @@ function App() {
         </Dock>
       </div>
 
+      {shareGrid && <ShareGridDialog place={shareGrid} onClose={() => setShareGrid(null)} />}
+
       {/* GLOBAL CONTEXT MENU */}
       {contextMenu && (
         <div
@@ -1756,6 +1796,17 @@ function App() {
               >
                 Set as Target
               </button>
+              {toMgrs(contextMenu.lat, contextMenu.lon) && (
+                <button
+                  className="ctx-btn"
+                  onClick={() => {
+                    shareAt(contextMenu.lat, contextMenu.lon);
+                    setContextMenu(null);
+                  }}
+                >
+                  Share grid…
+                </button>
+              )}
               <button
                 className="ctx-btn ctx-btn--danger"
                 onClick={handleAddThreatHere}
@@ -1773,6 +1824,17 @@ function App() {
               >
                 Set as Target
               </button>
+              {toMgrs(contextMenu.lat, contextMenu.lon) && (
+                <button
+                  className="ctx-btn"
+                  onClick={() => {
+                    shareAt(contextMenu.lat, contextMenu.lon);
+                    setContextMenu(null);
+                  }}
+                >
+                  Share grid…
+                </button>
+              )}
 
               <hr className="ctx-divider" />
 

@@ -1,0 +1,57 @@
+{
+  "description": "A grid sent to someone, as frontend/src/utils/gridShare.js makes it: `shareText` (the lines a share sheet, a QR code and a copy carry), `gridLink` (the link that opens EZ/PZ at the grid), `cleanLabel`, and `readGridLink` (what a link's fragment asks for: its grid read as the target field reads it, and its label cleaned; null when it is not one grid).",
+  "generatedBy": "frontend/src/contracts/webFixtures.test.js (UPDATE_CONTRACTS=1)",
+  "shareText": [
+    {"place":{"mgrs":"16S GC 28864 55349","lat":33.913724026697224,"lon":-84.52450547388797,"label":"LZ HAWK"},"expected":"LZ HAWK\n16S GC 28864 55349\n33.91372° N, 84.52451° W\nhttps://ezpztac.app/#grid=16SGC2886455349&name=LZ%20HAWK"},
+    {"place":{"mgrs":"16S GC 28864 55349","lat":33.913724026697224,"lon":-84.52450547388797,"label":""},"expected":"16S GC 28864 55349\n33.91372° N, 84.52451° W\nhttps://ezpztac.app/#grid=16SGC2886455349"},
+    {"place":{"mgrs":"16S GC 28864 55349","lat":33.913724026697224,"lon":-84.52450547388797},"expected":"16S GC 28864 55349\n33.91372° N, 84.52451° W\nhttps://ezpztac.app/#grid=16SGC2886455349"},
+    {"place":{"mgrs":"56H LH 34368 50948","lat":-33.8688,"lon":151.2093,"label":"  Sydney\n harbour\t& bridge  "},"expected":"Sydney harbour & bridge\n56H LH 34368 50948\n33.86880° S, 151.20930° E\nhttps://ezpztac.app/#grid=56HLH3436850948&name=Sydney%20harbour%20%26%20bridge"},
+    {"place":{"mgrs":"04Q FJ 1234 5678","lat":21.30947809186551,"lon":-157.91681890577107,"label":"PZ #2 / 50% (east) 'A'"},"expected":"PZ #2 / 50% (east) 'A'\n04Q FJ 1234 5678\n21.30948° N, 157.91682° W\nhttps://ezpztac.app/#grid=04QFJ12345678&name=PZ%20%232%20%2F%2050%25%20(east)%20'A'"},
+    {"place":{"mgrs":"31N AA 66021 00000","lat":0,"lon":0,"label":"🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁"},"expected":"🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁\n31N AA 66021 00000\n0.00000° N, 0.00000° E\nhttps://ezpztac.app/#grid=31NAA6602100000&name=%F0%9F%9A%81%F0%9F%9A%81%F0%9F%9A%81%F0%9F%9A%81%F0%9F%9A%81%F0%9F%9A%81%F0%9F%9A%81%F0%9F%9A%81%F0%9F%9A%81%F0%9F%9A%81%F0%9F%9A%81%F0%9F%9A%81%F0%9F%9A%81%F0%9F%9A%81%F0%9F%9A%81%F0%9F%9A%81%F0%9F%9A%81%F0%9F%9A%81%F0%9F%9A%81%F0%9F%9A%81%F0%9F%9A%81%F0%9F%9A%81%F0%9F%9A%81%F0%9F%9A%81%F0%9F%9A%81%F0%9F%9A%81%F0%9F%9A%81%F0%9F%9A%81%F0%9F%9A%81%F0%9F%9A%81%F0%9F%9A%81%F0%9F%9A%81%F0%9F%9A%81%F0%9F%9A%81%F0%9F%9A%81%F0%9F%9A%81%F0%9F%9A%81%F0%9F%9A%81%F0%9F%9A%81%F0%9F%9A%81%F0%9F%9A%81%F0%9F%9A%81%F0%9F%9A%81%F0%9F%9A%81%F0%9F%9A%81%F0%9F%9A%81%F0%9F%9A%81%F0%9F%9A%81%F0%9F%9A%81%F0%9F%9A%81%F0%9F%9A%81%F0%9F%9A%81%F0%9F%9A%81%F0%9F%9A%81%F0%9F%9A%81%F0%9F%9A%81%F0%9F%9A%81%F0%9F%9A%81%F0%9F%9A%81%F0%9F%9A%81"},
+    {"place":{"mgrs":"16S GC 28864 55349","lat":33.9,"lon":-84.5,"label":"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx🚁y"},"expected":"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx🚁\n16S GC 28864 55349\n33.90000° N, 84.50000° W\nhttps://ezpztac.app/#grid=16SGC2886455349&name=xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx%F0%9F%9A%81"},
+    {"place":{"mgrs":"16S GC 28864 55349","lat":33.9,"lon":-84.5,"label":"half \ud83d emoji"},"expected":"half emoji\n16S GC 28864 55349\n33.90000° N, 84.50000° W\nhttps://ezpztac.app/#grid=16SGC2886455349&name=half%20emoji"},
+    {"place":{"mgrs":"16S GC 28864 55349","lat":33.9,"lon":-84.5,"label":"été 中文 \u0001bell line"},"expected":"été 中文 bell line\n16S GC 28864 55349\n33.90000° N, 84.50000° W\nhttps://ezpztac.app/#grid=16SGC2886455349&name=%C3%A9t%C3%A9%20%E4%B8%AD%E6%96%87%20bell%20line"}
+  ],
+  "gridLink": [
+    {"mgrs":"16S GC 28864 55349","label":"LZ HAWK","expected":"https://ezpztac.app/#grid=16SGC2886455349&name=LZ%20HAWK"},
+    {"mgrs":"16S GC 28864 55349","label":"","expected":"https://ezpztac.app/#grid=16SGC2886455349"},
+    {"mgrs":"16S GC 28864 55349","label":null,"expected":"https://ezpztac.app/#grid=16SGC2886455349"},
+    {"mgrs":"56H LH 34368 50948","label":"  Sydney\n harbour\t& bridge  ","expected":"https://ezpztac.app/#grid=56HLH3436850948&name=Sydney%20harbour%20%26%20bridge"},
+    {"mgrs":"04Q FJ 1234 5678","label":"PZ #2 / 50% (east) 'A'","expected":"https://ezpztac.app/#grid=04QFJ12345678&name=PZ%20%232%20%2F%2050%25%20(east)%20'A'"},
+    {"mgrs":"31N AA 66021 00000","label":"🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁","expected":"https://ezpztac.app/#grid=31NAA6602100000&name=%F0%9F%9A%81%F0%9F%9A%81%F0%9F%9A%81%F0%9F%9A%81%F0%9F%9A%81%F0%9F%9A%81%F0%9F%9A%81%F0%9F%9A%81%F0%9F%9A%81%F0%9F%9A%81%F0%9F%9A%81%F0%9F%9A%81%F0%9F%9A%81%F0%9F%9A%81%F0%9F%9A%81%F0%9F%9A%81%F0%9F%9A%81%F0%9F%9A%81%F0%9F%9A%81%F0%9F%9A%81%F0%9F%9A%81%F0%9F%9A%81%F0%9F%9A%81%F0%9F%9A%81%F0%9F%9A%81%F0%9F%9A%81%F0%9F%9A%81%F0%9F%9A%81%F0%9F%9A%81%F0%9F%9A%81%F0%9F%9A%81%F0%9F%9A%81%F0%9F%9A%81%F0%9F%9A%81%F0%9F%9A%81%F0%9F%9A%81%F0%9F%9A%81%F0%9F%9A%81%F0%9F%9A%81%F0%9F%9A%81%F0%9F%9A%81%F0%9F%9A%81%F0%9F%9A%81%F0%9F%9A%81%F0%9F%9A%81%F0%9F%9A%81%F0%9F%9A%81%F0%9F%9A%81%F0%9F%9A%81%F0%9F%9A%81%F0%9F%9A%81%F0%9F%9A%81%F0%9F%9A%81%F0%9F%9A%81%F0%9F%9A%81%F0%9F%9A%81%F0%9F%9A%81%F0%9F%9A%81%F0%9F%9A%81%F0%9F%9A%81"},
+    {"mgrs":"16S GC 28864 55349","label":"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx🚁y","expected":"https://ezpztac.app/#grid=16SGC2886455349&name=xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx%F0%9F%9A%81"},
+    {"mgrs":"16S GC 28864 55349","label":"half \ud83d emoji","expected":"https://ezpztac.app/#grid=16SGC2886455349&name=half%20emoji"},
+    {"mgrs":"16S GC 28864 55349","label":"été 中文 \u0001bell line","expected":"https://ezpztac.app/#grid=16SGC2886455349&name=%C3%A9t%C3%A9%20%E4%B8%AD%E6%96%87%20bell%20line"}
+  ],
+  "cleanLabel": [
+    {"label":"LZ HAWK","expected":"LZ HAWK"},
+    {"label":"","expected":""},
+    {"label":null,"expected":""},
+    {"label":"  Sydney\n harbour\t& bridge  ","expected":"Sydney harbour & bridge"},
+    {"label":"PZ #2 / 50% (east) 'A'","expected":"PZ #2 / 50% (east) 'A'"},
+    {"label":"🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁","expected":"🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁"},
+    {"label":"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx🚁y","expected":"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx🚁"},
+    {"label":"half \ud83d emoji","expected":"half emoji"},
+    {"label":"été 中文 \u0001bell line","expected":"été 中文 bell line"}
+  ],
+  "readGridLink": [
+    {"hash":"#grid=16SGC2886455349&name=LZ%20HAWK","expected":{"mgrs":"16S GC 28864 55349","lat":33.913724026697224,"lon":-84.52450547388797,"name":"LZ HAWK"}},
+    {"hash":"#grid=16SGC2886455349","expected":{"mgrs":"16S GC 28864 55349","lat":33.913724026697224,"lon":-84.52450547388797,"name":""}},
+    {"hash":"grid=16sgc2886455349","expected":{"mgrs":"16S GC 28864 55349","lat":33.913724026697224,"lon":-84.52450547388797,"name":""}},
+    {"hash":"#grid=16S%20GC%2028864%2055349","expected":{"mgrs":"16S GC 28864 55349","lat":33.913724026697224,"lon":-84.52450547388797,"name":""}},
+    {"hash":"#grid=16S+GC+2886+5534&name=a+b","expected":{"mgrs":"16S GC 2886 5534","lat":33.91368337030782,"lon":-84.5245012432259,"name":"a b"}},
+    {"hash":"#name=X&grid=16SGC2886455349&extra=1","expected":{"mgrs":"16S GC 28864 55349","lat":33.913724026697224,"lon":-84.52450547388797,"name":"X"}},
+    {"hash":"#grid=16SGC288645534","expected":null},
+    {"hash":"#grid=34.5,-84.1","expected":null},
+    {"hash":"#grid=34%2084","expected":null},
+    {"hash":"#grid=","expected":null},
+    {"hash":"#name=only","expected":null},
+    {"hash":"","expected":null},
+    {"hash":"#","expected":null},
+    {"hash":"#grid=16TGC2886455349","expected":null},
+    {"hash":"#grid=11111111111111111111111111111111111111111","expected":null},
+    {"hash":"#grid=16SGC2886455349&name=%F0%9F%9A%81%F0%9F%9A%81%F0%9F%9A%81%F0%9F%9A%81%F0%9F%9A%81%F0%9F%9A%81%F0%9F%9A%81%F0%9F%9A%81%F0%9F%9A%81%F0%9F%9A%81%F0%9F%9A%81%F0%9F%9A%81%F0%9F%9A%81%F0%9F%9A%81%F0%9F%9A%81%F0%9F%9A%81%F0%9F%9A%81%F0%9F%9A%81%F0%9F%9A%81%F0%9F%9A%81%F0%9F%9A%81%F0%9F%9A%81%F0%9F%9A%81%F0%9F%9A%81%F0%9F%9A%81%F0%9F%9A%81%F0%9F%9A%81%F0%9F%9A%81%F0%9F%9A%81%F0%9F%9A%81%F0%9F%9A%81%F0%9F%9A%81%F0%9F%9A%81%F0%9F%9A%81%F0%9F%9A%81%F0%9F%9A%81%F0%9F%9A%81%F0%9F%9A%81%F0%9F%9A%81%F0%9F%9A%81%F0%9F%9A%81%F0%9F%9A%81%F0%9F%9A%81%F0%9F%9A%81%F0%9F%9A%81%F0%9F%9A%81%F0%9F%9A%81%F0%9F%9A%81%F0%9F%9A%81%F0%9F%9A%81%F0%9F%9A%81%F0%9F%9A%81%F0%9F%9A%81%F0%9F%9A%81%F0%9F%9A%81%F0%9F%9A%81%F0%9F%9A%81%F0%9F%9A%81%F0%9F%9A%81%F0%9F%9A%81%F0%9F%9A%81%F0%9F%9A%81%F0%9F%9A%81%F0%9F%9A%81%F0%9F%9A%81%F0%9F%9A%81%F0%9F%9A%81%F0%9F%9A%81%F0%9F%9A%81%F0%9F%9A%81","expected":{"mgrs":"16S GC 28864 55349","lat":33.913724026697224,"lon":-84.52450547388797,"name":"🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁🚁"}},
+    {"hash":"#grid=16SGC2886455349&name=%E0%A4%A","expected":{"mgrs":"16S GC 28864 55349","lat":33.913724026697224,"lon":-84.52450547388797,"name":"�%A"}},
+    {"hash":"#grid=%E0%A4%A","expected":null}
+  ]
+}
