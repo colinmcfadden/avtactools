@@ -210,9 +210,8 @@ only (`notify.py`'s header, AGENTS.md §4): the grid is the message, it is uncla
 notification's words. So the notification row carries the grid in its `fields` (the label and the lat/long do not go in it); `notify.py`'s
 header and AGENTS.md say so. **The web** shows it in the app only, as its notifications do (N3), with the label too.
 
-(*To confirm with the owner:* the session that relayed the owner's choice of options asked that the lock screen name the sender only and
-never the grid, while the owner told this plan's author directly that the grid may show. This plan follows the owner's direct words; if
-the sender only is wanted, the notification simply drops its second line and the row keeps no grid.)
+When it is built, AGENTS.md §4 and §7 (and `notify.py`'s header) record `grid_shared` as the one exception to the rule of
+2026-10-28, by the owner's decision of 2026-11-04, in the same PR, so that nobody "fixes" it back.
 
 ### 7.5 How long a grid is kept
 
