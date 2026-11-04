@@ -195,7 +195,8 @@ public object MgrsConverter {
         return Mgrs(utm.zone, utm.band, square, within(utm.easting), within(utm.northing))
     }
 
-    private val GRID = Regex("""(\d{1,2})([C-HJ-NP-X])([A-HJ-NP-Z])([A-HJ-NP-Z])(\d*)""")
+    // [0-9], never \d: Android's \d (ICU) takes other scripts' digits, which the web's does not.
+    private val GRID = Regex("""([0-9]{1,2})([C-HJ-NP-X])([A-HJ-NP-Z])([A-HJ-NP-Z])([0-9]*)""")
 
     /**
      * A grid, as typed, to the point at the centre of the square it names, or

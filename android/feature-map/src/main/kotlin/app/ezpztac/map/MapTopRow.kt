@@ -73,6 +73,36 @@ class MapSearchState(expanded: Boolean = false, text: String = "") {
         private set
 
     var text by mutableStateOf(text)
+        private set
+
+    /**
+     * Whether the places what is typed could be are listed under the field ([PlaceList]): from an edit until one is chosen, the search
+     * finds its place, or the search folds. Not kept through a turn of the phone: the list comes back with the next keystroke.
+     */
+    var listed by mutableStateOf(false)
+        private set
+
+    /** What was typed, which lists its places again. */
+    fun edit(typed: String) {
+        text = typed
+        listed = typed.isNotBlank()
+    }
+
+    /** A search refused: what was typed is listed again, so readings to choose from (or why not) are there. */
+    fun show() {
+        listed = text.isNotBlank()
+    }
+
+    /** The list goes, what was typed stays: Escape, or a tablet's field and list both left. */
+    fun hide() {
+        listed = false
+    }
+
+    /** A place was chosen, or found: its grid is what the field then says, and the list goes. */
+    fun settle(grid: String?) {
+        if (grid != null) text = grid
+        listed = false
+    }
 
     fun open() {
         expanded = true
@@ -80,10 +110,17 @@ class MapSearchState(expanded: Boolean = false, text: String = "") {
 
     fun close() {
         expanded = false
+        listed = false
     }
 
-    /** A tap on the map: with the search open it folds it and does nothing else (true); with it folded the tap is the map's (false). */
-    fun foldOnTap(): Boolean = expanded.also { if (it) close() }
+    /**
+     * A tap on the map: with the search open it folds it and does nothing else (true); with it folded the tap is the map's (false). A
+     * tablet's search bar never folds, but its list goes.
+     */
+    fun foldOnTap(): Boolean {
+        listed = false
+        return expanded.also { if (it) close() }
+    }
 
     companion object {
         val Saver = listSaver<MapSearchState, Any>(
@@ -210,9 +247,12 @@ private fun OpenSearch(search: MapSearchState, error: String?, onSearch: (String
             BasicTextField(
                 value = field,
                 onValueChange = {
+                    // The cursor moving changes nothing typed, and lists nothing again.
+                    if (it.text != field.text) {
+                        search.edit(it.text)
+                        if (error != null) onClearError()
+                    }
                     field = it
-                    search.text = it.text
-                    if (error != null) onClearError()
                 },
                 modifier = Modifier.weight(1f).focusRequester(focus).onFocusChanged { focused = it.isFocused },
                 singleLine = true,

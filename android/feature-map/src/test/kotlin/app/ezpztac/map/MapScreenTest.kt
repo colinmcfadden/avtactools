@@ -39,6 +39,7 @@ import androidx.compose.ui.unit.dp
 import app.ezpztac.designsystem.EzpzIcons
 import app.ezpztac.designsystem.EzpzTheme
 import app.ezpztac.designsystem.ThemeMode
+import app.ezpztac.geo.PlaceSearch
 import app.ezpztac.model.LatLon
 import kotlin.math.abs
 import org.junit.Assert.assertEquals
@@ -73,7 +74,8 @@ class MapScreenTest {
         readout: Readout? = Readout.of(LatLon(34.783817, -84.08219)),
         error: String? = null,
         style: MapBaseStyle = styles.first(),
-    ) = MapUiState(styles = styles, style = style, readout = readout, searchError = error)
+        center: LatLon? = null,
+    ) = MapUiState(styles = styles, style = style, readout = readout, searchError = error, center = center)
 
     private fun show(
         state: MapUiState, gps: GpsState = GpsState.Off, camera: CameraState? = CameraState(LatLon(34.78, -84.08), 16.0, 30.0), mode: ThemeMode = ThemeMode.Dark,
@@ -95,7 +97,7 @@ class MapScreenTest {
                     onToggleGps = { log += "gps" }, onGpsPermissionResult = { log += "permission $it" }, onLocateMe = { log += "locate" },
                     onFaceNorth = { log += "north" }, onCopyReadout = { log += "copy $it" }, padding = padding, buttonsAtFoot = buttonsAtFoot,
                     onToggleGrid = grid?.let { { log += "grid" } }, chrome = chrome, search = search, hiding = hiding, controls = controls,
-                    tools = tools, overlay = overlay, controlsBottom = controlsBottom,
+                    tools = tools, overlay = overlay, controlsBottom = controlsBottom, onChoosePlace = { log += "go ${it.mgrs}" },
                     map = { Box(Modifier.fillMaxSize().background(Color(0xFF3A5A40)).semantics { contentDescription = "The map" }) },  // stands in for the GPU-drawn map
                 )
             }
@@ -204,6 +206,88 @@ class MapScreenTest {
     private fun openSearch() {
         compose.onNodeWithContentDescription("Search a grid or lat/long").performClick()
         compose.waitForIdle()
+    }
+
+    @Test
+    fun `as a grid is typed its grid and its lat and long are listed under the field, and choosing one goes there and folds the search`() {
+        show(state())
+        openSearch()
+        compose.onNode(hasSetTextAction()).performTextInput("16sgc2886455349")
+        compose.waitForIdle()
+        compose.onNodeWithText("16S GC 28864 55349").assertIsDisplayed()
+        compose.onNodeWithText("33.91372° N, 84.52451° W").assertIsDisplayed()
+        compose.onNodeWithText("MGRS grid, to 1 m").assertIsDisplayed()
+        compose.onNodeWithText("33.91372° N, 84.52451° W").performClick()
+        compose.waitForIdle()
+        assertEquals(listOf("go 16S GC 28864 55349"), log.filter { it.startsWith("go") })
+        assertFalse(search.expanded)
+        assertEquals("16S GC 28864 55349", search.text)                                          // the field then says the grid gone to
+    }
+
+    @Test
+    fun `an unsigned pair is listed as both its readings, nearest the map first, and the search key does not guess between them`() {
+        found = false
+        show(state(center = LatLon(34.5, -84.0)))
+        openSearch()
+        compose.onNode(hasSetTextAction()).performTextInput("34 84")
+        compose.waitForIdle()
+        compose.onNodeWithText(PlaceSearch.Messages.EAST_OR_WEST).assertIsDisplayed()
+        val west = compose.onNodeWithText("34.00000° N, 84.00000° W").fetchSemanticsNode().boundsInRoot
+        val east = compose.onNodeWithText("34.00000° N, 84.00000° E").fetchSemanticsNode().boundsInRoot
+        assertTrue("west, nearer the map, first: $west, $east", west.top < east.top)
+        compose.onNode(hasSetTextAction()).performImeAction()
+        compose.waitForIdle()
+        assertTrue(search.expanded)
+        compose.onNodeWithText("34.00000° N, 84.00000° W").assertIsDisplayed()                   // still there to choose from
+        compose.onNodeWithText("34.00000° N, 84.00000° W").performClick()
+        compose.waitForIdle()
+        assertEquals("go 17S KT 22908 66214", log.last())
+    }
+
+    @Test
+    fun `the search key on one place writes its grid into the field, as choosing a row does`() {
+        show(state())
+        openSearch()
+        compose.onNode(hasSetTextAction()).performTextInput("34.5457, -84.1234")
+        compose.onNode(hasSetTextAction()).performImeAction()
+        compose.waitForIdle()
+        assertEquals("16S GD 63976 26424", search.text)
+    }
+
+    @Test
+    fun `a refused search lists what was typed again, so its readings are there to choose from`() {
+        found = false
+        show(state(), buttonsAtFoot = true)
+        compose.onNode(hasSetTextAction()).performTextInput("34 84")
+        compose.waitForIdle()
+        search.hide()                                                                              // a tap on the map
+        compose.waitForIdle()
+        compose.onNodeWithText("34.00000° N, 84.00000° W").assertDoesNotExist()
+        compose.onNode(hasSetTextAction()).performImeAction()
+        compose.waitForIdle()
+        compose.onNodeWithText("34.00000° N, 84.00000° W").assertIsDisplayed()
+    }
+
+    @Test
+    fun `what is not a place yet is said in words under the field, as it is typed`() {
+        show(state())
+        openSearch()
+        compose.onNode(hasSetTextAction()).performTextInput("16S GC 288")
+        compose.waitForIdle()
+        compose.onNodeWithText(PlaceSearch.Messages.GRID_ODD).assertIsDisplayed()
+    }
+
+    @Test
+    fun `a tablet's search bar lists the places too, and lets the list go once one is chosen`() {
+        show(state(), buttonsAtFoot = true)
+        compose.onNode(hasSetTextAction()).performTextInput("34°32'44.4\"N 84°07'24.4\"W")
+        compose.waitForIdle()
+        compose.onNodeWithText("16S GD 63972 26420").assertIsDisplayed()
+        compose.onNodeWithText("Lat/long, read as degrees, minutes and seconds").assertIsDisplayed()
+        compose.onNodeWithText("16S GD 63972 26420").performClick()
+        compose.waitForIdle()
+        assertEquals("go 16S GD 63972 26420", log.last())
+        compose.onNodeWithText("Lat/long, read as degrees, minutes and seconds").assertDoesNotExist()
     }
 
     @Test
