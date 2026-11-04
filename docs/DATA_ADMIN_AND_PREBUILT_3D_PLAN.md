@@ -954,3 +954,71 @@ Each phase updates AGENTS.md (§4's features, §6, §10's settings) in the same 
 - how the map looks in the admin's browser.
 
 The owner checks each in the phase's step.
+
+### 10.8 The owner's answers, and D0 to D2 as built (2026-11-04)
+
+**The owner's answer.** "Proceed with DEM downloads. If we can show on the map what LiDAR is cached, that's great too."
+- **Q3:** no LiDAR downloads.
+- **Q9:** no uploads in this round.
+- **Every other question:** as recommended in §10.6.
+
+**Built** (`backend/data_admin/`, `routes/admin_data.py`, `templates/admin/data.html`):
+- **D0, the guards:**
+  - `volumes.py`: the mount check, the reserve, and each place's mount read from `/proc/self/mountinfo`;
+  - `LOCAL_CATALOG.refresh()`, with dot folders skipped in the walk;
+  - `terrain_tiles.generations()`, `sweep_generations()` and `rewarm_after_change()`;
+  - `DATA_ADMIN`, and the `data_job` table.
+- **D1, the map:**
+  - MapLibre GL JS 6.15.0, vendored (1.7 MB). It is ES modules only since version 6, so the page imports it as a module and it finds its worker beside itself;
+  - the layers and the panel of §10.3;
+  - the streamed cache, walked and placed by decoding each piece's name with the secret, counted in 0.1° cells. Pieces wider than 10 km count only in their survey's totals. A survey key of an older look is counted as "never served again";
+  - the downloaded LiDAR layer, wherever `LIDAR_COLLECTION` is set on the API.
+- **D2, DEMs from USGS:**
+  - the search, then a job (searched again on the server when confirmed, so nothing the page sends is downloaded);
+  - downloads resumed with `Range`, the reserve checked every 256 MB, nothing fetched while an analysis runs;
+  - the checks, the NAVD88 tag, the move into place, the catalog and the 3D terrain after it;
+  - *Replace*, which moves the old file to `.trash/` for 7 days. It applies only to **the same tile**: the same name, the
+    same cell, or a footprint about the same both ways. A cell inside a larger DEM (a statewide mosaic) is marked *covered*,
+    never fetched and never replaced, since moving the mosaic aside would take all its other ground with it (the review
+    found that);
+  - the button that tags the server's existing USGS-named DEMs (Q5).
+
+**Found by the independent review, and built in:**
+- **One bad file is that file's failure.** A 4xx, a redirect, or a size other than TNM's fails that file, and the job goes
+  on. A busy host (429, 5xx) is tried again after a pause. A redirect is never followed.
+- **A job always ends.** A database failure mid-job (the pooler restarting) still writes it failed, in a fresh session, so it
+  is never left *running* to be resumed at every look.
+- **Leftover jobs resume only where writes are on.** A cancel is always set on the job itself.
+- **The terrain cache sweep deletes only this deployment's generations.** Each generation is marked with a hash of the
+  database's host and name (`.owner`), since staging shares `/data/cache`. One another deployment made, or one from
+  before the marks, is kept. A rewarm asked for while one runs goes round again rather than being dropped.
+- **A download leaves the streamed LiDAR cache room to grow on the same disk:** its cap less what it holds. The cache
+  prunes by its cap alone and never looks at what is free. The panel warns when cap and reserve exceed what is free.
+- **The datum check reads the compound CRS with pyproj.** NAVD88 must be in metres: NAVD88 in US survey feet is refused.
+- **The search has a 30 s deadline**, under Cloudflare's 100 s. The walks of the caches run one at a time and are kept 10
+  minutes. The streamed layer is off until it is ticked.
+- **1 m project names that could climb out of their folder, or start a dot folder, are left out.** The older
+  `USGS_one_meter_…` names are read.
+- **Messages name folders by what they are, never by the server's paths.**
+
+**Not like §10, on purpose:**
+- **The search runs in the request.** It is one to three pages from TNM, under 2 s each, with timeouts.
+- **A file refused by its checks is deleted from `.incoming`, not kept there.** It is USGS's own file and can be fetched again, and 480 MB left for an admin to clear is how a disk fills.
+
+**Tried:**
+- a real search through the page over Ellijay (the newest of six versions chosen, the cell found on the server under another name);
+- the checks on USGS's real 1/3″ and 1 m files, read over HTTP: both pass, +0.3 m and +1.0 m from Terrarium at the median;
+- the page in the browser preview, over a local server with two test DEMs: the map, its layers, the volumes, a real 1/3″
+  and a real 1 m search;
+- everything else against stand-ins, in `tests/test_data_admin.py`.
+
+**Not tried:**
+- a whole download on the VM;
+- the mount check under Coolify;
+- the cache walks over a real stream cache.
+
+**Owner steps:**
+1. On the **production** API, set `DATA_ADMIN=write` and mount `/data/topo` writable.
+2. On staging, set `DATA_ADMIN=read` (or leave it off).
+3. Open `admin.ezpztac.app/admin/data` and check that the Volumes panel shows `/data/topo` as a mounted volume with the free space you expect.
+4. Download one 1/3″ cell (about 480 MB) and watch it reach the map.
