@@ -1,6 +1,7 @@
 # Sending grids to people — plan
 
-Status: **proposed, waiting on the owner's choice** (2026-11-04). Nothing here is built yet.
+Status: **proposed, waiting on the owner's choice** (2026-11-04). Nothing here is built yet. The owner has since said how option 4b's
+notification reads on Android (§3, option 4).
 
 The owner asked to be able to "send grids to people quickly within the application (on both android and web)", and on Android "via other modes
 (like airdrop or bluetooth or something)". This file lays out the ways to do it, what each costs, and a recommendation. §6 lists the questions
@@ -97,8 +98,11 @@ Two shapes, with very different costs:
   point sets yet** (`docs/ANDROID_MISSION_PACKS_PLAN.md`, *Deferred* 4), so it waits on that.
 - **4b. To a teammate directly**, outside any pack: a new server table (sender, recipient, grid, label, sent, seen), routes to send, list and
   dismiss, the people search limited to teammates as it is today, an inbox in each app, and a new notification kind in the outbox
-  (`docs/NOTIFICATIONS.md`). **The notification never carries the place** (it shows on the lock screen, AGENTS.md §4): it says *Sam B. sent you
-  a grid*, and the grid shows only in the app. A new route the apps call is a minor API version (AGENTS.md §6).
+  (`docs/NOTIFICATIONS.md`). **On Android the notification shows the grid** (the owner, 2026-11-04): *Sam B. sent you a grid.* and, on a
+  new line, the grid (`16S GC 28864 55349`), and a tap opens the app at the point. That is a deliberate exception to the outbox's rule that
+  a row names people, packs and teams only (AGENTS.md §4, §7), because the grid is the whole message and it is unclassified: the row keeps
+  the grid in its `fields`, it shows on the lock screen like every notification's words, and nothing else about the place (the label, the
+  lat/long) goes in it. A new route the apps call is a minor API version (AGENTS.md §6).
 - **Cost:** 4a about two days once Android draws a pack's point sets. 4b about a week across the server, the web and Android.
 - **Offline:** neither. Both go through the server.
 
