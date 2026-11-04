@@ -19,6 +19,10 @@
 import { looksLikeMgrs, readCoordinate } from "./coordParse";
 import { mgrsToLatLon, parseMgrs, toMgrs } from "./mgrs";
 
+const BANDS = "CDEFGHJKLMNPQRSTUVWX";
+// How far past its band's edge a square's centre may fall: a coarse square straddles the edge.
+const BAND_MARGIN_DEG = 0.5;
+
 export const MESSAGES = {
   incomplete: "Keep typing: a grid, or a latitude and a longitude.",
   unreadable: "Type a grid, such as 16S GC 28864 55349, or a latitude and longitude, such as 34.5457, -84.1234.",
@@ -32,8 +36,9 @@ export const MESSAGES = {
   gridOdd: "Keep typing: a grid has as many northing digits as easting digits.",
   gridOff: "That grid is not on the map.",
   gridLong: "A grid has at most ten digits: five for the easting and five for the northing.",
+  gridBand: "That grid's band letter does not hold that square: check the letter after the zone.",
   beyond: "That point is beyond the MGRS grid: north of 84° N or south of 80° S.",
-  eastOrWest: "No sign or N/S/E/W was given, so the longitude could be east or west. Choose one.",
+  eastOrWest: "The longitude has no sign or E/W, so it could be east or west. Choose one.",
 };
 
 // A grid's precision in words, by the digits in each half.
@@ -77,19 +82,30 @@ const readGrid = (text) => {
   }
   const point = mgrsToLatLon(text);
   // A square the zone has can still name a place past the grid's ends (16X GC is at 87° N): it is no target.
+  // Nor is a zone Svalbard does not have (32X, 34X, 36X).
   if (!point || !toMgrs(point.lat, point.lon)) return { choices: [], message: MESSAGES.gridOff };
+  if (grid.band === "X" && [32, 34, 36].includes(grid.zone)) return { choices: [], message: MESSAGES.gridOff };
+  // A band letter mistyped (16T for 16S) still names a square, 900 km from the one meant: refuse a square
+  // whose centre is not in or beside the band typed.
+  const south = BANDS.indexOf(grid.band) * 8 - 80;
+  const north = grid.band === "X" ? 84 : south + 8;
+  if (point.lat < south - BAND_MARGIN_DEG || point.lat > north + BAND_MARGIN_DEG) return { choices: [], message: MESSAGES.gridBand };
   const zone = String(grid.zone).padStart(2, "0");
   const mgrs = `${zone}${grid.band} ${grid.square} ${grid.easting} ${grid.northing}`;
   const precision = PRECISION[grid.easting.length] ?? "under 1 m";
   return { choices: [choiceAt(point.lat, point.lon, mgrs, `MGRS grid, to ${precision}`)], message: null };
 };
 
+// Quotes, brackets and a sentence's last mark round a grid pasted from a message: "“16S GC 28864 55349”.".
+const unwrap = (text) => text.replace(/^["'“”‘’([]+/, "").replace(/["'“”‘’)\].,;:]+$/, "").trim();
+
 /** What `text`, typed into the target field, could mean. See the file's head. */
 export const readTarget = (text) => {
   const typed = String(text ?? "").trim();
   if (!typed) return { choices: [], message: null };
 
-  if (looksLikeMgrs(typed)) return readGrid(typed);
+  const unwrapped = unwrap(typed);
+  if (looksLikeMgrs(unwrapped)) return readGrid(unwrapped);
   // A zone, band and one square letter is a grid half typed ("16S G").
   if (/^\d{1,2}[C-HJ-NP-X][A-HJ-NP-Z]$/i.test(squeeze(typed))) return { choices: [], message: MESSAGES.gridSquare };
   if (/^\d{1,2}[C-HJ-NP-X][A-HJ-NP-Z]{2}\d{11,}$/i.test(squeeze(typed))) return { choices: [], message: MESSAGES.gridLong };
@@ -106,12 +122,15 @@ export const readTarget = (text) => {
   const literal = at(parsed.lat, parsed.lon);
   if (!literal) return { choices: [], message: MESSAGES.beyond };
 
-  // With no sign or hemisphere anywhere, an unsigned longitude is east as
-  // written, but crews west of Greenwich drop the minus all the time: offer
-  // both rather than guess. Latitude first stays the rule (see coordParse).
+  // With no sign or E/W on the longitude (whatever the latitude says), it is
+  // east as written, but crews west of Greenwich drop the minus all the time:
+  // offer both rather than guess. Latitude first stays the rule (see coordParse).
   if (!signed && parsed.lon !== 0) {
     const west = at(parsed.lat, -parsed.lon);
-    return { choices: [literal, west], message: MESSAGES.eastOrWest };
+    // 180° east is 180° west, and a longitude that rounds to 0° reads the same both ways: one place to offer.
+    if (west && west.latLong !== literal.latLong && west.mgrs !== literal.mgrs) {
+      return { choices: [literal, west], message: MESSAGES.eastOrWest };
+    }
   }
   return { choices: [literal], message: null };
 };

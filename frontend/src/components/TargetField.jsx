@@ -1,4 +1,4 @@
-import React, { useId, useMemo, useState } from "react";
+import React, { useId, useMemo, useRef, useState } from "react";
 import { nearestFirst, readTarget } from "../utils/targetReading";
 import "./TargetField.css";
 
@@ -30,6 +30,7 @@ const TargetField = ({
   inputProps = {},
 }) => {
   const id = useId();
+  const inputRef = useRef(null);
   const listId = `${id}-places`;
   const [open, setOpen] = useState(false);
   const [active, setActive] = useState(-1);
@@ -54,9 +55,11 @@ const TargetField = ({
   const shown = open && (rows.length > 0 || Boolean(reading.message));
   const optionId = (index) => `${id}-place-${index}`;
 
-  const choose = (choice) => {
+  const choose = (choice, { byPointer = false } = {}) => {
     setOpen(false);
     setActive(-1);
+    // A tap puts the phone's keyboard away, so the map it goes to is not under it; a key leaves the focus where it was.
+    if (byPointer) inputRef.current?.blur();
     onChoose(choice);
   };
 
@@ -65,7 +68,9 @@ const TargetField = ({
       choose(reading.choices[0]);
       return;
     }
-    // Readings to choose from, or a sentence: show them, and say it again.
+    // Readings to choose from, or a sentence: show them, and say it again. The focus goes back to the
+    // field, so the list closes as it always does (Escape, leaving the field) and the arrow keys reach it.
+    inputRef.current?.focus();
     setOpen(true);
     setAsked((n) => n + 1);
   };
@@ -112,6 +117,7 @@ const TargetField = ({
       <div className={rowClassName}>
         <input
           {...inputProps}
+          ref={inputRef}
           className={inputClassName}
           placeholder={placeholder}
           autoFocus={autoFocus}
@@ -161,7 +167,7 @@ const TargetField = ({
               // Keeps the focus in the field, so choosing does not first close the list by blurring it.
               onMouseDown={(event) => event.preventDefault()}
               onMouseEnter={() => setActive(index)}
-              onClick={() => choose(row.choice)}
+              onClick={() => choose(row.choice, { byPointer: true })}
             >
               <span className="target-field__main">{row.main}</span>
               <span className="target-field__note">{row.note}</span>

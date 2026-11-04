@@ -125,6 +125,29 @@ describe("TargetField", () => {
     expect(screen.queryAllByRole("option")).toHaveLength(0);
   });
 
+  it("GO with nothing to go to takes the focus back to the field, so the list closes as it always does", () => {
+    const { input, type } = setup();
+    type("34 84");
+    expect(document.activeElement).not.toBe(input);
+    fireEvent.click(screen.getByRole("button", { name: "GO" }));
+    expect(document.activeElement).toBe(input);
+    expect(screen.getAllByRole("option")).toHaveLength(2);
+    fireEvent.keyDown(input, { key: "Escape" });
+    expect(screen.queryAllByRole("option")).toHaveLength(0);
+  });
+
+  it("a tap on a row puts the keyboard away; Enter leaves the focus in the field", () => {
+    const { input, type } = setup();
+    input.focus();
+    type("16S GC 28864 55349");
+    fireEvent.click(screen.getAllByRole("option")[0]);
+    expect(document.activeElement).not.toBe(input);
+    input.focus();
+    type("16S GC 2886 5534");
+    fireEvent.keyDown(input, { key: "Enter" });
+    expect(document.activeElement).toBe(input);
+  });
+
   it("shows nothing for an empty field", () => {
     const { input } = setup();
     input.focus();
@@ -146,6 +169,7 @@ describe("formatMGRS leaves coordinates alone", () => {
     "-84",
     "34N 84E",          // E and S once read as grid letters, so this was reformatted
     "34S",
+    "34 ",              // the space after a first number, typed on the way to "34 84"
     "34 84",            // an unsigned pair, offered as its readings
     "34 32 44",
   ])("passes %s through untouched", (text) => {

@@ -117,6 +117,13 @@ const PARSE_TEXTS = [
   // why a text is not a pair, which the target field says in words
   "34", "34.5, -", "34 32 44", "N34 32 44", "1 2 3 4 5 6 7", "34 32 44 84 07 24 12", "3475N 08407W", "200, 34", "34, 200",
   "W84 E34", "34S", "?", "34.5457, -84.1234 hello",
+  // found by the review: a number written from its point, a letter on one value of a pair with a separator,
+  // dashes between minutes and seconds, a labelled latitude with a longitude still to label
+  "51.5, -.12", "N34.5 W.5", "-.5, -.12", ".5 .5", "34.5457, 84.1234W", "34.5457, 84.1234 W", "N34.5457, -84.1234",
+  "N34 32, 84 07", "34 32.74, 84 07.41W", "34 32 N", "N34 84", "34-32-44 84-07-24", "34° 32′ 44″ N 84° 07′ 24″", "34.5N 84.1",
+  "34.5, 84.1, 12", "34.5, 84.1W, 12",
+  // letters JavaScript's /i does not fold to ASCII (long s, dotless i, the Kelvin sign), which Kotlin's IGNORE_CASE would
+  "34.5\u017f 84.1W", "34.5N 84.1\u212a", "\u017f34.5 W84.1", "34.5 84.1 \u0131",
 ];
 
 const MGRS_TEXTS = [
@@ -124,12 +131,13 @@ const MGRS_TEXTS = [
   "16S GC", "16sgc2886455349", "34N 084W", "34.5457, -84.1234",
   "16I GC 12345 67890", "", "16S", "16SGC12345678901", "1SGC", "99ZGC12",
   "16 S GC 28864 55349",
+  "16\u017fGC2886455349", "16SG\u212a2886455349", "16sgc2886455349",
 ];
 
 const COORDINATE_TEXTS = [
   "34.", "34.5, -", "34.5457, -84.1234", "34N 84W", "34 N", "16S GC 28864 55349",
   "N34", "", "  ", "hello", "34 32 44.4 N", "34°", "W", "N", "34S",
-  "34N 84E", "34S 84E", "E84", "16SG", "16S G", "34NE", "34 84", "34 32 44", " 34 ", "16 S", "16 SG",
+  "34N 84E", "34S 84E", "E84", "16SG", "16S G", "34NE", "34 84", "34 32 44", " 34 ", "16 S", "16 SG", "34 ", "34 32 ",
 ];
 
 // The target field: what each text is offered as (utils/targetReading.js). Grids at every precision and
@@ -152,6 +160,14 @@ const READING_TEXTS = [
   // sentences
   "3", "34", "34.5, -", "34 32 44", "1 2 3 4 5 6 7", "91, -84", "34, 200", "34 75 N, 84 07 W", "3475N 08407W", "34N 84N",
   "W84 E34", "Dahlonega", "?", "34S", "34N", "85, 10", "-81, 10",
+  // found by the review
+  "51.5, -.12", "N34.5 W.5", "34.5457, 84.1234W", "N34.5457, -84.1234", "34-32-44 84-07-24", "34° 32′ 44″ N 84° 07′ 24″", "34.5N 84.1",
+  "34 32 44 8", "34 32 44 84", "34 32 44.4 84", "34 32 44 84 0", "34 32 44 84 07", "34 32 4 84",
+  "34 180", "34 -180", "0.5 0.000001", "34 0.000004",
+  "16S GC 28864 55349.", "16S GC 28864 55349,", "\u201c16S GC 28864 55349\u201d", "(16S GC 28864 55349)", "'16S GC 2886 5534'",
+  "16T GC 28864 55349", "16R GC 28864 55349", "32X MN 12345 67890", "34X ET 12345 12345", "31V EK 12345 12345",
+  "16S GD 0 0", "16S GD 9 9",
+  "16\u017fGC2886455349", "16SG\u212a 1234", "16\u017fG", "34.5N 84.1\u212a",
 ];
 
 const NEAR_CASES = [
