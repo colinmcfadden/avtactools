@@ -53,6 +53,55 @@
 .shell-topbar__status--offline { color: #b9c1cb; }
 .shell-topbar__status--offline .shell-topbar__status-dot { background: #6f7885; }
 .shell-topbar__status--finished { color: #b9c1cb; }
+/* The search: as wide as the bar spares, between the workspace and the buttons. */
+.shell-topbar__search { flex: 1 1 560px; min-width: 150px; max-width: 680px; margin: 0 6px 0 auto; }
+/* Room for it beside the rest at middling widths: the pack's status gives way first (its dot stays), then the
+   buttons' words and the account's name, as a phone's do. */
+.shell-topbar__status { min-width: 0; flex: 0 1 auto; overflow: hidden; text-overflow: ellipsis; }
+@media (max-width: 1360px) {
+  .shell-topbar__button-label,
+  .shell-topbar__account-name { display: none; }
+}
+.shell-topbar__search .target-field__drop { right: auto; width: 100%; min-width: 320px; }
+.topbar-search {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  height: 34px;
+  padding: 0 3px 0 10px;
+  box-sizing: border-box;
+  border: 1px solid var(--hairline-strong);
+  border-radius: 8px;
+  background: var(--surface-1);
+}
+.topbar-search:focus-within { border-color: var(--ff-accent); box-shadow: 0 0 0 1px var(--ff-accent); }
+.topbar-search__input {
+  flex: 1 1 auto;
+  min-width: 0;
+  height: 100%;
+  border: none;
+  outline: none;
+  background: transparent;
+  color: var(--ff-text-main);
+  font-family: var(--mono, "SFMono-Regular", Consolas, monospace);
+  font-size: 13px;
+}
+.topbar-search__input::placeholder { color: #8a94a1; font-family: var(--ff-font-stack); }
+.topbar-search .target-field__share { width: 28px; height: 28px; }
+.topbar-search__go {
+  flex: none;
+  height: 26px;
+  padding: 0 12px;
+  border: none;
+  border-radius: 6px;
+  background: var(--primary-fill, #3d84b3);
+  color: #fff;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  cursor: pointer;
+}
+.topbar-search__go:hover { background: #4a7db3; }
 .shell-topbar__end { margin-left: auto; display: flex; align-items: center; gap: 8px; flex: none; }
 .shell-topbar__button {
   box-sizing: border-box;
@@ -470,6 +519,8 @@
   .shell-topbar__button-label,
   .shell-topbar__account-name { display: none; }
   .shell-topbar__switcher { max-width: 46vw; }
+  /* A phone's search is its own, over the map (MobileGridInput). */
+  .shell-topbar__search { display: none; }
 }
 
 @media (prefers-reduced-motion: reduce) {

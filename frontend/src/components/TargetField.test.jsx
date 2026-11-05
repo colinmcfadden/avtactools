@@ -1,12 +1,12 @@
 import React, { useState } from "react";
-import { fireEvent, render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, within } from "@testing-library/react";
 import TargetField from "./TargetField";
 import { formatMGRS } from "../utils/Helpers";
 
 // A field as the app holds it: the text in state, every choice recorded.
-const Harness = ({ initial = "", near = null, onChoose }) => {
+const Harness = ({ initial = "", near = null, onChoose, onShare = null }) => {
   const [value, setValue] = useState(initial);
-  return <TargetField value={value} onChange={setValue} onChoose={onChoose} near={near} />;
+  return <TargetField value={value} onChange={setValue} onChoose={onChoose} onShare={onShare} near={near} />;
 };
 
 const setup = (props = {}) => {
@@ -146,6 +146,60 @@ describe("TargetField", () => {
     type("16S GC 2886 5534");
     fireEvent.keyDown(input, { key: "Enter" });
     expect(document.activeElement).toBe(input);
+  });
+
+  it("shares a row's place from the button at its end, without choosing it", () => {
+    const onShare = vi.fn();
+    const { input, type, onChoose } = setup({ onShare });
+    input.focus();
+    type("34 84");
+    // A pointer's alone: no control inside an option, so a screen reader reads each row as one choice.
+    const west = document.querySelector('[data-share="17S KT 22908 66214"]');
+    expect(west).toHaveAttribute("aria-hidden", "true");
+    expect(within(screen.getAllByRole("option")[1]).queryByRole("button")).toBeNull();
+    expect(fireEvent.mouseDown(west)).toBe(false); // the focus stays in the field
+    fireEvent.click(west);
+    expect(onShare).toHaveBeenCalledWith(expect.objectContaining({ mgrs: "17S KT 22908 66214", lon: -84 }));
+    expect(onChoose).not.toHaveBeenCalled();
+    expect(document.activeElement).not.toBe(input); // the field is put away, so closing the dialog opens no list
+  });
+
+  it("the field's share button shares the one place there is, and waits while there is none", () => {
+    const onShare = vi.fn();
+    const { type } = setup({ onShare });
+    const button = () => screen.getByRole("button", { name: /^Share grid/ });
+    expect(button()).toBeDisabled();
+    type("34 84");
+    expect(button()).toBeDisabled(); // two readings: never a guess
+    type("16S GC 28864 55349");
+    expect(button()).toHaveAccessibleName("Share grid 16S GC 28864 55349");
+    fireEvent.click(button());
+    expect(onShare).toHaveBeenCalledWith(expect.objectContaining({ mgrs: "16S GC 28864 55349" }));
+  });
+
+  it("the field's share button shares the reading the arrow keys are on", () => {
+    const onShare = vi.fn();
+    const { input, type } = setup({ onShare, near: { lat: 34, lon: -84 } });
+    input.focus();
+    type("34 84");
+    fireEvent.keyDown(input, { key: "ArrowDown" });
+    fireEvent.keyDown(input, { key: "ArrowDown" });
+    const button = screen.getByRole("button", { name: /^Share grid/ });
+    // Tab from the field to the button: the reading picked stays picked.
+    fireEvent.blur(input, { relatedTarget: button });
+    button.focus();
+    expect(button).toBeEnabled();
+    expect(button).toHaveAccessibleName(/^Share grid 45S /);
+    fireEvent.click(button);
+    expect(onShare).toHaveBeenCalledWith(expect.objectContaining({ lon: 84 }));
+  });
+
+  it("offers no share buttons without onShare, and asks to search by grid or lat/long", () => {
+    const { input, type } = setup();
+    input.focus();
+    type("16S GC 28864 55349");
+    expect(screen.queryByRole("button", { name: /^Share/ })).toBeNull();
+    expect(input).toHaveAttribute("placeholder", "Search by grid or lat/long");
   });
 
   it("shows nothing for an empty field", () => {

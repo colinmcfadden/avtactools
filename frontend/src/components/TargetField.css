@@ -49,8 +49,8 @@
 
 .target-field__option {
   display: flex;
-  flex-direction: column;
-  gap: 2px;
+  align-items: center;
+  gap: 8px;
   min-height: 44px; /* a finger's, and a glove's, reach */
   justify-content: center;
   padding: 6px 10px;
@@ -64,6 +64,57 @@
 .target-field__option--active,
 .target-field__option:hover {
   background: rgba(90, 167, 212, 0.16);
+}
+
+.target-field__text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+/* The row's share button, at its end; and the field's own, between the text and GO. */
+.target-field__row-share,
+.target-field__share {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--ff-text-muted, #9ca3af);
+  cursor: pointer;
+}
+
+.target-field__row-share:hover,
+.target-field__share:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--ff-text-main, #f3f4f6);
+}
+
+@media (max-width: 850px) {
+  /* A finger's, and a glove's, reach, as the rows' (a near miss on a row would choose it). */
+  .target-field__row-share,
+  .target-field__share {
+    width: 44px;
+    height: 44px;
+  }
+}
+
+.target-field__share:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+
+.target-field__share:focus-visible,
+.target-field__row-share:focus-visible {
+  outline: 2px solid var(--ff-accent, #5aa7d4);
+  outline-offset: -2px;
 }
 
 .target-field__main {
