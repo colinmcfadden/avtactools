@@ -1,7 +1,7 @@
 /**
  * Reads a latitude/longitude out of free text, in whatever shape it arrives.
  *
- * The MGRS target input accepts a pasted coordinate as well as a grid, so this
+ * The target search accepts a pasted coordinate as well as a grid, so this
  * has to cope with everything people actually paste — Google Maps, ForeFlight,
  * a flight plan, a spreadsheet cell, a text message:
  *

@@ -3,7 +3,9 @@ package app.ezpztac.map
 import android.Manifest
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
@@ -27,7 +29,6 @@ import androidx.compose.foundation.layout.windowInsetsBottomHeight
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.layout.windowInsetsTopHeight
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.DropdownMenu
@@ -43,7 +44,6 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.Stable
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -59,17 +59,17 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.key.key
-import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
 import androidx.compose.ui.layout.SubcomposeLayout
 import androidx.compose.ui.layout.boundsInParent
+import androidx.compose.ui.layout.boundsInWindow
 import androidx.compose.ui.layout.layout
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalDensity
-import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.semantics
@@ -213,6 +213,8 @@ fun MapScreen(
     chrome: MapChromeBoxes? = null,
     /** A place chosen from the list under the search: the map goes there. */
     onChoosePlace: (PlaceChoice) -> Unit = {},
+    /** Whether this screen draws the open search ([MapSearchSpotlight]) itself: false where its host draws it over everything, the sheet included. */
+    spotlight: Boolean = true,
     /** The search: folded or open on a phone, and what was typed. Held by the frame, which folds it (a tap on the map). */
     search: MapSearchState = rememberMapSearchState(),
     /** The phone's frame hiding (a tap on the map): the row, what is said under it and the search go with it, up off the screen; the rest stays. */
@@ -230,36 +232,6 @@ fun MapScreen(
     val top = WindowInsets.safeDrawing.only(WindowInsetsSides.Top + WindowInsetsSides.Horizontal)
     // The search goes with the frame (and the keyboard with it).
     LaunchedEffect(hiding.hidden) { if (hiding.hidden) search.close() }
-    // What is typed, read as it is typed (the web's target field), the rows it lists and what a screen reader is told of them.
-    val reading = remember(search.text) { PlaceSearch.read(search.text) }
-    val places = remember(reading, state.center, search.listed) {
-        val rows = placeRows(reading, state.center)
-        Places(reading, rows, placeSummary(reading, rows), search.listed)
-    }
-    // A search refused is said in its banner, in place of the list, which says the same sentence; but readings to choose from stay listed
-    // (their sentence says why there are two), or there would be nothing to choose.
-    val listing = places.shown && (state.searchError == null || places.rows.isNotEmpty())
-    val focusManager = LocalFocusManager.current
-    // Each search refused, so the same sentence is said again (the web's `asked`).
-    var refusals by remember { mutableIntStateOf(0) }
-    val find: (String) -> Boolean = { typed ->
-        onSearch(typed).also { found ->
-            // Found: the field says the grid gone to, as the web's does. Refused: readings to choose from, or why not, listed again.
-            if (found) search.settle(PlaceSearch.read(typed).choices.singleOrNull()?.mgrs) else { search.show(); refusals++ }
-        }
-    }
-    // A tablet's bar is always there: its list goes once neither the field nor a row of the list has the focus.
-    var fieldFocused by remember { mutableStateOf(false) }
-    var listFocused by remember { mutableStateOf(false) }
-    LaunchedEffect(fieldFocused, listFocused) { if (buttonsAtFoot && !fieldFocused && !listFocused) search.hide() }
-    val listModifier = Modifier.onFocusChanged { listFocused = it.hasFocus }
-    val choose: (PlaceChoice) -> Unit = { choice ->
-        onClearSearchError()
-        onChoosePlace(choice)
-        search.settle(choice.mgrs)
-        search.close()
-        focusManager.clearFocus()
-    }
     Box(modifier.fillMaxSize()) {
         map()
         if (!controls) return@Box
@@ -346,15 +318,6 @@ fun MapScreen(
 
         sheet()
 
-        // What the list under the search holds, said politely; apart from the search's column, so it takes none of its room.
-        val said = when {
-            !buttonsAtFoot && !search.expanded -> ""
-            listing -> places.summary
-            else -> state.searchError ?: ""
-        }
-        // A zero-width space that alternates, so a refusal of the same words is said again.
-        PlaceAnnouncer(if (said.isEmpty()) "" else said + if (refusals % 2 == 1) "\u200B" else "")
-
         // The navigation bar at the map's foot covers it too (a tablet's, where no sheet rises), and the status bar at its top: only told, never drawn.
         if (chrome != null) {
             Box(Modifier.align(Alignment.BottomStart).fillMaxWidth().windowInsetsBottomHeight(WindowInsets.safeDrawing).chromeBox(chrome, "navigation"))
@@ -367,11 +330,7 @@ fun MapScreen(
                 Modifier.fillMaxWidth().onGloballyPositioned { searchBottom = it.boundsInParent().bottom }.chromeBox(chrome, "search").windowInsetsPadding(top)
                     .padding(top = MapChrome.SEARCH_TOP, start = Tokens.Spacing.lg.dp, end = Tokens.Spacing.lg.dp),
             ) {
-                SearchBar(search, state.searchError, find, onClearSearchError, account, onFocus = { fieldFocused = it })
-                // The places it could be, as it is typed; in their place, what a search refused (the list says the same sentence while it shows).
-                if (listing) PlaceList(places.reading, places.rows, choose, listModifier.padding(top = Tokens.Spacing.sm.dp))
-                // On its own surface: red text straight on imagery cannot be read.
-                else state.searchError?.let { Banner(it, BannerKind.Error, Modifier.padding(top = Tokens.Spacing.sm.dp)) }
+                SearchBar(search, account)
                 Box(Modifier.padding(top = Tokens.Spacing.sm.dp)) { belowChips() }
             }
         } else {
@@ -386,16 +345,13 @@ fun MapScreen(
                     }
                     .windowInsetsPadding(top).padding(top = MapChrome.ROW_TOP, start = Tokens.Spacing.lg.dp, end = Tokens.Spacing.lg.dp),
             ) {
-                MapTopRow(search, state.searchError, find, onClearSearchError, account, chips)
+                MapTopRow(search, account, chips)
                 // What is said under the row stops short of the map's buttons, which stand at the end below it.
-                val clear = Modifier.padding(top = Tokens.Spacing.sm.dp, end = MapChrome.BUTTON + Tokens.Spacing.sm.dp)
-                // The places it could be, as it is typed; in their place, what a search refused.
-                if (listing && search.expanded) PlaceList(places.reading, places.rows, choose, clear)
-                // On its own surface: red text straight on imagery cannot be read.
-                else state.searchError?.let { Banner(it, BannerKind.Error, clear) }
-                Box(clear) { belowChips() }
+                Box(Modifier.padding(top = Tokens.Spacing.sm.dp, end = MapChrome.BUTTON + Tokens.Spacing.sm.dp)) { belowChips() }
             }
         }
+        // The search open: over everything this screen draws, unless whoever draws over the whole frame draws it (the app's MapHome).
+        if (spotlight) MapSearchSpotlight(search, state, onSearch, onClearSearchError, onChoosePlace)
     }
 }
 
@@ -546,53 +502,40 @@ private fun ReadoutPill(readout: Readout, onCopy: (String) -> Unit) {
 private class Places(val reading: PlaceReading, val rows: List<PlaceRow>, val summary: String, val shown: Boolean)
 
 /**
- * A tablet's search along the top, always open: a grid or a coordinate, flown to when the keyboard's search key or the search button is pressed. What is typed is
- * [search]'s, so it is the same words when the window turns into a phone's. [account] sits at its end (a tablet's is the rail's: none).
+ * A tablet's search along the top: what was typed (or what it takes), which opens the search over everything ([MapSearchSpotlight]) when tapped, the open field
+ * growing out of it. What is typed is [search]'s, so it is the same words when the window turns into a phone's. [account] sits at its end (a tablet's is the
+ * rail's: none).
  */
 @Composable
-private fun SearchBar(
-    search: MapSearchState,
-    error: String?,
-    onSearch: (String) -> Boolean,
-    onClearError: () -> Unit,
-    account: @Composable () -> Unit,
-    onFocus: (Boolean) -> Unit = {},
-) {
-    val text = search.text
+private fun SearchBar(search: MapSearchState, account: @Composable () -> Unit) {
+    // In step with the open field: the bar's words go as it leaves and come back once it is back.
+    val progress = animateFloatAsState(if (search.expanded) 1f else 0f, tween(SPOTLIGHT_MILLIS, easing = FastOutSlowInEasing), label = "search bar")
     Surface(
-        modifier = Modifier.fillMaxWidth().height(MapChrome.SEARCH_HEIGHT),
+        onClick = search::open,
+        modifier = Modifier.fillMaxWidth().height(MapChrome.SEARCH_HEIGHT)
+            .onGloballyPositioned { search.origin = it.boundsInWindow() }
+            .semantics { contentDescription = if (search.text.isBlank()) "Search a grid or lat/long" else "Search a grid or lat/long: ${search.text}" },
         shape = RoundedCornerShape(28.dp),
         color = MaterialTheme.colorScheme.surfaceContainerHigh,
         contentColor = MaterialTheme.colorScheme.onSurface,
         shadowElevation = 3.dp,
     ) {
-        Row(Modifier.padding(horizontal = Tokens.Spacing.xs.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(Tokens.Spacing.xs.dp)) {
-            IconButton(onClick = { onSearch(text) }, modifier = Modifier.size(48.dp)) {
-                Icon(painterResource(EzpzIcons.search), contentDescription = "Search a grid or lat/long")
+        Row(
+            Modifier.padding(horizontal = Tokens.Spacing.xs.dp).graphicsLayer { alpha = if (progress.value > 0f) 0f else 1f },
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(Tokens.Spacing.xs.dp),
+        ) {
+            Box(Modifier.size(48.dp), contentAlignment = Alignment.Center) {
+                Icon(painterResource(EzpzIcons.search), contentDescription = null, tint = EzpzTheme.status.accent)
             }
-            val style = MaterialTheme.typography.bodyLarge.copy(
-                fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Medium, letterSpacing = 0.32.sp, color = MaterialTheme.colorScheme.onSurface,
-            )
-            BasicTextField(
-                value = text,
-                onValueChange = { search.edit(it); if (error != null) onClearError() },
-                modifier = Modifier.weight(1f).onFocusChanged { onFocus(it.isFocused) }
-                    // Escape lets the list go and keeps what was typed (a keyboard on a tablet).
-                    .onPreviewKeyEvent { event ->
-                        if (event.key == Key.Escape && event.type == KeyEventType.KeyDown && search.listed) { search.hide(); true } else false
-                    },
-                singleLine = true,
-                textStyle = style,
-                cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
-                // Grids are capitals; a coordinate is digits, which the setting leaves alone.
-                keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Characters, autoCorrectEnabled = false, imeAction = ImeAction.Search),
-                keyboardActions = KeyboardActions(onSearch = { onSearch(text) }),
-                decorationBox = { field ->
-                    Box(contentAlignment = Alignment.CenterStart) {
-                        if (text.isEmpty()) Text("MGRS grid or lat/long", style = style.copy(fontFamily = FontFamily.Default, fontWeight = FontWeight.Normal, letterSpacing = 0.sp), color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        field()
-                    }
-                },
+            val style = MaterialTheme.typography.bodyLarge
+            Text(
+                search.text.ifBlank { "Search by grid or lat/long" },
+                style = if (search.text.isBlank()) style else style.copy(fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Medium, letterSpacing = 0.32.sp),
+                color = if (search.text.isBlank()) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.onSurface,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.weight(1f).clearAndSetSemantics {},
             )
             account()
         }

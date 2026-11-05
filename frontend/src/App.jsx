@@ -7,6 +7,7 @@ import { toMgrs } from "./utils/mgrs";
 import ExportModal from "./feature/export/ExportModal";
 import MobileQuickAccess from "./components/MobileQuickAccess";
 import MobileGridInput from "./components/MobileGridInput";
+import TopBarSearch from "./feature/shell/TopBarSearch";
 import SidebarCollapseToggle from "./components/SidebarCollapseToggle";
 import { useIsMobile } from "./feature/auth/useIsMobile";
 import api from "./feature/auth/api";
@@ -45,6 +46,7 @@ import UnitBuilder from "./feature/unit/UnitBuilder";
 import { useLzWorkspace } from "./feature/lzWorkspace/useLzWorkspace";
 import { withLzMeasure } from "./feature/lzMeasure/lzMeasure";
 import CopyGridTitle from "./components/CopyGridTitle";
+import Icon from "./feature/ui/Icon";
 import ShareGridDialog from "./feature/gridShare/ShareGridDialog";
 import { captureGridLink, takeGridLink } from "./feature/gridShare/gridLinkCapture";
 import Lz3DWindow from "./feature/viewer3d/Lz3DWindow";
@@ -84,8 +86,7 @@ const resolveStateUpdate = (nextValue, currentValue) =>
   typeof nextValue === "function" ? nextValue(currentValue) : nextValue;
 
 // The desktop control panel toggles between its full width and a narrow icon
-// rail. The rail is wide enough for the tool icons; the MGRS Target input pops
-// out on demand while collapsed so it's still typeable.
+// rail, wide enough for the tool icons. The search is the top bar's.
 const SIDEBAR_RAIL = 76;
 const SIDEBAR_DEFAULT = 320;
 const SIDEBAR_COLLAPSED_KEY = "avtac.sidebarCollapsed";
@@ -118,7 +119,8 @@ function App() {
   const [contextMenu, setContextMenu] = useState(null);
   const [loading, setLoading] = useState(false);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
-  const [gridInput, setGridInput] = useState("16S GC 28864 55349");
+  // Empty until a target is set, so the search says what it takes.
+  const [gridInput, setGridInput] = useState("");
   const [isDrawingLZ, setIsDrawingLZ] = useState(false);
   const [drawingPoints, setDrawingPoints] = useState([]);
   const [clickedGrid, setClickedGrid] = useState("Loading...");
@@ -1367,13 +1369,69 @@ function App() {
   }, [inPack, dock]);
 
   return (
-    <div className={`app-container${presenting ? " app-container--presenting" : ""}`} {...(presenting ? IGNORE_DROPS : {})}>
+    // Files dropped anywhere in the window are imported (the bar and its open search lie over the map), but not while a brief is presented.
+    <div className={`app-container${presenting ? " app-container--presenting" : ""}`} {...(presenting ? IGNORE_DROPS : imports.dragProps)}>
       <button
         className="mobile-hamburger-btn"
         onClick={() => setIsMobileMenuOpen(true)}
       >
         ☰
       </button>
+      {/* Across the whole window, over the control panel and the map alike (the dock and the panel sit under it). */}
+      <TopBar
+        user={user}
+        isAdmin={Boolean(user?.is_admin)}
+        onOpenSurveys={user?.is_admin || feat.lz_surveys ? () => setSurveysOpen(true) : undefined}
+        onSignOut={logout}
+        onOpenLibrary={() => openLibrary("lz")}
+        searchSlot={
+          <TopBarSearch
+            value={gridInput}
+            onChange={setGridInput}
+            onChoose={chooseTarget}
+            onShare={(choice) => setShareGrid({ mgrs: choice.mgrs, lat: choice.lat, lon: choice.lon })}
+            near={targetNear}
+          />
+        }
+        briefSlot={feat.mission_brief ? (
+          <BriefMenu packName={inPack ? packs.meta?.name ?? "the pack" : null} summary={brief.summary} onGenerate={() => setBriefOpen(true)} onPresent={presentBrief} />
+        ) : null}
+        onImport={(kind) => pickers[kind]?.open()}
+        canImport={{ msnx: feat.msnx_import && !inPack, ths: feat.threats }}
+        pack={packs.topPack}
+        packStatus={packs.topStatus ?? "live"}
+        people={packPeople}
+        switcher={workspaceSwitcher}
+        renderSwitcher={
+          feat.mission_packs
+            ? ({ open, close, anchorRef }) => (
+                <WorkspaceSwitcher
+                  open={open}
+                  onClose={close}
+                  anchorRef={anchorRef}
+                  onOpen={packs.home.refresh}
+                  current={packs.open}
+                  here={packPeople.length}
+                  packs={packs.home.packs}
+                  invites={packs.home.invites}
+                  teams={packs.home.teams}
+                  library={{
+                    lz: history.length,
+                    routes: savedRoutes.length,
+                    points: localPoints.savedPointSets.length,
+                    unsaved: inPack ? packs.parkedUnsaved : diagrams.filter((d) => d.status === "analyzed" && (d.savedId == null || d.dirty)).length,
+                  }}
+                  onPick={packs.openPack}
+                  onNewPack={packs.newPack}
+                  onManageTeams={packs.manageTeams}
+                  onAccept={(invite) => packs.answerInvite(invite, true)}
+                  onDecline={(invite) => packs.answerInvite(invite, false)}
+                />
+              )
+            : undefined
+        }
+        onOpenMenu={isMobile ? () => setIsMobileMenuOpen(true) : undefined}
+      />
       <div
         className={`sidebar ${isMobileMenuOpen ? "mobile-open" : ""} ${
           sidebarCompact ? "sidebar-compact" : ""
@@ -1425,10 +1483,6 @@ function App() {
           }}
           isMobileMenuOpen={isMobileMenuOpen}
           closeMobileMenu={() => setIsMobileMenuOpen(false)}
-          gridInput={gridInput}
-          setGridInput={setGridInput}
-          onChooseTarget={chooseTarget}
-          targetNear={targetNear}
           isDrawingLZ={isDrawingLZ}
           toggleDrawingMode={toggleDrawingMode}
           performTerrainAnalysis={performTerrainAnalysis}
@@ -1459,52 +1513,7 @@ function App() {
           <SandtableSteps sandtable={sandtable} />
         </>
       )}
-      <div className="map-area" {...(presenting ? {} : imports.dragProps)}>
-        <TopBar
-          user={user}
-          isAdmin={Boolean(user?.is_admin)}
-          onOpenSurveys={user?.is_admin || feat.lz_surveys ? () => setSurveysOpen(true) : undefined}
-          onSignOut={logout}
-          onOpenLibrary={() => openLibrary("lz")}
-          briefSlot={feat.mission_brief ? (
-            <BriefMenu packName={inPack ? packs.meta?.name ?? "the pack" : null} summary={brief.summary} onGenerate={() => setBriefOpen(true)} onPresent={presentBrief} />
-          ) : null}
-          onImport={(kind) => pickers[kind]?.open()}
-          canImport={{ msnx: feat.msnx_import && !inPack, ths: feat.threats }}
-          pack={packs.topPack}
-          packStatus={packs.topStatus ?? "live"}
-          people={packPeople}
-          switcher={workspaceSwitcher}
-          renderSwitcher={
-            feat.mission_packs
-              ? ({ open, close, anchorRef }) => (
-                  <WorkspaceSwitcher
-                    open={open}
-                    onClose={close}
-                    anchorRef={anchorRef}
-                    onOpen={packs.home.refresh}
-                    current={packs.open}
-                    here={packPeople.length}
-                    packs={packs.home.packs}
-                    invites={packs.home.invites}
-                    teams={packs.home.teams}
-                    library={{
-                      lz: history.length,
-                      routes: savedRoutes.length,
-                      points: localPoints.savedPointSets.length,
-                      unsaved: inPack ? packs.parkedUnsaved : diagrams.filter((d) => d.status === "analyzed" && (d.savedId == null || d.dirty)).length,
-                    }}
-                    onPick={packs.openPack}
-                    onNewPack={packs.newPack}
-                    onManageTeams={packs.manageTeams}
-                    onAccept={(invite) => packs.answerInvite(invite, true)}
-                    onDecline={(invite) => packs.answerInvite(invite, false)}
-                  />
-                )
-              : undefined
-          }
-          onOpenMenu={isMobile ? () => setIsMobileMenuOpen(true) : undefined}
-        />
+      <div className="map-area">
         <div
           className={`shell-map${dock.collapsed ? " shell-map--dock-collapsed" : ""}${inPack && packs.meta?.status === "finished" ? " shell-map--banner" : ""}`}
         >
@@ -1528,6 +1537,7 @@ function App() {
           gridInput={gridInput}
           setGridInput={setGridInput}
           onChooseTarget={chooseTarget}
+          onShare={(choice) => setShareGrid({ mgrs: choice.mgrs, lat: choice.lat, lon: choice.lon })}
           targetNear={targetNear}
         />
         <MobileQuickAccess
@@ -1807,31 +1817,37 @@ function App() {
             // Clamp to the viewport so the menu never spills off a screen edge
             // (especially on phones, where a tap near the right/bottom would
             // otherwise push it out of view).
-            left: Math.max(8, Math.min(contextMenu.x, window.innerWidth - 178)),
+            // 214: the grid on one line with its share button beside it.
+            left: Math.max(8, Math.min(contextMenu.x, window.innerWidth - 214)),
             top: Math.max(8, Math.min(contextMenu.y, window.innerHeight - 340)),
             zIndex: 99999,
           }}
         >
           {contextMenu.type === "map" ? (
             <>
-              <CopyGridTitle grid={clickedGrid} onCopied={() => setContextMenu(null)} />
+              <div className="ctx-title-row">
+                <CopyGridTitle grid={clickedGrid} onCopied={() => setContextMenu(null)} />
+                {toMgrs(contextMenu.lat, contextMenu.lon) && (
+                  <button
+                    type="button"
+                    className="ctx-title-share"
+                    aria-label={`Share grid ${clickedGrid}`}
+                    title="Share grid"
+                    onClick={() => {
+                      shareAt(contextMenu.lat, contextMenu.lon);
+                      setContextMenu(null);
+                    }}
+                  >
+                    <Icon name="share" size={14} />
+                  </button>
+                )}
+              </div>
               <button
                 className="ctx-btn ctx-btn--success"
                 onClick={handleSetAsTarget}
               >
                 Set as Target
               </button>
-              {toMgrs(contextMenu.lat, contextMenu.lon) && (
-                <button
-                  className="ctx-btn"
-                  onClick={() => {
-                    shareAt(contextMenu.lat, contextMenu.lon);
-                    setContextMenu(null);
-                  }}
-                >
-                  Share grid…
-                </button>
-              )}
               <button
                 className="ctx-btn ctx-btn--danger"
                 onClick={handleAddThreatHere}
@@ -1842,24 +1858,29 @@ function App() {
           ) : contextMenu.type === "lz" ? (
             // --- THE LZ CONTEXT MENU ---
             <>
-              <CopyGridTitle grid={clickedGrid} onCopied={() => setContextMenu(null)} />
+              <div className="ctx-title-row">
+                <CopyGridTitle grid={clickedGrid} onCopied={() => setContextMenu(null)} />
+                {toMgrs(contextMenu.lat, contextMenu.lon) && (
+                  <button
+                    type="button"
+                    className="ctx-title-share"
+                    aria-label={`Share grid ${clickedGrid}`}
+                    title="Share grid"
+                    onClick={() => {
+                      shareAt(contextMenu.lat, contextMenu.lon);
+                      setContextMenu(null);
+                    }}
+                  >
+                    <Icon name="share" size={14} />
+                  </button>
+                )}
+              </div>
               <button
                 className="ctx-btn ctx-btn--success"
                 onClick={handleSetAsTarget}
               >
                 Set as Target
               </button>
-              {toMgrs(contextMenu.lat, contextMenu.lon) && (
-                <button
-                  className="ctx-btn"
-                  onClick={() => {
-                    shareAt(contextMenu.lat, contextMenu.lon);
-                    setContextMenu(null);
-                  }}
-                >
-                  Share grid…
-                </button>
-              )}
 
               <hr className="ctx-divider" />
 

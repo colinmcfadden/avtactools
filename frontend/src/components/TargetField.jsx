@@ -1,4 +1,5 @@
-import React, { useId, useMemo, useRef, useState } from "react";
+import React, { useEffect, useId, useMemo, useRef, useState } from "react";
+import Icon from "../feature/ui/Icon";
 import { nearestFirst, readTarget } from "../utils/targetReading";
 import "./TargetField.css";
 
@@ -16,18 +17,45 @@ import "./TargetField.css";
  * It is an ARIA combobox: the input owns a listbox, the row picked by the
  * arrow keys is its active descendant, and a polite status says what the list
  * holds, so a screen reader hears the place without leaving the field.
+ *
+ * With `onShare`, each row has a share icon at its end (for a pointer) and the field a
+ * share button beside GO (docs/GRID_SHARING.md): the row's place, or the place in the
+ * field (the row the arrow keys or the pointer are on, else the one place the text
+ * reads as; never a guess between readings).
  */
+
+// Where the placeholder's width cannot be measured (no canvas: a test), the width taken to hold the example.
+const WIDE_PLACEHOLDER_PX = 480;
+
+let measurer = null;
+// The width `text` takes in the font `input` draws its placeholder in (its own where that cannot be read), or
+// null where it cannot be measured.
+const textWidth = (text, input) => {
+  try {
+    measurer = measurer ?? document.createElement("canvas").getContext("2d");
+    if (!measurer) return null;
+    measurer.font = getComputedStyle(input, "::placeholder").font || getComputedStyle(input).font;
+    return measurer.measureText(text).width;
+  } catch {
+    return null;
+  }
+};
 const TargetField = ({
   value,
   onChange,
   onChoose,
   near = null,
-  placeholder = "MGRS grid or lat/long",
+  placeholder = "Search by grid or lat/long",
+  // Shown instead where the field is wide enough to hold it.
+  widePlaceholder = "Search by grid or lat/long, e.g. 16S GC 28864 55349 or 34.54, -84.12",
+  onShare = null,
   autoFocus = false,
   rowClassName = "ff-input-group",
   inputClassName = "ff-input",
   buttonClassName = "ff-btn primary",
   inputProps = {},
+  // Drawn in the row before the input (a search icon).
+  leading = null,
 }) => {
   const id = useId();
   const inputRef = useRef(null);
@@ -36,6 +64,22 @@ const TargetField = ({
   const [active, setActive] = useState(-1);
   // Bumped by GO when it cannot choose, so the status says its sentence again.
   const [asked, setAsked] = useState(0);
+  const [wide, setWide] = useState(false);
+
+  const shareRef = useRef(null);
+
+  // The example is shown only where all of it fits (a cut-off coordinate would mislead): watch the field's
+  // own width, which a top bar shares with its neighbours, against the example's width in the field's font.
+  useEffect(() => {
+    const input = inputRef.current;
+    if (!input || !widePlaceholder || typeof ResizeObserver === "undefined") return undefined;
+    const observer = new ResizeObserver(([entry]) => {
+      const needed = textWidth(widePlaceholder, input) ?? WIDE_PLACEHOLDER_PX;
+      setWide(entry.contentRect.width >= needed + 4);
+    });
+    observer.observe(input);
+    return () => observer.disconnect();
+  }, [widePlaceholder]);
 
   const reading = useMemo(() => readTarget(value), [value]);
   const rows = useMemo(() => {
@@ -63,9 +107,23 @@ const TargetField = ({
     onChoose(choice);
   };
 
-  const go = () => {
+  // What the field's own share button sends: the row the arrow keys or the pointer are on, else the one place.
+  // The row stays picked while the focus goes from the field to that button, so a key reaches either reading.
+  const sharable = active >= 0 && rows[active] ? rows[active].choice
+    : reading.choices.length === 1 ? reading.choices[0] : null;
+  const share = (choice, { byPointer = false } = {}) => {
+    if (!choice) return;
+    setOpen(false);
+    setActive(-1);
+    // As choosing does: a tap puts the field (and a phone's keyboard) away, so closing the dialog, which gives
+    // the focus back to what had it, does not open the list again over the map.
+    if (byPointer) inputRef.current?.blur();
+    onShare(choice);
+  };
+
+  const go = ({ byPointer = false } = {}) => {
     if (reading.choices.length === 1) {
-      choose(reading.choices[0]);
+      choose(reading.choices[0], { byPointer });
       return;
     }
     // Readings to choose from, or a sentence: show them, and say it again. The focus goes back to the
@@ -115,17 +173,18 @@ const TargetField = ({
   return (
     <div className="target-field">
       <div className={rowClassName}>
+        {leading}
         <input
           {...inputProps}
           ref={inputRef}
           className={inputClassName}
-          placeholder={placeholder}
+          placeholder={wide && widePlaceholder ? widePlaceholder : placeholder}
           autoFocus={autoFocus}
           autoComplete="off"
           spellCheck={false}
           value={value}
           role="combobox"
-          aria-label={inputProps["aria-label"] ?? "Target: MGRS grid or lat/long"}
+          aria-label={inputProps["aria-label"] ?? "Search by grid or lat/long"}
           aria-autocomplete="list"
           aria-expanded={shown}
           aria-controls={listId}
@@ -139,13 +198,41 @@ const TargetField = ({
             setOpen(true);
             inputProps.onFocus?.(event);
           }}
-          onBlur={() => {
+          onBlur={(event) => {
+            // To the field's own share button: the row picked is what it shares, so it stays picked.
+            if (shareRef.current && event.relatedTarget === shareRef.current) return;
             setOpen(false);
             setActive(-1);
           }}
           onKeyDown={onKeyDown}
         />
-        <button type="button" onClick={go} className={buttonClassName}>
+        {onShare && (
+          <button
+            ref={shareRef}
+            type="button"
+            className="target-field__share"
+            onMouseDown={(event) => event.preventDefault()}
+            onClick={(event) => share(sharable, { byPointer: event.detail > 0 })}
+            onBlur={(event) => {
+              if (event.relatedTarget === inputRef.current) return;
+              setOpen(false);
+              setActive(-1);
+            }}
+            disabled={!sharable}
+            aria-label={sharable ? `Share grid ${sharable.mgrs}` : "Share grid"}
+            title={sharable ? "Share grid" : "Type a grid or lat/long to share it"}
+          >
+            <Icon name="share" size={16} />
+          </button>
+        )}
+        <button
+          type="button"
+          // Keeps the focus in the field while it is pressed (Safari and Firefox on a Mac give a clicked button none), so a field that
+          // folds as it loses the focus is still there when the click lands; a click that chooses then puts the field away, as a row's does.
+          onMouseDown={(event) => event.preventDefault()}
+          onClick={(event) => go({ byPointer: event.detail > 0 })}
+          className={buttonClassName}
+        >
           GO
         </button>
       </div>
@@ -169,8 +256,27 @@ const TargetField = ({
               onMouseEnter={() => setActive(index)}
               onClick={() => choose(row.choice, { byPointer: true })}
             >
-              <span className="target-field__main">{row.main}</span>
-              <span className="target-field__note">{row.note}</span>
+              <span className="target-field__text">
+                <span className="target-field__main">{row.main}</span>
+                <span className="target-field__note">{row.note}</span>
+              </span>
+              {onShare && (
+                // For a pointer only: an option holds no control of its own (a screen reader would fold it into the
+                // option's name), and the keyboard shares the row picked with the field's own share button.
+                <span
+                  aria-hidden="true"
+                  className="target-field__row-share"
+                  data-share={row.choice.mgrs}
+                  title="Share grid"
+                  onMouseDown={(event) => event.preventDefault()}
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    share(row.choice, { byPointer: true });
+                  }}
+                >
+                  <Icon name="share" size={16} />
+                </span>
+              )}
             </li>
           ))}
         </ul>
