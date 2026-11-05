@@ -38,6 +38,20 @@ class MgrsFixtureTests(unittest.TestCase):
             self.assertTrue(path.exists(), f"{path} is missing")
             self.assertGreater(path.read_text(encoding="utf-8").count("\n"), minimum)
 
+    def test_check_forgives_a_last_digit_and_nothing_more(self):
+        # What `check` compares a regenerated fixture with: platforms' maths libraries
+        # differ in a double's last digit, a real change is far larger.
+        same = self.fixtures.first_difference
+        self.assertIsNone(same([["16S GD 1 1", 34.5964072051445, -84.0]],
+                               [["16S GD 1 1", 34.596407205144494, -84.0]]))
+        self.assertIsNone(same([0.0038818576054017195], [0.0038818576054021167]))
+        self.assertIn("$[0][1]", same([["g", 34.64814884576996]], [["g", 34.64814884476996]]))
+        self.assertIn("$[0][0]", same([["16S GD 1 1"]], [["17S GD 1 1"]]))
+        self.assertIn("entries", same([[1.0], [2.0]], [[1.0]]))
+        self.assertIn("keys", same({"a": 1, "b": 2}, {"b": 2, "a": 1}))
+        self.assertIsNotNone(same([1], [1.0]))
+        self.assertIsNotNone(same([True], [1]))
+
 
 class SqliteFixtureTests(unittest.TestCase):
     """The `.LPS` and `.ths` fixtures: SQLite's own reading of each file, and the backend's `.ths` exporter."""

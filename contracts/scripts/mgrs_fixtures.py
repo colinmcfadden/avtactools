@@ -7,13 +7,18 @@ Android app and the iOS app each convert on the device and must agree with them.
     python contracts/scripts/mgrs_fixtures.py write   # regenerate the JSON
     python contracts/scripts/mgrs_fixtures.py check   # fail if the JSON drifted
 
-Generation is deterministic (fixed seed, no clock), so `check` is exact and the
-diff of a regenerated file only ever shows a real change in PyGeodesy or here.
+Generation is deterministic (fixed seed, no clock). `check` holds every string,
+key, count and order exactly, and every number to `CHECK_REL_TOL`: the inverse's
+latitudes and longitudes come out of floating-point series whose last digit
+differs between platforms' maths libraries (Linux against macOS, x86-64 against
+arm64), so a byte-for-byte comparison failed on machines that agree to 1e-14.
+`write` still writes PyGeodesy's exact digits; keep only the diff you meant.
 
 Needs `pygeodesy`, pinned in backend/requirements.txt.
 """
 
 import json
+import math
 import random
 import sys
 from pathlib import Path
@@ -27,6 +32,15 @@ SEED = 20261002
 # Tolerance for lat/lon answers. Both sides are Krueger series good to
 # nanometres; 1e-8 degrees (~1 mm) is the loosest we promise anyone.
 TOLERANCE_DEG = 1e-8
+
+# How closely `check` holds a regenerated number to the committed one. Measured
+# with pygeodesy 26.2.2, the committed inverse.json and a Mac's regeneration differ
+# in 387 numbers, by at most 5.7e-14 degrees; a latitude near the equator differs
+# by about 4e-16 degrees, which is many ulps of itself, hence the absolute bound.
+# Either bound is a ten-thousandth of TOLERANCE_DEG (1e-12 degrees is 0.1 um), so
+# a real change in PyGeodesy or in the generator still fails.
+CHECK_REL_TOL = 1e-12
+CHECK_ABS_TOL = 1e-12
 
 BANDS = "CDEFGHJKLMNPQRSTUVWX"
 COLUMN_SETS = ["ABCDEFGH", "JKLMNPQR", "STUVWXYZ"]
@@ -323,15 +337,53 @@ def write():
         print(f"wrote {name}: {len(doc['cases'])} cases")
 
 
+def first_difference(expected, actual, path="$"):
+    """Where `actual` departs from `expected`, or None if it does not.
+
+    Structure, keys (in order), strings, booleans and integers must be equal;
+    floats need only agree to CHECK_REL_TOL / CHECK_ABS_TOL. An int and a float
+    are never the same thing here: the writer would have to have changed.
+    """
+    if isinstance(expected, bool) or isinstance(actual, bool):
+        same = type(expected) is type(actual) and expected == actual
+        return None if same else f"{path}: fixture {expected!r}, PyGeodesy {actual!r}"
+    if isinstance(expected, float) and isinstance(actual, float):
+        if math.isclose(expected, actual, rel_tol=CHECK_REL_TOL, abs_tol=CHECK_ABS_TOL):
+            return None
+        return f"{path}: fixture {expected!r}, PyGeodesy {actual!r}"
+    if type(expected) is not type(actual):
+        return f"{path}: fixture {expected!r}, PyGeodesy {actual!r}"
+    if isinstance(expected, dict):
+        if list(expected) != list(actual):
+            return f"{path}: fixture keys {list(expected)}, PyGeodesy keys {list(actual)}"
+        for key in expected:
+            found = first_difference(expected[key], actual[key], f"{path}.{key}")
+            if found:
+                return found
+        return None
+    if isinstance(expected, list):
+        if len(expected) != len(actual):
+            return f"{path}: fixture has {len(expected)} entries, PyGeodesy {len(actual)}"
+        for i, (e, a) in enumerate(zip(expected, actual)):
+            found = first_difference(e, a, f"{path}[{i}]")
+            if found:
+                return found
+        return None
+    return None if expected == actual else f"{path}: fixture {expected!r}, PyGeodesy {actual!r}"
+
+
 def check():
-    """Raises AssertionError naming the first fixture that no longer matches."""
+    """Raises AssertionError naming the first fixture, and place, that no longer matches."""
     for name, doc in documents().items():
         path = FIXTURES / name
         if not path.exists():
             raise AssertionError(f"{path} is missing; run `write`")
-        if path.read_text(encoding="utf-8") != dumps(doc):
+        committed = json.loads(path.read_text(encoding="utf-8"))
+        regenerated = json.loads(dumps(doc))
+        found = first_difference(committed, regenerated)
+        if found:
             raise AssertionError(
-                f"{path} differs from what PyGeodesy produces; "
+                f"{path} differs from what PyGeodesy produces at {found}; "
                 "regenerate with `python contracts/scripts/mgrs_fixtures.py write` "
                 "and review the diff"
             )
