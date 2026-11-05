@@ -138,7 +138,7 @@ step. An ATAK data package (a zip with a manifest) is the plan's later work for 
 ## 6. Questions for the owner
 
 1. ~~Which options to build, and in what order?~~ **Answered: 1 to 4; not 5** (2026-11-04).
-2. For the QR code on Android: **ZXing core** as a dependency, or a **vendored generator**?
+2. ~~For the QR code on Android: ZXing core or a vendored generator?~~ **Answered: ZXing core** (`com.google.zxing:core` 3.5.4, 2026-11-05).
 3. Should the shared text include the link at all while Android's verified links are not set up? (It still opens the web app.)
 4. For option 4b, who may receive: teammates only (as the people search is today), or anyone in a pack with you too?
 5. KML or CoT for ATAK, if anyone has seen what their ATAK build does with each?
