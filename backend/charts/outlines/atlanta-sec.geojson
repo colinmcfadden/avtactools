@@ -1,0 +1,39 @@
+{
+ "type": "Feature",
+ "properties": {
+  "id": "atlanta-sec",
+  "title": "Atlanta Sectional",
+  "tier": "sectional",
+  "file": "Atlanta SEC.tif",
+  "made_from": {
+   "width": 17951,
+   "height": 12354,
+   "transform": [
+    42.333684695,
+    0.0,
+    -424300.498916397,
+    0.0,
+    -42.332068494,
+    278559.454486756
+   ]
+  },
+  "edges": {
+   "north": "neighbour:cincinnati-sec,st-louis-sec",
+   "east": "neighbour:charlotte-sec",
+   "south": "neatline",
+   "west": "neatline"
+  }
+ },
+ "geometry": {
+  "type": "Polygon",
+  "coordinates": [
+   [
+    [-88.0,32.0],
+    [-82.0,32.0],
+    [-82.0,36.0],
+    [-88.0,36.0],
+    [-88.0,32.0]
+   ]
+  ]
+ }
+}

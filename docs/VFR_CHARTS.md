@@ -1,6 +1,6 @@
 # VFR charts — plan
 
-Status: **decided, not built** (2026-11-05). The owner finds the VFR base map too soft next to SkyVector and ForeFlight. This file
+Status: **decided; C0 built** (2026-11-05: the outlines and the build, run by hand; nothing is served yet, §9). The owner finds the VFR base map too soft next to SkyVector and ForeFlight. This file
 proposes replacing it with chart tiles EZ/PZ builds itself from the FAA's free digital charts: the sectional everywhere, then the
 Terminal Area Chart (TAC) and the Helicopter Route Chart stacked over it where they exist, on the web and Android.
 
@@ -190,6 +190,12 @@ checks each one over an overview image before it is committed. It is about 84 ch
 Eastern Long Island, 11 helicopter sheets and 5 insets), plus the insets' holes, done once. There are more polygons than zips (§5.2)
 because some zips hold more than one chart.
 
+**Made (C0).** 86 polygons: 37 sectionals, 33 of the TAC tier (31 TACs, Grand Canyon and Eastern Long Island), 11 helicopter sheets
+and 5 insets, from 74 zips (`backend/charts/catalog.py`, `neatline.py`; `outlines/<id>.geojson`, with what each was made from, and
+the hand corrections in `outlines/edits.json`). Each was looked at over its chart. The sectionals' union has no sliver between two of
+them; its only holes are two insets cut out over the Gulf where no other sectional is (New Orleans' Eglin and Pensacola diagram,
+Jacksonville's west inset), so nothing is drawn there below a TAC.
+
 **Each cycle**, the pipeline compares each chart with the one its polygon was made from: dimensions, transform, and the neatline's
 pixels along the polygon.
 - A chart that has changed beyond a tolerance is **not built in the new form**, and the Data tab says so until its polygon is made
@@ -239,6 +245,12 @@ sparse Ellijay at level 11, Atlanta TAC at 12, Washington helicopter at 13.
 | WebP, quality 80 | 40 – 57 KB | ~4.5 GB |
 
 The charts are scanned images, with screened tints and dither, so lossless encodings stay large.
+
+**Measured on C0's build** (WebP quality 90, method 4, as built): the same four blocks drawn alone are 81.5, 79.3, 75.8 and 71.4 KB a
+tile, inside the range above. Stacked as built they are 90.0 KB (dense Atlanta at level 11, which draws the TAC over the sectional
+there), 79.3, 75.8 and 62.1 KB (the helicopter chart at 13, where the inset is drawn over it). The whole prototype, 4,946 tiles over
+levels 5 to 14, averages about 59 KB a tile in its 292 MB file, so expect about **5 GB** for CONUS, not 7. Method 6 is 3% smaller and
+twice as slow to encode (36 ms a tile against 17), so method 4 stays. What WebP loses is 31 to 37 dB PSNR against the warp it encodes.
 
 **Recommendation: WebP at quality 90.**
 - Enlarged twice, it could not be told from lossless in our comparisons, and it is a fifth the size. Tiles download faster on a phone, and Android's tile cache holds five times as many.
@@ -823,6 +835,9 @@ WebP encode is a fraction of that, so expect about **0.1 s a tile on one core**:
 
 The VM's real figure is the first thing C1 measures, sharing the API container's CPU.
 
+**Measured by C0** on the owner's Mac: **0.08 s to warp and composite a tile and 0.015 s to encode it**, so the estimate holds. The
+prototype's 4,122 tiles of levels 11 to 14 took 66 s on six processes, preparing its seven charts 6.5 s, and its 824 lower tiles 6 s.
+
 ---
 
 ## 7. Serving
@@ -924,6 +939,22 @@ no stop after the web to decide (§10, 1).
 | **C4** | Android: the style from config, the fallback (none at all, and ArcGIS outside CONUS), the config asked again while VFR shows, the attribution and the line. | Held to the same coverage fixture as the web. |
 | **C5** | A real cycle change on production, by the automation: the next edition built when posted and its switch scheduled with no one pressing anything, the email received, the switch seen in both clients, and a roll back tried from the tab. | Seen by the owner on production. |
 | later | Vector airspace and airports (§11). | — |
+
+**C0, as built** (2026-11-05). `backend/charts/` holds the catalog, the neatline tool, the 86 outlines (§4.2) and the build
+(`python -m charts.build <zips> <out> <chart id> …`: steps 3 to 7 of §5.3, resumable, a process pool), run by hand over seven charts
+of the 10-29-2026 edition, every tier: the Atlanta and Washington sectionals, the Atlanta and Baltimore-Washington TACs, the Washington
+and Baltimore helicopter charts and the Washington inset. It validated with nothing refused:
+- **The warp is GDAL's**: every tier's tile, against the chart warped by GDAL's own warped VRT and encoded alike, differs by nothing; a
+  level-10 tile inside each TAC is the sectional's (a mean difference of 1.6 and 2.0 from it, 38 and 52 from the TAC).
+- **No seams between tiles**: the step in colour across a tile's edge is that between two columns inside a tile (a ratio of 0.93 to
+  1.02 at levels 7 to 13).
+- **The tiers lie on each other**: each chart's printed 5′ graticule is within half a pixel of its georeference, and one tier's lines
+  meet the next's within about 10 to 18 m (Atlanta's TAC and sectional 18 m, Baltimore-Washington's TAC and the Washington sectional
+  15 m, the helicopter chart and the TAC 10 m), about a pixel of a level-12 tile and under one of the sectional's own 42 m pixels. The
+  state lines, rivers and roads run on across the TAC's, the helicopter chart's and the inset's edges. The white band round the
+  Atlanta TAC is the sectional's own print (its legend's margin), not the build's.
+- Its `coverage.json` is `contracts/fixtures/charts/coverage.json`, and `backend/tests/test_charts.py` (in CI) holds it to the
+  committed outlines and the catalog, and runs the whole build over a small sectional and TAC made in the test.
 
 The tests of the chart routes and state go in a file CI runs (`backend.yaml`'s list), with their imports added to its install step.
 `test_data_admin.py` itself runs only locally today.
