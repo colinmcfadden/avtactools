@@ -23,6 +23,7 @@ You can also **right-click anywhere on the map** → **Set as Target** to move t
 
 - Doghouse values (heading, time, distance, airspeed) are editable — click a value and enter a new one.
 - Use **Layers** (bottom left of the map) to switch between **Satellite**, **USGS** (the USGS topographic map), **Topo** and the **VFR** sectional, and to turn on the **MGRS grid** over any of them. The grid draws zone boundaries, 100 km squares, and lines at 10 km, 1 km or 100 m as you zoom in, labelled with the zone, the square and each line's digits, so a grid reference can be read straight off the map. It is for planning on screen only: it never appears on an exported LZ card.
+- **Where the map opens.** The first time the map loads, your browser may ask to share your location. Allow it and the map opens around where you are; refuse it (EZ/PZ will not ask again in that browser) and it opens where it always has. Your location only centres the map: it is not sent to the server, saved with a plan or shown to anyone in a Mission Pack. If an LZ/PZ, a grid link or a pack opens first, or you move the map before the browser answers, the map stays where it is. To be asked again, allow location for the site in your browser's settings.
 
 ## 2. Analyze the LZ
 

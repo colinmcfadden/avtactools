@@ -35,6 +35,7 @@ import SlopeLayer from "../feature/terrain/SlopeLayer";
 import { SLOPE_OPACITY } from "../feature/terrain/slopeOpacity";
 import PresenceLayer from "../feature/missionPacks/ui/PresenceLayer";
 import SandtableLayer from "../feature/brief/SandtableLayer";
+import StartAtLocation from "../feature/startLocation/StartAtLocation";
 
 // Fix for default Leaflet marker icons in React
 delete L.Icon.Default.prototype._getIconUrl;
@@ -252,6 +253,9 @@ const MapView = ({
       wheelPxPerZoomLevel={30}
       updateWhenZooming={false}
     >
+      {/* First, so it hears every later move: the person's location, asked once, used only while nothing else set the view */}
+      <StartAtLocation claimed={Boolean(targetLocation || flyTo || presentation)} />
+
       {/* Base Layer - driven by the mapStyles registry */}
       <TileLayer
         key={activeMapStyle.id} // Forces Leaflet to refresh when the style changes
