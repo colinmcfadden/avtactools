@@ -1,0 +1,430 @@
+{% extends 'admin/base.html' %}
+{% block title %}Data{% endblock %}
+{% block content %}
+<link rel="stylesheet" href="{{ url_for('static', filename='vendor/maplibre-gl-6.15.0/maplibre-gl.css') }}">
+<style>
+  .wrap { max-width: none; padding: 16px 20px 40px; }
+  .data-layout { display: grid; grid-template-columns: minmax(0, 1fr) 400px; gap: 16px; align-items: start; }
+  #map { height: calc(100vh - 110px); min-height: 520px; border-radius: 10px; border: 1px solid var(--hairline); }
+  .side { max-height: calc(100vh - 110px); overflow-y: auto; }
+  .side .card { padding: 14px; }
+  .kv { display: grid; grid-template-columns: 1fr auto; gap: 3px 10px; font-size: 13px; }
+  .kv .muted { font-size: 12px; }
+  .layer { display: flex; align-items: center; gap: 8px; margin: 4px 0; font-size: 13px; }
+  .swatch { width: 14px; height: 14px; border-radius: 3px; display: inline-block; border: 1px solid rgba(255,255,255,.3); }
+  .warn { color: var(--warning); }
+  .err { color: #e4aaa5; }
+  .bar { height: 6px; background: var(--surface-1); border-radius: 3px; overflow: hidden; margin: 6px 0; }
+  .bar > div { height: 100%; background: var(--accent); width: 0; }
+  .files { max-height: 220px; overflow-y: auto; font-size: 12px; margin-top: 8px; }
+  .files td { padding: 4px 6px; }
+  .bbox { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; }
+  .bbox .input { width: 100%; height: 32px; padding: 0 6px; font-size: 12px; }
+  .maplibregl-popup-content { background: var(--surface-2); color: var(--text); font-size: 12px; border: 1px solid var(--hairline-strong); }
+  .maplibregl-popup-tip { display: none; }
+  .note { font-size: 12px; color: var(--muted); margin: 6px 0 0; }
+  @media (max-width: 1000px) { .data-layout { grid-template-columns: 1fr; } #map { height: 60vh; } .side { max-height: none; } }
+</style>
+
+<div class="data-layout">
+  <div id="map" role="region" aria-label="Map of the terrain and LiDAR data on the server"></div>
+  <div class="side">
+    <div class="card">
+      <h2>Layers</h2>
+      <label class="layer"><input type="checkbox" data-layer="dems" checked> <span class="swatch" style="background:#5aa7d4"></span> DEMs on the server <span class="muted" id="count-dems"></span></label>
+      <label class="layer"><input type="checkbox" data-layer="stream"> <span class="swatch" style="background:#47a37e"></span> Streamed LiDAR cached (10 km cells) <span class="muted" id="count-stream"></span></label>
+      <label class="layer"><input type="checkbox" data-layer="lidar"> <span class="swatch" style="background:#d5a03f"></span> Downloaded LiDAR <span class="muted" id="count-lidar"></span></label>
+      <label class="layer"><input type="checkbox" data-layer="tilesets"> <span class="swatch" style="background:#b07ad6"></span> Built tilesets (10 km cells) <span class="muted" id="count-tilesets"></span></label>
+      <label class="layer"><input type="checkbox" data-layer="aws"> <span class="swatch" style="background:#97a0ab"></span> USGS LiDAR on AWS (where 3D streams) <span class="muted" id="count-aws"></span></label>
+      <div class="row" style="margin-top:8px">
+        <label class="muted" for="basemap" style="font-size:12px">Base map</label>
+        <select id="basemap" class="input" style="height:30px">
+          <option value="USGSTopo">USGS topo</option>
+          <option value="USGSImageryOnly">USGS imagery</option>
+          <option value="USGSShadedReliefOnly">USGS shaded relief</option>
+        </select>
+        <button class="btn btn-sm" id="refresh">Refresh</button>
+      </div>
+      <p class="note">DEMs are coloured by resolution: <span style="color:#7cc4ff">1 m</span>, <span style="color:#5aa7d4">to 5 m</span>,
+        <span style="color:#3d84b3">to 15 m</span>, <span style="color:#97a0ab">coarser</span>. A dashed amber outline states no NAVD88 datum.</p>
+    </div>
+
+    <div class="card">
+      <h2>Volumes</h2>
+      <div id="volumes" class="kv"><span class="muted">Loading…</span></div>
+    </div>
+
+    <div class="card">
+      <h2>Add DEMs from USGS</h2>
+      {% if mode != 'write' %}<p class="note warn">Searching only: downloads need <span class="mono">DATA_ADMIN=write</span> on this server.</p>{% endif %}
+      <div class="field" style="margin-bottom:8px">
+        <label for="product">Product</label>
+        <select id="product" class="input">
+          {% for key, label in products.items() %}<option value="{{ key }}">{{ label }}</option>{% endfor %}
+        </select>
+      </div>
+      <div class="field">
+        <label>Area (west, south, east, north)</label>
+        <div class="bbox">
+          <input class="input" id="bw" aria-label="West" inputmode="decimal">
+          <input class="input" id="bs" aria-label="South" inputmode="decimal">
+          <input class="input" id="be" aria-label="East" inputmode="decimal">
+          <input class="input" id="bn" aria-label="North" inputmode="decimal">
+        </div>
+      </div>
+      <div class="row" style="margin-top:8px">
+        <button class="btn btn-sm" id="draw">Draw area on map</button>
+        <button class="btn btn-sm btn-primary" id="search">Search USGS</button>
+      </div>
+      <div id="search-out"></div>
+    </div>
+
+    <div class="card">
+      <h2>Downloads</h2>
+      <div id="jobs"><span class="muted">None yet.</span></div>
+    </div>
+
+    <div class="card">
+      <h2>Datum labels</h2>
+      <p class="note" id="untagged">…</p>
+      {% if mode == 'write' %}<button class="btn btn-sm" id="tag" style="margin-top:8px" hidden>Tag USGS DEMs as NAVD88</button>{% endif %}
+    </div>
+
+    <div class="card">
+      <h2>Streamed LiDAR cache</h2>
+      <div id="stream"><span class="muted">Loading…</span></div>
+    </div>
+  </div>
+</div>
+
+<script type="module">
+import { Map, Popup, NavigationControl, ScaleControl, LngLatBounds } from "{{ url_for('static', filename='vendor/maplibre-gl-6.15.0/maplibre-gl.mjs') }}";
+
+const CSRF = {{ csrf_token()|tojson }};
+const CAN_WRITE = {{ (mode == 'write')|tojson }};
+const URLS = {
+  layer: (name) => "{{ url_for('admin.data') }}/layers/" + name + ".json",
+  volumes: "{{ url_for('admin.data_volumes') }}",
+  search: "{{ url_for('admin.data_search') }}",
+  jobs: "{{ url_for('admin.data_jobs') }}",
+  create: "{{ url_for('admin.data_job_create') }}",
+  cancel: (id) => "{{ url_for('admin.data') }}/jobs/" + encodeURIComponent(id) + "/cancel",
+  tag: "{{ url_for('admin.data_tag_usgs') }}",
+};
+
+const $ = (id) => document.getElementById(id);
+const esc = (value) => String(value ?? "").replace(/[&<>"']/g, (c) => ({"&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"}[c]));
+const gb = (bytes) => bytes == null ? "?" : (bytes >= 1e9 ? (bytes / 1e9).toFixed(1) + " GB" : (bytes / 1e6).toFixed(0) + " MB");
+const empty = { type: "FeatureCollection", features: [] };
+
+async function getJson(url) {
+  const response = await fetch(url, { credentials: "same-origin" });
+  if (!response.ok) throw new Error("The server answered " + response.status + ".");
+  return response.json();
+}
+async function postJson(url, body) {
+  const response = await fetch(url, {
+    method: "POST", credentials: "same-origin",
+    headers: { "Content-Type": "application/json", "X-CSRF": CSRF },
+    body: JSON.stringify(body || {}),
+  });
+  let data = {};
+  try { data = await response.json(); } catch (_) { data = { error: "The server answered " + response.status + "." }; }
+  if (!response.ok && !data.error) data.error = "The server answered " + response.status + ".";
+  return data;
+}
+
+const tiles = (name) => [`https://basemap.nationalmap.gov/arcgis/rest/services/${name}/MapServer/tile/{z}/{y}/{x}`];
+const map = new Map({
+  container: "map",
+  style: {
+    version: 8,
+    sources: { base: { type: "raster", tiles: tiles("USGSTopo"), tileSize: 256, maxzoom: 16,
+                       attribution: "USGS The National Map" } },
+    layers: [{ id: "base", type: "raster", source: "base" }],
+  },
+  bounds: [[-125, 24], [-66, 50]],
+  maxBounds: [[-180, 5], [-40, 75]],
+});
+map.addControl(new NavigationControl({ showCompass: false }));
+map.addControl(new ScaleControl({ unit: "imperial" }));
+
+const LAYERS = {
+  dems: [
+    { id: "dems-fill", type: "fill", paint: { "fill-color": ["step", ["get", "resolution_m"], "#7cc4ff", 1.5, "#5aa7d4", 5, "#3d84b3", 15.5, "#97a0ab"], "fill-opacity": 0.28 } },
+    { id: "dems-line", type: "line", paint: { "line-color": "#5aa7d4", "line-width": 1 } },
+    { id: "dems-datum", type: "line", filter: ["!", ["get", "navd88"]], paint: { "line-color": "#d5a03f", "line-width": 2, "line-dasharray": [2, 2] } },
+  ],
+  stream: [{ id: "stream-fill", type: "fill", paint: { "fill-color": "#47a37e", "fill-opacity": ["interpolate", ["linear"], ["get", "pieces"], 0, 0.25, 200, 0.7] } },
+           { id: "stream-line", type: "line", paint: { "line-color": "#47a37e", "line-width": 1 } }],
+  lidar: [{ id: "lidar-fill", type: "fill", paint: { "fill-color": ["case", [">=", ["coalesce", ["get", "year"], 0], 2015], "#d5a03f", "#a3772a"], "fill-opacity": 0.35 } },
+          { id: "lidar-line", type: "line", paint: { "line-color": "#d5a03f", "line-width": 0.6 } }],
+  tilesets: [{ id: "tilesets-fill", type: "fill", paint: { "fill-color": "#b07ad6", "fill-opacity": 0.45 } }],
+  aws: [{ id: "aws-fill", type: "fill", paint: { "fill-color": ["case", [">=", ["coalesce", ["get", "year"], 0], 2015], "#97a0ab", "#5d646d"], "fill-opacity": 0.12 } },
+        { id: "aws-line", type: "line", paint: { "line-color": "#97a0ab", "line-width": 0.5 } }],
+  search: [{ id: "search-fill", type: "fill", paint: { "fill-color": ["case", ["to-boolean", ["get", "held"]], "#97a0ab", "#7cbde0"], "fill-opacity": 0.25 } },
+           { id: "search-line", type: "line", paint: { "line-color": ["case", ["to-boolean", ["get", "held"]], "#97a0ab", "#7cbde0"], "line-width": 1.5 } }],
+  job: [{ id: "job-line", type: "line", paint: { "line-color": ["match", ["get", "state"], "done", "#47a37e", "refused", "#d66b64", "failed", "#d66b64", "downloading", "#7cbde0", "checking", "#7cbde0", "#d5a03f"], "line-width": 2.5 } }],
+  draw: [{ id: "draw-line", type: "line", paint: { "line-color": "#ffffff", "line-width": 2, "line-dasharray": [3, 2] } }],
+};
+const ON_BY_DEFAULT = new Set(["dems", "search", "job", "draw"]);
+const loaded = {};
+
+function setData(name, data) {
+  const source = map.getSource(name);
+  if (source) source.setData(data); else loaded[name] = data;
+}
+
+map.on("load", () => {
+  for (const [name, layers] of Object.entries(LAYERS)) {
+    map.addSource(name, { type: "geojson", data: loaded[name] || empty });
+    for (const layer of layers) {
+      map.addLayer({ ...layer, source: name, layout: { visibility: ON_BY_DEFAULT.has(name) ? "visible" : "none" } });
+    }
+  }
+  for (const box of document.querySelectorAll("[data-layer]")) {
+    box.addEventListener("change", () => {
+      for (const layer of LAYERS[box.dataset.layer]) map.setLayoutProperty(layer.id, "visibility", box.checked ? "visible" : "none");
+      if (box.checked) loadLayer(box.dataset.layer);
+    });
+  }
+  loadAll(false);
+});
+
+function popupOn(layerId, html) {
+  map.on("click", layerId, (event) => {
+    if (drawing) return;
+    const feature = event.features && event.features[0];
+    if (feature) new Popup({ maxWidth: "340px" }).setLngLat(event.lngLat).setHTML(html(feature.properties)).addTo(map);
+  });
+  map.on("mouseenter", layerId, () => { if (!drawing) map.getCanvas().style.cursor = "pointer"; });
+  map.on("mouseleave", layerId, () => { if (!drawing) map.getCanvas().style.cursor = ""; });
+}
+const list = (value) => { try { return (typeof value === "string" ? JSON.parse(value) : value) || []; } catch (_) { return []; } };
+popupOn("dems-fill", (p) => `<b class="mono">${esc(p.name)}</b><br>${esc(p.kind)} · ${esc(p.resolution_m)} m · ${esc(gb(p.bytes))}<br>
+  Datum: <span class="${p.navd88 ? "" : "warn"}">${esc(p.datum)}</span><br>${p.slope ? "Used by slope analysis" : "Too coarse for slope analysis (3D only)"}`);
+popupOn("stream-fill", (p) => `<b>${esc(p.pieces)} pieces</b>${p.laz ? `, ${esc(p.laz)} LAZ kept for surveys` : ""} · ${esc(gb(p.bytes))}<br>${list(p.surveys).map(esc).join("<br>")}`);
+popupOn("lidar-fill", (p) => `<b>${esc(p.survey || list(p.surveys).join(", "))}</b><br>${p.tiles ? esc(p.tiles) + " tiles · " : ""}${p.year ? esc(p.year) : "year unknown"}${(p.year || 0) >= 2015 ? " (classifies vegetation)" : ""}`);
+popupOn("tilesets-fill", (p) => `<b>${esc(p.tilesets)} built tileset(s)</b> in this 10 km cell`);
+popupOn("aws-fill", (p) => `<b>${esc(p.name)}</b><br>${esc(p.year || "year unknown")} · ${esc(Math.round((p.points || 0) / 1e6))} M points`);
+popupOn("search-fill", (p) => `<b class="mono">${esc(p.name)}</b><br>${esc(gb(p.size))} · ${esc(p.published)}<br>${!p.held ? "New" : (p.same_tile ? "On the server: " : "Covered by ") + esc(p.held)}`);
+
+async function loadLayer(name, fresh) {
+  try {
+    const data = await getJson(URLS.layer(name) + (fresh ? "?fresh=1" : ""));
+    if (name === "dems") {
+      setData("dems", data);
+      $("count-dems").textContent = `(${data.features.length})`;
+      showUntagged(data.features);
+      fitTo(data.features);
+    } else if (name === "stream") {
+      setData("stream", { type: "FeatureCollection", features: data.cells || [] });
+      showStream(data);
+    } else if (name === "tilesets") {
+      setData("tilesets", { type: "FeatureCollection", features: data.cells || [] });
+      $("count-tilesets").textContent = `(${data.count})`;
+    } else if (name === "lidar") {
+      setData("lidar", { type: "FeatureCollection", features: data.features || [] });
+      $("count-lidar").textContent = data.available ? `(${data.tiles} tiles)` : "(not here)";
+      if (!data.available && data.reason) $("count-lidar").title = data.reason;
+    } else if (name === "aws") {
+      setData("aws", data);
+      $("count-aws").textContent = data.available ? `(${data.features.length} surveys)` : "(no index here)";
+    }
+  } catch (error) {
+    const label = $("count-" + name);
+    if (label) label.textContent = "(failed to load)";
+  }
+}
+
+let fitted = false;
+function fitTo(features) {
+  if (fitted || !features.length) return;
+  const bounds = new LngLatBounds();
+  for (const feature of features) for (const point of feature.geometry.coordinates[0]) bounds.extend(point);
+  map.fitBounds(bounds, { padding: 40, maxZoom: 9, duration: 0 });
+  fitted = true;
+}
+
+function loadAll(fresh) {
+  for (const box of document.querySelectorAll("[data-layer]")) if (box.checked) loadLayer(box.dataset.layer, fresh);
+  loadVolumes();
+  loadJobs();
+}
+
+$("refresh").addEventListener("click", () => loadAll(true));
+$("basemap").addEventListener("change", (event) => {
+  const source = map.getSource("base");
+  if (source) source.setTiles(tiles(event.target.value));
+});
+
+async function loadVolumes() {
+  try {
+    const data = await getJson(URLS.volumes);
+    const rows = data.places.map((p) => {
+      const mount = p.mount ? `${p.mount.fs} ${p.mount.source}` : "";
+      const flags = [];
+      if (!p.exists) flags.push(`<span class="err">missing</span>`);
+      else if (p.on_container_disk) flags.push(`<span class="err">on the container's own disk: not a mounted volume</span>`);
+      if (p.exists && !p.writable) flags.push(`<span class="muted">read only</span>`);
+      if (p.free != null && p.reserve != null && p.free < p.reserve) flags.push(`<span class="err">below its reserve</span>`);
+      if (p.stream_headroom && p.free != null && p.free - p.reserve < p.stream_headroom) flags.push(`<span class="warn">the streamed LiDAR cache may grow ${esc(gb(p.stream_headroom))} more on this disk, more than is free past the reserve: lower LIDAR_STREAM_CACHE_MAX_GB</span>`);
+      return `<div><b>${esc(p.label)}</b> <span class="muted mono">${esc(p.setting)}</span><br>
+        <span class="muted">${esc(mount)}</span> ${flags.join(" · ")}</div>
+        <div style="text-align:right">${p.free == null ? "" : `${esc(gb(p.free))} free<br><span class="muted">of ${esc(gb(p.total))}, ${esc(gb(p.reserve))} kept</span>`}</div>`;
+    });
+    const generations = data.terrain_generations || [];
+    if (generations.length) {
+      const old = generations.filter((g) => !g.current && g.owner === "this");
+      const kept = generations.filter((g) => !g.current && g.owner !== "this");
+      rows.push(`<div><b>3D terrain tiles</b><br><span class="muted">${generations.length} generation(s)${old.length ? `, ${old.length} old, let go of after the next DEM is added` : ""}${kept.length ? `, ${kept.length} another deployment's or from before marking (kept)` : ""}</span></div>
+        <div style="text-align:right">${esc(gb(generations.reduce((sum, g) => sum + g.bytes, 0)))}</div>`);
+    }
+    $("volumes").innerHTML = rows.join("") || `<span class="muted">No data folders are set on this server.</span>`;
+  } catch (error) {
+    $("volumes").innerHTML = `<span class="err">${esc(error.message)}</span>`;
+  }
+}
+
+function showStream(data) {
+  if (!data.enabled) {
+    $("stream").innerHTML = `<span class="muted">Streaming is off here (LIDAR_STREAM_CACHE_DIR is not set).</span>`;
+    $("count-stream").textContent = "(off)";
+    return;
+  }
+  const pieces = (data.surveys || []).reduce((sum, s) => sum + s.pieces, 0);
+  $("count-stream").textContent = `(${pieces} pieces)`;
+  const rows = (data.surveys || []).map((s) => `<tr><td>${esc(s.name)}</td><td>${esc(s.pieces)}</td><td>${esc(s.photographic)}</td><td>${esc(s.laz)}</td><td>${esc(gb(s.bytes))}</td></tr>`).join("");
+  $("stream").innerHTML = `<div class="kv"><span>In the cache</span><span>${esc(gb(data.bytes))} of ${esc(gb(data.cap_bytes))}</span>
+      ${data.older_bytes ? `<span class="muted">Of an older look, never served again</span><span class="muted">${esc(gb(data.older_bytes))}</span>` : ""}</div>
+    ${rows ? `<table class="files"><tr><th>Survey</th><th>Pieces</th><th>Photo</th><th>LAZ</th><th>Size</th></tr>${rows}</table>` : `<p class="note">Nothing cached yet.</p>`}
+    ${data.complete === false ? `<p class="note warn">Too many pieces to place them all on the map; the totals count every one.</p>` : ""}`;
+}
+
+function showUntagged(features) {
+  const untagged = features.filter((f) => !f.properties.navd88);
+  const usgs = untagged.filter((f) => /(^|\/)USGS_(13_n\d{2}w\d{3}|1M_\d{1,2}_x\d+y\d+_|one_meter_|1_n\d{2}w\d{3}|2_n\d{2}w\d{3})[^/]*\.tif$/i.test(f.properties.name));
+  $("untagged").textContent = untagged.length
+    ? `${untagged.length} DEM(s) state no NAVD88 datum${usgs.length ? `, ${usgs.length} of them named as USGS names its 3DEP DEMs (NAVD88 by what they are).` : "."} The 3D terrain treats every DEM as NAVD88 either way; this only corrects the label.`
+    : "Every DEM states NAVD88.";
+  const button = $("tag");
+  if (button) button.hidden = usgs.length === 0;
+}
+if ($("tag")) $("tag").addEventListener("click", async () => {
+  if (!confirm("Write a .aux.xml beside each USGS DEM, recording NAVD88 as its vertical datum? The GeoTIFFs themselves are not changed.")) return;
+  const result = await postJson(URLS.tag);
+  alert(result.ok ? `Tagged ${result.tagged} DEM(s).${result.refused && result.refused.length ? "\n\nNot tagged:\n" + result.refused.join("\n") : ""}` : result.error);
+  loadLayer("dems");
+});
+
+// --- the area: typed, or drawn by dragging on the map --------------------------------------------
+let drawing = false, start = null;
+const inputs = ["bw", "bs", "be", "bn"].map($);
+function area() {
+  const values = inputs.map((input) => parseFloat(input.value));
+  return values.every(Number.isFinite) ? values : null;
+}
+function showArea() {
+  const box = area();
+  setData("draw", box ? { type: "FeatureCollection", features: [{ type: "Feature", properties: {},
+    geometry: { type: "Polygon", coordinates: [[[box[0], box[1]], [box[2], box[1]], [box[2], box[3]], [box[0], box[3]], [box[0], box[1]]]] } }] } : empty);
+}
+function setArea(a, b) {
+  const box = [Math.min(a.lng, b.lng), Math.min(a.lat, b.lat), Math.max(a.lng, b.lng), Math.max(a.lat, b.lat)];
+  inputs.forEach((input, i) => { input.value = box[i].toFixed(4); });
+  showArea();
+}
+inputs.forEach((input) => input.addEventListener("change", showArea));
+$("draw").addEventListener("click", () => {
+  drawing = !drawing;
+  $("draw").textContent = drawing ? "Drag a box on the map…" : "Draw area on map";
+  map.getCanvas().style.cursor = drawing ? "crosshair" : "";
+});
+map.on("mousedown", (event) => {
+  if (!drawing) return;
+  event.preventDefault();
+  map.dragPan.disable();
+  start = event.lngLat;
+});
+map.on("mousemove", (event) => { if (drawing && start) setArea(start, event.lngLat); });
+map.on("mouseup", (event) => {
+  if (!drawing || !start) return;
+  setArea(start, event.lngLat);
+  start = null;
+  drawing = false;
+  map.dragPan.enable();
+  map.getCanvas().style.cursor = "";
+  $("draw").textContent = "Draw area on map";
+});
+
+// --- search and download -------------------------------------------------------------------------
+let lastSearch = null;
+$("search").addEventListener("click", async () => {
+  const bbox = area();
+  const out = $("search-out");
+  if (!bbox) { out.innerHTML = `<p class="note err">Draw or type an area first.</p>`; return; }
+  out.innerHTML = `<p class="note">Asking The National Map…</p>`;
+  const product = $("product").value;
+  const result = await postJson(URLS.search, { bbox, product });
+  if (!result.ok) { out.innerHTML = `<p class="note err">${esc(result.error)}</p>`; return; }
+  lastSearch = { bbox, product };
+  setData("search", { type: "FeatureCollection", features: result.files.map((f) => ({ type: "Feature", properties: f,
+    geometry: { type: "Polygon", coordinates: [[[f.bounds[0], f.bounds[1]], [f.bounds[2], f.bounds[1]], [f.bounds[2], f.bounds[3]], [f.bounds[0], f.bounds[3]], [f.bounds[0], f.bounds[1]]]] } })) });
+  const held = result.files.length - result.new_files;
+  const room = result.room;
+  const refusal = result.refusal;
+  const rows = result.files.map((f) => `<tr><td class="mono">${esc(f.name)}</td><td>${esc(gb(f.size))}</td><td>${!f.held ? "new"
+    : f.same_tile ? `<span class="muted" title="${esc(f.held)}">on server</span>`
+    : `<span class="muted" title="${esc(f.held)}">covered by ${esc(f.held)}</span>`}</td></tr>`).join("");
+  out.innerHTML = `<p class="note">${result.files.length} file(s)${result.skipped ? `, ${result.skipped} older version(s) or non-DEM items left out` : ""}.
+      <b>${result.new_files} new, ${esc(gb(result.new_bytes))}</b>${held ? `; ${held} on the server already (${esc(gb(result.held_bytes))})` : ""}.
+      ${room ? `${esc(gb(room.free))} free, ${esc(gb(room.reserve))} kept.` : ""}</p>
+    ${refusal ? `<p class="note err">${esc(refusal)}</p>` : ""}
+    ${rows ? `<table class="files">${rows}</table>` : ""}
+    ${CAN_WRITE && result.files.length ? `<label class="layer"><input type="checkbox" id="replace"> Replace the ones on the server (old copies kept 7 days)</label>
+      <button class="btn btn-sm btn-primary" id="download" ${refusal ? "disabled" : ""}>Download</button>` : ""}`;
+  const download = $("download");
+  if (download) download.addEventListener("click", async () => {
+    download.disabled = true;
+    const replace = $("replace").checked;
+    const created = await postJson(URLS.create, { ...lastSearch, replace });
+    if (!created.ok) { out.insertAdjacentHTML("beforeend", `<p class="note err">${esc(created.error)}</p>`); download.disabled = false; return; }
+    loadJobs();
+  });
+});
+
+let polling = null;
+async function loadJobs() {
+  try {
+    const data = await getJson(URLS.jobs);
+    const active = data.jobs.find((j) => j.state === "queued" || j.state === "running");
+    const shown = active || data.jobs[0];
+    setData("job", shown ? { type: "FeatureCollection", features: shown.files.filter((f) => f.bounds).map((f) => ({ type: "Feature", properties: { state: f.state },
+      geometry: { type: "Polygon", coordinates: [[[f.bounds[0], f.bounds[1]], [f.bounds[2], f.bounds[1]], [f.bounds[2], f.bounds[3]], [f.bounds[0], f.bounds[3]], [f.bounds[0], f.bounds[1]]]] } })) } : empty);
+    $("jobs").innerHTML = data.jobs.length ? data.jobs.map(jobHtml).join("") : `<span class="muted">None yet.</span>`;
+    for (const button of document.querySelectorAll("[data-cancel]")) {
+      button.addEventListener("click", async () => { button.disabled = true; await postJson(URLS.cancel(button.dataset.cancel)); loadJobs(); });
+    }
+    clearTimeout(polling);
+    if (active) polling = setTimeout(loadJobs, 2000);
+    else if (polling !== null) { polling = null; loadLayer("dems"); loadVolumes(); }
+  } catch (error) {
+    $("jobs").innerHTML = `<span class="err">${esc(error.message)}</span>`;
+  }
+}
+function jobHtml(job) {
+  const share = job.bytes_total ? Math.min(100, 100 * job.bytes_done / job.bytes_total) : 0;
+  const files = job.files.map((f) => `<tr><td class="mono">${esc(f.name)}</td><td>${esc(f.state)}${f.state === "downloading" ? " " + Math.round(100 * f.done / (f.size || 1)) + "%" : ""}</td></tr>
+    ${(f.reasons || []).map((r) => `<tr><td colspan="2" class="err">${esc(r)}</td></tr>`).join("")}`).join("");
+  const live = job.state === "queued" || job.state === "running";
+  return `<div style="margin-bottom:12px">
+    <div class="row"><b>${esc(job.product === "13" ? "1/3″" : "1 m")}</b> <span class="badge">${esc(job.state)}</span>
+      <span class="muted">${esc(job.files_done)}/${esc(job.files_total)} files · ${esc(gb(job.bytes_done))} of ${esc(gb(job.bytes_total))} · ${esc(job.requested_by)}</span>
+      ${live && CAN_WRITE && !job.cancel_requested ? `<button class="btn btn-sm btn-danger" data-cancel="${esc(job.id)}">Cancel</button>` : ""}</div>
+    ${live ? `<div class="bar"><div style="width:${share}%"></div></div>` : ""}
+    ${job.error ? `<p class="note err">${esc(job.error)}</p>` : ""}
+    <details ${live ? "open" : ""}><summary class="muted" style="font-size:12px">Files</summary><table class="files">${files}</table></details>
+  </div>`;
+}
+</script>
+{% endblock %}

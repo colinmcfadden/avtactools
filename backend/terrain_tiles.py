@@ -24,6 +24,7 @@ import functools
 import hashlib
 import math
 import os
+import re
 import sys
 import tempfile
 import threading
@@ -472,7 +473,43 @@ def _cache_path(level: int, x: int, y: int) -> Path | None:
     entries = LOCAL_CATALOG.entries()
     if not entries:
         return None
-    return root / _fingerprint(entries) / str(level) / str(x) / f"{y}.i16"
+    generation = _fingerprint(entries)
+    _mark_owner(root, generation)
+    return root / generation / str(level) / str(x) / f"{y}.i16"
+
+
+OWNER_FILE = ".owner"
+_marked = set()
+_marked_lock = threading.Lock()
+
+
+def deployment() -> str:
+    """Names this deployment, for the generations it makes: staging and production share ``/data/cache`` (AGENTS.md §9),
+    and one must never sweep the other's tiles. From the database's host and name (never its password), so the two, with
+    their own Supabase projects, differ, and every restart of one is the same."""
+    from urllib.parse import urlparse
+
+    raw = (os.environ.get("DATABASE_URL") or "").strip()
+    try:
+        parts = urlparse(raw)
+        where = f"{parts.hostname or ''}:{parts.port or ''}{parts.path}" if raw else "local"
+    except ValueError:
+        where = "unreadable"
+    return hashlib.sha256(where.encode()).hexdigest()[:16]
+
+
+def _mark_owner(root: Path, generation: str) -> None:
+    with _marked_lock:
+        if generation in _marked:
+            return
+        _marked.add(generation)
+    marker = root / generation / OWNER_FILE
+    try:
+        if not marker.exists():
+            marker.parent.mkdir(parents=True, exist_ok=True)
+            marker.write_text(deployment())
+    except OSError:
+        pass
 
 
 def _write_atomic(path: Path, data: bytes) -> None:
@@ -643,6 +680,115 @@ def start_warming() -> threading.Thread | None:
             _log(f"warming stopped: {error}")
 
     thread = threading.Thread(target=run, name="terrain-warm", daemon=True)
+    thread.start()
+    return thread
+
+
+_GENERATION = re.compile(r"^[0-9a-f]{16}$")
+_rewarm_lock = threading.Lock()
+_rewarm_state = threading.Lock()
+_rewarm_again = False
+
+
+def current_generation() -> str | None:
+    """The fingerprint the cache serves from now, or None with no cache or no DEM."""
+    if cache_root() is None:
+        return None
+    entries = LOCAL_CATALOG.entries()
+    return _fingerprint(entries) if entries else None
+
+
+def generations() -> list[dict]:
+    """Every generation of cached tiles on disk, with its size: one per set of DEMs the server has had, until a sweep lets
+    the old ones go. A walk of the cache, so it is for the admin's Data tab, not for requests."""
+    root = cache_root()
+    if root is None or not root.is_dir():
+        return []
+    current = current_generation()
+    found = []
+    for child in root.iterdir():
+        if not (child.is_dir() and _GENERATION.match(child.name)):
+            continue
+        files = size = 0
+        for directory, _, names in os.walk(child):
+            for name in names:
+                try:
+                    size += os.stat(os.path.join(directory, name)).st_size
+                    files += 1
+                except OSError:
+                    pass
+        try:
+            owner = (child / OWNER_FILE).read_text().strip()
+        except OSError:
+            owner = None
+        found.append({"name": child.name, "current": child.name == current, "files": files, "bytes": size,
+                      "owner": "this" if owner == deployment() else ("other" if owner else "unmarked")})
+    found.sort(key=lambda generation: (not generation["current"], -generation["bytes"]))
+    return found
+
+
+def sweep_generations() -> int:
+    """Delete every generation of cached tiles this deployment made but the one served now. Adding a DEM moves the whole
+    cache to a new generation (``_fingerprint``) and nothing else ever removes the old one, so each change would otherwise
+    stay on the disk for good. Only folders named like a fingerprint and marked as this deployment's are touched: one
+    another deployment sharing the cache made, or one from before the marks, is left as it is. Returns how many went."""
+    import shutil
+
+    root = cache_root()
+    current = current_generation()
+    if root is None or current is None or not root.is_dir():
+        return 0
+    removed = 0
+    for child in root.iterdir():
+        if not (child.is_dir() and _GENERATION.match(child.name) and child.name != current):
+            continue
+        try:
+            owner = (child / OWNER_FILE).read_text().strip()
+        except OSError:
+            continue
+        if owner == deployment():
+            shutil.rmtree(child, ignore_errors=True)
+            with _marked_lock:
+                _marked.discard(child.name)
+            removed += 1
+    return removed
+
+
+def rewarm_after_change(*, log=_log) -> threading.Thread | None:
+    """After the DEMs changed (data_admin put one in place): warm the coarse levels of the new generation, as a start
+    does, then let the old generations go. In the background; one at a time, since a second would only repeat the first."""
+    try:
+        level = int(os.environ.get("TERRAIN_WARM_LEVEL", DEFAULT_WARM_LEVEL))
+    except ValueError:
+        level = DEFAULT_WARM_LEVEL
+    if cache_root() is None:
+        return None
+
+    global _rewarm_again
+    with _rewarm_state:
+        _rewarm_again = True
+
+    def run():
+        global _rewarm_again
+        if not _rewarm_lock.acquire(blocking=False):
+            return      # the one running sees _rewarm_again and goes round once more, for the newest DEMs
+        try:
+            while True:
+                with _rewarm_state:
+                    if not _rewarm_again:
+                        return
+                    _rewarm_again = False
+                if level >= 0:
+                    warm(level, log=log)
+                removed = sweep_generations()
+                if removed:
+                    log(f"let go of {removed} older terrain tile generation(s)")
+        except Exception as error:  # noqa: BLE001 — warming is an optimisation
+            log(f"rewarming stopped: {error}")
+        finally:
+            _rewarm_lock.release()
+
+    thread = threading.Thread(target=run, name="terrain-rewarm", daemon=True)
     thread.start()
     return thread
 

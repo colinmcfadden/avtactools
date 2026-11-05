@@ -766,3 +766,29 @@ class LzSurveyImport(db.Model):
     checked_by_name = db.Column(db.String(120), nullable=True)
     checked_at = db.Column(db.DateTime, nullable=True)
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+
+
+class DataJob(db.Model):
+    """A download the admin's Data tab asked for (data_admin/jobs.py; docs/DATA_ADMIN_AND_PREBUILT_3D_PLAN.md §10): DEMs
+    from USGS, fetched in the background one job at a time. ``files`` is each file's name, URL, size, footprint and how it
+    stands, so the map can draw them and a restart can pick up where the last process left off. Never logged."""
+
+    __tablename__ = 'data_job'
+
+    id = db.Column(db.String(32), primary_key=True)  # random hex, never a place
+    kind = db.Column(db.String(20), nullable=False, default='dem_download')
+    product = db.Column(db.String(10), nullable=False)  # 13 | 1m
+    state = db.Column(db.String(10), nullable=False, default='queued')  # queued | running | done | failed | cancelled
+    files = db.Column(db.JSON, nullable=False, default=list)
+    files_total = db.Column(db.Integer, nullable=False, default=0)
+    files_done = db.Column(db.Integer, nullable=False, default=0)
+    bytes_total = db.Column(db.BigInteger, nullable=False, default=0)
+    bytes_done = db.Column(db.BigInteger, nullable=False, default=0)
+    replace = db.Column(db.Boolean, nullable=False, default=False)
+    cancel_requested = db.Column(db.Boolean, nullable=False, default=False)
+    error = db.Column(db.String(300), nullable=True)
+    requested_by = db.Column(db.Integer, db.ForeignKey('user.id', ondelete='SET NULL'), nullable=True)
+    requested_by_name = db.Column(db.String(120), nullable=False, default='')
+    created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+    started_at = db.Column(db.DateTime, nullable=True)
+    finished_at = db.Column(db.DateTime, nullable=True)

@@ -8,6 +8,8 @@ the owner's answers of that day: existing tilesets keep their old keys (no renam
 `frame` go only to a client that asks for them in the request (so an installed app that frames on the root sphere keeps
 the build flow), and tests build a tiny octree themselves, with a live AWS test behind an environment variable and no
 USGS data committed. **Phase 1 built for the backend, the web and Android the same day** (*Phase 1 as built*, below).
+**2026-11-04:** the admin's Data section (the map of what the server holds, and adding DEMs and LiDAR to it) planned again
+against the code and TNM's API as they are, in §10, which replaces Parts A and B for it. Its questions are the owner's (§10.6).
 
 The request, in the owner's words: an admin page with a CONUS map showing where the server holds terrain and LiDAR
 itself (not what comes from outside services); drag-and-drop uploads into the server's volumes; areas chosen on the
@@ -83,6 +85,8 @@ Measured costs (north Georgia):
 
 ## 3. Part A: the coverage map
 
+*Replaced for the admin's Data section by §10 (2026-11-04).*
+
 A **Data** tab in the admin (`/admin/data`): a CONUS map with layers, and beside it a panel of numbers.
 
 **Layers** (each can be switched off):
@@ -127,6 +131,8 @@ Native the Android app draws with.
 ---
 
 ## 4. Part B: uploads into the volumes
+
+*Replaced for the admin's Data section by §10 (2026-11-04).*
 
 Streaming makes AWS the source of LiDAR for 3D, so uploads matter most for **DEMs** (slope analysis and the 3D terrain)
 and for LiDAR that is **not on AWS**: a state survey, a newer flight, a file handed over.
@@ -659,3 +665,360 @@ before launch, a SAM.gov registration for selling to units, and the measurements
 | D13 | AOs and access | **Several AOs per org**, set by the super-admin | One polygon per org, set by the super-admin; members get the paid version of pieces inside it | Several AOs per org; org admins editing their AO |
 | D14 | What individuals buy | As recommended | Pro: warmed catalogue areas with photographic colour | A small AO of their own; no individual plan |
 | D15 | Billing | As recommended | Manual plans first; ask about a provider at Phase 8 | Stripe now; a merchant of record |
+
+---
+
+## 10. The Data section, planned again (2026-11-04)
+
+The owner's request, in their words: *"a section in the admin that allows you to view a map that overlays with the blocks of
+USGS data that are available on the server. It will also allow me to upload or connect to USGS if possible to download data
+into the volume."* This section replaces Parts A and B (§3, §4) for that request. Where it disagrees with them, it wins. The
+owner's open questions are in §10.6. **Nothing here is built yet.**
+
+### 10.1 The plan against the code, 2026-11-04 (develop at `67974631`, the same backend as release 1.8.0)
+
+**Done since the plan was written.**
+- §2.1, the tileset exposure (Phase 0):
+  - the file route serves only tile files, never `area.json` and nothing under a dot (`lidar/catalog.is_served_file`);
+  - `GET /api/lidar/tilesets` is for admins only;
+  - new keys are an HMAC under `LIDAR_KEY_SECRET`.
+- Part C, streaming (Phase 1), on the web and on Android:
+  - `resolve` takes `stream` and answers with `frame` (§2.4);
+  - the natural palette, and the NAIP photographic pass in the background (`lidar/photo.py`).
+- LZ surveys read USGS's own LAZ for obstacles. They come from the stream cache (`Streamer.laz`), not from `/data/lidar`.
+
+**Not done.**
+- §2.2: one fingerprint still names *every* cached terrain tile (`terrain_tiles._fingerprint`: every DEM's path, size and mtime,
+  plus the geoid). Two things follow from that:
+  - Adding one DEM anywhere moves the whole cache to a new generation directory.
+  - Old generations are **never removed**: only `*.tmp` leftovers are cleared.
+- §2.3:
+  - `collection.save_index` is a plain `write_text`;
+  - `collection.scan` globs the top folder only.
+- §2.5: `find_covering` still reads every `area.json` on each call.
+- Phases 2 to 9.
+- Nothing in the backend checks free disk space. `lidar/fetch.py` does not, and neither does the stream cache, whose only limit
+  is its own cap (`LIDAR_STREAM_CACHE_MAX_GB`, 200 by default) with no look at what is left on the volume.
+
+**Gone stale, now that streaming exists or the code has moved.**
+
+1. **"Only DEMs need downloading" (D4).** The owner now asks for LiDAR downloads too. LAZ in `/data/lidar` feeds only two
+   things today:
+   - the build service's collection, and the build service builds only where nothing streams;
+   - D24's local Entwine index, which is not built.
+
+   Streaming and surveys read USGS's copy on AWS. So a LAZ download buys little until Phase 6. See Q3.
+2. **The downloaded LiDAR layer reads `tile_index.json`**, which only the build service can see: the API mounts no
+   `/data/lidar` and `LIDAR_COLLECTION` is read only by `worker.py`. The scan also misses a survey kept in a folder of its own
+   (§2.3).
+3. **The "streamed views" layer has no index to read.** The cache is files under `<LIDAR_STREAM_CACHE_DIR>/<survey key>/`, as
+   below.
+
+   | File | Name |
+   |---|---|
+   | `.pnts` pieces | opaque: a keyed Feistel permutation of the node |
+   | kept LAZ | `laz/D-X-Y-Z.laz` |
+   | hierarchy pages | `h/D-X-Y-Z.json` |
+
+   Places come back from these with the secret (`names.piece_node`, `ept.Info.cube`). The cheap way is the hierarchy pages
+   and the kept LAZ, whose names are in clear. It takes a walk of the folder, so it is done once and kept for 10 minutes.
+4. **The DEM datum check would refuse every USGS DEM.** Checked 2026-11-04 by opening two of USGS's own files over HTTP with
+   `GTIFF_REPORT_COMPD_CS=YES`:
+
+   | File | CRS | Vertical part |
+   |---|---|---|
+   | `USGS_13_n35w085.tif` | EPSG:4269 | none |
+   | `USGS_1M_16_x72y385_GA_Statewide_2018_B18_DRRA.tif` | EPSG:26916 | none |
+
+   §4's rule ("a compound CRS must have NAVD88 as its vertical part") therefore needs a provenance path. A file fetched from
+   TNM's 3DEP DEM products is NAVD88 in CONUS **by what it is**, and the server writes `VERT_DATUM=NAVD88` into a `.aux.xml`
+   beside it.
+   - GDAL folds a PAM `.aux.xml` into `tags()`, and the catalog reads that tag. Tried with rasterio on a test file.
+   - An *upload* with no vertical part still needs the admin's tick.
+   - The DEMs on the VM today almost certainly carry no tag either, so the catalog labels them "source metadata required". The
+     3D terrain treats them as NAVD88 anyway, since `terrain_tiles` never reads the label. See Q5.
+5. **The catalog walks every folder under `TERRAIN_DATA_DIR`** (`os.walk`, recursive) and opens every `.tif` it finds. So a
+   download or upload staged inside `/data/topo` under its real name would be:
+   - opened half-written;
+   - folded into the tile fingerprint.
+
+   Staging must use a `.part` suffix, which `_entry_kind` ignores, and the walk should skip dot folders.
+6. **TNM lists every dated version of a 1/3″ cell.** For `n35w085` it lists six:
+   - 2011-04-01, 2022-05-12, 2022-07-25, 2023-02-15 and 2026-04-29 (all about 475–481 MB);
+   - and an item titled "USGS 13 arc-second n35w085 1 x 1 degree" of 465 KB, pointing at a 2017 file.
+
+   All of them sit under `historical/`. The `current/USGS_13_n35w085.tif` URL is not listed, though it exists. Its size
+   (481,116,556 bytes) and date (Last-Modified 2026-04-29) match the newest dated copy.
+
+   So a search must keep **the newest version of each cell**, and must detect a cell already on the server under any name, by
+   its bounds. Two overlapping DEMs both enter the mosaic.
+7. **D1 (MapLibre GL JS) and Leaflet.** The brief for this work asked for "what the web already has (Leaflet)"; D1 chose
+   MapLibre. See Q1.
+8. **What a new DEM does to the 3D terrain cache, today.**
+   - The next catalog scan comes up to 5 minutes later (`TERRAIN_CATALOG_REFRESH_SECONDS`), and there is no way to ask for one
+     sooner.
+   - That scan changes the fingerprint, so **every** cached tile is in the old generation and is computed again on first ask.
+     That is about 50 ms a tile from level 9 down, and 0.3–3.3 s for levels 0–8.
+   - Warming runs only at startup, so the coarse levels stay cold until the next deploy.
+   - The old generation stays on disk for good.
+
+   None of it is wrong (no stale heights are ever served), but each download costs a cold 3D everywhere and leaves its litter.
+   See Q7.
+9. **No `MAX_CONTENT_LENGTH`, no CSP on `/admin`, and no static folder in the backend.**
+   - The size-guard precedent is `survey_routes`: check `request.content_length`, set `request.max_content_length`, catch
+     `RequestEntityTooLarge`.
+   - The background-job precedent is `survey/book.py`'s `Printer`: a daemon thread, a database row holding state and progress,
+     and re-running what a restart left half done.
+   - CSRF for `fetch` is the `X-CSRF` header, as `login.html` sends it.
+
+### 10.2 What TNM Access offers (tried 2026-11-04)
+
+Keyless, HTTPS, JSON, answered in under 2 s.
+
+- `GET https://tnmaccess.nationalmap.gov/api/v1/datasets` lists the products. The ones that matter here:
+
+  | `datasets=` value | Product |
+  |---|---|
+  | `National Elevation Dataset (NED) 1/3 arc-second` | 1/3″ DEM, 1° × 1° cells |
+  | `Digital Elevation Model (DEM) 1 meter` | 1 m DEM, 10 × 10 km tiles in UTM, by project |
+  | `Lidar Point Cloud (LPC)` | LAZ tiles, by project |
+
+  `1/9 arc-second` returned nothing over Ellijay.
+- `GET …/api/v1/products?datasets=<name>&bbox=w,s,e,n&max=<n>&offset=<n>&outputFormat=JSON` also takes `polygon=` and
+  `prodFormats=`.
+  - It answers `{total, items, errors, messages}`.
+  - Each item carries `title`, `format`, `sizeInBytes`, `downloadURL`, `boundingBox {minX, maxX, minY, maxY}` in degrees,
+    `publicationDate`, `lastUpdated` and `extent`.
+- Measured over Ellijay and its 1° cell:
+
+  | Product | Area | Items | Size | Host |
+  |---|---|---|---|---|
+  | 1/3″ | `n35w085` | 6 | about 480 MB each | `prd-tnm.s3.amazonaws.com` |
+  | 1 m | 1° cell | 169 tiles | about 345 MB each (**about 58 GB**) | `prd-tnm.s3.amazonaws.com` |
+  | LPC | a small box | 66 tiles | 13–20 MB each | `rockyweb.usgs.gov` |
+- Each host answers a HEAD with `Content-Length` and `Accept-Ranges: bytes`, so a download can resume with `Range`.
+- USGS's GeoTIFFs are already tiled (512 × 512) LZW COGs with overviews, float32, nodata −999999. No rewrite is needed.
+- The National Map's raster base maps answer keyless, as `…/arcgis/rest/services/{USGSTopo, USGSImageryOnly,
+  USGSShadedReliefOnly}/MapServer/tile/{z}/{y}/{x}` on `basemap.nationalmap.gov`.
+
+### 10.3 The page
+
+A **Data** tab (`/admin/data`) beside Users, Aircraft, Packs and Teams. It is behind `admin_required`, with a CSRF check on every
+write and `Cache-Control: private, no-store` on every JSON answer. `DATA_ADMIN` (`off` | `read` | `write`, default `off`)
+decides what it offers:
+- `read` shows the map;
+- `write` adds downloads and uploads.
+
+Only the production API gets `write`, because staging mounts the same volumes. The Fly backend says it holds no data. Nothing
+here is reachable with a JWT, so no app and no non-admin ever sees a place (AGENTS.md §15).
+
+**The map** (library: Q1). Vendored with its CSS into `backend/static/vendor/`, one exact version, with no CDN and no build step.
+The base map is the USGS National Map (topo, imagery, shaded relief).
+
+| Layer | From | Drawn as; clicked shows |
+|---|---|---|
+| DEMs (on) | `LOCAL_CATALOG.entries()` | Footprints coloured by resolution (1 m, about 3 m, 1/3″, coarser), and hatched where the datum is not NAVD88 or not stated. A click shows the file (relative to its root), kind, resolution, datum, size and date, whether slope analysis uses it (15 m or finer), and the other DEMs it overlaps |
+| Downloaded LiDAR (on, when mounted) | `tile_index.json` (Q10), bounds to WGS84 with pyproj, once per CRS, kept until the index changes | Tiles coloured by survey year (2015 on classifies vegetation), grouped by survey (the folder, else the project in a USGS file name). Above 20,000 tiles they are shown as 0.05° cells until zoomed in |
+| Streamed cache (off) | the walk in 10.1 (3), kept 10 minutes | **Counts per 10 km cell** (D16), never pieces |
+| Built tilesets (off) | `area.json` of each | Counts per 10 km cell (D16) |
+| AWS 3DEP coverage (off) | the coverage index the streamer keeps | Faint survey footprints by year: where streaming has data |
+| A USGS search (while one is open) | §10.4 | Each file's footprint: on the server already, new, or too big |
+
+**The panel.**
+- For each place data lives, its total, used and free space and the reserve (§10.4), from `shutil.disk_usage`:
+  - `TERRAIN_DATA_DIR`'s roots;
+  - `/data/lidar` if mounted;
+  - `LIDAR_STREAM_CACHE_DIR` (against its cap);
+  - `LIDAR_TILES_DIR`;
+  - `TERRAIN_TILE_CACHE_DIR` (with its generations and their size).
+- **A warning in red when a place is on the container's own disk** (§10.4's mount check).
+- The jobs: running, queued, the last ten.
+
+**Endpoints** (admin session, JSON):
+- `GET /admin/data`, the page;
+- `GET /admin/data/coverage.json?layer=…&bbox=…`;
+- `GET /admin/data/volumes.json`;
+- `POST /admin/data/usgs/search`;
+- `POST /admin/data/jobs`, `GET /admin/data/jobs/<id>.json`, `POST /admin/data/jobs/<id>/cancel`;
+- the upload routes of §4, for Phase U.
+
+### 10.4 Adding data: the rules every way in shares
+
+**The disk** (a module of its own, `data_volumes.py`, used by every write). Coolify once went down when the VM's root disk
+filled, so:
+- **The mount check.** A write is refused when the destination is on the same device as the container's `/` (`os.stat(dir).st_dev
+  == os.stat("/").st_dev`). That is what a missing Coolify mount looks like: the folder exists in the container's overlay, which
+  lives on the VM's root disk. It is refused in words ("/data/topo is not a mounted volume here"). `DATA_ADMIN_SAME_DISK=allow`
+  exists for a local run only, and production refuses it.
+- **The reserve.** Nothing is started unless what it adds still leaves `max(20 GB, 10 % of the volume)` free (Q6). The check is
+  made again before each file, and every 256 MB while a file comes down. A job that crosses the reserve stops, keeps what is
+  whole, deletes its `.part` and says why.
+- **The stream cache.** The stream cache's cap is checked against the volume too. If cap plus reserve exceeds what is free, the
+  panel says so. Pruning by cap alone could otherwise fill a volume that also holds DEMs.
+
+**Staging.** Each volume has `.incoming/` at its top: the same filesystem, so the move into place is a rename. Everything there
+is named `*.part`, and the catalog walk skips dot folders (10.1, 5). A `.part` with no progress for 48 hours is removed.
+
+**Where the work runs (Q2): in the API, on a thread of its own.** A download is mostly waiting on the network, which a thread
+does without holding the interpreter (as the NAIP pass does), so it never takes one of gunicorn's 8 request threads. The job
+follows `survey/book.py`'s `Printer`:
+- a `data_job` row holds the state, files, bytes and error;
+- one job at a time;
+- a restart picks up a job left running, resuming each `.part` with `Range`;
+- the page polls the row every 2 s.
+
+It pauses while an analysis runs (`terrain_tiles.analysis_running`), as warming does. The build service is the alternative, but
+it mounts no `/data/topo`, has no database, and is to retire (D20, D24).
+
+**Only USGS's hosts.** A job fetches only `https://` URLs on `prd-tnm.s3.amazonaws.com` and `rockyweb.usgs.gov`, whatever TNM's
+answer says, and follows no redirect elsewhere. Each file is checked against TNM's `sizeInBytes` and the server's
+`Content-Length`. No coordinates, bounding boxes or file names are logged; a job's id is random.
+
+**After a DEM lands** (Q7), in order:
+1. The catalog is refreshed at once (a new `LOCAL_CATALOG.refresh()`).
+2. That moves the terrain tiles to a new generation.
+3. A background warm of levels 0–9 starts (about a minute over north Georgia).
+4. Once it finishes, the older generations are deleted.
+
+Until then the 3D terrain is computed on demand, as on a first start. The per-tile key of §2.2 would spare all of that, and is
+Phase 2 of the old plan.
+
+### 10.5 The ways in, in the order proposed
+
+**Download DEMs from USGS** (first: no tunnel limit, no client code beyond the map).
+1. Draw a rectangle on the map and choose 1/3″ or 1 m (Q4).
+2. The server asks TNM and answers the files:
+   - the newest version of each cell or tile only;
+   - each one's size;
+   - each one marked *on the server* (same file name, or bounds that overlap an entry of the same resolution by 95 %) or
+     *new*;
+   - the total, and the free space after.
+3. A search over the job limit (Q11) or the reserve is refused before anything is asked of USGS's file hosts.
+4. Confirm. The job downloads each file into `.incoming`.
+5. Each file is validated:
+   - rasterio opens it; it has a CRS and a nodata value, one band, and units in metres;
+   - its bounds lie inside the geoid grids' box (−125 to −66, 24 to 50);
+   - it is 15 m or finer;
+   - its median difference from Terrarium at 25 points is within ±5 m.
+6. It is tagged NAVD88 by provenance (10.1, 4) and renamed into place:
+   - 1/3″ into `<first TERRAIN_DATA_DIR root>/usgs/13/`;
+   - 1 m into `<root>/usgs/1m/<project>/`.
+7. 10.4's "after a DEM lands" runs.
+
+A cell already on the server is skipped unless the admin ticks *replace* (Q8). A replaced file goes to `.trash/` for 7 days, so
+a bad replace can be undone.
+
+**Upload DEMs** (Part B's chunked, resumable protocol, D3, unchanged). The validation is the same, and with no vertical datum
+stated the *NAVD88 (USGS 3DEP)* tick is required. DTED is refused (D5). It is the way in for a DEM that TNM does not serve. Q9
+asks whether to build it in this round.
+
+**LiDAR** (Q3), if wanted:
+- the same search against `Lidar Point Cloud (LPC)`, files into `/data/lidar/<project>/`;
+- validation as §4 (header, CRS, completeness, the box);
+- then the index written by rename, with the scan recursing (§2.3);
+- LAZ uploads through the same protocol.
+
+This needs `/data/lidar` mounted writable into the production API at the same path (D2). Until D24, all it feeds is the build
+service.
+
+### 10.6 The owner's open questions
+
+| # | Question | Recommended | Other choices |
+|---|---|---|---|
+| Q1 | The map library | **MapLibre GL JS, as D1 decided** (already approved), vendored into `backend/static` | Leaflet 1.9.4, the web's version, vendored: smaller, no WebGL, and plenty for these layers once aggregated |
+| Q2 | Where downloads run | **In the API, on a background thread of its own** (10.4) | In the build service, which would need `/data/topo` and endpoints of its own |
+| Q3 | LiDAR downloads | **Not in this round.** DEMs first. LAZ only matters to the build service until local streaming (D24) | Build it now, after DEMs |
+| Q4 | DEM products offered | **1/3″ and 1 m**, 1 m chosen per search (about 58 GB a 1° cell) | 1/3″ only |
+| Q5 | The DEMs on the VM with no datum tag | **A button that tags as NAVD88 the files whose names are USGS's** (`USGS_13_…`, `USGS_1M_…`), writing a `.aux.xml` beside each | Leave them labelled "source metadata required" |
+| Q6 | The reserve kept free on a volume | **max(20 GB, 10 %)**, and the mount check refusing the container's own disk | Another figure. Also: how big is the `/data` volume? |
+| Q7 | The terrain cache after a new DEM | **Rewarm, then delete old generations** (10.4) now; §2.2 later | Build §2.2's per-tile key first |
+| Q8 | A newer version of a cell already held | **Skip unless *replace* is ticked**, the old one kept in `.trash/` for 7 days | Always take the newest |
+| Q9 | Uploads in this round | **After downloads**, as their own phase | With downloads |
+| Q10 | Mount `/data/lidar` read-only into the API for the map | **Yes, at the same path** (D2) | Leave the LiDAR layer out |
+| Q11 | The largest job | **20 GB and 100 files**, more by several jobs | Another figure |
+
+### 10.7 Phases, each its own PR off `develop`
+
+| Phase | Builds | Owner steps |
+|---|---|---|
+| **D0. Guards** | `data_volumes.py` (the mount check, the reserve, `disk_usage`); `LOCAL_CATALOG.refresh()` and dot folders skipped in the walk; terrain cache generations listed, rewarmed and swept (Q7); `DATA_ADMIN`; the `data_job` table | None |
+| **D1. The map, read only** | The Data tab with its layers and panel (10.3), and the map library vendored (Q1) | Set `DATA_ADMIN=read` on production and staging. Optionally mount `/data/lidar` read-only into the API (Q10) |
+| **D2. DEMs from USGS** | The search, the job, validation, tagging, the move, the refresh (10.5); the tag button for existing DEMs (Q5) | Mount `/data/topo` writable into the **production** API only. Set `DATA_ADMIN=write` there. Run one small search and download (one 1/3″ cell, about 480 MB) |
+| **D3. Uploads** (Q9) | Part B's chunked uploads into `.incoming`, the same validation | Upload one file over 100 MB to confirm the tunnel takes 64 MB chunks |
+| **D4. LiDAR** (Q3) | The LPC search and job, LAZ uploads, §2.3 | Mount `/data/lidar` writable into the production API at the same path |
+
+Each phase updates AGENTS.md (§4's features, §6, §10's settings) in the same commit. **Not verifiable from an agent session:**
+- the VM's free space;
+- whether Coolify's mounts are what the mount check expects;
+- the VM's speed to USGS's hosts;
+- how the map looks in the admin's browser.
+
+The owner checks each in the phase's step.
+
+### 10.8 The owner's answers, and D0 to D2 as built (2026-11-04)
+
+**The owner's answer.** "Proceed with DEM downloads. If we can show on the map what LiDAR is cached, that's great too."
+- **Q3:** no LiDAR downloads.
+- **Q9:** no uploads in this round.
+- **Every other question:** as recommended in §10.6.
+
+**Built** (`backend/data_admin/`, `routes/admin_data.py`, `templates/admin/data.html`):
+- **D0, the guards:**
+  - `volumes.py`: the mount check, the reserve, and each place's mount read from `/proc/self/mountinfo`;
+  - `LOCAL_CATALOG.refresh()`, with dot folders skipped in the walk;
+  - `terrain_tiles.generations()`, `sweep_generations()` and `rewarm_after_change()`;
+  - `DATA_ADMIN`, and the `data_job` table.
+- **D1, the map:**
+  - MapLibre GL JS 6.15.0, vendored (1.7 MB). It is ES modules only since version 6, so the page imports it as a module and it finds its worker beside itself;
+  - the layers and the panel of §10.3;
+  - the streamed cache, walked and placed by decoding each piece's name with the secret, counted in 0.1° cells. Pieces wider than 10 km count only in their survey's totals. A survey key of an older look is counted as "never served again";
+  - the downloaded LiDAR layer, wherever `LIDAR_COLLECTION` is set on the API.
+- **D2, DEMs from USGS:**
+  - the search, then a job (searched again on the server when confirmed, so nothing the page sends is downloaded);
+  - downloads resumed with `Range`, the reserve checked every 256 MB, nothing fetched while an analysis runs;
+  - the checks, the NAVD88 tag, the move into place, the catalog and the 3D terrain after it;
+  - *Replace*, which moves the old file to `.trash/` for 7 days. It applies only to **the same tile**: the same name, the
+    same cell, or a footprint about the same both ways. A cell inside a larger DEM (a statewide mosaic) is marked *covered*,
+    never fetched and never replaced, since moving the mosaic aside would take all its other ground with it (the review
+    found that);
+  - the button that tags the server's existing USGS-named DEMs (Q5).
+
+**Found by the independent review, and built in:**
+- **One bad file is that file's failure.** A 4xx, a redirect, or a size other than TNM's fails that file, and the job goes
+  on. A busy host (429, 5xx) is tried again after a pause. A redirect is never followed.
+- **A job always ends.** A database failure mid-job (the pooler restarting) still writes it failed, in a fresh session, so it
+  is never left *running* to be resumed at every look.
+- **Leftover jobs resume only where writes are on.** A cancel is always set on the job itself.
+- **The terrain cache sweep deletes only this deployment's generations.** Each generation is marked with a hash of the
+  database's host and name (`.owner`), since staging shares `/data/cache`. One another deployment made, or one from
+  before the marks, is kept. A rewarm asked for while one runs goes round again rather than being dropped.
+- **A download leaves the streamed LiDAR cache room to grow on the same disk:** its cap less what it holds. The cache
+  prunes by its cap alone and never looks at what is free. The panel warns when cap and reserve exceed what is free.
+- **The datum check reads the compound CRS with pyproj.** NAVD88 must be in metres: NAVD88 in US survey feet is refused.
+- **The search has a 30 s deadline**, under Cloudflare's 100 s. The walks of the caches run one at a time and are kept 10
+  minutes. The streamed layer is off until it is ticked.
+- **1 m project names that could climb out of their folder, or start a dot folder, are left out.** The older
+  `USGS_one_meter_…` names are read.
+- **Messages name folders by what they are, never by the server's paths.**
+
+**Not like §10, on purpose:**
+- **The search runs in the request.** It is one to three pages from TNM, under 2 s each, with timeouts.
+- **A file refused by its checks is deleted from `.incoming`, not kept there.** It is USGS's own file and can be fetched again, and 480 MB left for an admin to clear is how a disk fills.
+
+**Tried:**
+- a real search through the page over Ellijay (the newest of six versions chosen, the cell found on the server under another name);
+- the checks on USGS's real 1/3″ and 1 m files, read over HTTP: both pass, +0.3 m and +1.0 m from Terrarium at the median;
+- the page in the browser preview, over a local server with two test DEMs: the map, its layers, the volumes, a real 1/3″
+  and a real 1 m search;
+- everything else against stand-ins, in `tests/test_data_admin.py`.
+
+**Not tried:**
+- a whole download on the VM;
+- the mount check under Coolify;
+- the cache walks over a real stream cache.
+
+**Owner steps:**
+1. On the **production** API, set `DATA_ADMIN=write` and mount `/data/topo` writable.
+2. On staging, set `DATA_ADMIN=read` (or leave it off).
+3. Open `admin.ezpztac.app/admin/data` and check that the Volumes panel shows `/data/topo` as a mounted volume with the free space you expect.
+4. Download one 1/3″ cell (about 480 MB) and watch it reach the map.
