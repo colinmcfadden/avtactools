@@ -3,8 +3,10 @@ package app.ezpztac.android
 import android.content.Intent
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.v2.createComposeRule
+import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performScrollTo
 import androidx.test.core.app.ApplicationProvider
 import app.ezpztac.designsystem.EzpzTheme
 import app.ezpztac.designsystem.ThemeMode
@@ -63,6 +65,32 @@ class GridShareTest {
     }
 
     @Test
+    fun `the QR code reads back as the whole text, a label in any script and a long one included`() {
+        val long = GridSharePlace("31N AA 66021 00000", 0.0, 0.0, "\uD83D\uDE81".repeat(70))
+        val script = GridSharePlace("16S GC 28864 55349", 33.9, -84.5, "été 中文 مرحبا")
+        for (shared in listOf(place, long, script)) {
+            val modules = GridQr.matrix(shared.text())!!
+            val pixels = IntArray(modules.width * modules.height) { i -> if (modules[i % modules.width, i / modules.width]) 0 else 0xFFFFFF }
+            val source = com.google.zxing.RGBLuminanceSource(modules.width, modules.height, pixels)
+            val read = com.google.zxing.qrcode.QRCodeReader().decode(
+                com.google.zxing.BinaryBitmap(com.google.zxing.common.HybridBinarizer(source)),
+                mapOf(com.google.zxing.DecodeHintType.PURE_BARCODE to true, com.google.zxing.DecodeHintType.CHARACTER_SET to "UTF-8"),
+            )
+            assertEquals(shared.text(), read.text)
+        }
+    }
+
+    @Test
+    fun `at night the code waits behind a button, and shows when asked`() {
+        compose.setContent {
+            EzpzTheme(ThemeMode.Night) { GridShareDialog(place, onShare = {}, onCopy = { _, _ -> }, onDismiss = {}, night = true) }
+        }
+        compose.onNodeWithContentDescription("QR code of LZ HAWK, 16S GC 28864 55349").assertDoesNotExist()
+        compose.onNodeWithText("Show QR code").performScrollTo().performClick()
+        compose.onNodeWithContentDescription("QR code of LZ HAWK, 16S GC 28864 55349").assertExists()
+    }
+
+    @Test
     fun `the dialog shows the grid and its lat and long, and copies the lines or the link`() {
         val copied = mutableListOf<String>()
         var shared = 0
@@ -71,9 +99,10 @@ class GridShareTest {
         }
         compose.onNodeWithText("16S GC 28864 55349").assertIsDisplayed()
         compose.onNodeWithText("33.91372° N, 84.52451° W").assertIsDisplayed()
-        compose.onNodeWithText("Copy").performClick()
-        compose.onNodeWithText("Copy link").performClick()
-        compose.onNodeWithText("Share…").performClick()
+        compose.onNodeWithContentDescription("QR code of LZ HAWK, 16S GC 28864 55349").assertExists()
+        compose.onNodeWithText("Copy").performScrollTo().performClick()
+        compose.onNodeWithText("Copy link").performScrollTo().performClick()
+        compose.onNodeWithText("Share…").performScrollTo().performClick()
         assertEquals(listOf(text, "https://ezpztac.app/#grid=16SGC2886455349&name=LZ%20HAWK"), copied)
         assertEquals(1, shared)
     }

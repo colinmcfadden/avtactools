@@ -3,13 +3,17 @@ package app.ezpztac.android
 import android.content.ClipData
 import android.content.Context
 import android.content.Intent
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -18,8 +22,15 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.FilterQuality
 import androidx.compose.ui.platform.ClipEntry
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.heading
@@ -59,12 +70,23 @@ internal fun shareGrid(context: Context, place: GridSharePlace) {
 internal fun copyClip(what: String, text: String): ClipEntry = ClipEntry(ClipData.newPlainText(what, text))
 
 /**
- * Sends a grid to someone (`docs/GRID_SHARING.md`, options 1 and 3): the grid, its lat/long and its label, through the system's share sheet
- * ([onShare]), or copied ([onCopy] with the lines, or with the link alone). Its QR code (option 2) waits on the owner's choice of library.
+ * Sends a grid to someone (`docs/GRID_SHARING.md`, options 1 to 3): the grid, its lat/long and its label, through the system's share sheet
+ * ([onShare]), or copied ([onCopy] with the lines, or with the link alone), and a QR code of the same lines for another phone's camera, which
+ * needs no signal. At [night] the code waits behind *Show QR code*: it is black on white whatever the theme (a camera reads it best so), the
+ * brightest thing on a night screen, which would spoil dark adaptation and bloom under NVGs until someone is about to scan it.
  */
 @Composable
-internal fun GridShareDialog(place: GridSharePlace, onShare: () -> Unit, onCopy: (label: String, text: String) -> Unit, onDismiss: () -> Unit) {
+internal fun GridShareDialog(
+    place: GridSharePlace,
+    onShare: () -> Unit,
+    onCopy: (label: String, text: String) -> Unit,
+    onDismiss: () -> Unit,
+    night: Boolean = false,
+) {
     val label = GridShare.cleanLabel(place.label)
+    val text = place.text()
+    val qr = remember(text) { GridQr.image(text) }
+    var shown by rememberSaveable(text, night) { mutableStateOf(!night) }
     Dialog(onDismissRequest = onDismiss) {
         Surface(
             modifier = Modifier.widthIn(max = 420.dp).fillMaxWidth().semantics { paneTitle = "Share grid" },
@@ -73,7 +95,8 @@ internal fun GridShareDialog(place: GridSharePlace, onShare: () -> Unit, onCopy:
             contentColor = MaterialTheme.colorScheme.onSurface,
         ) {
             Column(
-                Modifier.padding(Tokens.Spacing.xl.dp),
+                // A phone on its side has room for less than the code and the buttons.
+                Modifier.verticalScroll(rememberScrollState()).padding(Tokens.Spacing.xl.dp),
                 verticalArrangement = Arrangement.spacedBy(Tokens.Spacing.sm.dp),
                 horizontalAlignment = Alignment.CenterHorizontally,
             ) {
@@ -90,8 +113,23 @@ internal fun GridShareDialog(place: GridSharePlace, onShare: () -> Unit, onCopy:
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     textAlign = TextAlign.Center,
                 )
+                if (qr != null && !shown) {
+                    OutlinedButton(onClick = { shown = true }, modifier = Modifier.padding(top = Tokens.Spacing.sm.dp)) { Text("Show QR code") }
+                } else if (qr != null) {
+                    Image(
+                        qr,
+                        contentDescription = "QR code of ${if (label.isNotEmpty()) "$label, " else ""}${place.mgrs}",
+                        // Each module a block of its own: smoothed, the code blurs and a camera reads it less well.
+                        filterQuality = FilterQuality.None,
+                        // As wide as the dialog allows up to 300 dp, so a long label's denser code keeps its modules big enough to read.
+                        modifier = Modifier.padding(top = Tokens.Spacing.sm.dp).widthIn(max = 300.dp).fillMaxWidth().aspectRatio(1f)
+                            .clip(RoundedCornerShape(8.dp)),
+                    )
+                } else {
+                    Text("The QR code could not be drawn.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
+                }
                 Text(
-                    "Quick Share and Bluetooth reach a phone nearby with no signal. Unclassified only.",
+                    "Another phone's camera reads the code. Quick Share and Bluetooth reach a phone nearby. Neither needs a signal. Unclassified only.",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     textAlign = TextAlign.Center,

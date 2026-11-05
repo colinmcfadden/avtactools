@@ -1050,6 +1050,7 @@ fun MapHome(
             sharing?.let { place ->
                 GridShareDialog(
                     place,
+                    night = night,
                     onShare = { shareGrid(context, place); sharing = null },
                     onCopy = { what, text ->
                         scope.launch { clipboard.setClipEntry(copyClip(what, text)) }

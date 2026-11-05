@@ -67,6 +67,7 @@ dependencies {
     implementation(libs.googleid)
     implementation(libs.androidx.work.runtime)
     implementation(libs.androidx.hilt.work)
+    implementation(libs.zxing.core)
     ksp(libs.androidx.hilt.compiler)
 
     testImplementation(libs.androidx.work.testing)
