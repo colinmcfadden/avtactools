@@ -1,8 +1,8 @@
 # Place search — plan
 
-Status: **proposed, not built** (2026-11-05). The owner asked how hard it would be to add addresses and searchable points of interest,
-so that a crew can type a name and get its grid. This file plans it for the web and Android. §12 asks the owner the questions that must
-be answered before anything is built. Where this plan and the code disagree once it is built, the code wins (AGENTS.md §16).
+Status: **partly decided, not built** (2026-11-05). The owner asked how hard it would be to add addresses and searchable points of
+interest, so that a crew can type a name and get its grid. This file plans it for the web and Android. The owner answered §12's
+Q1, Q2, Q5 and Q6 the same day, each as recommended. Q4 and Q7 to Q11 are still open. Where this plan and the code disagree once it is built, the code wins (AGENTS.md §16).
 
 **In short.**
 - **It is a search, not a map layer.** A name typed into the field that already reads grids and lat/longs (PR #140) lists the places it
@@ -501,6 +501,15 @@ AGENTS.md changes as each step lands:
 ## 12. Questions for the owner
 
 Each has a recommendation, marked **(rec.)**.
+
+**Answered by the owner, 2026-11-05:**
+- **Q1, choosing a place:** fly there and offer *Set as target*, as recommended.
+- **Q2, addresses:** leave them out for now, as recommended. Overture's landmarks may come later if crews ask (§5.3).
+- **Q5, the Android download:** by itself on an unmetered connection, as recommended.
+- **Q6, the map layer:** build it with no new library, as recommended.
+
+Q3 falls away with Q2: no Photon. Q4 and Q7 to Q11 are still open, and the plan follows the recommendation for each until the owner
+says otherwise.
 
 | # | Question | Options |
 |---|---|---|
