@@ -50,6 +50,32 @@ class CoordinateParserTest {
     }
 
     @Test
+    fun `says why a text is not a pair, and whether it said a side, as the web does`() {
+        val cases = cases("read")
+        assertTrue(cases.size >= 80, "the fixture shrank to ${cases.size}")
+        val misses = cases.mapNotNull { c ->
+            val reading = CoordinateParser.read(c.text())
+            val problem = c["problem"]?.jsonPrimitive?.content
+            val signed = c["signed"]?.jsonPrimitive?.boolean
+            when {
+                problem != null -> if (reading.problem == problem) null else "'${c.text()}': ${reading.problem} vs $problem"
+                reading.problem != null -> "'${c.text()}': refused as ${reading.problem}, the web reads it"
+                reading.signed != signed -> "'${c.text()}': signed ${reading.signed} vs $signed"
+                else -> null
+            }
+        }
+        assertEquals(emptyList<String>(), misses)
+    }
+
+    @Test
+    fun `reads Arabic-Indic digits as nothing, as JavaScript does, and never throws on them`() {
+        // Android's \d (ICU) would take them, and toDouble would then throw (AGENTS.md §17).
+        assertNull(CoordinateParser.parse("\u0663\u0664, -\u0668\u0664"))
+        assertEquals("unreadable", CoordinateParser.read("\u0663\u0664").problem)
+        assertEquals(false, CoordinateParser.looksLikeMgrs("\u0661\u0666SGC12345678"))
+    }
+
+    @Test
     fun `tells a grid from a coordinate the way the web does`() {
         cases("looksLikeMgrs").forEach { c ->
             assertEquals(c["expected"]!!.jsonPrimitive.boolean, CoordinateParser.looksLikeMgrs(c.text()), "looksLikeMgrs('${c.text()}')")

@@ -3,6 +3,7 @@ package app.ezpztac.android
 import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import app.ezpztac.geo.GridShare
 import app.ezpztac.android.export.ExportCleaner
 import app.ezpztac.android.notifications.NotificationShell
 import app.ezpztac.android.notifications.NotificationTap
@@ -110,6 +111,18 @@ class AppViewModel @Inject constructor(
     private var configLook: Job? = null
 
     private val tap = MutableStateFlow<NotificationTap?>(null)
+
+    /**
+     * A grid link the app was opened with (`https://ezpztac.app/#grid=…`), until the map has gone there: its fragment kept in the saved state, as
+     * the invitation's token is, so a sign-in, a turn of the phone and the process being ended (verifying an email in another app) keep it.
+     */
+    val gridLink: StateFlow<GridShare.Link?> = saved.getStateFlow<String?>(GRID_LINK, null)
+        .map { fragment -> fragment?.let(GridShare::readGridLink) }
+        .stateIn(viewModelScope, SharingStarted.Eagerly, saved.get<String>(GRID_LINK)?.let(GridShare::readGridLink))
+
+    fun gridLinkHandled() {
+        saved[GRID_LINK] = null
+    }
 
     /** A notification tapped for the account signed in, and shown on this device, until the frame has done what it says (§7 of docs/NOTIFICATIONS.md). */
     val notificationTap: StateFlow<NotificationTap?> = tap.asStateFlow()
@@ -336,6 +349,7 @@ class AppViewModel @Inject constructor(
      */
     fun onLink(url: String?) {
         AuthLinks.parse(url)?.let { link.value = it }
+        GridLinks.fragmentOf(url)?.takeIf { GridShare.readGridLink(it) != null }?.let { saved[GRID_LINK] = it }
         InviteLinks.parse(url)?.let { token ->
             // The link kept, opened again: the person is asking again, perhaps after closing what it said, as a reload asks on the web.
             if (token == saved.get<String>(INVITE_TOKEN)) retryInvite() else saved[INVITE_TOKEN] = token
@@ -397,6 +411,8 @@ class AppViewModel @Inject constructor(
     private companion object {
         // The invitation link waiting to be accepted, in the saved state (the web's sessionStorage key).
         const val INVITE_TOKEN = "ezpz.packInvite"
+        // A grid link's fragment, until the map has gone there (the web's sessionStorage key).
+        const val GRID_LINK = "ezpz.gridLink"
 
         // The system shows its dialog twice at most; after a second refusal only its own settings can turn notifications on.
         const val MAX_ASKS = 2

@@ -1,0 +1,44 @@
+/* Sending a grid to someone (ShareGridDialog.jsx). */
+
+.grid-share {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  text-align: center;
+}
+
+.grid-share__grid {
+  font-family: var(--mono, "SFMono-Regular", Consolas, monospace);
+  font-size: 1.15rem;
+  font-weight: 700;
+  color: var(--ff-text-main);
+}
+
+.grid-share__latlong {
+  font-family: var(--mono, "SFMono-Regular", Consolas, monospace);
+  font-size: 0.85rem;
+  color: var(--ff-text-muted);
+}
+
+.grid-share__qr {
+  margin-top: 8px;
+  border-radius: 6px;
+  /* Black on white whatever the theme: a camera reads it best so. */
+  background: #fff;
+  max-width: 100%;
+  height: auto;
+}
+
+.grid-share__note {
+  margin: 0;
+  font-size: 0.75rem;
+  color: var(--ff-text-muted);
+}
+
+.grid-share__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: flex-end;
+}

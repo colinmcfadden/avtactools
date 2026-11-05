@@ -1,0 +1,95 @@
+/* The target field and the places it could be, under it as it is typed (TargetField.jsx). */
+
+.target-field {
+  position: relative;
+}
+
+.target-field__drop {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  right: 0;
+  z-index: 1200;
+  overflow: hidden;
+  border: 1px solid var(--hairline-strong, #374151);
+  border-radius: 8px;
+  background: var(--ff-panel-bg, #1f2937);
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.45);
+}
+
+.target-field__drop--hidden {
+  display: none;
+}
+
+.target-field__message {
+  margin: 0;
+  padding: 8px 10px;
+  color: var(--ff-text-muted, #9ca3af);
+  font-size: 0.75rem;
+  line-height: 1.4;
+}
+
+.target-field__message--asked {
+  color: var(--ff-warning, #f59e0b);
+}
+
+.target-field__list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.target-field__list:empty {
+  display: none;
+}
+
+.target-field__message + .target-field__list {
+  border-top: 1px solid var(--hairline, rgba(255, 255, 255, 0.08));
+}
+
+.target-field__option {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-height: 44px; /* a finger's, and a glove's, reach */
+  justify-content: center;
+  padding: 6px 10px;
+  cursor: pointer;
+}
+
+.target-field__option + .target-field__option {
+  border-top: 1px solid var(--hairline, rgba(255, 255, 255, 0.08));
+}
+
+.target-field__option--active,
+.target-field__option:hover {
+  background: rgba(90, 167, 212, 0.16);
+}
+
+.target-field__main {
+  color: var(--ff-text-main, #f3f4f6);
+  font-family: var(--mono, "SFMono-Regular", Consolas, "Liberation Mono", monospace);
+  font-size: 0.86rem;
+  font-weight: 600;
+  /* Breaks only at its spaces (between a grid's halves, after a comma), never inside a number. */
+  overflow-wrap: normal;
+  word-break: keep-all;
+}
+
+.target-field__note {
+  color: var(--ff-text-muted, #9ca3af);
+  font-size: 0.7rem;
+}
+
+/* Said to a screen reader, not shown. */
+.target-field__status {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  border: 0;
+}

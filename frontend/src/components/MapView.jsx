@@ -161,6 +161,8 @@ const MapView = ({
   draftPoints,
   activeDiagramId,
   targetLocation,
+  // Where something other than a target asks the map to go ({ lat, lon, key }: a grid link): flown to once per key.
+  flyTo = null,
   mapData,
   detectedLZ,
   lzMeasurements,
@@ -340,6 +342,7 @@ const MapView = ({
 
       {/* Logic to Zoom when target changes */}
       <MapUpdater center={targetLocation} targetId={activeDiagramId} paused={Boolean(presentation)} />
+      {flyTo && <MapUpdater center={[flyTo.lat, flyTo.lon]} targetId={`fly:${flyTo.key}`} paused={Boolean(presentation)} />}
       <SizeWatcher />
 
       {!presentation && (<>

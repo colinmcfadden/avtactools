@@ -1,5 +1,6 @@
 package app.ezpztac.map
 
+import app.ezpztac.geo.PlaceSearch
 import app.ezpztac.model.LatLon
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -214,7 +215,7 @@ class MapViewModelTest {
         vm.search("somewhere nice")
         advanceUntilIdle()
         assertTrue(seen.isEmpty())
-        assertEquals("Could not read that as a grid or a coordinate.", vm.state.value.searchError)
+        assertEquals(PlaceSearch.Messages.UNREADABLE, vm.state.value.searchError)
         vm.clearSearchError()
         assertNull(vm.state.value.searchError)
         vm.search("34.5, -84.1")

@@ -76,6 +76,8 @@ internal data class MapMenuChoices(
     /** *Add object*: a planning graphic of the open LZ/PZ put at the press. Null while no LZ/PZ is open. */
     val addObject: AddObjectChoice? = null,
     val copyGrid: () -> Unit = {},
+    /** Sends the grid to someone (docs/GRID_SHARING.md): null where the place has no grid (past 84° N or 80° S). */
+    val shareGrid: (() -> Unit)? = null,
 )
 
 /**
@@ -227,6 +229,7 @@ internal fun ColumnScope.MapMenuItems(place: MapMenuPlace, choices: MapMenuChoic
         MenuChoice(EzpzIcons.route, "Add route point here", supporting, choose(add), enabled = enabled)
     }
     MenuChoice(EzpzIcons.contentCopy, "Copy grid", null, choose(choices.copyGrid))
+    choices.shareGrid?.let { MenuChoice(EzpzIcons.share, "Share grid…", "Quick Share, Bluetooth, messages", choose(it)) }
 }
 
 @Composable
