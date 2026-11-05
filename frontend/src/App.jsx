@@ -45,6 +45,8 @@ import UnitBuilder from "./feature/unit/UnitBuilder";
 import { useLzWorkspace } from "./feature/lzWorkspace/useLzWorkspace";
 import { withLzMeasure } from "./feature/lzMeasure/lzMeasure";
 import CopyGridTitle from "./components/CopyGridTitle";
+import ShareGridDialog from "./feature/gridShare/ShareGridDialog";
+import { captureGridLink, takeGridLink } from "./feature/gridShare/gridLinkCapture";
 import Lz3DWindow from "./feature/viewer3d/Lz3DWindow";
 import { releaseAbandonedBuilds } from "./feature/viewer3d/useLidarTileset";
 import { useBuildOnSave } from "./feature/viewer3d/useBuildOnSave";
@@ -622,6 +624,8 @@ function App() {
 
   // The live sandtable (docs/MISSION_BRIEF.md §2.8): the workspace a brief is being presented in ({ pack }), or null.
   const [presented, setPresented] = useState(null);
+  // True while the map shows a place a grid link asked for, until the person moves on (sets a target, switches pack).
+  const gridLinkShown = useRef(false);
 
   // --- Mission Packs: one open at a time, in place of the Library (docs/MENU_REDESIGN.md §8) ----------
   const packs = usePackWorkspace({
@@ -631,6 +635,8 @@ function App() {
     dock,
     // The Pack panel is put away while a brief is presented: nobody is looking at it.
     presenting: Boolean(presented),
+    // A grid link's place is on the map: the remembered pack's first LZ/PZ is not opened over it.
+    keepMap: gridLinkShown,
     lz: {
       workspace: lzWorkspace.workspace,
       importDiagram: lzWorkspace.importDiagram,
@@ -1028,11 +1034,66 @@ function App() {
   // browser with no call to the API) starts a new LZ/PZ there; startDiagramAtTarget writes its grid into
   // the field, so a pasted coordinate is seen to become the MGRS the rest of the app uses.
   const chooseTarget = (choice) => {
+    gridLinkShown.current = false;
     startDiagramAtTarget([choice.lat, choice.lon], choice.mgrs);
     setIsMobileMenuOpen(false); // Closes the menu if they chose from the sidebar
   };
   // Where the map is, so the field offers the nearer of an unsigned pair's readings first.
   const targetNear = useMemo(() => ({ lat: mapCenter[0], lon: mapCenter[1] }), [mapCenter]);
+
+  // A grid to send (docs/GRID_SHARING.md): { mgrs, lat, lon, label? }, shown in the Share dialog.
+  const [shareGrid, setShareGrid] = useState(null);
+  const shareAt = (lat, lon, label) => {
+    const mgrs = toMgrs(lat, lon);
+    if (mgrs) setShareGrid({ mgrs, lat, lon, label });
+  };
+  const shareDiagramGrid = (id) => {
+    const diagram = lzWorkspace.workspace.diagramsById[id];
+    const target = diagram?.target;
+    if (!target || !Number.isFinite(target.lat) || !Number.isFinite(target.lon)) return;
+    setShareGrid({ mgrs: target.mgrs || toMgrs(target.lat, target.lon), lat: target.lat, lon: target.lon, label: diagram.name || "" });
+  };
+
+  // A grid link (#grid=…, taken out of the address in index.jsx, or later by hashchange in a tab already open):
+  // the map goes there and the target field holds it, with Set as target one tap away. Nothing is made until
+  // the person chooses. The action calls the newest chooseTarget, whatever pack has opened since.
+  const [flyTo, setFlyTo] = useState(null);
+  const flights = useRef(0);
+  const chooseTargetRef = useRef(chooseTarget);
+  chooseTargetRef.current = chooseTarget;
+  const showGridLink = useCallback(() => {
+    const link = takeGridLink();
+    if (!link) return;
+    if (link.unread) {
+      toast({ tone: "warn", message: "That grid link could not be read: it may have been cut short." });
+      return;
+    }
+    const { choice, name } = link;
+    gridLinkShown.current = true;
+    setGridInput(choice.mgrs);
+    flights.current += 1;
+    // A new key each time, so the same grid linked again flies again.
+    setFlyTo({ lat: choice.lat, lon: choice.lon, key: String(flights.current) });
+    toast({
+      tone: "info",
+      message: `${name ? `${name}, ` : ""}${choice.mgrs}, from a link.`,
+      action: { label: "Set as target", onClick: () => chooseTargetRef.current(choice) },
+    });
+  }, [toast]);
+  useEffect(() => {
+    showGridLink();
+    const onHash = () => {
+      if (captureGridLink()) showGridLink();
+    };
+    window.addEventListener("hashchange", onHash);
+    return () => window.removeEventListener("hashchange", onHash);
+  }, [showGridLink]);
+  // Another pack opened is the person moving on: its first LZ/PZ opens as it always does.
+  const packShownWith = useRef(packs.open);
+  useEffect(() => {
+    if (packShownWith.current !== packs.open) gridLinkShown.current = false;
+    packShownWith.current = packs.open;
+  }, [packs.open]);
 
   // --- The redesign's frame: top bar, dock, Library and imports (docs/MENU_REDESIGN.md) --------
 
@@ -1496,6 +1557,7 @@ function App() {
           diagramReadinessText={diagramReadinessText}
         />
         <MapView
+          flyTo={flyTo}
           importedRoutes={shownImported}
           onUpdateMsnxPointPosition={mapEdit(updatePointPosition)}
           onInsertMsnxPoint={mapEdit(handleInsertPointContextMenu)}
@@ -1642,6 +1704,7 @@ function App() {
               }
               onBrowseAll={() => openLibrary("lz")}
               onExportCard={feat.exports ? exportCard : undefined}
+              onShareGrid={shareDiagramGrid}
               onCollapse={() => dock.setCollapsed(true)}
             />
           )}
@@ -1733,6 +1796,8 @@ function App() {
         </Dock>
       </div>
 
+      {shareGrid && <ShareGridDialog place={shareGrid} onClose={() => setShareGrid(null)} />}
+
       {/* GLOBAL CONTEXT MENU */}
       {contextMenu && (
         <div
@@ -1756,6 +1821,17 @@ function App() {
               >
                 Set as Target
               </button>
+              {toMgrs(contextMenu.lat, contextMenu.lon) && (
+                <button
+                  className="ctx-btn"
+                  onClick={() => {
+                    shareAt(contextMenu.lat, contextMenu.lon);
+                    setContextMenu(null);
+                  }}
+                >
+                  Share grid…
+                </button>
+              )}
               <button
                 className="ctx-btn ctx-btn--danger"
                 onClick={handleAddThreatHere}
@@ -1773,6 +1849,17 @@ function App() {
               >
                 Set as Target
               </button>
+              {toMgrs(contextMenu.lat, contextMenu.lon) && (
+                <button
+                  className="ctx-btn"
+                  onClick={() => {
+                    shareAt(contextMenu.lat, contextMenu.lon);
+                    setContextMenu(null);
+                  }}
+                >
+                  Share grid…
+                </button>
+              )}
 
               <hr className="ctx-divider" />
 

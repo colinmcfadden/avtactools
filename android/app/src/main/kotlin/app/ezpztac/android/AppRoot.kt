@@ -54,6 +54,7 @@ fun AppRoot(viewModel: AppViewModel = hiltViewModel()) {
     val invite by viewModel.inviteState.collectAsStateWithLifecycle()
     val inviteAttempt by viewModel.inviteAttempt.collectAsStateWithLifecycle()
     val notificationTap by viewModel.notificationTap.collectAsStateWithLifecycle()
+    val gridLink by viewModel.gridLink.collectAsStateWithLifecycle()
     val context = LocalContext.current
     // Nothing runs while the app is out of sight, so what changed meanwhile (the server's config, a pack's edits) is looked at as it comes back.
     LifecycleEventEffect(Lifecycle.Event.ON_START) { viewModel.appStarted() }
@@ -113,6 +114,7 @@ fun AppRoot(viewModel: AppViewModel = hiltViewModel()) {
                 notificationTap = notificationTap, onNotificationHandled = viewModel::notificationHandled,
                 notificationToasts = viewModel.notificationToasts, onNotificationAction = viewModel::openFromToast,
                 switcherNotify = offer.takeIf { it.offered }?.let { SwitcherNotify(it.turnOn, it.notNow) },
+                gridLink = gridLink, onGridLinkHandled = viewModel::gridLinkHandled,
                 )
             }
             is Gate.UpdateRequired -> UpdateRequiredScreen(current.minimum)

@@ -51,6 +51,8 @@ import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import app.ezpztac.geo.MgrsConverter
+import app.ezpztac.geo.GridShare
 import app.ezpztac.android.export.ShareExport
 import app.ezpztac.android.frame.AccountButton
 import app.ezpztac.android.frame.MapFrame
@@ -239,6 +241,9 @@ fun MapHome(
     onNotificationAction: (NotificationTap) -> Unit = {},
     /** The switcher's offer to turn notifications on, while it is made. */
     switcherNotify: SwitcherNotify? = null,
+    /** A grid link the app was opened with (`#grid=…`, docs/GRID_SHARING.md), until the map has gone there. */
+    gridLink: GridShare.Link? = null,
+    onGridLinkHandled: () -> Unit = {},
     viewModel: MapViewModel = hiltViewModel(),
     home: HomeViewModel = hiltViewModel(),
     display: DisplayViewModel = hiltViewModel(),
@@ -524,6 +529,25 @@ fun MapHome(
         // Android 13 and later say so themselves; before that the app does.
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) scope.launch { snackbars.showSnackbar("Copied $text") }
     }
+    // A grid to send (docs/GRID_SHARING.md), shown in its dialog: a place with no grid (past the grid's ends) has nothing to send.
+    var sharing by remember { mutableStateOf<GridSharePlace?>(null) }
+    // The grid an LZ/PZ keeps is the one sent (as the web's `target.mgrs ||`): one typed to 100 m stays at 100 m.
+    val shareAt: (String, LatLon, String?) -> Unit = { label, at, grid ->
+        (grid?.takeIf { it.isNotBlank() } ?: MgrsConverter.toMgrs(at.lat, at.lon)?.format())?.let { sharing = GridSharePlace(it, at.lat, at.lon, label) }
+    }
+    // A grid link: the map goes there (the crosshair on it) and the search holds its grid; nothing is made until the person chooses. It waits
+    // while a brief is presented (the map is the sandtable's), and flies through the map host, which keeps a flight asked before the map is made.
+    LaunchedEffect(gridLink, presenting) {
+        val link = gridLink ?: return@LaunchedEffect
+        if (presenting) return@LaunchedEffect
+        viewModel.clearSearchError()
+        host.flyTo(link.choice.at, MapViewModel.SEARCH_ZOOM)
+        search.settle(link.choice.mgrs)
+        val name = link.name.takeIf { it.isNotEmpty() }?.let { "$it, " }.orEmpty()
+        // Put up in a scope of its own: letting go of the link changes this effect's key, which would cancel the toast.
+        scope.launch { snackbars.showSnackbar("$name${link.choice.mgrs}, from a link: the crosshair is on it.", withDismissAction = true) }
+        onGridLinkHandled()
+    }
 
     LaunchedEffect(host) {
         viewModel.commands.collect { command ->
@@ -637,6 +661,7 @@ fun MapHome(
                             crosshair = state.center, crosshairGrid = state.readout?.mgrs, canMakeAircraft = user.hasFeature("aircraft_profiles"),
                             onBrowseLibrary = { libraryTab = LibraryTab.LZ }, pane = if (tablet) LzPane.LIST else LzPane.WHOLE, viewModel = diagrams,
                             onAddToPack = askCopy?.invoke(RecordKind.LZ), onSaveCopy = saveCopy, hiddenOnMap = hiddenOnMap, onToggleOnMap = home::toggleOnMap,
+                            onShareGrid = shareAt,
                         )
                         Panel.Routes -> RoutesHost(
                             crosshair = state.center, threatCount = counts.threats, onBrowseLibrary = { libraryTab = LibraryTab.ROUTES }, viewModel = routesModel,
@@ -803,6 +828,7 @@ fun MapHome(
                                 AddObjectChoice(current.name, off = addObjectOff(graphicsState.canEdit, graphicsState.locked)) { kind -> placeObject(graphics, kind, open.place.at) }
                             },
                             copyGrid = { copyGrid(open.place.grid) },
+                            shareGrid = MgrsConverter.toMgrs(open.place.at.lat, open.place.at.lon)?.let { { shareAt("", open.place.at, null) } },
                         ),
                     )
                 }
@@ -905,6 +931,7 @@ fun MapHome(
                     supporting = supportingPanes(
                         routes, lz, crosshair = state.center, crosshairGrid = state.readout?.mgrs, canMakeAircraft = user.hasFeature("aircraft_profiles"), diagrams = diagrams,
                         routesModel = routesModel, routePlan = movableRoutePlan, onAddToPack = askCopy?.invoke(RecordKind.LZ), onSaveCopy = saveCopy,
+                        onShareGrid = shareAt,
                     ),
                     // The Library, Members and Teams draw the toasts over themselves, as dialogs: the frame's under their scrim would be a second copy.
                     toasts = libraryTab == null && !membersOpen && !teamsOpen && !briefOpen,
@@ -1020,6 +1047,19 @@ fun MapHome(
             // one made later, so it is made again when the Library's window is (it opens, or turns from a page into a tablet's dialog).
             if (packsHere) key(tablet, libraryTab != null) { AddToPackHost(copies, tablet) }
             if (packsHere) ItemDialogsHost(itemCopies, tablet)
+            sharing?.let { place ->
+                GridShareDialog(
+                    place,
+                    night = night,
+                    onShare = { shareGrid(context, place); sharing = null },
+                    onCopy = { what, text ->
+                        scope.launch { clipboard.setClipEntry(copyClip(what, text)) }
+                        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) scope.launch { snackbars.showSnackbar("Copied") }
+                        sharing = null
+                    },
+                    onDismiss = { sharing = null },
+                )
+            }
             // The open LZ/PZ in 3D, over the whole screen and everything on it, phone and tablet alike (the owner, 2026-10-20): the frame under it stays
             // composed and untouched, neither read nor touched while it is up, so closing it shows the map as it was.
             Viewer3DHost(target = lz.viewer3d, night = night, onClose = diagrams::close3d, snackbars = snackbars, focus = viewer3dFocus)
@@ -1080,6 +1120,8 @@ private fun supportingPanes(
     onAddToPack: ((uuid: String, name: String) -> Unit)? = null,
     /** Asks what to call a copy of the pack's LZ/PZ open, saved to the Library, as the phone's plan page does. */
     onSaveCopy: ((uuid: String) -> Unit)? = null,
+    /** Sends the open LZ/PZ's grid to someone, as the phone's plan page does. */
+    onShareGrid: ((name: String, at: LatLon, grid: String?) -> Unit)? = null,
 ): List<SupportingPane> {
     val open = lz.current
     val lzPane = if (lz.page == LzPage.PLAN && open != null) {
@@ -1095,7 +1137,7 @@ private fun supportingPanes(
             ) {
                 LzPanelHost(
                     crosshair = crosshair, crosshairGrid = crosshairGrid, canMakeAircraft = canMakeAircraft, pane = LzPane.PLAN, viewModel = diagrams, onAddToPack = onAddToPack,
-                    onSaveCopy = onSaveCopy,
+                    onSaveCopy = onSaveCopy, onShareGrid = onShareGrid,
                 )
                 Spacer(Modifier.height(Tokens.Spacing.lg.dp))
             }
