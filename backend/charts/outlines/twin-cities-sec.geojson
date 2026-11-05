@@ -1,0 +1,39 @@
+{
+ "type": "Feature",
+ "properties": {
+  "id": "twin-cities-sec",
+  "title": "Twin Cities Sectional",
+  "tier": "sectional",
+  "file": "Twin Cities SEC.tif",
+  "made_from": {
+   "width": 17920,
+   "height": 12357,
+   "transform": [
+    42.331892264,
+    0.0,
+    -411337.183534061,
+    0.0,
+    -42.334254667,
+    262236.651706472
+   ]
+  },
+  "edges": {
+   "north": "neatline",
+   "east": "content",
+   "south": "neighbour:chicago-sec,omaha-sec",
+   "west": "neatline"
+  }
+ },
+ "geometry": {
+  "type": "Polygon",
+  "coordinates": [
+   [
+    [-101.0,44.5],
+    [-92.75,44.5],
+    [-92.75,49.0],
+    [-101.0,49.0],
+    [-101.0,44.5]
+   ]
+  ]
+ }
+}

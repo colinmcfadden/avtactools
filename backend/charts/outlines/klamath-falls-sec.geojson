@@ -1,0 +1,39 @@
+{
+ "type": "Feature",
+ "properties": {
+  "id": "klamath-falls-sec",
+  "title": "Klamath Falls Sectional",
+  "tier": "sectional",
+  "file": "Klamath Falls SEC.tif",
+  "made_from": {
+   "width": 17910,
+   "height": 12398,
+   "transform": [
+    42.335067358,
+    0.0,
+    -410914.935186984,
+    0.0,
+    -42.334405528,
+    252729.259942335
+   ]
+  },
+  "edges": {
+   "north": "neighbour:seattle-sec",
+   "east": "neighbour:salt-lake-city-sec",
+   "south": "neatline",
+   "west": "neatline"
+  }
+ },
+ "geometry": {
+  "type": "Polygon",
+  "coordinates": [
+   [
+    [-125.0,40.0],
+    [-117.0,40.0],
+    [-117.0,44.5],
+    [-125.0,44.5],
+    [-125.0,40.0]
+   ]
+  ]
+ }
+}

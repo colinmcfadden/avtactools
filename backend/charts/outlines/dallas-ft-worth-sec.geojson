@@ -1,0 +1,39 @@
+{
+ "type": "Feature",
+ "properties": {
+  "id": "dallas-ft-worth-sec",
+  "title": "Dallas-Ft Worth Sectional",
+  "tier": "sectional",
+  "file": "Dallas-Ft Worth SEC.tif",
+  "made_from": {
+   "width": 17957,
+   "height": 12243,
+   "transform": [
+    42.334928995,
+    0.0,
+    -424886.449361059,
+    0.0,
+    -42.334316209,
+    252841.78048021
+   ]
+  },
+  "edges": {
+   "north": "neighbour:kansas-city-sec,wichita-sec",
+   "east": "neighbour:memphis-sec",
+   "south": "neatline",
+   "west": "neatline"
+  }
+ },
+ "geometry": {
+  "type": "Polygon",
+  "coordinates": [
+   [
+    [-102.0,32.0],
+    [-95.0,32.0],
+    [-95.0,36.0],
+    [-102.0,36.0],
+    [-102.0,32.0]
+   ]
+  ]
+ }
+}

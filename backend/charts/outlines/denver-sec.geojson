@@ -1,0 +1,39 @@
+{
+ "type": "Feature",
+ "properties": {
+  "id": "denver-sec",
+  "title": "Denver Sectional",
+  "tier": "sectional",
+  "file": "Denver SEC.tif",
+  "made_from": {
+   "width": 16635,
+   "height": 12391,
+   "transform": [
+    42.334666406,
+    0.0,
+    -380521.035404818,
+    0.0,
+    -42.33485726,
+    291529.85463451
+   ]
+  },
+  "edges": {
+   "north": "neighbour:cheyenne-sec,salt-lake-city-sec",
+   "east": "content",
+   "south": "edit",
+   "west": "neatline"
+  }
+ },
+ "geometry": {
+  "type": "Polygon",
+  "coordinates": [
+   [
+    [-111.0,35.6875],
+    [-104.0,35.6875],
+    [-104.0,40.0],
+    [-111.0,40.0],
+    [-111.0,35.6875]
+   ]
+  ]
+ }
+}

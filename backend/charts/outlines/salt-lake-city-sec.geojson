@@ -1,0 +1,39 @@
+{
+ "type": "Feature",
+ "properties": {
+  "id": "salt-lake-city-sec",
+  "title": "Salt Lake City Sectional",
+  "tier": "sectional",
+  "file": "Salt Lake City SEC.tif",
+  "made_from": {
+   "width": 17897,
+   "height": 12361,
+   "transform": [
+    42.336530117,
+    0.0,
+    -409889.909891965,
+    0.0,
+    -42.336222865,
+    255817.748178787
+   ]
+  },
+  "edges": {
+   "north": "neighbour:great-falls-sec,seattle-sec",
+   "east": "neighbour:cheyenne-sec",
+   "south": "neatline",
+   "west": "neatline"
+  }
+ },
+ "geometry": {
+  "type": "Polygon",
+  "coordinates": [
+   [
+    [-117.0,40.0],
+    [-109.0,40.0],
+    [-109.0,44.5],
+    [-117.0,44.5],
+    [-117.0,40.0]
+   ]
+  ]
+ }
+}
