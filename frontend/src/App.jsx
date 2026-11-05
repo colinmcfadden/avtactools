@@ -7,7 +7,7 @@ import { toMgrs } from "./utils/mgrs";
 import ExportModal from "./feature/export/ExportModal";
 import MobileQuickAccess from "./components/MobileQuickAccess";
 import MobileGridInput from "./components/MobileGridInput";
-import TargetField from "./components/TargetField";
+import TopBarSearch from "./feature/shell/TopBarSearch";
 import SidebarCollapseToggle from "./components/SidebarCollapseToggle";
 import { useIsMobile } from "./feature/auth/useIsMobile";
 import api from "./feature/auth/api";
@@ -119,7 +119,8 @@ function App() {
   const [contextMenu, setContextMenu] = useState(null);
   const [loading, setLoading] = useState(false);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
-  const [gridInput, setGridInput] = useState("16S GC 28864 55349");
+  // Empty until a target is set, so the search says what it takes.
+  const [gridInput, setGridInput] = useState("");
   const [isDrawingLZ, setIsDrawingLZ] = useState(false);
   const [drawingPoints, setDrawingPoints] = useState([]);
   const [clickedGrid, setClickedGrid] = useState("Loading...");
@@ -1368,13 +1369,69 @@ function App() {
   }, [inPack, dock]);
 
   return (
-    <div className={`app-container${presenting ? " app-container--presenting" : ""}`} {...(presenting ? IGNORE_DROPS : {})}>
+    // Files dropped anywhere in the window are imported (the bar and its open search lie over the map), but not while a brief is presented.
+    <div className={`app-container${presenting ? " app-container--presenting" : ""}`} {...(presenting ? IGNORE_DROPS : imports.dragProps)}>
       <button
         className="mobile-hamburger-btn"
         onClick={() => setIsMobileMenuOpen(true)}
       >
         ☰
       </button>
+      {/* Across the whole window, over the control panel and the map alike (the dock and the panel sit under it). */}
+      <TopBar
+        user={user}
+        isAdmin={Boolean(user?.is_admin)}
+        onOpenSurveys={user?.is_admin || feat.lz_surveys ? () => setSurveysOpen(true) : undefined}
+        onSignOut={logout}
+        onOpenLibrary={() => openLibrary("lz")}
+        searchSlot={
+          <TopBarSearch
+            value={gridInput}
+            onChange={setGridInput}
+            onChoose={chooseTarget}
+            onShare={(choice) => setShareGrid({ mgrs: choice.mgrs, lat: choice.lat, lon: choice.lon })}
+            near={targetNear}
+          />
+        }
+        briefSlot={feat.mission_brief ? (
+          <BriefMenu packName={inPack ? packs.meta?.name ?? "the pack" : null} summary={brief.summary} onGenerate={() => setBriefOpen(true)} onPresent={presentBrief} />
+        ) : null}
+        onImport={(kind) => pickers[kind]?.open()}
+        canImport={{ msnx: feat.msnx_import && !inPack, ths: feat.threats }}
+        pack={packs.topPack}
+        packStatus={packs.topStatus ?? "live"}
+        people={packPeople}
+        switcher={workspaceSwitcher}
+        renderSwitcher={
+          feat.mission_packs
+            ? ({ open, close, anchorRef }) => (
+                <WorkspaceSwitcher
+                  open={open}
+                  onClose={close}
+                  anchorRef={anchorRef}
+                  onOpen={packs.home.refresh}
+                  current={packs.open}
+                  here={packPeople.length}
+                  packs={packs.home.packs}
+                  invites={packs.home.invites}
+                  teams={packs.home.teams}
+                  library={{
+                    lz: history.length,
+                    routes: savedRoutes.length,
+                    points: localPoints.savedPointSets.length,
+                    unsaved: inPack ? packs.parkedUnsaved : diagrams.filter((d) => d.status === "analyzed" && (d.savedId == null || d.dirty)).length,
+                  }}
+                  onPick={packs.openPack}
+                  onNewPack={packs.newPack}
+                  onManageTeams={packs.manageTeams}
+                  onAccept={(invite) => packs.answerInvite(invite, true)}
+                  onDecline={(invite) => packs.answerInvite(invite, false)}
+                />
+              )
+            : undefined
+        }
+        onOpenMenu={isMobile ? () => setIsMobileMenuOpen(true) : undefined}
+      />
       <div
         className={`sidebar ${isMobileMenuOpen ? "mobile-open" : ""} ${
           sidebarCompact ? "sidebar-compact" : ""
@@ -1456,64 +1513,7 @@ function App() {
           <SandtableSteps sandtable={sandtable} />
         </>
       )}
-      <div className="map-area" {...(presenting ? {} : imports.dragProps)}>
-        <TopBar
-          user={user}
-          isAdmin={Boolean(user?.is_admin)}
-          onOpenSurveys={user?.is_admin || feat.lz_surveys ? () => setSurveysOpen(true) : undefined}
-          onSignOut={logout}
-          onOpenLibrary={() => openLibrary("lz")}
-          searchSlot={
-            <TargetField
-              value={gridInput}
-              onChange={setGridInput}
-              onChoose={chooseTarget}
-              onShare={(choice) => setShareGrid({ mgrs: choice.mgrs, lat: choice.lat, lon: choice.lon })}
-              near={targetNear}
-              rowClassName="topbar-search"
-              inputClassName="topbar-search__input"
-              buttonClassName="topbar-search__go"
-            />
-          }
-          briefSlot={feat.mission_brief ? (
-            <BriefMenu packName={inPack ? packs.meta?.name ?? "the pack" : null} summary={brief.summary} onGenerate={() => setBriefOpen(true)} onPresent={presentBrief} />
-          ) : null}
-          onImport={(kind) => pickers[kind]?.open()}
-          canImport={{ msnx: feat.msnx_import && !inPack, ths: feat.threats }}
-          pack={packs.topPack}
-          packStatus={packs.topStatus ?? "live"}
-          people={packPeople}
-          switcher={workspaceSwitcher}
-          renderSwitcher={
-            feat.mission_packs
-              ? ({ open, close, anchorRef }) => (
-                  <WorkspaceSwitcher
-                    open={open}
-                    onClose={close}
-                    anchorRef={anchorRef}
-                    onOpen={packs.home.refresh}
-                    current={packs.open}
-                    here={packPeople.length}
-                    packs={packs.home.packs}
-                    invites={packs.home.invites}
-                    teams={packs.home.teams}
-                    library={{
-                      lz: history.length,
-                      routes: savedRoutes.length,
-                      points: localPoints.savedPointSets.length,
-                      unsaved: inPack ? packs.parkedUnsaved : diagrams.filter((d) => d.status === "analyzed" && (d.savedId == null || d.dirty)).length,
-                    }}
-                    onPick={packs.openPack}
-                    onNewPack={packs.newPack}
-                    onManageTeams={packs.manageTeams}
-                    onAccept={(invite) => packs.answerInvite(invite, true)}
-                    onDecline={(invite) => packs.answerInvite(invite, false)}
-                  />
-                )
-              : undefined
-          }
-          onOpenMenu={isMobile ? () => setIsMobileMenuOpen(true) : undefined}
-        />
+      <div className="map-area">
         <div
           className={`shell-map${dock.collapsed ? " shell-map--dock-collapsed" : ""}${inPack && packs.meta?.status === "finished" ? " shell-map--banner" : ""}`}
         >

@@ -119,6 +119,8 @@ fun PhoneFrame(
     backShows: Boolean = true,
     closed: Boolean = false,
     onClose: () -> Unit = {},
+    /** Whether the frame draws its toasts: not while something over it draws them (the open search, which dims the frame). */
+    toasts: Boolean = true,
     mapScreen: @Composable (MapFrame) -> Unit,
 ) {
     val density = LocalDensity.current
@@ -223,7 +225,7 @@ fun PhoneFrame(
                     .onSizeChanged { if (it.height > 0) barPx = it.height },
             )
         }
-        ToastHost(
+        if (toasts) ToastHost(
             snackbars,
             Modifier.fillMaxSize().padding(horizontal = Tokens.Spacing.lg.dp)
                 .aboveTheControls(

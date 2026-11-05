@@ -15,7 +15,7 @@ The interface has four parts:
 
 ## 1. Getting started: set a target
 
-Type an MGRS grid, or a latitude and longitude in any common form (`34.5457, -84.1234`, `34°32'44.4"N 84°07'24.4"W`, `3432.740N 08407.407W`), in the search box in the top bar (on a phone, the box over the map). As you type, a list under the box shows the grid and the lat/long it reads; choose either (or press **GO** or Enter) to go there. The share button on each row, or beside **GO**, sends that grid to someone: by your device's share sheet, a copy, a link or a QR code. If what you typed could mean two places, such as `34 84` with no minus sign or N/S/E/W, the list offers both, nearest the map first, and you choose. The map flies to the location, drops a gold star on the target, and automatically generates two **doghouses** (SP/RP flight-data cards) beside it.
+Type an MGRS grid, or a latitude and longitude in any common form (`34.5457, -84.1234`, `34°32'44.4"N 84°07'24.4"W`, `3432.740N 08407.407W`), in the search box in the top bar (on a phone, the box over the map). On a computer it opens wider over the map when you click it. As you type, a list under the box shows the grid and the lat/long it reads; choose either (or press **GO** or Enter) to go there. The share button on each row, or beside **GO**, sends that grid to someone: by your device's share sheet, a copy, a link or a QR code. If what you typed could mean two places, such as `34 84` with no minus sign or N/S/E/W, the list offers both, nearest the map first, and you choose. The map flies to the location, drops a gold star on the target, and automatically generates two **doghouses** (SP/RP flight-data cards) beside it.
 
 ![Search result with doghouses](images/02-search.png)
 

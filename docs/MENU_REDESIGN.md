@@ -58,7 +58,7 @@ Related: the Mission Packs architecture proposal (Oct 5, 2026, by Colin; not in 
 | Region | Today | Redesign |
 |---|---|---|
 | Left sidebar | Target, aircraft, analysis, tools, export, routes | Kept. "Import MSNX" moves to the Imports menu. In a finished pack the tools are disabled. |
-| Top bar (new, 48 px, right of the sidebar) | Floppy icon, user name, Log out | **Workspace switcher** (left); **Import** menu, **Library** button, account menu (right). In a pack: presence avatars and sync status. |
+| Top bar (new, 48 px, across the whole window since 2026-11-05, the sidebar under it) | Floppy icon, user name, Log out | **Workspace switcher** (left); the **search** (a grid or lat/long, opening over the map when clicked); **Import** menu, **Library** button, account menu (right). In a pack: presence avatars and sync status. |
 | Floating windows | `ActiveLzWindow`, `RoutesPanel` | One **right dock**: a 344 px panel plus a 56 px icon rail on the right edge. Rail: **Pack** (pack mode only), **LZ/PZ**, **Routes**, **Threats**, **Imports**. Clicking the active rail icon collapses the panel. |
 | Save menu modal | Save form + history + local points | Split into the **Save dialog** (§4) and the **Library** modal (§5). |
 

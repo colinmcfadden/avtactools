@@ -28,12 +28,13 @@ import "./TargetField.css";
 const WIDE_PLACEHOLDER_PX = 480;
 
 let measurer = null;
-// The width `text` takes in `input`'s own font, or null where it cannot be measured.
+// The width `text` takes in the font `input` draws its placeholder in (its own where that cannot be read), or
+// null where it cannot be measured.
 const textWidth = (text, input) => {
   try {
     measurer = measurer ?? document.createElement("canvas").getContext("2d");
     if (!measurer) return null;
-    measurer.font = getComputedStyle(input).font;
+    measurer.font = getComputedStyle(input, "::placeholder").font || getComputedStyle(input).font;
     return measurer.measureText(text).width;
   } catch {
     return null;
@@ -53,6 +54,8 @@ const TargetField = ({
   inputClassName = "ff-input",
   buttonClassName = "ff-btn primary",
   inputProps = {},
+  // Drawn in the row before the input (a search icon).
+  leading = null,
 }) => {
   const id = useId();
   const inputRef = useRef(null);
@@ -118,9 +121,9 @@ const TargetField = ({
     onShare(choice);
   };
 
-  const go = () => {
+  const go = ({ byPointer = false } = {}) => {
     if (reading.choices.length === 1) {
-      choose(reading.choices[0]);
+      choose(reading.choices[0], { byPointer });
       return;
     }
     // Readings to choose from, or a sentence: show them, and say it again. The focus goes back to the
@@ -170,6 +173,7 @@ const TargetField = ({
   return (
     <div className="target-field">
       <div className={rowClassName}>
+        {leading}
         <input
           {...inputProps}
           ref={inputRef}
@@ -221,7 +225,14 @@ const TargetField = ({
             <Icon name="share" size={16} />
           </button>
         )}
-        <button type="button" onClick={go} className={buttonClassName}>
+        <button
+          type="button"
+          // Keeps the focus in the field while it is pressed (Safari and Firefox on a Mac give a clicked button none), so a field that
+          // folds as it loses the focus is still there when the click lands; a click that chooses then puts the field away, as a row's does.
+          onMouseDown={(event) => event.preventDefault()}
+          onClick={(event) => go({ byPointer: event.detail > 0 })}
+          className={buttonClassName}
+        >
           GO
         </button>
       </div>
