@@ -265,10 +265,19 @@ class LocalRasterCatalog:
                 return self._entries
             return self._refresh()
 
+    def refresh(self):
+        """Scan now, rather than when the interval next runs out: a DEM the admin's Data tab just put in place
+        (data_admin) is used at once."""
+        with self._refresh_lock:
+            return self._refresh()
+
     def _refresh(self):
         entries: list[RasterEntry] = []
         for root in self._roots():
-            for directory, _, files in os.walk(root):
+            for directory, folders, files in os.walk(root):
+                # Dot folders hold what is not in place yet (data_admin's .incoming, .trash): a DEM there may be half
+                # written, and would change the 3D terrain's fingerprint (terrain_tiles) before it is checked.
+                folders[:] = [name for name in folders if not name.startswith(".")]
                 for name in files:
                     path = os.path.join(directory, name)
                     kind = _entry_kind(path)

@@ -26,6 +26,7 @@ from models import (
     db, User, SavedRoute, SavedLZ, SavedPointSet, SavedBrief, LoginEvent, AircraftProfile, SyncCounter,
     MissionPack, MissionPackItem, MissionPackMember, Team, TeamMember,
 )
+import data_admin
 import pack_support
 import sync_support as sync
 from entitlements import (
@@ -100,6 +101,7 @@ def _inject():
         'affiliation_ok': affiliation_ok,
         'current_admin': _current_admin(),
         'ICON_CHOICES': ICON_CHOICES,
+        'data_admin_on': data_admin.can_read(),
     }
 
 
@@ -769,3 +771,7 @@ def aircraft_promote(pid):
         'ok',
     )
     return redirect(url_for('admin.aircraft_detail', pid=copy.id))
+
+
+# The Data tab's routes live on this blueprint too (they need its session, CSRF and context).
+from routes import admin_data  # noqa: E402,F401
