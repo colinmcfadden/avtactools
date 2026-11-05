@@ -108,7 +108,7 @@ class TileCacheTests(CacheHarness):
     def test_no_partial_file_is_ever_visible(self):
         """Written beside and moved into place, so a reader sees all or nothing."""
         terrain_tiles.tile_bytes(12, 1100, 830)
-        names = [p.name for p in self.cache.rglob("*") if p.is_file()]
+        names = [p.name for p in self.cache.rglob("*") if p.is_file() and p.name != terrain_tiles.OWNER_FILE]
         self.assertEqual(names, ["830.i16"])
 
 

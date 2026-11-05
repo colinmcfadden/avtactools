@@ -213,7 +213,7 @@ code — a changed number is a changed plan on a crew's kneeboard.
 ```powershell
 # MGRS (needs pygeodesy, as pinned in backend/requirements.txt)
 python contracts/scripts/mgrs_fixtures.py write
-python contracts/scripts/mgrs_fixtures.py check    # exact regeneration check, ~20 s
+python contracts/scripts/mgrs_fixtures.py check    # regeneration check: text exact, numbers to 1e-12, ~20 s
 
 # Everything the web app is the reference for
 cd frontend
