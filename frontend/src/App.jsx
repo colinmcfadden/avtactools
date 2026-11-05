@@ -29,7 +29,6 @@ import { useMsnxImport } from "./feature/msnxImport/useMsnxImport";
 import { useAircraftProfiles } from "./feature/aircraft/useAircraftProfiles";
 import AircraftProfileModal from "./feature/aircraft/AircraftProfileModal";
 import { matchProfileToAircraft } from "./feature/aircraft/aircraftProfiles";
-import { parseCoordinate } from "./utils/coordParse";
 import { useRouteSketch } from "./feature/msnxImport/useRouteSketch";
 import ForeFlightModal from "./feature/msnxImport/ForeFlightModal";
 import { useSavedRoutes } from "./feature/msnxImport/useSavedRoutes";
@@ -1025,38 +1024,15 @@ function App() {
     }
   };
 
-  const handleSearch = async () => {
-    setLoading(true);
-    try {
-      // The target field takes a grid or a pasted lat/long in any common
-      // notation. A coordinate already gives us the position, so it only needs
-      // converting to MGRS for display; a grid needs the conversion the other
-      // way. parseCoordinate refuses anything that is a valid grid, so an MGRS
-      // entry can never be diverted down the coordinate path.
-      const coordinate = parseCoordinate(gridInput);
-      if (coordinate) {
-        const { lat, lon } = coordinate;
-        const mgrs = toMgrs(lat, lon);
-        if (!mgrs) throw new Error("That position is beyond the MGRS grid (84°N / 80°S).");
-        // startDiagramAtTarget rewrites the field with the grid, so the user
-        // sees their coordinate resolve into the MGRS the rest of the app uses.
-        startDiagramAtTarget([lat, lon], mgrs);
-        return;
-      }
-
-      const res = await api.post("/convert-grid", {
-        grid: gridInput,
-      });
-      const { lat, lon } = res.data;
-      startDiagramAtTarget([lat, lon], gridInput);
-    } catch (err) {
-      const detail = err.response?.data?.message || err.response?.data?.error || err.message;
-      toast({ tone: "error", message: `That grid could not be found: ${detail}` });
-    } finally {
-      setLoading(false);
-      setIsMobileMenuOpen(false); // Closes menu if they searched from the sidebar
-    }
+  // A place chosen in the target field (TargetField: a grid or a lat/long in any notation, read in the
+  // browser with no call to the API) starts a new LZ/PZ there; startDiagramAtTarget writes its grid into
+  // the field, so a pasted coordinate is seen to become the MGRS the rest of the app uses.
+  const chooseTarget = (choice) => {
+    startDiagramAtTarget([choice.lat, choice.lon], choice.mgrs);
+    setIsMobileMenuOpen(false); // Closes the menu if they chose from the sidebar
   };
+  // Where the map is, so the field offers the nearer of an unsigned pair's readings first.
+  const targetNear = useMemo(() => ({ lat: mapCenter[0], lon: mapCenter[1] }), [mapCenter]);
 
   // --- The redesign's frame: top bar, dock, Library and imports (docs/MENU_REDESIGN.md) --------
 
@@ -1390,7 +1366,8 @@ function App() {
           closeMobileMenu={() => setIsMobileMenuOpen(false)}
           gridInput={gridInput}
           setGridInput={setGridInput}
-          handleSearch={handleSearch}
+          onChooseTarget={chooseTarget}
+          targetNear={targetNear}
           isDrawingLZ={isDrawingLZ}
           toggleDrawingMode={toggleDrawingMode}
           performTerrainAnalysis={performTerrainAnalysis}
@@ -1489,7 +1466,8 @@ function App() {
         <MobileGridInput
           gridInput={gridInput}
           setGridInput={setGridInput}
-          handleSearch={handleSearch}
+          onChooseTarget={chooseTarget}
+          targetNear={targetNear}
         />
         <MobileQuickAccess
           features={feat}

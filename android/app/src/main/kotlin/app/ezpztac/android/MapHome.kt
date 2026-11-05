@@ -664,7 +664,7 @@ fun MapHome(
                     onSearch = viewModel::search, onClearSearchError = viewModel::clearSearchError, onSelectStyle = { viewModel.selectStyle(it); home.baseMapChosen(it) },
                     onToggleGps = viewModel::toggleGps, onGpsPermissionResult = viewModel::permissionResult, onLocateMe = viewModel::locateMe,
                     onFaceNorth = viewModel::faceNorth,
-                    onToggleGrid = viewModel::toggleGrid, chrome = chrome,
+                    onToggleGrid = viewModel::toggleGrid, chrome = chrome, onChoosePlace = viewModel::goTo,
                     slope = slopeToggle, onToggleSlope = home::toggleSlope,
                     onCopyReadout = copyGrid,
                     padding = frame.padding,
