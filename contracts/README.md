@@ -79,6 +79,7 @@ reference is.
 | `threats/parse.json` | `frontend/src/contracts/sqliteFixtures.test.js` | — | `core-formats` |
 | `network/responses.json` | — (it is *written* from the server) | `backend/tests/test_network_fixtures.py` | `core-network` |
 | `network/priority.json` | `frontend/src/contracts/networkFixtures.test.js` | — | `core-network` |
+| `places/*` | — (the web asks the server) | `backend/tests/test_places.py` (`PlaceFixtureTests`: `contracts/scripts/place_fixtures.py check`) | not yet (P3 of `docs/PLACE_SEARCH.md`: Android's search over `places.sqlite` must answer every case of `queries.json`, in order) |
 | `threats/export.json` | — | `backend/tests/test_contract_fixtures.py` (the rows the exporter writes) | `core-formats` (`ThsExport`) |
 | `packs/ops.json` | `frontend/src/contracts/packOpsFixtures.test.js` | `backend/tests/test_pack_ops.py` (the server applies every mission-pack edit with it) | `core-missionpacks` (`PackOps`: every case, strictly: status, reason, null kept apart from absent, keys in JavaScript's order; `PackOpsFixtureTest`) |
 | `packs/ops-brief.json` | `frontend/src/contracts/packOpsFixtures.test.js` | `backend/tests/test_pack_ops.py` | `core-missionpacks` (`PackOpsFixtureTest`, its cases beside `ops.json`'s, as strictly) |
@@ -181,6 +182,25 @@ tests show what they have to follow.
 ```powershell
 cd backend; $env:UPDATE_CONTRACTS="1"; python -m pytest tests/test_network_fixtures.py
 ```
+
+### The `places/` fixtures
+
+The place search (`docs/PLACE_SEARCH.md`): the server builds one SQLite index of the FAA's airports, heliports,
+navaids and fixes (NASR) and USGS's place names (GNIS), and answers `POST /api/places/search` from it; Android is to
+search its own copy of the same file. `sources/` holds real rows, unchanged, from the 10-29-2026 NASR cycle's CSV
+extract and GNIS's file of 2026-11-02 (north Georgia round Blairsville, Civil and Census rows that must be left out,
+a river listed in two states, towns named alike in nine states, a parish, a borough, a city of its own, a
+territory). `places.sqlite` is what `backend/places/index.py` builds from them (a fixed build time), and
+`queries.json` what `backend/places/search.py` answers over it, in order, as the API says each place.
+
+```powershell
+python contracts/scripts/place_fixtures.py write   # after a change to the reader, the index or the ranking
+python contracts/scripts/place_fixtures.py check   # the backend test runs this
+```
+
+`check` rebuilds the index from `sources/` and asks every query of it and of the committed file; it compares
+answers and meta, never bytes. The index's schema (`index.SCHEMA`) is in its meta: a reader of another schema must
+not read it.
 
 ### The `sqlite/` fixtures
 

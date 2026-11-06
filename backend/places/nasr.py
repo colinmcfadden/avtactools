@@ -14,7 +14,7 @@ import math
 import zipfile
 
 
-PLACE_FIELDS = ("id", "source", "kind", "detail", "name", "ident", "icao", "city", "state", "lat", "lon",
+PLACE_FIELDS = ("id", "source", "kind", "detail", "name", "ident", "icao", "city", "county", "state", "lat", "lon",
                 "elev_ft", "use", "status", "military", "rank")
 
 # APT_BASE's SITE_TYPE_CODE.

@@ -34,7 +34,8 @@ const EMPTY = Object.freeze([]);
  *
  * `places` are those of the latest answer, kept while the next is asked so the list does not flicker as each key is
  * typed; `current` says whether they are the answer for the text as it is now. `failed` is a search that did not
- * answer; `available` false is a server with no index yet.
+ * answer; `available` false is a server with no index yet. `sources` are the answer's NASR cycle and GNIS date
+ * (`{ nasrCycle, gnisDate }`, either null), or null before an answer.
  */
 export const usePlaceSearch = ({ text, kind, near, search }) => {
   const q = kind && search ? String(text ?? "").trim() : "";
@@ -57,23 +58,29 @@ export const usePlaceSearch = ({ text, kind, near, search }) => {
       let found;
       try {
         const body = await search(q, nearOf(nearKey), PLACE_LIMIT);
-        found = { places: Array.isArray(body?.places) ? body.places : EMPTY, available: body?.available !== false, failed: false };
+        found = {
+          places: Array.isArray(body?.places) ? body.places : EMPTY,
+          available: body?.available !== false,
+          failed: false,
+          sources: { nasrCycle: body?.nasrCycle ?? null, gnisDate: body?.gnisDate ?? null },
+        };
         cache.current.set(key, found);
         if (cache.current.size > CACHE_SIZE) cache.current.delete(cache.current.keys().next().value);
       } catch {
-        found = { places: EMPTY, available: true, failed: true };
+        found = { places: EMPTY, available: true, failed: true, sources: null };
       }
       if (mine === latest.current) setAnswer({ q, ...found });
     }, PLACE_DEBOUNCE_MS);
     return () => clearTimeout(timer);
   }, [q, nearKey, search]);
 
-  if (!q) return { places: EMPTY, current: false, failed: false, available: true };
+  if (!q) return { places: EMPTY, current: false, failed: false, available: true, sources: null };
   const current = answer?.q === q;
   return {
     places: answer?.places ?? EMPTY,
     current,
     failed: current && answer.failed,
     available: !current || answer.available,
+    sources: answer?.sources ?? null,
   };
 };

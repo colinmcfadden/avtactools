@@ -1,6 +1,6 @@
 # Place search — plan
 
-Status: **NASR on the web built** (2026-11-05, §0); GNIS, Android and the layer not built. The owner asked how hard it would be to add addresses and searchable points of
+Status: **NASR and GNIS on the web built** (2026-11-05, §0), with `contracts/fixtures/places/`; Android and the layer not built. The owner asked how hard it would be to add addresses and searchable points of
 interest, so that a crew can type a name and get its grid. This file plans it for the web and Android. The owner answered §12's
 Q1, Q2, Q4, Q5, Q6 and Q10 the same day, each as recommended, and chose GNIS as the next step. Q7, Q8, Q9 and Q11 are still open. Where this plan and the code disagree once it is built, the code wins (AGENTS.md §16).
 
@@ -23,29 +23,43 @@ Q1, Q2, Q4, Q5, Q6 and Q10 the same day, each as recommended, and chose GNIS as 
 
 ## 0. What is built (2026-11-05)
 
-The web's search over the FAA's NASR, behind `place_search` (in `DEFAULT_OFF`: admins and the testers an admin ticks). It departs from the
+The web's search over the FAA's NASR and USGS's GNIS, behind `place_search` (in `DEFAULT_OFF`: admins and the testers an admin ticks). It departs from the
 plan below where the list says so; where they disagree, this section and the code win.
 
-- **NASR only.** GNIS (§4.2) is the next source, into the same index; the schema and the ranking leave room for it.
 - **The index** (`backend/places/`): `nasr.py` reads the cycle's APT, NAV and FIX CSV zips (airports and every other kind of landing site,
-  navaids, fixes and VFR waypoints; a row with no position is left out, never put at 0°, 0°), `index.py` writes one FTS4 SQLite file with the
-  simple tokenizer over text `text.py` folds to plain lower case (so Android 29's SQLite 3.22 can read the same file, §7), `search.py`
-  ranks. Measured on the 10-29-2026 cycle: 91,102 places, 18.7 MB, built in under a second; a search well under a millisecond.
-- **The ranking**: an identifier or ICAO code typed whole first, whatever the distance; then the name equal to the text, the name starting
-  with it, an identifier starting with it (after the names, so a fix's `ATLEE` never pushes *Atlanta* away), then every word typed starting
-  a word of the name, identifier or city. In each group open before closed, nearest first, then public, military, private, navaid, fix.
-  Fixes only from three characters.
-- **Names are the FAA's own, in its capitals** (`BLAIRSVILLE`, `UNION GENERAL HOSPITAL`), as the chart and the Chart Supplement spell
-  them; §1's examples in mixed case are GNIS's style. `ft rucker` finds nothing (the FAA spells it `FORT RUCKER`): aliases are §12, Q8.
-- **Kept current by the API itself, not a Data tab job** (`places/refresh.py`): a background thread looks at the APRA API every six hours
-  and, when the index under `PLACES_DIR` is not the current cycle's, fetches its three zips from `nfdc.faa.gov` (https only, the two FAA
-  hosts only, no redirects followed, 64 MB a file at most), checks the counts (a whole cycle has 10,000 airports, 4,000 heliports and 50,000
-  fixes or more, and no kind moves more than 5% against the last build), builds beside the old and switches `current.json`; two builds are
-  kept. It waits while an analysis runs, as the NAIP pass does. A build is a second's work, so §10's fresh interpreter and its wait for
-  the charts' C1 are not needed for NASR; GNIS (a million rows) may want them. `PLACES_REFRESH=off` stops it; `python -m places
-  refresh|build|search` does each by hand.
+  navaids, fixes and VFR waypoints; a row with no position is left out, never put at 0°, 0°), `gnis.py` reads GNIS's national file (every
+  class but *Civil* and *Census*, Q4; a feature listed in two states' files read once, by its `feature_id`; a name marked `(historical)` kept
+  as a place that was; no elevation, which GNIS no longer gives), `index.py` writes one FTS4 SQLite file with the simple tokenizer over
+  text `text.py` folds to plain lower case (so Android 29's SQLite 3.22 can read the same file, §7), `search.py` ranks. Measured on the
+  10-29-2026 cycle and GNIS's 2026-11-02 file: 980,128 places (91,102 NASR, 889,026 GNIS), **142 MB, 49 MB gzipped** (§2's 100 MB and
+  35 MB were estimates), built in 8–10 s at about 330 MB; a search under a millisecond for most text, up to about 100 ms for two letters or
+  a word thousands of names share. To keep it so, ids are not indexed as unique, the folded identifier and ICAO columns are indexed only
+  where they hold something, and the FTS4 table keeps no per-document sizes (`matchinfo=fts3`).
+- **The ranking**: an identifier or ICAO code typed whole first, whatever the distance; then **what is within 150 km of the map before
+  what is not** (so *blairs* from Blairsville lists Blairsville, its airport and the hospital pad before *Blairs*, Virginia, though that
+  name is the text exactly); then the name equal to the text, the name starting with it, an identifier starting with it (after the names,
+  so a fix's `ATLEE` never pushes *Atlanta* away), then every word typed starting a word of the name, identifier or city. In each group
+  open before closed (or historical), nearest first, then by kind: public, military and private airfields, navaids, fixes, then GNIS's
+  towns and installations, terrain, water and last streams (230,000 of them). Fixes only from three characters. Without `near` there is
+  no band, and the kinds order it.
+- **Names are each source's own**: the FAA's in its capitals (`BLAIRSVILLE`, `UNION GENERAL HOSPITAL`), as the chart and the Chart
+  Supplement spell them; GNIS's in mixed case (`Brasstown Bald`), with its county where the FAA gives a city (*Summit · Towns County, GA*;
+  a parish in Louisiana; Alaska's boroughs and census areas, Virginia's independent cities and the territories' as GNIS names them).
+  `ft rucker` finds nothing (the FAA spells it `FORT RUCKER`, GNIS `Fort Novosel`): aliases are §12, Q8.
+- **Kept current by the API itself, not a Data tab job** (`places/refresh.py`): a background thread, every six hours, looks at the APRA
+  API for the current cycle and at GNIS's file's `Last-Modified` (a `HEAD`), fetches what changed into `PLACES_DIR/sources/` (the cycle's
+  three zips from `nfdc.faa.gov`, 64 MB a file at most; GNIS's from `prd-tnm.s3.amazonaws.com`, 160 MB at most; https only, those three
+  hosts only, no redirects followed), and when the index is not of both, **builds in a process of its own at low priority**
+  (`python -m places build --low-priority`, so the API's interpreter is never held for the build's seconds), checks the counts (a whole
+  cycle has 10,000 airports, 4,000 heliports and 50,000 fixes or more; a whole GNIS file 150,000 populated places, 50,000 summits and
+  180,000 streams; no kind moves more than 5% against the last build, so a build without GNIS never replaces one with it), and switches
+  `current.json`; two builds are kept. GNIS that cannot be fetched leaves out nothing it had: the file kept is built with, and a server
+  that never had one builds NASR alone until it does. It waits while an analysis runs, as the NAIP pass does. `PLACES_REFRESH=off` stops
+  it; `python -m places refresh|build|search` does each by hand (`build --gnis <file>` for GNIS). It needs about 1 GB free under
+  `PLACES_DIR`.
 - **The route** is §6's, but **web only**: not in `contracts/openapi.yaml`, so the API version does not move (Android is to search its own
-  copy, §7). Its answer is `{ available, build, nasrCycle, places }`, `build` as `2026-10-29.s1` (the cycle and the index's schema). Rate
+  copy, §7). Its answer is `{ available, build, nasrCycle, gnisDate, places }`, `build` as `2026-10-29.g20261102.s2` (the cycle, GNIS's date and the
+  index's schema; `2026-10-29.s2` without GNIS), and each place has a `county` (GNIS's; null for NASR's). Rate
   limit: 10 a second per account.
 - **The field** (`TargetField`, so the top bar's Spotlight search and the phone's alike; `feature/places/`): from the first two
   characters it tells what is typed (`placeQuery.js`): a grid or a lat/long the reader has read asks nothing; a name, or a letter-led
@@ -55,7 +69,12 @@ plan below where the list says so; where they disagree, this section and the cod
   (up to 20), which the arrow keys and Enter reach; typing again folds it. Each row: identifier and name; what it is, city and state,
   elevation; and how far from the middle of the map in **nautical miles** (not km as §1 says: crews measure in nm). The grid is the
   device's. GO or Enter with no row picked takes the first place once the list answers the text as it is.
-- **Choosing** flies the map there (zoom 14 for an airport, 15 for a pad, navaid or fix), puts the place's grid in the field, and toasts
+- **The contract** (`contracts/fixtures/places/`, P0's other half): real NASR and GNIS rows round Blairsville and elsewhere, the index
+  built from them, and 33 queries with their answers in order, by `contracts/scripts/place_fixtures.py`, which the backend test runs;
+  Android's search (P3) is to answer each the same.
+- **The sources are credited under the places**: *Places: FAA NASR 2026-10-29 · USGS GNIS 2026-11-02*. With nothing found the field
+  says so in words naming what it searched (*named place* once GNIS is in).
+- **Choosing** flies the map there (zoom 14 for an airport, a town or an installation, 15 for a pad, navaid, fix or feature), puts the place's grid in the field, and toasts
   its name and grid with *Set as target*; nothing is made. Sharing sends the name as the label. On the phone's field, text that starts
   with a letter is left as typed rather than spaced as a grid.
 
@@ -554,6 +573,7 @@ Each has a recommendation, marked **(rec.)**.
 - **Q6, the map layer:** build it with no new library, as recommended.
 - **Q10, Android asking the server:** only if the person turns it on; off by default, as recommended.
 - **What is next:** GNIS in the server's index, with `contracts/fixtures/places/` (P0's other half), before Android (P3) and the layer (P4).
+  Built the same day (§0); Android (P3) is next.
 - **Coverage:** the US only for now; DAFIF is out (§2.2, *US only*).
 
 Q3 falls away with Q2: no Photon. Q7, Q8, Q9 and Q11 are still open, and the plan follows the recommendation for each until the owner

@@ -3,7 +3,7 @@ import Icon from "../feature/ui/Icon";
 import { nearestFirst, readTarget } from "../utils/targetReading";
 import { placeQueryOf } from "../feature/places/placeQuery";
 import { usePlaceSearch } from "../feature/places/usePlaceSearch";
-import { placeChoice, placeDistance, placeNote, placeTitle } from "../feature/places/placeWords";
+import { placeChoice, placeDistance, placeNote, placeSources, placeTitle } from "../feature/places/placeWords";
 import "./TargetField.css";
 
 /**
@@ -136,7 +136,11 @@ const TargetField = ({
       if (!found.current) return null;
       if (found.failed) return "The place search is not answering. Grids and lat/longs still work.";
       if (!found.available) return "The place search has nothing to search on this server yet. Grids and lat/longs still work.";
-      if (placeRows.length === 0) return "No airport, heliport, navaid or fix by that name or identifier.";
+      if (placeRows.length === 0) {
+        return found.sources?.gnisDate
+          ? "No airport, heliport, navaid, fix or named place by that name or identifier."
+          : "No airport, heliport, navaid or fix by that name or identifier.";
+      }
       return null;
     }
     return reading.message;
@@ -354,6 +358,10 @@ const TargetField = ({
             </li>
           ))}
         </ul>
+        {/* The sources are credited where their places are shown: public data, but USGS and the FAA ask to be named. */}
+        {shown && placeRows.length > 0 && placeSources(found.sources) && (
+          <p className="target-field__credit">Places: {placeSources(found.sources)}</p>
+        )}
       </div>
 
       {/* A live region with no role, so it is not taken for the panel's own status lines. */}

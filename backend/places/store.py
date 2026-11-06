@@ -1,7 +1,7 @@
 """The index the API searches: the build ``current.json`` names under ``PLACES_DIR``.
 
 ``PLACES_DIR/`` holds ``places-<build>.sqlite`` (written by ``refresh.py``, never changed after) and
-``current.json``, ``{"build", "file", "nasr_cycle"}``, which is replaced whole to switch builds. The file is
+``current.json``, ``{"build", "file", "nasr_cycle", "gnis_date"}`` (no ``gnis_date`` for a build without GNIS), which is replaced whole to switch builds. The file is
 opened read-only and immutable, once per build; a new ``current.json`` is seen at the next search.
 
 With no ``PLACES_DIR``, or nothing built there yet, there is no index and a search answers that it has none.
@@ -81,14 +81,18 @@ def _index():
     return _open[1:]
 
 
+def _sources(build, meta):
+    return {"available": True, "build": build, "nasrCycle": meta.get("nasr_cycle"), "gnisDate": meta.get("gnis_date")}
+
+
 def status():
-    """What is being served: ``{"available": False}``, or the build, its NASR cycle and its count."""
+    """What is being served: ``{"available": False}``, or the build, its NASR cycle, GNIS's date and its count."""
     with _lock:
         found = _index()
         if not found:
             return {"available": False}
         build, _connection, meta = found
-        return {"available": True, "build": build, "nasrCycle": meta.get("nasr_cycle"), "count": int(meta.get("count", 0))}
+        return {**_sources(build, meta), "count": int(meta.get("count", 0))}
 
 
 def search(text, near=None, limit=8):
@@ -99,7 +103,7 @@ def search(text, near=None, limit=8):
             return {"available": False}, []
         build, connection, meta = found
         rows = searching.search(connection, text, near, limit)
-        return {"available": True, "build": build, "nasrCycle": meta.get("nasr_cycle")}, [
+        return _sources(build, meta), [
             searching.as_answer(row) for row in rows]
 
 

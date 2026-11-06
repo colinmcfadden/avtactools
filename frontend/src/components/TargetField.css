@@ -169,3 +169,12 @@
   font-family: inherit;
   font-weight: 600;
 }
+
+/* Where the places come from, under them: small, out of the way, and never a row to pick. */
+.target-field__credit {
+  margin: 0;
+  padding: 4px 10px 6px;
+  border-top: 1px solid var(--hairline, rgba(255, 255, 255, 0.08));
+  color: var(--ff-text-muted, #9ca3af);
+  font-size: 0.65rem;
+}
