@@ -472,7 +472,8 @@ class BuildJobTests(ChartCase):
                 job_id = self.make_job()
                 self.assertEqual(self.run_build(job_id), chart_job.DONE)
                 r = self.row(job_id)
-                self.assertEqual((r.state, r.stage), ("failed", "sizes"))
+                # Its stage says it ran out of room: the automatic cycle then gives the cycle up at once (§5.7).
+                self.assertEqual((r.state, r.stage), ("failed", chart_job.ROOM_STAGE))
                 self.assertIn(words, r.error)
                 self.assertNotIn(str(self.root), r.error)
                 self.assertEqual(self.leftovers(r.build), [])
@@ -761,6 +762,33 @@ class RouteTests(ChartCase):
             self.assertEqual(self.post({"cycle": self.now.isoformat()}).get_json()["error"],
                              "CHART_TILES_DIR is not set on this server.")
         self.assertEqual(DataJob.query.count(), 0)
+
+    def test_the_coverage_layers_and_the_page(self):
+        from test_chart_serve import LIVE, OTHER, listed, make_build
+
+        layer = lambda name, query="": self.dashboard.get(f"/admin/data/layers/{name}.json{query}")   # noqa: E731
+        self.assertEqual(layer("vfr-sectional").get_json()["available"], False)       # nothing live yet
+        for name in (LIVE, OTHER):
+            make_build(self.root, name, {})
+            listed(self.root, name)
+        state.switch(self.root, LIVE, "Ann")
+        answer = layer("vfr-tac")
+        self.assertEqual(answer.headers["Cache-Control"], "private, no-store")
+        body = answer.get_json()
+        self.assertEqual((body["build"], body["role"], len(body["features"])), (LIVE, "live", 2))
+        self.assertEqual(layer("vfr-helicopter", f"?build={OTHER}").get_json()["build"], OTHER)
+        for query in ("?build=2026-10-29.7", "?build=../../etc", "?build=%2e%2e"):
+            refused = layer("vfr-tac", query)
+            self.assertEqual(refused.status_code, 404, query)
+            self.assertEqual(refused.get_json()["error"], "That build is not in the chart folder's state.json.")
+        self.assertEqual(layer("vfr-wac").status_code, 404)
+        with patch.dict(os.environ, {"DATA_ADMIN": "off"}):
+            self.assertEqual(layer("vfr-tac").status_code, 404)
+        self.assertEqual(self.app.test_client().get("/admin/data/layers/vfr-tac.json").status_code, 302)   # to the admin login
+        page = self.dashboard.get("/admin/data").get_data(as_text=True)
+        for words in ('data-layer="vfr-sectional"', 'data-layer="vfr-tac"', 'data-layer="vfr-helicopter"', 'id="chart-tiles"',
+                      '"/charts/vfr/"', "/admin/data/charts/roll-back", "/admin/data/charts/schedule/cancel"):
+            self.assertIn(words, page)
 
 
 # --------------------------------------------------------------------------------------------- real build processes

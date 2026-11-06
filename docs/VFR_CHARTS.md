@@ -1,6 +1,7 @@
 # VFR charts — plan
 
-Status: **decided; C0 built** (2026-11-05: the outlines and the build, run by hand; nothing is served yet, §9). The owner finds the VFR base map too soft next to SkyVector and ForeFlight. This file
+Status: **decided; C0 to C2 built** (2026-11-05: the outlines and the build; the build as a Data tab job; the tiles served, switched
+from the tab and built each cycle on production. The web and Android still draw the ArcGIS sectional until C3 and C4, §9). The owner finds the VFR base map too soft next to SkyVector and ForeFlight. This file
 proposes replacing it with chart tiles EZ/PZ builds itself from the FAA's free digital charts: the sectional everywhere, then the
 Terminal Area Chart (TAC) and the Helicopter Route Chart stacked over it where they exist, on the web and Android.
 
@@ -776,8 +777,9 @@ The tab says which, and why.
 - **A cycle not yet posted is never a try.** It is waited for, however late the FAA is.
 - **These are not tries either:** a waiting job; an "already running" lock (§5.1); a restart after a redeploy; a build an admin
   cancelled.
-- **A download or validation failure is a try.** A cycle is tried at most three times, at least 6 hours apart, then given up
-  (`gave_up`). The tab shows it in red with the last reason, and the owner is emailed once.
+- **A download or validation failure is a try**, and so is a build that finished but whose folder went before it was listed (it
+  can never be listed now). A cycle is tried at most three times, at least 6 hours apart, then given up (`gave_up`). The tab
+  shows it in red with the last reason, and the owner is emailed once.
 - **A refusal for room is not retried.** It gives the cycle up at once, with what the room check said, and is emailed, because room
   has to be made by someone. *Try again* on the Charts card clears `gave_up` and the tries, for this case and the one above.
 - **A cycle that has waited more than 24 hours behind another job** is emailed once, naming the job.
@@ -1011,6 +1013,75 @@ differs from §5, or says more:
   its sources), validate refusing nothing, staging gone, and a second build asked meanwhile refused (409). The build process ran niced, in
   its own process group, with spawned workers. **Not tried here:** the API's Linux image (no Docker on that machine, so §12's check of
   rasterio's GDAL and Pillow's WebP in the image is the owner's, before release), and a whole CONUS cycle, the owner's on the VM.
+
+
+**C2, as built** (2026-11-05). What `state.json` says is served at `/charts/vfr/`, named in `/api/config`, changed from the tab's
+Charts card and by the automatic cycle, and drawn on the tab's map. Where it differs from §5 and §7, or says more:
+- **One reader of the state** (`charts/state.py`): `effective(state, now)` is pure, and `serving(where, now)` is the file as last
+  written (kept in memory, read again when its inode, `mtime_ns` or size changes) with a passed switch applied. The config, the tile
+  route, the coverage layers and the card all read through it, and no `GET` writes. Every write (`update`) first writes down a passed
+  switch at `next.at` and forgets builds retired more than a day ago, then does what was asked; a forgotten build's folder is moved
+  into `.trash/` after the write and deleted from there, so it is never half there under its name. A refusal (`Refused`) is said in
+  words and writes nothing it asked. A scheduled switch is at 0901Z on the cycle's date, as the FAA dates its editions.
+- **The actions** are `POST /admin/data/charts/builds/<build>/{switch,schedule,delete}`, `/charts/roll-back`, `/charts/schedule/cancel`
+  and `/charts/cycles/<cycle>/try-again`, under the CSRF check and `DATA_ADMIN=write`, each recorded in `history` with the admin's name.
+- **The tile route** (`routes/chart_routes.py`, `charts/serve.py`) is §7's, headers and all. Past level 11 a tile not stored is cut from
+  its nearest stored ancestor and enlarged with Lanczos (the build composites every chart shown at a level under each tile it stores,
+  so under a TAC's edge it is the sectional's level-11 tile); an ancestor with nothing drawn under the tile, and ground with no stored
+  ancestor, is the shared transparent tile. The last 400 enlarged tiles are kept in memory. Tile numbers are digits only, no leading
+  zero, at most seven. Pillow alone serves: rasterio is the build's, and a test holds the tile size, WebP quality and top level to it.
+- **The registry**: one connection per build, `mode=ro&immutable=1`, `check_same_thread=False`, used under a lock per build. A request
+  that finds `state.json` changed closes the connections to builds it no longer lists; one unused for 10 minutes is closed at the
+  next sweep (every minute, at a request). A request that met a connection closed under it opens it again.
+- **`/api/config`'s `charts`** is `{vfr: {build, cycle, tiles, tileSize, minZoom, maxZoom, effective, expires, coverage, bounds,
+  fallback}}`, left out where nothing is live, the live build's files will not open, or `CHART_TILES_DIR` is not set: the clients
+  then draw ArcGIS everywhere. `bounds` is the build's own, from its `coverage.json` (the tile route allows its five-decimal rounding); `fallback` is each
+  region of the table below that no outline of the build reaches. API 1.4.0, read as additive by `api_version.py check`.
+- **The fallback table** (`serve.FALLBACK_TILES`) is where ArcGIS's VFR service has charts and a CONUS build does not, measured
+  2026-11-06 (UTC) from its tilemap at level 12 by `contracts/scripts/arcgis_vfr.py`, which fetched a tile inside and outside each
+  edge: Alaska (split at the antimeridian, the Western Aleutians reaching 180° from the west), Hawaii, the Marianas and American
+  Samoa. The script writes `contracts/fixtures/charts/arcgis_vfr.json`, and `test_chart_serve.py` holds the table to it and to the
+  CONUS outlines (no region reaches one; none is left out of a CONUS build).
+- **The automatic cycle** is `charts/auto.py`, §5.7 step by step, its record in `state.json`'s `auto[<cycle>]` and its looks in
+  `looks`. The tab's one-job rule is now a lock both share (`data_admin.jobs.CREATING`), and `auto.lock` keeps two containers from
+  both starting. Its emails go through `email_service.send_email`, each claimed in `told` under the state's lock before it is sent.
+- **The Charts card** lists what serves (live, previous with *Roll back*, next with *Cancel*), the automatic cycle (on or off and why,
+  its last and next look, an error), the current and next cycle (what the automation did or will do, *Build now*, *Try again*), every
+  build with its role and actions (*Switch*, *Switch at its effective time*, *Delete*), and the history. Read-only with
+  `DATA_ADMIN=read`.
+- **The coverage layers** (`/admin/data/layers/vfr-{sectional,tac,helicopter}.json`, `layers.vfr_charts`; the helicopter layer holds
+  the insets too) are each chart's neatline from the live build's `coverage.json`, or the build chosen in the card (`?build=`, a 404 in
+  words unless `state.json` lists it). **One more state than §5.6 named**: a build chosen ahead of its cycle has charts *not in effect
+  yet* (blue), beside *in effect* (green), *held back* (amber) and *out of date* (red). **Held back is judged first**: a chart kept from
+  the last cycle has that cycle's edition, which ends as its build's begins, so judged by date every held-back chart would read out of
+  date; its popup says *past its date* instead. A chart is dashed where the next build's edition of it differs or it has none, and
+  its popup names every build that holds it. *Chart tiles* draws the chosen build's tiles from the public route on the same host,
+  under the overlays, at 512 px and within its levels and bounds.
+- **Tests**, all in CI's list: `test_chart_auto.py` (every test §5.5 and §5.7 name, on a fake clock with the FAA faked, and the card's
+  routes), `test_chart_serve.py` (the tiles, the registry with requests from many threads while builds are deleted and made again,
+  the config held to the spec, the coverage schema, the fallback table, the coverage layers), `test_chart_jobs.py` (the coverage
+  layers' route and the page), and the recorded config in `responses.json`, which Android's `DtoFixtureTest` decodes.
+  A mutation run (2026-11-06) over the new and changed code. Of 49 mutations of `serve.py`, `layers.py`, `chart_routes.py` and
+  `admin_data.py`, all but two were killed, and those two change nothing. One drops an alpha plane that is all opaque, which libwebp
+  leaves out anyway. The other sends level 11 down the enlarging path, which finds no ancestor and gives the same transparent tile. Of
+  65 mutations of `state.py` and `auto.py`, all but three were killed, and those three change nothing either. Reading three tries as
+  more than three changes nothing, because a third failure always gives up first. *Try again* leaving `seen` changes nothing, because
+  `seen` is only compared with the `started` it clears. A build in `gone` not being skipped changes nothing, because a build is listed
+  before it can be deleted, and listing an automatic build marks it seen. The run found one fault, now fixed and tested. A build that
+  finished but whose folder went before it was listed left the card saying *Building* for ever. It is now a failed try.
+- **Tried locally** (2026-11-06 UTC, the owner's Mac): the real API over C1's scratch database and disk image (`CHART_TILES_DIR` on the
+  image, `DATA_ADMIN=write`), driven as the tab and a client ask. Before a switch `/api/config` had no `charts`, and the listed build's
+  `coverage.json` was served all the same. *Switch* made `2026-10-29.1` live, and the config then named it with Atlanta's bounds and the
+  five fallback regions. Atlanta's tiles at levels 5, 8, 11 and 12 came `immutable` for a year, with `*` and `nosniff`. Huntsville's
+  at level 12, outside the TAC, was cut from the sectional's level 11 and enlarged. Level 13, a tile outside the bounds and a leading
+  zero were each a 404 kept a day; a build not listed was a 404 `no-store` with `X-Chart-Build: gone`. A second build of the cycle made
+  from the card (`2026-10-29.2`, 70 s) was switched to and rolled back both ways, and the previous build's tiles were served meanwhile.
+  Every refusal was in words: scheduling a cycle already in effect, cancelling with nothing scheduled, deleting the live or the
+  previous build, *Try again* on a cycle not given up, and a request with no CSRF. In a browser the card, the coverage layers
+  (Atlanta's sectional and TAC in effect, each popup naming both builds) and the tile preview drew as described.
+- **Owner steps before it serves**: the Cloudflare cache rule for `/charts/*` (§7), and `CHART_AUTO=off` on the API if the first
+  build is to be switched to by hand. **Not tried here**: Cloudflare in front of the route, Resend's emails, the automatic cycle's
+  six-hourly looks on the VM, and staging's read-only tab, which waits for production to run C2 (only production writes `state.json`).
 
 The tests of the chart routes and state go in a file CI runs (`backend.yaml`'s list), with their imports added to its install step.
 `test_data_admin.py` itself runs only locally today.

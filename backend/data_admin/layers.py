@@ -355,3 +355,108 @@ def generations(*, fresh=False) -> list:
     import terrain_tiles
 
     return _remember("generations", terrain_tiles.generations, fresh=fresh)
+
+
+# -- the VFR charts a build holds (docs/VFR_CHARTS.md §5.6) -------------------------------------------------------------------
+
+# A layer for each name, its charts by tier: the helicopter charts' insets are drawn with them.
+VFR_LAYERS = {"vfr-sectional": ("sectional",), "vfr-tac": ("tac",), "vfr-helicopter": ("helicopter", "inset")}
+COVERAGE_MAX_BYTES = 32 << 20
+
+
+class BuildNotListed(LookupError):
+    """A ``?build=`` that ``state.json`` does not list (deleted, never made, or not a build's name)."""
+
+
+def _coverage_of(where, name):
+    """A build's ``coverage.json``, read whole and bounded, or None when it cannot be read as one."""
+    from charts import serve, state
+
+    try:
+        with open(state.build_dir(where, name) / serve.COVERAGE, "rb") as f:
+            raw = f.read(COVERAGE_MAX_BYTES + 1)
+        if len(raw) > COVERAGE_MAX_BYTES:
+            return None
+        cov = json.loads(raw)
+        return cov if isinstance(cov, dict) and isinstance(cov.get("charts"), list) else None
+    except (OSError, ValueError):
+        return None
+
+
+def _scale(scale) -> str:
+    return f"1:{scale:,}" if isinstance(scale, int) and not isinstance(scale, bool) else ""
+
+
+def vfr_charts(name: str, build: str | None = None, *, environ=os.environ, now=None) -> dict:
+    """The charts of one layer (``VFR_LAYERS``) in a build: the live one, or ``build`` when given, which ``state.json`` must
+    list (``BuildNotListed`` otherwise). Each is its neatline, with its state at ``now``: ``kept`` (held back, the last
+    edition standing in), else ``expired``, ``next`` (not in effect yet: a build made ahead of its cycle) or ``current``;
+    ``dashed`` where the build scheduled next holds another edition of it, or none; and which builds hold it."""
+    from charts import state
+
+    tiers = VFR_LAYERS[name]
+    now = now or state.now_utc()
+    where = state.root(environ)
+    if where is None:
+        return {"type": "FeatureCollection", "features": [], "available": False,
+                "reason": "CHART_TILES_DIR is not set on the API."}
+    try:
+        held = state.serving(where, now)
+    except state.StateError as error:
+        return {"type": "FeatureCollection", "features": [], "available": False, "reason": str(error)}
+    builds = {k: v for k, v in held["builds"].items() if isinstance(v, dict)}
+    roles = state.roles(held)
+    if build is not None:
+        try:
+            state.check_name(build)
+        except ValueError:
+            raise BuildNotListed(build) from None
+        if build not in builds:
+            raise BuildNotListed(build)
+    chosen = build or roles["live"]
+    if not chosen or chosen not in builds:
+        return {"type": "FeatureCollection", "features": [], "available": False,
+                "reason": "No build is live: choose one in the Charts card."}
+    covers = {n: _coverage_of(where, n) for n in sorted(builds, key=state._order, reverse=True)}
+    cov = covers[chosen]
+    if cov is None:
+        return {"type": "FeatureCollection", "features": [], "available": False,
+                "reason": f"Build {chosen}'s coverage.json could not be read."}
+
+    def role_of(n):
+        return next((r for r in ("live", "previous", "next") if roles[r] == n), "built")
+
+    def editions(c):
+        return {ch.get("id"): ch.get("edition") for ch in (c or {}).get("charts", []) if isinstance(ch, dict)}
+
+    held_by = {n: editions(c) for n, c in covers.items()}
+    nxt = roles["next"] if roles["next"] != chosen else None
+    next_editions = held_by.get(nxt) if nxt else None
+    features = []
+    for ch in cov["charts"]:
+        if not isinstance(ch, dict) or ch.get("tier") not in tiers or not isinstance(ch.get("outline"), dict):
+            continue
+        edition = ch.get("edition") if isinstance(ch.get("edition"), dict) else {}
+        effective, expires = state.instant(edition.get("effective")), state.instant(edition.get("expires"))
+        # Held back is said first: its edition is the last cycle's, over once its build's cycle starts, and the admin's question
+        # is why it was held back. Red is a chart simply out of date: a build not switched from in time.
+        if ch.get("kept"):
+            standing = "kept"
+        elif expires is not None and expires <= now:
+            standing = "expired"
+        elif effective is not None and effective > now:
+            standing = "next"
+        else:
+            standing = "current"
+        holders = [f"{n} ({role_of(n)})" for n, eds in held_by.items() if ch.get("id") in eds]
+        other = next_editions.get(ch.get("id")) if next_editions is not None else None
+        features.append({"type": "Feature", "geometry": ch["outline"], "properties": {
+            "id": ch.get("id"), "title": ch.get("title"), "tier": ch.get("tier"), "scale": _scale(ch.get("scale")),
+            "start": edition.get("start"), "end": edition.get("end"), "effective": edition.get("effective"),
+            "expires": edition.get("expires"), "state": standing, "over": expires is not None and expires <= now,
+            "stored_to": ch.get("storedTo"), "shown_from": ch.get("shownFrom"), "builds": ", ".join(holders),
+            "dashed": next_editions is not None and other != edition,
+            "next_edition": (other or {}).get("start") if next_editions is not None else None,
+        }})
+    return {"type": "FeatureCollection", "features": features, "available": True, "build": chosen,
+            "role": role_of(chosen), "cycle": cov.get("cycle"), "next": nxt}

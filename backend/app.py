@@ -32,6 +32,7 @@ from security_config import (
 import lidar_builder
 from lidar import catalog as lidar_catalog
 import terrain_tiles
+from charts import auto as chart_auto
 from routes.terrain_routes import terrain_bp
 from routes.lidar_routes import lidar_bp
 from routes.location_routes import location_bp
@@ -52,6 +53,7 @@ from routes.pack_routes import pack_bp
 from routes.team_routes import team_bp
 from routes.survey_routes import survey_bp
 from routes.notification_routes import notification_bp
+from routes.chart_routes import chart_bp
 from cors_config import configure_cors, cors_origins
 
 app = Flask(__name__)
@@ -137,6 +139,7 @@ app.register_blueprint(pack_bp)
 app.register_blueprint(team_bp)
 app.register_blueprint(survey_bp)
 app.register_blueprint(notification_bp)
+app.register_blueprint(chart_bp)
 
 # Compute the coarse terrain tiles ahead of the first 3D view, in the
 # background; see terrain_tiles. A no-op without TERRAIN_DATA_DIR. Under
@@ -144,6 +147,9 @@ app.register_blueprint(notification_bp)
 # watches files, then in the one that serves — so warm only in the latter.
 if not (__name__ == "__main__" and os.environ.get("WERKZEUG_RUN_MAIN") != "true"):
     terrain_tiles.start_warming()
+    # The VFR charts' automatic cycle (docs/VFR_CHARTS.md §5.7): a look every 6 hours, only where writes are on and
+    # CHART_TILES_DIR is set; whether a look may build is CHART_AUTO's (charts.auto.mode).
+    chart_auto.start(app)
     # Say at startup what the 3D view will lack, rather than leave it to be
     # found later as a "can't build" panel, or as terrain sitting 30 m off the
     # point cloud. Both have happened after a restart lost its settings.

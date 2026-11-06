@@ -131,6 +131,11 @@ def effective_instant(cycle: date) -> datetime:
     return datetime(cycle.year, cycle.month, cycle.day, 9, 1, tzinfo=timezone.utc)
 
 
+def cycle_ends(cycle: date) -> datetime:
+    """When a cycle stops being in effect: the next one's effective instant."""
+    return effective_instant(cycle + timedelta(days=_CYCLE_DAYS))
+
+
 def expires_instant(end: date) -> datetime:
     """A chart printed as valid to ``end`` expires at the next cycle's effective instant: 0901Z the day after (§4.5)."""
     return effective_instant(end + timedelta(days=1))

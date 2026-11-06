@@ -62,6 +62,7 @@ CHECKED = "checked.json"
 EMPTY = "empty.json"
 SOURCES = "sources"
 LABEL = "The chart folder"
+ROOM_STAGE = "room"             # a failed build's stage when it ran out of room: the automatic cycle gives up at once (§5.7)
 
 POLL_S = 1.0                    # the parent's look at its child, its row and the analyses
 CANCEL_GRACE_S = 30             # a cancel not answered in this long has the build's group killed
@@ -268,7 +269,10 @@ class Build:
             return REPLACED
         except jobs.Cancelled:
             return self._end("cancelled", None)
-        except (volumes.NoRoom, BuildRefused) as error:
+        except volumes.NoRoom as error:
+            self.stage = ROOM_STAGE
+            return self._end("failed", str(error))
+        except BuildRefused as error:
             return self._end("failed", str(error))
         except Exception:  # noqa: BLE001 — the admin sees that it failed; the log says why, with no place in it
             log.exception("chart build: stopped")
@@ -282,7 +286,7 @@ class Build:
                 f["state"] = "queued" if how == "cancelled" else "failed"
         try:
             self.row.update(state=how, error=(error or None) and error[:300], finished_at=datetime.utcnow(),
-                            files=[dict(f) for f in self.files])
+                            files=[dict(f) for f in self.files], stage=self.stage)
         except Replaced:
             return REPLACED
         return DONE
@@ -1010,13 +1014,38 @@ def build_info(job, folder: Path) -> dict:
 
 
 def register(job, where: Path) -> bool:
-    """Lists a finished build in ``state.json``, once: True if it was listed now (§5.3, step 8)."""
+    """Lists a finished build in ``state.json``, once: True if it was listed now (§5.3, step 8). In the same write, the automatic
+    cycle schedules or switches to a build it started (§5.7, step 6), and then says so by email."""
+    from . import auto          # the API's side only: the build process never registers
+
     folder = state.build_dir(where, job.build)
     if not (folder / "coverage.json").is_file():
         return False
-    listed = state.register(where, job.build, build_info(job, folder))
+    listed = state.register(where, job.build, build_info(job, folder), then=auto.registered)
     clean(where, job.build)          # what a build process killed after its row said done left behind
+    if listed:
+        auto.tell_quietly(where)
     return listed
+
+
+def start(app, cycle: date, *, by_id=None, by_name: str, then=None, job_id: str | None = None, now=None):
+    """Starts a build of ``cycle``: takes its number and makes its job in one go, under the one-job rule, then hands it to the
+    runner. The tab's *Build now* and the automatic cycle both start a build here (§5.7, step 5). ``then(state, name, job_id)`` is
+    applied in the write that takes the number. Raises ``jobs.Busy`` while another job is queued or running, and
+    ``state.StateError`` or ``OSError`` when ``state.json`` cannot be written."""
+    where = state.root()
+    files = files_for(cycle, only())
+    job_id = job_id or jobs.new_id()
+    with jobs.CREATING:
+        if DataJob.query.filter(DataJob.state.in_(("queued", "running"))).count():
+            raise jobs.Busy("Another job is under way. Wait for it, or cancel it.")
+        name = state.take_number(where, cycle, then=(lambda s, n: then(s, n, job_id)) if then else None, now=now)
+        job = DataJob(id=job_id, kind=KIND, product=PRODUCT, files=files, files_total=len(files), bytes_total=0, build=name,
+                      stage=STAGES[0], requested_by=by_id, requested_by_name=by_name)
+        db.session.add(job)
+        db.session.commit()
+    jobs.RUNNER.enqueue(app, job.id)
+    return job
 
 
 def recover(runner=None, *, limit: int = 20) -> None:
