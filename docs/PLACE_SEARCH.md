@@ -139,6 +139,12 @@ Other rules:
 **Not in this plan:** a search that understands an address's parts; a "what is here" lookup from a right-click or long press (reverse
 geocoding); routing; and anything outside the US and its territories.
 
+**US only, by the owner's call (2026-11-05).** DAFIF, which would have covered the world, was considered and left out. NGA took it off
+public access in 2006, and it is LIMITED DISTRIBUTION, which DoD handles as CUI. EZ/PZ holds no CUI (AGENTS.md §2). The plan would also
+serve the index from a public route and through Cloudflare's cache, which its distribution limits forbid. If worldwide coverage is wanted
+later, it comes from public sources beside NASR: OurAirports for airports, heliports and navaids (no fixes), and NGA's GEOnet Names
+Server for place names. Check both licences first.
+
 ---
 
 ## 3. The sources, side by side
@@ -507,6 +513,7 @@ Each has a recommendation, marked **(rec.)**.
 - **Q2, addresses:** leave them out for now, as recommended. Overture's landmarks may come later if crews ask (§5.3).
 - **Q5, the Android download:** by itself on an unmetered connection, as recommended.
 - **Q6, the map layer:** build it with no new library, as recommended.
+- **Coverage:** the US only for now; DAFIF is out (§2.2, *US only*).
 
 Q3 falls away with Q2: no Photon. Q4 and Q7 to Q11 are still open, and the plan follows the recommendation for each until the owner
 says otherwise.
