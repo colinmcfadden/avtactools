@@ -185,6 +185,9 @@ export const usePackWorkspace = ({
   onOpenLibrary,
   // A brief presented on the live sandtable puts the dock away, the Pack panel with it.
   presenting = false,
+  // A ref that is true while the map is showing a place a grid link asked for: the pack's first LZ/PZ is not
+  // opened over it (the map would fly away from the grid the person followed).
+  keepMap = null,
 }) => {
   const me = user?.id ?? null;
   const actor = actorName(user);
@@ -345,7 +348,7 @@ export const usePackWorkspace = ({
     if (firstOpened.current !== open) {
       firstOpened.current = open;
       const first = items.find((item) => item.kind === "lz");
-      if (first && !Object.keys(workspaceRef.current?.diagramsById ?? {}).length) packLz.openItem(first.uuid);
+      if (first && !keepMap?.current && !Object.keys(workspaceRef.current?.diagramsById ?? {}).length) packLz.openItem(first.uuid);
     }
   }, [open, session, items, packRoutes, packPoints, packLz, points.pointSets]);
 

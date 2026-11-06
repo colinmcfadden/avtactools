@@ -9,12 +9,17 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.ime
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.safeDrawing
+import androidx.compose.foundation.layout.union
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.DropdownMenu
@@ -36,6 +41,7 @@ import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.graphics.Color
@@ -63,15 +69,17 @@ import app.ezpztac.android.frame.TabletFrame
 import app.ezpztac.android.frame.TabletRail
 import app.ezpztac.android.frame.WorkspaceChips
 import app.ezpztac.android.frame.WorkspaceLine
-import app.ezpztac.android.frame.rememberFrameState
-import app.ezpztac.android.frame.rememberTouchExploration
 import app.ezpztac.android.frame.lookingAtPack
 import app.ezpztac.android.frame.panelsFor
 import app.ezpztac.android.frame.pick
+import app.ezpztac.android.frame.rememberFrameState
 import app.ezpztac.android.frame.rememberTabletFrameState
+import app.ezpztac.android.frame.rememberTouchExploration
 import app.ezpztac.android.frame.shownPanel
 import app.ezpztac.android.frame.underPage
 import app.ezpztac.android.frame.usesTabletFrame
+import app.ezpztac.android.notifications.NotificationTap
+import app.ezpztac.android.notifications.NotificationToast
 import app.ezpztac.android.packs.InviteNotices
 import app.ezpztac.briefs.BriefSetupHost
 import app.ezpztac.briefs.BriefViewModel
@@ -88,26 +96,30 @@ import app.ezpztac.designsystem.BannerKind
 import app.ezpztac.designsystem.EzpzIcons
 import app.ezpztac.designsystem.PillButton
 import app.ezpztac.designsystem.SheetDetent
+import app.ezpztac.designsystem.ToastHost
 import app.ezpztac.designsystem.Tokens
 import app.ezpztac.designsystem.rememberPanelSheetState
+import app.ezpztac.geo.GridShare
+import app.ezpztac.geo.MgrsConverter
+import app.ezpztac.map.ContourLabelsLayer
 import app.ezpztac.map.DiagramLayer
-import app.ezpztac.map.OtherLzLayer
-import app.ezpztac.map.OtherLzScene
 import app.ezpztac.map.EzpzMap
 import app.ezpztac.map.GpsLayer
 import app.ezpztac.map.GpsState
-import app.ezpztac.map.ContourLabelsLayer
 import app.ezpztac.map.GraphicLabelsLayer
 import app.ezpztac.map.LzScene
 import app.ezpztac.map.MapChromeBoxes
-import app.ezpztac.map.MgrsGridLayer
 import app.ezpztac.map.MapCommand
 import app.ezpztac.map.MapProjection
 import app.ezpztac.map.MapScreen
+import app.ezpztac.map.MapSearchSpotlight
 import app.ezpztac.map.MapViewModel
+import app.ezpztac.map.MgrsGridLayer
+import app.ezpztac.map.OtherLzLayer
+import app.ezpztac.map.OtherLzScene
 import app.ezpztac.map.PinLabelsLayer
-import app.ezpztac.map.PointScene
 import app.ezpztac.map.PointLayer
+import app.ezpztac.map.PointScene
 import app.ezpztac.map.PointersLayer
 import app.ezpztac.map.RouteLayer
 import app.ezpztac.map.RouteScene
@@ -121,22 +133,18 @@ import app.ezpztac.missionpacks.PackStatus
 import app.ezpztac.model.LatLon
 import app.ezpztac.model.UnitDraft
 import app.ezpztac.network.ApiUser
-import app.ezpztac.android.notifications.NotificationTap
-import app.ezpztac.android.notifications.NotificationToast
+import app.ezpztac.packs.AddToPackHost
 import app.ezpztac.packs.FinishedBand
 import app.ezpztac.packs.FinishedBanner
-import app.ezpztac.packs.AddToPackHost
 import app.ezpztac.packs.ItemDialogsHost
-import app.ezpztac.packs.PackCopyViewModel
-import app.ezpztac.packs.PackItemCopyViewModel
 import app.ezpztac.packs.MembersHost
 import app.ezpztac.packs.MembersViewModel
 import app.ezpztac.packs.NewPackHost
 import app.ezpztac.packs.NewPackViewModel
-import app.ezpztac.packs.TeamsHost
-import app.ezpztac.packs.TeamsViewModel
+import app.ezpztac.packs.PackCopyViewModel
 import app.ezpztac.packs.PackDialogsHost
 import app.ezpztac.packs.PackHeaderMenu
+import app.ezpztac.packs.PackItemCopyViewModel
 import app.ezpztac.packs.PackPanelFoot
 import app.ezpztac.packs.PackPanelHost
 import app.ezpztac.packs.PackPanelViewModel
@@ -144,10 +152,13 @@ import app.ezpztac.packs.PackWords
 import app.ezpztac.packs.SwitcherContent
 import app.ezpztac.packs.SwitcherNotify
 import app.ezpztac.packs.SwitcherSheet
+import app.ezpztac.packs.TeamsHost
+import app.ezpztac.packs.TeamsViewModel
 import app.ezpztac.packs.WorkspaceViewModel
 import app.ezpztac.packs.actionsOf
-import app.ezpztac.sync.RecordKind
 import app.ezpztac.symbols.LocalSymbolRenderer
+import app.ezpztac.sync.RecordKind
+import app.ezpztac.viewer3d.Viewer3DHost
 import app.ezpztac.workspace.BoundaryToolbarHost
 import app.ezpztac.workspace.DiagramsUiState
 import app.ezpztac.workspace.DiagramsViewModel
@@ -155,7 +166,6 @@ import app.ezpztac.workspace.ExportFile
 import app.ezpztac.workspace.GraphicKind
 import app.ezpztac.workspace.GraphicsViewModel
 import app.ezpztac.workspace.HeldObjectBarHost
-import app.ezpztac.workspace.LzToolRailHost
 import app.ezpztac.workspace.ImportReviewHost
 import app.ezpztac.workspace.ImportSheet
 import app.ezpztac.workspace.ImportSheetContent
@@ -167,10 +177,10 @@ import app.ezpztac.workspace.LibraryTab
 import app.ezpztac.workspace.LzPage
 import app.ezpztac.workspace.LzPane
 import app.ezpztac.workspace.LzPanelHost
+import app.ezpztac.workspace.LzToolRailHost
 import app.ezpztac.workspace.MapPointAction
 import app.ezpztac.workspace.PlacementToolbarHost
 import app.ezpztac.workspace.PointsViewModel
-import app.ezpztac.viewer3d.Viewer3DHost
 import app.ezpztac.workspace.RoutePlanHost
 import app.ezpztac.workspace.RouteToolbarHost
 import app.ezpztac.workspace.RoutesFooterHost
@@ -239,6 +249,9 @@ fun MapHome(
     onNotificationAction: (NotificationTap) -> Unit = {},
     /** The switcher's offer to turn notifications on, while it is made. */
     switcherNotify: SwitcherNotify? = null,
+    /** A grid link the app was opened with (`#grid=…`, docs/GRID_SHARING.md), until the map has gone there. */
+    gridLink: GridShare.Link? = null,
+    onGridLinkHandled: () -> Unit = {},
     viewModel: MapViewModel = hiltViewModel(),
     home: HomeViewModel = hiltViewModel(),
     display: DisplayViewModel = hiltViewModel(),
@@ -524,6 +537,27 @@ fun MapHome(
         // Android 13 and later say so themselves; before that the app does.
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) scope.launch { snackbars.showSnackbar("Copied $text") }
     }
+    // A grid to send (docs/GRID_SHARING.md), shown in its dialog: a place with no grid (past the grid's ends) has nothing to send.
+    var sharing by remember { mutableStateOf<GridSharePlace?>(null) }
+    // The grid an LZ/PZ keeps is the one sent (as the web's `target.mgrs ||`): one typed to 100 m stays at 100 m.
+    val shareAt: (String, LatLon, String?) -> Unit = { label, at, grid ->
+        (grid?.takeIf { it.isNotBlank() } ?: MgrsConverter.toMgrs(at.lat, at.lon)?.format())?.let { sharing = GridSharePlace(it, at.lat, at.lon, label) }
+    }
+    // A grid link: the map goes there (the crosshair on it) and the search holds its grid; nothing is made until the person chooses. It waits
+    // while a brief is presented (the map is the sandtable's), and flies through the map host, which keeps a flight asked before the map is made.
+    LaunchedEffect(gridLink, presenting) {
+        val link = gridLink ?: return@LaunchedEffect
+        if (presenting) return@LaunchedEffect
+        viewModel.clearSearchError()
+        host.flyTo(link.choice.at, MapViewModel.SEARCH_ZOOM)
+        search.settle(link.choice.mgrs)
+        // An open search folds, so the map, the crosshair and the toast are in sight (a link opened from another app while it was open).
+        search.close()
+        val name = link.name.takeIf { it.isNotEmpty() }?.let { "$it, " }.orEmpty()
+        // Put up in a scope of its own: letting go of the link changes this effect's key, which would cancel the toast.
+        scope.launch { snackbars.showSnackbar("$name${link.choice.mgrs}, from a link: the crosshair is on it.", withDismissAction = true) }
+        onGridLinkHandled()
+    }
 
     LaunchedEffect(host) {
         viewModel.commands.collect { command ->
@@ -626,7 +660,7 @@ fun MapHome(
                         Panel.Pack -> PackPanelHost(
                             packPanel,
                             looking = lookingAtPack(
-                                current, tablet, tabletState.listShown, sheet.settled, covered = overFrame || (!tablet && (routes.planOpen || frameState.hidden || frameState.closed)),
+                                current, tablet, tabletState.listShown, sheet.settled, covered = overFrame || search.expanded || (!tablet && (routes.planOpen || frameState.hidden || frameState.closed)),
                             ),
                             onMembers = { invite -> members.open(openPack?.name.orEmpty(), invite) },
                             onUpdate = itemCopies::askUpdate, onSaveCopy = itemCopies::askSave,
@@ -637,6 +671,7 @@ fun MapHome(
                             crosshair = state.center, crosshairGrid = state.readout?.mgrs, canMakeAircraft = user.hasFeature("aircraft_profiles"),
                             onBrowseLibrary = { libraryTab = LibraryTab.LZ }, pane = if (tablet) LzPane.LIST else LzPane.WHOLE, viewModel = diagrams,
                             onAddToPack = askCopy?.invoke(RecordKind.LZ), onSaveCopy = saveCopy, hiddenOnMap = hiddenOnMap, onToggleOnMap = home::toggleOnMap,
+                            onShareGrid = shareAt,
                         )
                         Panel.Routes -> RoutesHost(
                             crosshair = state.center, threatCount = counts.threats, onBrowseLibrary = { libraryTab = LibraryTab.ROUTES }, viewModel = routesModel,
@@ -664,7 +699,7 @@ fun MapHome(
                     onSearch = viewModel::search, onClearSearchError = viewModel::clearSearchError, onSelectStyle = { viewModel.selectStyle(it); home.baseMapChosen(it) },
                     onToggleGps = viewModel::toggleGps, onGpsPermissionResult = viewModel::permissionResult, onLocateMe = viewModel::locateMe,
                     onFaceNorth = viewModel::faceNorth,
-                    onToggleGrid = viewModel::toggleGrid, chrome = chrome,
+                    onToggleGrid = viewModel::toggleGrid, chrome = chrome, onChoosePlace = viewModel::goTo,
                     slope = slopeToggle, onToggleSlope = home::toggleSlope,
                     onCopyReadout = copyGrid,
                     padding = frame.padding,
@@ -687,6 +722,8 @@ fun MapHome(
                     },
                     buttonsAtFoot = tablet,
                     search = search,
+                    // Drawn over the whole frame below, the sheet and the rail included.
+                    spotlight = false,
                     hiding = frame.hiding,
                     // The LZ/PZ tools on the map's edge while its panel is the one chosen: no going into the panel's plan to add an object (the owner's, 2026-10-22).
                     tools = if (current == Panel.Lz) {
@@ -803,6 +840,7 @@ fun MapHome(
                                 AddObjectChoice(current.name, off = addObjectOff(graphicsState.canEdit, graphicsState.locked)) { kind -> placeObject(graphics, kind, open.place.at) }
                             },
                             copyGrid = { copyGrid(open.place.grid) },
+                            shareGrid = MgrsConverter.toMgrs(open.place.at.lat, open.place.at.lon)?.let { { shareAt("", open.place.at, null) } },
                         ),
                     )
                 }
@@ -905,9 +943,10 @@ fun MapHome(
                     supporting = supportingPanes(
                         routes, lz, crosshair = state.center, crosshairGrid = state.readout?.mgrs, canMakeAircraft = user.hasFeature("aircraft_profiles"), diagrams = diagrams,
                         routesModel = routesModel, routePlan = movableRoutePlan, onAddToPack = askCopy?.invoke(RecordKind.LZ), onSaveCopy = saveCopy,
+                        onShareGrid = shareAt,
                     ),
                     // The Library, Members and Teams draw the toasts over themselves, as dialogs: the frame's under their scrim would be a second copy.
-                    toasts = libraryTab == null && !membersOpen && !teamsOpen && !briefOpen,
+                    toasts = libraryTab == null && !membersOpen && !teamsOpen && !briefOpen && !search.expanded,
                     band = openPack?.takeIf { it.finished }?.let { finished ->
                         { FinishedBand(finished, onDuplicate = workspace::askDuplicate, onReopen = workspace::askReopen, onSaveCopy = CopyRules.bannerCopy(lz.current?.uuid, saveCopy)) }
                     },
@@ -919,8 +958,8 @@ fun MapHome(
                             SandtableFlights(host, shown.view, sandtableBoxes, sandtableHandover)
                         }
                     },
-                    modifier = Modifier.underPage(unread = libraryTab != null || lz.viewer3d != null, focusTo = viewer3dFocus.takeIf { lz.viewer3d != null }),
-                    backEnabled = !overFrame,
+                    modifier = Modifier.underPage(unread = libraryTab != null || lz.viewer3d != null || search.expanded, focusTo = viewer3dFocus.takeIf { lz.viewer3d != null }),
+                    backEnabled = !overFrame && !search.expanded,
                     panel = { p -> movablePanels.getValue(p)() },
                     mapScreen = movableMap,
                 )
@@ -942,11 +981,13 @@ fun MapHome(
                     floatingPx = { floating },
                     footer = footer,
                     // Under the route's plan page the frame is still there (the map, the panels and what they listen for) but neither read nor touched.
-                    modifier = Modifier.underPage(unread = routes.planOpen || libraryTab != null || lz.viewer3d != null, focusTo = viewer3dFocus.takeIf { lz.viewer3d != null }),
+                    modifier = Modifier.underPage(unread = routes.planOpen || libraryTab != null || lz.viewer3d != null || search.expanded, focusTo = viewer3dFocus.takeIf { lz.viewer3d != null }),
                     // A tap on the map hides it; Back shows it again, unless a page over the frame has Back for itself.
                     hidden = frameState.hidden,
                     onShow = frameState::show,
-                    backShows = !routes.planOpen && !overFrame,
+                    backShows = !routes.planOpen && !overFrame && !search.expanded,
+                    // The open search draws them over itself, in sight and read.
+                    toasts = !search.expanded,
                     // Its close button: the sheet goes down behind the bar until a panel is picked again.
                     closed = frameState.closed,
                     onClose = {
@@ -956,6 +997,21 @@ fun MapHome(
                     panel = { p -> movablePanels.getValue(p)() },
                     mapScreen = movableMap,
                 )
+            }
+            // The search open (the owner's request of 2026-11-05): over the whole frame, its sheet and bar or its rail and panes, which it dims, in the middle of
+            // the screen above the keyboard. Not while a brief is presented: the sandtable takes no edit, and has no search.
+            LaunchedEffect(presenting) { if (presenting) search.close() }
+            if (!presenting) {
+                MapSearchSpotlight(
+                    search = search, state = state, onSearch = viewModel::search, onClearSearchError = viewModel::clearSearchError, onChoosePlace = viewModel::goTo,
+                )
+                // The frame's toasts while it is open (the frames draw none meanwhile): over the scrim, above the keyboard, at full brightness and read.
+                if (search.expanded) {
+                    Box(
+                        Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.safeDrawing.union(WindowInsets.ime)).padding(Tokens.Spacing.lg.dp),
+                        contentAlignment = Alignment.BottomCenter,
+                    ) { ToastHost(snackbars) }
+                }
             }
             // The held route's plan (the design's RoutePlan): a page of its own over the frame, with the frame's toasts.
             if (!tablet) movableRoutePlan(false)
@@ -1020,6 +1076,19 @@ fun MapHome(
             // one made later, so it is made again when the Library's window is (it opens, or turns from a page into a tablet's dialog).
             if (packsHere) key(tablet, libraryTab != null) { AddToPackHost(copies, tablet) }
             if (packsHere) ItemDialogsHost(itemCopies, tablet)
+            sharing?.let { place ->
+                GridShareDialog(
+                    place,
+                    night = night,
+                    onShare = { shareGrid(context, place); sharing = null },
+                    onCopy = { what, text ->
+                        scope.launch { clipboard.setClipEntry(copyClip(what, text)) }
+                        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) scope.launch { snackbars.showSnackbar("Copied") }
+                        sharing = null
+                    },
+                    onDismiss = { sharing = null },
+                )
+            }
             // The open LZ/PZ in 3D, over the whole screen and everything on it, phone and tablet alike (the owner, 2026-10-20): the frame under it stays
             // composed and untouched, neither read nor touched while it is up, so closing it shows the map as it was.
             Viewer3DHost(target = lz.viewer3d, night = night, onClose = diagrams::close3d, snackbars = snackbars, focus = viewer3dFocus)
@@ -1080,6 +1149,8 @@ private fun supportingPanes(
     onAddToPack: ((uuid: String, name: String) -> Unit)? = null,
     /** Asks what to call a copy of the pack's LZ/PZ open, saved to the Library, as the phone's plan page does. */
     onSaveCopy: ((uuid: String) -> Unit)? = null,
+    /** Sends the open LZ/PZ's grid to someone, as the phone's plan page does. */
+    onShareGrid: ((name: String, at: LatLon, grid: String?) -> Unit)? = null,
 ): List<SupportingPane> {
     val open = lz.current
     val lzPane = if (lz.page == LzPage.PLAN && open != null) {
@@ -1095,7 +1166,7 @@ private fun supportingPanes(
             ) {
                 LzPanelHost(
                     crosshair = crosshair, crosshairGrid = crosshairGrid, canMakeAircraft = canMakeAircraft, pane = LzPane.PLAN, viewModel = diagrams, onAddToPack = onAddToPack,
-                    onSaveCopy = onSaveCopy,
+                    onSaveCopy = onSaveCopy, onShareGrid = onShareGrid,
                 )
                 Spacer(Modifier.height(Tokens.Spacing.lg.dp))
             }

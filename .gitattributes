@@ -16,3 +16,7 @@ contracts/fixtures/**/*.json text eol=lf
 # byte for byte to the web's node_modules copy): a CRLF checkout fails both.
 contracts/fixtures/**/*.svg text eol=lf
 android/core-symbols/src/main/assets/*.js text eol=lf
+# The place search's sources (contracts/fixtures/places/sources): the FAA's and USGS's rows as they publish them,
+# CRLF and byte order mark included, so no checkout converts them; and the index built from them.
+contracts/fixtures/places/sources/** -text
+*.sqlite binary

@@ -25,7 +25,7 @@
 
 /* --- Mobile/Tablet Breakpoint --- */
 @media (max-width: 850px) {
-    /* Level with the MGRS box: the floating menu button it once sat under is in the top bar now. The
+    /* Level with the search box: the floating menu button it once sat under is in the top bar now. The
        gap is tight so the whole rail stays above a phone's lowered sheet (about 530 px of a 660 px
        window). */
     .mobile-quick-access-container {
@@ -37,7 +37,7 @@
         right: 15px;
         top: 15px;
         z-index: 1000;
-        /* As wide as its widest button, so its empty corner lies over the MGRS box's GO: only the
+        /* As wide as its widest button, so its empty corner lies over the search box's GO: only the
            buttons take a tap. */
         pointer-events: none;
     }
@@ -94,7 +94,7 @@
         height: 18px;
     }
 
-    /* Without Sketch Route above it, the first button would sit beside the MGRS box, which it is wider than. */
+    /* Without Sketch Route above it, the first button would sit beside the search box, which it is wider than. */
     .qa-btn.qa-pill:first-child {
         margin-top: 58px;
     }

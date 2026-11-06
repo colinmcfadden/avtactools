@@ -12,7 +12,7 @@ class PlaceSearchTest {
         for (typed in listOf("16S GD 66993 52949", "16sgd6699352949", "  16S  GD  66993  52949 ")) {
             val place = PlaceSearch.resolve(typed) as PlaceResult.Found
             assertTrue(abs(place.at.lat - 34.783817) < 0.0001 && abs(place.at.lon - -84.08219) < 0.0001, typed)
-            assertEquals("MGRS grid", place.description)
+            assertEquals("MGRS grid, to 1 m", place.description)
         }
     }
 
@@ -28,10 +28,10 @@ class PlaceSearchTest {
         val decimal = PlaceSearch.resolve("34.545678, -84.123456") as PlaceResult.Found
         assertEquals(34.545678, decimal.at.lat, 1e-9)
         assertEquals(-84.123456, decimal.at.lon, 1e-9)
-        assertEquals("Decimal degrees", decimal.description)
+        assertEquals("Read as decimal degrees", decimal.description)
         val ddm = PlaceSearch.resolve("34°32.740'N 084°07.407'W") as PlaceResult.Found
         assertEquals(34.5456667, ddm.at.lat, 1e-6)
-        assertEquals("Degrees/decimal minutes", ddm.description)
+        assertEquals("Read as degrees and decimal minutes", ddm.description)
     }
 
     @Test
@@ -41,6 +41,14 @@ class PlaceSearchTest {
         assertTrue(PlaceSearch.resolve("somewhere nice") is PlaceResult.NotUnderstood)
         assertTrue(PlaceSearch.resolve("99.0, 200.0") is PlaceResult.NotUnderstood)
         assertTrue(PlaceSearch.resolve("16S ZZ 123") is PlaceResult.NotUnderstood)
-        assertEquals("Could not read that as a grid or a coordinate.", (PlaceSearch.resolve("somewhere nice") as PlaceResult.NotUnderstood).message)
+        assertEquals(PlaceSearch.Messages.UNREADABLE, (PlaceSearch.resolve("somewhere nice") as PlaceResult.NotUnderstood).message)
+        assertEquals(PlaceSearch.Messages.EMPTY, (PlaceSearch.resolve("  ") as PlaceResult.NotUnderstood).message)
+    }
+
+    @Test
+    fun `an unsigned pair is not guessed at where there is no list to choose from`() {
+        val result = PlaceSearch.resolve("34 84") as PlaceResult.NotUnderstood
+        assertEquals(PlaceSearch.Messages.EAST_OR_WEST_TYPED, result.message)
+        assertTrue(PlaceSearch.resolve("34 -84") is PlaceResult.Found)
     }
 }

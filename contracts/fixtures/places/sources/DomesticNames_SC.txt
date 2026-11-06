@@ -1,0 +1,2 @@
+﻿feature_id|feature_name|feature_class|state_name|state_numeric|county_name|county_numeric|map_name|date_created|date_edited|bgn_type|bgn_authority|bgn_date|prim_lat_dms|prim_long_dms|prim_lat_dec|prim_long_dec|source_lat_dms|source_long_dms|source_lat_dec|source_long_dec
+1224770|Mount Pleasant|Populated Place|South Carolina|45|Charleston|019|Fort Moultrie|09/27/2023|09/27/2023||||324739N|0795145W|32.7940651|-79.8625851|||0.0|0.0

@@ -1,7 +1,7 @@
 /**
  * Reads a latitude/longitude out of free text, in whatever shape it arrives.
  *
- * The MGRS target input accepts a pasted coordinate as well as a grid, so this
+ * The target search accepts a pasted coordinate as well as a grid, so this
  * has to cope with everything people actually paste — Google Maps, ForeFlight,
  * a flight plan, a spreadsheet cell, a text message:
  *
@@ -35,6 +35,9 @@ const AXIS_MAX = { lat: 90, lon: 180 };
 export const looksLikeMgrs = (text) =>
   MGRS_PATTERN.test(String(text ?? "").replace(/\s+/g, ""));
 
+// Any letter but a hemisphere's: N, S, E and W are the only ones a coordinate has.
+const OTHER_LETTER = /[A-DF-MOPQRT-VXYZ]/i;
+
 // Punctuation that appears in coordinates and never in a grid.
 const COORDINATE_PUNCTUATION = /[.,;/°º˚∘′‵'´`″‶"“”+\-‐-―−\t\n]/;
 
@@ -51,15 +54,22 @@ export const looksLikeCoordinateText = (text) => {
   if (!raw.trim()) return false;
   if (looksLikeMgrs(raw)) return false;
   if (COORDINATE_PUNCTUATION.test(raw)) return true;
-  // Hemisphere letters and nothing else alphabetic ("34N 84W") mean a
-  // coordinate; any other letter is a grid being typed.
-  return /[NSEW]/i.test(raw) && !/[A-MOP-VXYZ]/i.test(raw);
+  // A number followed by a space, with no letter at all ("34 ", "34 84",
+  // "34 32 44") is a pair being typed: a grid's digits come after its letters,
+  // and taking the space away would make "34 84" impossible to type.
+  if (/\d\s/.test(raw) && !/[A-Z]/i.test(raw)) return true;
+  // Hemisphere letters and nothing else alphabetic ("34N 84W", "34S") mean a
+  // coordinate; any other letter is a grid being typed. (The class once
+  // included E and S, so "34S" and "34N 84E" read as grids and the mobile field
+  // reformatted them.)
+  return /[NSEW]/i.test(raw) && !OTHER_LETTER.test(raw);
 };
 
 /**
  * Folds the many ways coordinate punctuation gets typed or pasted down to a
  * plain ASCII form: degree/minute/second marks become spaces, exotic dashes
- * become hyphens, and separators become spaces.
+ * become hyphens, and separators become " , ": a break the tokenizer notes, so
+ * "34.5, 84.1W" can be split where the comma was (see group).
  */
 const normalize = (text) =>
   String(text ?? "")
@@ -67,7 +77,7 @@ const normalize = (text) =>
     .replace(/[′‵'´`]/g, " ")              // ′ ‵ ' ´ `
     .replace(/[″‶"“”]/g, " ")         // ″ ‶ " " "
     .replace(/[‐-―−]/g, "-")               // ‐ – — − …
-    .replace(/[,;/|\t\n\r]+/g, " ")
+    .replace(/[,;/|\t\n\r]+/g, " , ")
     .trim();
 
 /**
@@ -78,9 +88,14 @@ const normalize = (text) =>
  */
 const tokenize = (text) => {
   const tokens = [];
-  const pattern = /([NSEW])|([+-]?\d+(?:\.\d+)?)/gi;
+  // A number may start with its point (".5", "-.12"), as people write them.
+  const pattern = /([NSEW])|([+-]?(?:\d+(?:\.\d+)?|\.\d+))/gi;
+  let lastEnd = 0;
   let match = pattern.exec(text);
   while (match !== null) {
+    // A separator (a comma, slash, tab…) between this token and the last.
+    const afterBreak = tokens.length > 0 && text.slice(lastEnd, match.index).includes(",");
+    lastEnd = match.index + match[0].length;
     if (match[1]) {
       // Whether the letter is glued to the number before it ("34.5N") or the
       // one after it ("W084") is the only thing separating a suffix from a
@@ -91,7 +106,8 @@ const tokenize = (text) => {
         type: "hemi",
         letter: match[1].toUpperCase(),
         suffixLike: /\d/.test(before || ""),
-        prefixLike: /[\d+-]/.test(after || ""),
+        prefixLike: /[\d+.-]/.test(after || ""),
+        afterBreak,
       });
     } else {
       const raw = match[2];
@@ -104,6 +120,7 @@ const tokenize = (text) => {
         negative: raw.startsWith("-"),
         // Integer digits *as written*, leading zeros included.
         intDigits: raw.replace(/^[+-]/, "").split(".")[0].length,
+        afterBreak,
       });
     }
     match = pattern.exec(text);
@@ -116,7 +133,10 @@ const tokenize = (text) => {
  *
  * A hemisphere letter closes the group it belongs to, whether it was written
  * in front (`N34 30`) or behind (`34 30 N`). With no hemisphere letters at all
- * the numbers are simply split down the middle.
+ * the numbers are simply split down the middle. A letter on only one value of a
+ * pair written with a separator ("34.5, 84.1W", "N34.5, -84.1") leaves one group
+ * holding both: it is split where the separator was, the letter going with the
+ * value it is written on.
  */
 const group = (tokens) => {
   const hasHemisphere = tokens.some((t) => t.type === "hemi");
@@ -140,6 +160,7 @@ const group = (tokens) => {
     if (token.type === "number") {
       if (current.numbers.length === 0 && pending) {
         current.hemi = pending;
+        current.side = "prefix";
         pending = null;
       }
       current.numbers.push(token);
@@ -159,16 +180,32 @@ const group = (tokens) => {
       pending = token.letter;
     } else {
       current.hemi = token.letter; // suffix: "34 30 N"
+      current.side = "suffix";
       groups.push(current);
       current = { numbers: [], hemi: null };
     }
   }
   if (current.numbers.length > 0) groups.push(current);
 
+  if (groups.length === 1) {
+    const [only] = groups;
+    const breaks = only.numbers.map((n, i) => (i > 0 && n.afterBreak ? i : -1)).filter((i) => i > 0);
+    if (breaks.length === 1) {
+      const [at] = breaks;
+      const first = { numbers: only.numbers.slice(0, at), hemi: only.side === "prefix" ? only.hemi : null };
+      const second = { numbers: only.numbers.slice(at), hemi: only.side === "suffix" ? only.hemi : null };
+      return [first, second];
+    }
+  }
+
   return groups.length === 2 ? groups : null;
 };
 
-/** Splits a packed DDMM[SS] integer into parts, or null if it can't be one. */
+/**
+ * Splits a packed DDMM[SS] integer into parts; `{ problem }` when it can't be
+ * one: "minutes" for minutes or seconds of 60 or more, "range" for a width no
+ * packed value has.
+ */
 const unpack = (token) => {
   const digits = token.raw.replace(/^[+-]/, "");
   const [intPart, decimals = ""] = digits.split(".");
@@ -176,7 +213,7 @@ const unpack = (token) => {
 
   // Width tells us where the degrees stop: DDMM / DDDMM / DDMMSS / DDDMMSS.
   const layout = { 4: [2, 0], 5: [3, 0], 6: [2, 1], 7: [3, 1] }[intPart.length];
-  if (!layout) return null;
+  if (!layout) return { problem: "range" };
   const [degWidth, hasSeconds] = layout;
 
   const degrees = Number(intPart.slice(0, degWidth));
@@ -184,20 +221,24 @@ const unpack = (token) => {
   const seconds = hasSeconds ? Number(intPart.slice(degWidth + 2)) + fraction : 0;
   const minuteFraction = hasSeconds ? 0 : fraction;
 
-  if (minutes >= 60 || seconds >= 60) return null;
+  if (minutes >= 60 || seconds >= 60) return { problem: "minutes" };
   return {
     degrees: degrees + (minutes + minuteFraction) / 60 + seconds / 3600,
     format: hasSeconds ? "packed-dms" : "packed-ddm",
   };
 };
 
-/** Converts one group's numbers to absolute decimal degrees. */
+/**
+ * Converts one group's numbers to absolute decimal degrees, or `{ problem }`
+ * saying why they are not a value: "pair" (more than degrees, minutes and
+ * seconds), "minutes", or "range".
+ */
 const toDegrees = (numbers, axisMax) => {
-  if (numbers.length > 3) return null;
+  if (numbers.length > 3) return { problem: "pair" };
 
   if (numbers.length >= 2) {
     const [d, m, s] = numbers.map((n) => Math.abs(n.value));
-    if (m >= 60 || (s !== undefined && s >= 60)) return null;
+    if (m >= 60 || (s !== undefined && s >= 60)) return { problem: "minutes" };
     return {
       degrees: d + m / 60 + (s || 0) / 3600,
       format: numbers.length === 3 ? "dms" : "ddm",
@@ -228,57 +269,99 @@ const FORMAT_LABELS = {
 };
 
 /**
- * Parses free text into `{ lat, lon, format, label }`, or null when the text
- * isn't a coordinate (including when it's a valid MGRS grid).
+ * Reads free text as a coordinate pair: `{ parsed, signed }` when it is one,
+ * else `{ problem }` saying why not, for the target field to put in words.
+ *
+ * `parsed` is what {@link parseCoordinate} answers. `signed` is true when the
+ * text said which side of the meridian the longitude is on (a sign on its first
+ * number, or its own hemisphere letter): without one it may have been meant
+ * west, whatever the latitude says, and the target field offers both readings.
+ *
+ * Problems: "empty", "grid" (a valid MGRS grid, never reread), "unreadable"
+ * (letters other than N/S/E/W, or no number), "incomplete" (too few numbers
+ * for a pair yet), "pair" (numbers that do not make two values), "minutes" (minutes
+ * or seconds of 60 or more), "latitude" or "longitude" (out of range), and
+ * "same-axis" ("34N 84N").
  */
-export const parseCoordinate = (text) => {
+export const readCoordinate = (text) => {
   const raw = String(text ?? "").trim();
-  if (!raw) return null;
+  if (!raw) return { problem: "empty" };
   // A grid is a grid. Never reinterpret one as a coordinate.
-  if (looksLikeMgrs(raw)) return null;
+  if (looksLikeMgrs(raw)) return { problem: "grid" };
 
-  const tokens = tokenize(normalize(raw));
-  if (!tokens || tokens.length === 0) return null;
-
+  const normalized = normalize(raw);
   // Letters other than N/S/E/W mean this is something else entirely (a place
   // name, a partial grid); refuse rather than parse the digits out of it.
-  if (/[A-MOP-VXYZ]/i.test(normalize(raw).replace(/[NSEW]/gi, ""))) return null;
+  if (/[A-MOP-VXYZ]/i.test(normalized.replace(/[NSEW]/gi, ""))) return { problem: "unreadable" };
+
+  const tokens = tokenize(normalized);
+  if (!tokens) return { problem: "unreadable" };
+  const numbers = tokens.filter((t) => t.type === "number");
+  if (numbers.length === 0) return { problem: "unreadable" };
 
   const groups = group(tokens);
-  if (!groups) return null;
+  // Fewer than six numbers may be a pair still being typed ("34 32 44" on the
+  // way to degrees, minutes and seconds); six or more that make no pair never will.
+  if (!groups) return { problem: numbers.length < 6 ? "incomplete" : "pair" };
 
-  const resolved = groups.map((g) => {
+  // Which axis each value is meant for, as the ordering rules below decide it:
+  // a hemisphere names it outright, one labelled value fixes the other, and
+  // with none latitude comes first. Used only to say which value is wrong.
+  const axes = groups.map((g) => (g.hemi ? HEMISPHERES[g.hemi].axis : null));
+  const axisOf = (i) => {
+    if (axes[i]) return axes[i];
+    const other = axes[1 - i];
+    if (other) return other === "lat" ? "lon" : "lat";
+    return i === 0 ? "lat" : "lon";
+  };
+
+  const resolved = [];
+  for (const [i, g] of groups.entries()) {
     const info = g.hemi ? HEMISPHERES[g.hemi] : null;
     // Use the axis limit we know about; without a hemisphere assume the wider
     // longitude limit so a valid longitude in first position still parses and
     // gets sorted out by the ordering rules below.
     const axisMax = info ? AXIS_MAX[info.axis] : AXIS_MAX.lon;
     const converted = toDegrees(g.numbers, axisMax);
-    if (!converted) return null;
+    if (converted.problem) {
+      const problem = converted.problem === "range"
+        ? (axisOf(i) === "lat" ? "latitude" : "longitude")
+        : converted.problem;
+      // "34 32 44 84" is degrees, minutes and seconds on the way, read for now as
+      // two degrees and minutes: its "minutes" of 44 84… are not wrong yet.
+      const unlabelled = groups.every((each) => !each.hemi);
+      if (problem === "minutes" && unlabelled && numbers.length < 6) return { problem: "incomplete" };
+      return { problem };
+    }
     const signedByText = g.numbers[0].negative ? -1 : 1;
-    return {
+    resolved.push({
       axis: info?.axis ?? null,
       value: converted.degrees * (info ? info.sign : signedByText),
       format: converted.format,
-    };
-  });
+      // Whether the value says its own side: a hemisphere letter, or a sign on
+      // its first number (a dash between minutes and seconds is not one).
+      sided: Boolean(info) || /^[+-]/.test(g.numbers[0].raw),
+    });
+  }
 
-  if (resolved.some((r) => r === null)) return null;
   const [first, second] = resolved;
 
   let lat;
   let lon;
+  let lonValue;
   if (first.axis && second.axis && first.axis !== second.axis) {
     // Hemispheres name the axes outright, in either order ("W084 N34").
     ({ lat, lon } = first.axis === "lat"
       ? { lat: first.value, lon: second.value }
       : { lat: second.value, lon: first.value });
+    lonValue = first.axis === "lat" ? second : first;
   } else if (first.axis === second.axis && first.axis) {
-    return null; // "34N 84N" — not a coordinate pair.
+    return { problem: "same-axis" }; // "34N 84N" — not a coordinate pair.
   } else if (first.axis === "lon" || second.axis === "lat") {
     // Only one side was labelled, but that's enough to fix both.
     lat = second.value;
     lon = first.value;
+    lonValue = first;
   } else {
     // Nothing labelled: latitude first, as every mapping tool writes it.
     //
@@ -291,19 +374,30 @@ export const parseCoordinate = (text) => {
     // genuinely means longitude first can say so with a hemisphere letter.
     lat = first.value;
     lon = second.value;
+    lonValue = second;
   }
 
-  if (!Number.isFinite(lat) || !Number.isFinite(lon)) return null;
-  if (Math.abs(lat) > 90 || Math.abs(lon) > 180) return null;
+  if (!Number.isFinite(lat) || !Number.isFinite(lon)) return { problem: "unreadable" };
+  if (Math.abs(lat) > 90) return { problem: "latitude" };
+  if (Math.abs(lon) > 180) return { problem: "longitude" };
 
   const format = first.format === second.format ? first.format : "mixed";
   return {
-    lat,
-    lon,
-    format,
-    label: FORMAT_LABELS[format] || "lat/long",
+    parsed: {
+      lat,
+      lon,
+      format,
+      label: FORMAT_LABELS[format] || "lat/long",
+    },
+    signed: lonValue.sided,
   };
 };
+
+/**
+ * Parses free text into `{ lat, lon, format, label }`, or null when the text
+ * isn't a coordinate (including when it's a valid MGRS grid).
+ */
+export const parseCoordinate = (text) => readCoordinate(text).parsed ?? null;
 
 /** Compact display of a parsed pair, for confirming what was recognised. */
 export const formatDecimal = (lat, lon, places = 5) =>

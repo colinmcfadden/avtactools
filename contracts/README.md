@@ -13,7 +13,7 @@ contracts/
 ├─ briefs/          the mission brief's formats as data (templates, bindings, constants, standards) — see briefs/README.md
 ├─ fixtures/        golden inputs and expected outputs, one JSON file per domain
 │  ├─ mgrs/         forward.json, inverse.json      reference: PyGeodesy; grid.json: the web
-│  ├─ coords/       parse.json                      reference: the web app
+│  ├─ coords/       parse.json, reading.json        reference: the web app (coordParse.js; targetReading.js, the target field)
 │  ├─ planning/     aircraft.json, route.json, summary.json, graphics.json   reference: the web app
 │  ├─ workspace/    diagram.json, ops.json, doghouses.json   reference: the web app
 │  ├─ routes/       sketch.json, winds.json, handoff.json   reference: the web app (sketchOps, routeWinds, foreflight.js)
@@ -56,6 +56,7 @@ reference is.
 | `mgrs/inverse.json` | — (the web asks the server) | same | `core-geo` |
 | `mgrs/grid.json` | `frontend/src/contracts/mgrsGridFixtures.test.js` | — | `core-geo` (`MgrsGrid`) |
 | `coords/parse.json` | `frontend/src/contracts/webFixtures.test.js` | — | `core-geo` |
+| `coords/reading.json` | `frontend/src/contracts/webFixtures.test.js` | — | `core-geo` (`PlaceSearch.read`, `nearestFirst`, `formatLatLong`) |
 | `planning/*.json` | `frontend/src/contracts/webFixtures.test.js` | — | `core-planning` (`summary.json`: `LzSummary`; `graphics.json`: `PlanningGraphics`) |
 | `workspace/diagram.json` | `frontend/src/contracts/webFixtures.test.js` | — | `core-model` |
 | `brief/compile.json` | `frontend/src/contracts/briefCompileFixtures.test.js` | `backend/tests/test_brief_pdf.py` (prints its first model) | `core-brief` (`CompileBrief`: every case, strictly: null kept apart from absent, numbers in JavaScript's digits, keys in JavaScript's order, the strips' numbers and the slope calls too; `CompileFixtureTest`) |
@@ -78,6 +79,7 @@ reference is.
 | `threats/parse.json` | `frontend/src/contracts/sqliteFixtures.test.js` | — | `core-formats` |
 | `network/responses.json` | — (it is *written* from the server) | `backend/tests/test_network_fixtures.py` | `core-network` |
 | `network/priority.json` | `frontend/src/contracts/networkFixtures.test.js` | — | `core-network` |
+| `places/*` | — (the web asks the server) | `backend/tests/test_places.py` (`PlaceFixtureTests`: `contracts/scripts/place_fixtures.py check`) | not yet (P3 of `docs/PLACE_SEARCH.md`: Android's search over `places.sqlite` must answer every case of `queries.json`, in order) |
 | `threats/export.json` | — | `backend/tests/test_contract_fixtures.py` (the rows the exporter writes) | `core-formats` (`ThsExport`) |
 | `packs/ops.json` | `frontend/src/contracts/packOpsFixtures.test.js` | `backend/tests/test_pack_ops.py` (the server applies every mission-pack edit with it) | `core-missionpacks` (`PackOps`: every case, strictly: status, reason, null kept apart from absent, keys in JavaScript's order; `PackOpsFixtureTest`) |
 | `packs/ops-brief.json` | `frontend/src/contracts/packOpsFixtures.test.js` | `backend/tests/test_pack_ops.py` | `core-missionpacks` (`PackOpsFixtureTest`, its cases beside `ops.json`'s, as strictly) |
@@ -181,6 +183,25 @@ tests show what they have to follow.
 cd backend; $env:UPDATE_CONTRACTS="1"; python -m pytest tests/test_network_fixtures.py
 ```
 
+### The `places/` fixtures
+
+The place search (`docs/PLACE_SEARCH.md`): the server builds one SQLite index of the FAA's airports, heliports,
+navaids and fixes (NASR) and USGS's place names (GNIS), and answers `POST /api/places/search` from it; Android is to
+search its own copy of the same file. `sources/` holds real rows, unchanged, from the 10-29-2026 NASR cycle's CSV
+extract and GNIS's file of 2026-11-02 (north Georgia round Blairsville, Civil and Census rows that must be left out,
+a river listed in two states, towns named alike in nine states, a parish, a borough, a city of its own, a
+territory). `places.sqlite` is what `backend/places/index.py` builds from them (a fixed build time), and
+`queries.json` what `backend/places/search.py` answers over it, in order, as the API says each place.
+
+```powershell
+python contracts/scripts/place_fixtures.py write   # after a change to the reader, the index or the ranking
+python contracts/scripts/place_fixtures.py check   # the backend test runs this
+```
+
+`check` rebuilds the index from `sources/` and asks every query of it and of the committed file; it compares
+answers and meta, never bytes. The index's schema (`index.SCHEMA`) is in its meta: a reader of another schema must
+not read it.
+
 ### The `sqlite/` fixtures
 
 `.LPS` and `.ths` files are SQLite databases, and the web and the apps each read them with a small
@@ -212,7 +233,7 @@ code — a changed number is a changed plan on a crew's kneeboard.
 ```powershell
 # MGRS (needs pygeodesy, as pinned in backend/requirements.txt)
 python contracts/scripts/mgrs_fixtures.py write
-python contracts/scripts/mgrs_fixtures.py check    # exact regeneration check, ~20 s
+python contracts/scripts/mgrs_fixtures.py check    # regeneration check: text exact, numbers to 1e-12, ~20 s
 
 # Everything the web app is the reference for
 cd frontend

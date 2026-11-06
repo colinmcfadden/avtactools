@@ -1,0 +1,4 @@
+﻿feature_id|feature_name|feature_class|state_name|state_numeric|county_name|county_numeric|map_name|date_created|date_edited|bgn_type|bgn_authority|bgn_date|prim_lat_dms|prim_long_dms|prim_lat_dec|prim_long_dec|source_lat_dms|source_long_dms|source_lat_dec|source_long_dec
+1306783|Mount Pleasant|Populated Place|Tennessee|47|Maury|119|Mount Pleasant|09/28/2023|09/28/2023||||353203N|0871225W|35.5342414|-87.2069541|||0.0|0.0
+1315555|Mount Pleasant|Populated Place|Tennessee|47|Greene|059|Mosheim|05/19/1980|06/07/2022||||361010N|0825425W|36.169545|-82.9068215|||0.0|0.0
+1315556|Mount Pleasant|Populated Place|Tennessee|47|Henry|079|Buchanan|05/19/1980|06/07/2022||||362911N|0881455W|36.4864444|-88.2486498|||0.0|0.0

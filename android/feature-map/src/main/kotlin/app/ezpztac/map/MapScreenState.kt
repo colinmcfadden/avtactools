@@ -3,7 +3,7 @@ package app.ezpztac.map
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import dagger.hilt.android.lifecycle.HiltViewModel
-import app.ezpztac.geo.PlaceResult
+import app.ezpztac.geo.PlaceChoice
 import app.ezpztac.geo.PlaceSearch
 import app.ezpztac.model.LatLon
 import kotlinx.coroutines.Job
@@ -130,17 +130,25 @@ class MapViewModel @Inject constructor(
 
     // -- Search ------------------------------------------------------------------------------------------
 
-    /** Looks for [text]: true when it is a place, which the map then flies to; false when it was not understood, said in [MapUiState.searchError]. */
-    fun search(text: String): Boolean = when (val result = PlaceSearch.resolve(text)) {
-        is PlaceResult.Found -> {
-            _state.update { it.copy(searchError = null) }
-            _commands.tryEmit(MapCommand.FlyTo(result.at, SEARCH_ZOOM))
-            true
+    /**
+     * Looks for [text]: true when it is one place, which the map then flies to; false when it is none, or could be two (an unsigned pair,
+     * which is never guessed between: the list under the field offers both), said in [MapUiState.searchError].
+     */
+    fun search(text: String): Boolean {
+        val reading = PlaceSearch.read(text)
+        val only = reading.choices.singleOrNull()
+        if (only != null) {
+            goTo(only)
+            return true
         }
-        is PlaceResult.NotUnderstood -> {
-            _state.update { it.copy(searchError = result.message) }
-            false
-        }
+        _state.update { it.copy(searchError = reading.message ?: PlaceSearch.Messages.EMPTY) }
+        return false
+    }
+
+    /** A place chosen from the list under the search: the map flies there. */
+    fun goTo(choice: PlaceChoice) {
+        _state.update { it.copy(searchError = null) }
+        _commands.tryEmit(MapCommand.FlyTo(choice.at, SEARCH_ZOOM))
     }
 
     fun clearSearchError() = _state.update { it.copy(searchError = null) }
