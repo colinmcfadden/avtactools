@@ -15,7 +15,8 @@
     0.0,
     -42.336222865,
     255817.748178787
-   ]
+   ],
+   "ink": 1.0
   },
   "edges": {
    "north": "neighbour:great-falls-sec,seattle-sec",

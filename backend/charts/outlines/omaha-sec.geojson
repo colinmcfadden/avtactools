@@ -15,7 +15,8 @@
     0.0,
     -42.334973725,
     257040.430107308
-   ]
+   ],
+   "ink": 1.0
   },
   "edges": {
    "north": "neighbour:twin-cities-sec",

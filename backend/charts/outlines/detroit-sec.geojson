@@ -15,7 +15,8 @@
     0.0,
     -42.334699851,
     234516.165501187
-   ]
+   ],
+   "ink": 1.0
   },
   "edges": {
    "north": "neighbour:lake-huron-sec",

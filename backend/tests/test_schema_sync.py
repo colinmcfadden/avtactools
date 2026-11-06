@@ -18,7 +18,7 @@ if str(BACKEND_DIR) not in sys.path:
     sys.path.insert(0, str(BACKEND_DIR))
 
 from aircraft_seed import seed_aircraft_profiles  # noqa: E402
-from models import AccountToken, AircraftProfile, LoginEvent, SavedLZ, SavedPointSet, SavedRoute, User, db  # noqa: E402
+from models import AccountToken, AircraftProfile, DataJob, LoginEvent, SavedLZ, SavedPointSet, SavedRoute, User, db  # noqa: E402
 from schema_sync import ensure_unique_index, sync_table_columns  # noqa: E402
 
 
@@ -485,3 +485,66 @@ class UserPendingMilColumnTests(unittest.TestCase):
     def test_is_idempotent(self):
         sync_table_columns(db, User)
         self.assertEqual([], sync_table_columns(db, User))
+
+
+# data_job as the Data tab's DEM downloads made it, before a chart build's columns (docs/VFR_CHARTS.md §5).
+LEGACY_DATA_JOB = """
+CREATE TABLE data_job (
+    id VARCHAR(32) NOT NULL PRIMARY KEY,
+    kind VARCHAR(20) NOT NULL,
+    product VARCHAR(10) NOT NULL,
+    state VARCHAR(10) NOT NULL,
+    files JSON NOT NULL,
+    files_total INTEGER NOT NULL,
+    files_done INTEGER NOT NULL,
+    bytes_total BIGINT NOT NULL,
+    bytes_done BIGINT NOT NULL,
+    replace BOOLEAN NOT NULL,
+    cancel_requested BOOLEAN NOT NULL,
+    error VARCHAR(300),
+    requested_by INTEGER,
+    requested_by_name VARCHAR(120) NOT NULL,
+    created_at DATETIME NOT NULL,
+    started_at DATETIME,
+    finished_at DATETIME
+)
+"""
+
+CHART_BUILD_COLUMNS = ["build", "stage", "work_done", "work_total", "token"]
+
+
+class DataJobChartColumnsTests(unittest.TestCase):
+    """data_job gained a chart build's columns: added to the table a DEM download made, its jobs kept as they were."""
+
+    def setUp(self):
+        self.app = Flask(__name__)
+        self.app.config.update(
+            SQLALCHEMY_DATABASE_URI="sqlite:///:memory:",
+            SQLALCHEMY_TRACK_MODIFICATIONS=False,
+        )
+        db.init_app(self.app)
+        self.ctx = self.app.app_context()
+        self.ctx.push()
+        db.session.execute(text(LEGACY_DATA_JOB))
+        db.session.execute(text(
+            "INSERT INTO data_job (id, kind, product, state, files, files_total, files_done, bytes_total, bytes_done, replace, "
+            "cancel_requested, requested_by_name, created_at) VALUES ('ab12', 'dem_download', '13', 'done', '[]', 2, 2, 10, 10, 0, "
+            "0, 'Admin', '2026-11-04 12:00:00')"
+        ))
+        db.session.commit()
+
+    def tearDown(self):
+        db.session.remove()
+        self.ctx.pop()
+
+    def test_adds_the_chart_columns_and_keeps_the_downloads(self):
+        self.assertEqual(CHART_BUILD_COLUMNS, sync_table_columns(db, DataJob))
+        job = db.session.get(DataJob, "ab12")
+        self.assertEqual(("dem_download", "done", 2, None, None, None, None, None),
+                         (job.kind, job.state, job.files_done, job.build, job.stage, job.work_done, job.work_total, job.token))
+        job.build, job.stage, job.work_done, job.token = "2026-10-29.1", "tile", 7, "a" * 32
+        db.session.commit()
+
+    def test_is_idempotent(self):
+        sync_table_columns(db, DataJob)
+        self.assertEqual([], sync_table_columns(db, DataJob))

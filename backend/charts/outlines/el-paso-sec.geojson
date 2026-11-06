@@ -15,7 +15,8 @@
     0.0,
     -42.335114263,
     233585.116905557
-   ]
+   ],
+   "ink": 1.0
   },
   "edges": {
    "north": "neighbour:albuquerque-sec",

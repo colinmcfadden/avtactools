@@ -1,4 +1,6 @@
-"""DEMs downloaded from USGS in the background, one job at a time (docs/DATA_ADMIN_AND_PREBUILT_3D_PLAN.md §10.4, §10.5).
+"""The Data tab's background jobs, one at a time: DEMs downloaded from USGS (docs/DATA_ADMIN_AND_PREBUILT_3D_PLAN.md §10.4,
+§10.5), and VFR chart builds (``kind`` ``chart_build``, docs/VFR_CHARTS.md §5), which run in a process of their own that the runner
+starts and watches (``charts.job``).
 
 A download is mostly waiting on the network, which a thread of its own does without taking one of gunicorn's request
 threads (AGENTS.md §9: one worker, eight threads). Each file comes down into ``<DEM root>/.incoming`` as a ``.part`` (the
@@ -15,6 +17,7 @@ from __future__ import annotations
 
 import collections
 import logging
+from dataclasses import dataclass
 import os
 import secrets
 import shutil
@@ -44,6 +47,20 @@ TRASH = ".trash"
 
 class Cancelled(Exception):
     pass
+
+
+@dataclass(frozen=True)
+class Source:
+    """Where a job may fetch from, and how it names itself: a file is fetched only from a URL ``allowed`` passes, and no redirect is
+    followed, whatever a URL in the job's row says."""
+
+    name: str                   # in the words a failure is said in: "USGS answered 503"
+    allowed: object             # url -> bool
+    user_agent: str
+    wrong_size: str             # the words for a file whose length is not the one listed
+
+
+USGS = Source("USGS", usgs.allowed_url, usgs.USER_AGENT, "USGS's file is not the size The National Map lists.")
 
 
 class FileFailed(RuntimeError):
@@ -115,7 +132,7 @@ class Runner:
                 self._queue.append(job_id)
             if self.inline or not self._queue or (self._thread is not None and self._thread.is_alive()):
                 return
-            self._thread = threading.Thread(target=self._work, args=(app,), name="data-download", daemon=True)
+            self._thread = threading.Thread(target=self._work, args=(app,), name="data-jobs", daemon=True)
             self._thread.start()
 
     def knows(self, job_id):
@@ -123,14 +140,23 @@ class Runner:
             return job_id in self._known
 
     def resume(self, app):
-        """Asks again for every job a stopped process left queued or running; only where writes are on."""
+        """Asks again for every job a stopped process left queued or running; only where writes are on. A chart build left running
+        is asked again only once its lock is free: held, it still runs somewhere (the other container of a redeploy), and is left
+        as it is to be looked at again (docs/VFR_CHARTS.md §5.1). A chart build its process finished and nobody registered is
+        registered (§5.3, step 8)."""
         import data_admin
 
         if not data_admin.can_write():
             return
+        from charts import job as chart_job
+
+        chart_job.recover(self)
         for job in DataJob.query.filter(DataJob.state.in_(("queued", "running"))).all():
-            if not self.knows(job.id):
-                self.enqueue(app, job.id)
+            if self.knows(job.id):
+                continue
+            if job.kind == chart_job.KIND and not chart_job.resumable(job):
+                continue
+            self.enqueue(app, job.id)
 
     def _next(self):
         with self._lock:
@@ -142,7 +168,14 @@ class Runner:
     def _one(self, app, job_id):
         try:
             with app.app_context():
-                run(job_id)
+                job = db.session.get(DataJob, job_id)
+                kind = job.kind if job is not None else None
+                if kind == "chart_build":
+                    from charts import job as chart_job
+
+                    chart_job.watch(job_id)
+                else:
+                    run(job_id)
         except Exception:  # noqa: BLE001 - run says its own failures; this is for one that escaped it
             log.exception("data admin: job failed")
         finally:
@@ -227,8 +260,14 @@ def _sweep(root: Path) -> None:
                 pass
 
 
-def _download(http, entry, part: Path, root: Path, progress: _Progress):
-    """Fetches one file into ``part``, resuming what is there; raises on a failure that trying again would not mend."""
+def _download(http, entry, part: Path, root: Path, progress, *, source: Source = USGS, label: str = "The DEM folder",
+              wait=None, headroom: int | None = None):
+    """Fetches one file into ``part``, resuming what is there; raises on a failure that trying again would not mend. ``progress``
+    is anything with a ``save()`` (which raises to stop), ``wait`` is called between chunks (by default it waits out an analysis),
+    and ``headroom`` is handed to the room checks (``volumes.check_room``)."""
+    if not source.allowed(entry["url"]):
+        raise FileFailed(f"Not one of {source.name}'s file hosts.")
+    wait = _wait_for_analysis if wait is None else wait
     expected = entry["size"]
     last_room = 0
     for attempt in range(TRIES):
@@ -238,7 +277,7 @@ def _download(http, entry, part: Path, root: Path, progress: _Progress):
             have = 0
         if have == expected:
             return
-        headers = {"User-Agent": usgs.USER_AGENT}
+        headers = {"User-Agent": source.user_agent}
         if have:
             headers["Range"] = f"bytes={have}-"
         try:
@@ -247,29 +286,29 @@ def _download(http, entry, part: Path, root: Path, progress: _Progress):
                 if status == 200 and have:
                     have = 0                         # the host would not resume: start again
                 elif status == 429 or status >= 500:
-                    raise ConnectionError(f"USGS answered {status}")     # busy: try again after a pause
+                    raise ConnectionError(f"{source.name} answered {status}")     # busy: try again after a pause
                 elif status not in (200, 206):
-                    # A redirect is not followed: it could lead anywhere (usgs.HOSTS).
-                    raise FileFailed(f"USGS answered {status} for this file.")
+                    # A redirect is not followed: it could lead anywhere (usgs.HOSTS, charts.faa.HOST).
+                    raise FileFailed(f"{source.name} answered {status} for this file.")
                 length = response.headers.get("Content-Length")
                 try:
                     length = None if length is None else int(length)
                 except ValueError:
                     length = None
                 if length is not None and length != expected - have:
-                    raise FileFailed("USGS's file is not the size The National Map lists.")
+                    raise FileFailed(source.wrong_size)
                 with open(part, "ab" if have else "wb") as out:
                     for chunk in response.iter_content(CHUNK):
                         out.write(chunk)
                         have += len(chunk)
                         entry["done"] = have
                         if have > expected:
-                            raise FileFailed("USGS sent more than the file's size.")
+                            raise FileFailed(f"{source.name} sent more than the file's size.")
                         if have - last_room >= ROOM_EVERY:
                             last_room = have
-                            volumes.check_room(root, expected - have, label="The DEM folder")
+                            volumes.check_room(root, expected - have, label=label, headroom=headroom)
                         progress.save()
-                        _wait_for_analysis()
+                        wait()
             if have == expected:
                 return
         except (requests_errors(), ConnectionError, TimeoutError):
