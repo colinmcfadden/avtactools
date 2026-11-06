@@ -144,3 +144,28 @@
   white-space: nowrap;
   border: 0;
 }
+
+/* The places (docs/PLACE_SEARCH.md §6): the list scrolls once "Show n more" has grown it past the window's room. */
+.target-field__list {
+  max-height: min(60vh, 520px);
+  overflow-y: auto;
+}
+
+.target-field__option--place .target-field__main {
+  font-family: inherit;
+}
+
+/* How far the place is from the map, at the row's end. */
+.target-field__end {
+  flex: none;
+  color: var(--ff-text-muted, #9ca3af);
+  font-family: var(--mono, "SFMono-Regular", Consolas, "Liberation Mono", monospace);
+  font-size: 0.72rem;
+  white-space: nowrap;
+}
+
+.target-field__option--more .target-field__main {
+  color: var(--ff-accent, #5aa7d4);
+  font-family: inherit;
+  font-weight: 600;
+}

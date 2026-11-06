@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { fireEvent, render, screen, within } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import TargetField from "./TargetField";
 import { formatMGRS } from "../utils/Helpers";
 
@@ -237,5 +237,125 @@ describe("formatMGRS leaves coordinates alone", () => {
 
   it("still handles an empty field", () => {
     expect(formatMGRS("")).toBe("");
+  });
+});
+
+describe("TargetField with the place search", () => {
+  const PLACES = [
+    { id: "nasr:apt:21530.", kind: "airport", kindWords: "Airport", name: "BLAIRSVILLE", ident: "DZJ", city: "BLAIRSVILLE", state: "GA", lat: 34.85508, lon: -83.99733, elevationFt: 1907 },
+    { id: "nasr:apt:34601.", kind: "airport", kindWords: "Airport", name: "BLAIRSTOWN", ident: "1N7", city: "BLAIRSTOWN", state: "NJ", lat: 40.97111, lon: -74.9975, elevationFt: 372 },
+    { id: "nasr:apt:21528.1", kind: "heliport", kindWords: "Heliport, private", name: "UNION GENERAL HOSPITAL", ident: "1GA3", city: "BLAIRSVILLE", state: "GA", lat: 34.8817, lon: -83.9624, elevationFt: 1900 },
+    { id: "nasr:apt:1", kind: "heliport", kindWords: "Heliport, private", name: "BLAIRS PAD", ident: "9GA1", city: "BLAIRSVILLE", state: "GA", lat: 34.88, lon: -83.96, elevationFt: null },
+    { id: "nasr:fix:BLAIR", kind: "fix", kindWords: "Fix", name: null, ident: "BLAIR", city: null, state: "GA", lat: 34.7, lon: -84.0, elevationFt: null },
+  ];
+  const NEAR = { lat: 34.8, lon: -83.9 };
+
+  const PlaceHarness = ({ onChoose, searchPlaces, onShare = null }) => {
+    const [value, setValue] = useState("");
+    return <TargetField value={value} onChange={setValue} onChoose={onChoose} onShare={onShare} near={NEAR} searchPlaces={searchPlaces} />;
+  };
+
+  const placeSetup = ({ answer = { available: true, places: PLACES }, onShare = null } = {}) => {
+    const onChoose = vi.fn();
+    const searchPlaces = vi.fn(async () => (typeof answer === "function" ? answer() : answer));
+    render(<PlaceHarness onChoose={onChoose} searchPlaces={searchPlaces} onShare={onShare} />);
+    const input = screen.getByRole("combobox");
+    input.focus();
+    return { onChoose, searchPlaces, input, type: (text) => fireEvent.change(input, { target: { value: text } }) };
+  };
+
+  it("lists the first three places a name finds, nearest first, with a row for the rest", async () => {
+    const { type, searchPlaces } = placeSetup();
+    type("blairs");
+    expect(await screen.findByText("DZJ · BLAIRSVILLE")).toBeInTheDocument();
+    expect(searchPlaces).toHaveBeenCalledWith("blairs", { lat: 34.8, lon: -83.9 }, 20);
+    expect(optionTexts()).toEqual(["DZJ · BLAIRSVILLE", "1N7 · BLAIRSTOWN", "1GA3 · UNION GENERAL HOSPITAL", "Show 2 more places"]);
+    expect(screen.getByText("Airport · BLAIRSVILLE, GA · 1,907 ft")).toBeInTheDocument();
+    expect(document.querySelector(".target-field__end").textContent).toBe("6 nm");
+    // A name is no grid: the reader's sentence about grids is not shown.
+    expect(messageText()).toBeUndefined();
+    expect(statusText()).toContain("3 places by that name, and 2 more.");
+  });
+
+  it("shows the rest when asked, with the arrow keys and Enter, keeping the row picked", async () => {
+    const { input, type } = placeSetup();
+    type("blairs");
+    await screen.findByText("DZJ · BLAIRSVILLE");
+    for (let i = 0; i < 4; i += 1) fireEvent.keyDown(input, { key: "ArrowDown" });
+    fireEvent.keyDown(input, { key: "Enter" });
+    expect(optionTexts()).toEqual(["DZJ · BLAIRSVILLE", "1N7 · BLAIRSTOWN", "1GA3 · UNION GENERAL HOSPITAL", "9GA1 · BLAIRS PAD", "BLAIR"]);
+    expect(screen.getAllByRole("option")[3]).toHaveAttribute("aria-selected", "true");
+    // Typing again folds it back to the first few.
+    type("blairsv");
+    expect(optionTexts()).toContain("Show 2 more places");
+  });
+
+  it("chooses a place as a reading is chosen, with its label", async () => {
+    const { type, onChoose } = placeSetup();
+    type("dzj");
+    fireEvent.click(await screen.findByText("DZJ · BLAIRSVILLE"));
+    expect(onChoose).toHaveBeenCalledWith(expect.objectContaining({
+      lat: 34.85508, lon: -83.99733, label: "BLAIRSVILLE (DZJ)", place: expect.objectContaining({ ident: "DZJ" }),
+    }));
+    expect(onChoose.mock.calls[0][0].mgrs).toMatch(/^17S /);
+  });
+
+  it("chooses the first place on GO, once the list is the answer for the text", async () => {
+    const { type, onChoose } = placeSetup();
+    type("blairs");
+    await screen.findByText("DZJ · BLAIRSVILLE");
+    fireEvent.click(screen.getByText("GO"));
+    expect(onChoose).toHaveBeenCalledWith(expect.objectContaining({ label: "BLAIRSVILLE (DZJ)" }));
+  });
+
+  it("says when no place has that name", async () => {
+    const empty = placeSetup({ answer: { available: true, places: [] } });
+    empty.type("zzzq");
+    await waitFor(() => expect(messageText()).toBe("No airport, heliport, navaid or fix by that name or identifier."));
+  });
+
+  it("says the search failed, and that grids still work", async () => {
+    const failing = placeSetup({ answer: () => { throw new Error("down"); } });
+    failing.type("blairs");
+    await waitFor(() => expect(messageText()).toBe("The place search is not answering. Grids and lat/longs still work."));
+  });
+
+  it("asks nothing for a grid, and offers places under a digit-led identifier", async () => {
+    const { type, searchPlaces } = placeSetup();
+    type("16sgc2886455349");
+    expect(optionTexts()).toEqual(["16S GC 28864 55349", "33.91372° N, 84.52451° W"]);
+    await new Promise((resolve) => setTimeout(resolve, 200));
+    expect(searchPlaces).not.toHaveBeenCalled();
+    type("1ga3");
+    expect(await screen.findByText("DZJ · BLAIRSVILLE")).toBeInTheDocument();
+    expect(searchPlaces).toHaveBeenCalledWith("1ga3", expect.anything(), 20);
+  });
+
+  it("drops an answer for text typed before", async () => {
+    let release;
+    const slow = new Promise((resolve) => { release = resolve; });
+    const answers = [slow, Promise.resolve({ available: true, places: [PLACES[4]] })];
+    const { type } = placeSetup({ answer: () => answers.shift() });
+    type("blai");
+    await new Promise((resolve) => setTimeout(resolve, 200));
+    type("blair");
+    expect(await screen.findByText("BLAIR")).toBeInTheDocument();
+    release({ available: true, places: PLACES });
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(optionTexts()).toEqual(["BLAIR"]);
+  });
+
+  it("shares a place's grid with its name", async () => {
+    const onShare = vi.fn();
+    const { type } = placeSetup({ onShare });
+    type("dzj");
+    await screen.findByText("DZJ · BLAIRSVILLE");
+    fireEvent.click(screen.getByRole("button", { name: /^Share grid 17S/ }));
+    expect(onShare).toHaveBeenCalledWith(expect.objectContaining({ label: "BLAIRSVILLE (DZJ)" }));
+  });
+
+  it("says it searches places in its placeholder only when it does", () => {
+    placeSetup();
+    expect(screen.getByRole("combobox")).toHaveAttribute("placeholder", "Search by grid, lat/long or place");
   });
 });

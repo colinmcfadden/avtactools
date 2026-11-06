@@ -1,8 +1,8 @@
 # Place search — plan
 
-Status: **partly decided, not built** (2026-11-05). The owner asked how hard it would be to add addresses and searchable points of
+Status: **NASR on the web built** (2026-11-05, §0); GNIS, Android and the layer not built. The owner asked how hard it would be to add addresses and searchable points of
 interest, so that a crew can type a name and get its grid. This file plans it for the web and Android. The owner answered §12's
-Q1, Q2, Q5 and Q6 the same day, each as recommended. Q4 and Q7 to Q11 are still open. Where this plan and the code disagree once it is built, the code wins (AGENTS.md §16).
+Q1, Q2, Q4, Q5, Q6 and Q10 the same day, each as recommended, and chose GNIS as the next step. Q7, Q8, Q9 and Q11 are still open. Where this plan and the code disagree once it is built, the code wins (AGENTS.md §16).
 
 **In short.**
 - **It is a search, not a map layer.** A name typed into the field that already reads grids and lat/longs (PR #140) lists the places it
@@ -20,6 +20,44 @@ Q1, Q2, Q5 and Q6 the same day, each as recommended. Q4 and Q7 to Q11 are still 
     - if crews want the landmarks GNIS no longer holds (schools, churches, towers, stadiums), add them later from Overture Maps' open
       places data, into the same index.
 - **Built and refreshed as Data tab jobs** (`/admin/data`), as the VFR charts are (docs/VFR_CHARTS.md §5).
+
+## 0. What is built (2026-11-05)
+
+The web's search over the FAA's NASR, behind `place_search` (in `DEFAULT_OFF`: admins and the testers an admin ticks). It departs from the
+plan below where the list says so; where they disagree, this section and the code win.
+
+- **NASR only.** GNIS (§4.2) is the next source, into the same index; the schema and the ranking leave room for it.
+- **The index** (`backend/places/`): `nasr.py` reads the cycle's APT, NAV and FIX CSV zips (airports and every other kind of landing site,
+  navaids, fixes and VFR waypoints; a row with no position is left out, never put at 0°, 0°), `index.py` writes one FTS4 SQLite file with the
+  simple tokenizer over text `text.py` folds to plain lower case (so Android 29's SQLite 3.22 can read the same file, §7), `search.py`
+  ranks. Measured on the 10-29-2026 cycle: 91,102 places, 18.7 MB, built in under a second; a search well under a millisecond.
+- **The ranking**: an identifier or ICAO code typed whole first, whatever the distance; then the name equal to the text, the name starting
+  with it, an identifier starting with it (after the names, so a fix's `ATLEE` never pushes *Atlanta* away), then every word typed starting
+  a word of the name, identifier or city. In each group open before closed, nearest first, then public, military, private, navaid, fix.
+  Fixes only from three characters.
+- **Names are the FAA's own, in its capitals** (`BLAIRSVILLE`, `UNION GENERAL HOSPITAL`), as the chart and the Chart Supplement spell
+  them; §1's examples in mixed case are GNIS's style. `ft rucker` finds nothing (the FAA spells it `FORT RUCKER`): aliases are §12, Q8.
+- **Kept current by the API itself, not a Data tab job** (`places/refresh.py`): a background thread looks at the APRA API every six hours
+  and, when the index under `PLACES_DIR` is not the current cycle's, fetches its three zips from `nfdc.faa.gov` (https only, the two FAA
+  hosts only, no redirects followed, 64 MB a file at most), checks the counts (a whole cycle has 10,000 airports, 4,000 heliports and 50,000
+  fixes or more, and no kind moves more than 5% against the last build), builds beside the old and switches `current.json`; two builds are
+  kept. It waits while an analysis runs, as the NAIP pass does. A build is a second's work, so §10's fresh interpreter and its wait for
+  the charts' C1 are not needed for NASR; GNIS (a million rows) may want them. `PLACES_REFRESH=off` stops it; `python -m places
+  refresh|build|search` does each by hand.
+- **The route** is §6's, but **web only**: not in `contracts/openapi.yaml`, so the API version does not move (Android is to search its own
+  copy, §7). Its answer is `{ available, build, nasrCycle, places }`, `build` as `2026-10-29.s1` (the cycle and the index's schema). Rate
+  limit: 10 a second per account.
+- **The field** (`TargetField`, so the top bar's Spotlight search and the phone's alike; `feature/places/`): from the first two
+  characters it tells what is typed (`placeQuery.js`): a grid or a lat/long the reader has read asks nothing; a name, or a letter-led
+  identifier (`DZJ`, `KATL`), asks for places and hides the reader's sentence about grids; a digit-led identifier (`1GA3`, `0J0`), which a
+  grid starts as too, asks and keeps the sentence; a hemisphere letter before a digit (`N34`) is a coordinate. Asked 150 ms after the typing
+  pauses, the latest answer only, `near` rounded to 0.1° by the client too. The first **three** places show, then *Show n more places*
+  (up to 20), which the arrow keys and Enter reach; typing again folds it. Each row: identifier and name; what it is, city and state,
+  elevation; and how far from the middle of the map in **nautical miles** (not km as §1 says: crews measure in nm). The grid is the
+  device's. GO or Enter with no row picked takes the first place once the list answers the text as it is.
+- **Choosing** flies the map there (zoom 14 for an airport, 15 for a pad, navaid or fix), puts the place's grid in the field, and toasts
+  its name and grid with *Set as target*; nothing is made. Sharing sends the name as the label. On the phone's field, text that starts
+  with a letter is left as typed rather than spaced as a grid.
 
 **How sure each number is.**
 - *Measured*: read on 2026-11-05 from the source named, by a ranged `GET`, a bucket listing, or files downloaded and counted.
@@ -372,7 +410,7 @@ What it keeps true:
   sort of a few hundred candidates at most.
 - **With no index on the server** (none built yet, or the Fly backend) it answers `{ "available": false, "places": [] }`, and the field
   lists coordinates only, as today.
-- **A rate limit** of 20 searches a second per account, through `auth_rate_limit.check_rate_limits`. It is in-process, which holds with
+- **A rate limit** of 10 searches a second per account (as built, §0), through `auth_rate_limit.check_rate_limits`. It is in-process, which holds with
   the one worker (AGENTS.md §9). A person typing never reaches it.
 
 ## 7. Searching on the device (Android)
@@ -511,11 +549,14 @@ Each has a recommendation, marked **(rec.)**.
 **Answered by the owner, 2026-11-05:**
 - **Q1, choosing a place:** fly there and offer *Set as target*, as recommended.
 - **Q2, addresses:** leave them out for now, as recommended. Overture's landmarks may come later if crews ask (§5.3).
+- **Q4, GNIS classes:** every class but *Civil* and *Census*, about 894,000 names, as recommended.
 - **Q5, the Android download:** by itself on an unmetered connection, as recommended.
 - **Q6, the map layer:** build it with no new library, as recommended.
+- **Q10, Android asking the server:** only if the person turns it on; off by default, as recommended.
+- **What is next:** GNIS in the server's index, with `contracts/fixtures/places/` (P0's other half), before Android (P3) and the layer (P4).
 - **Coverage:** the US only for now; DAFIF is out (§2.2, *US only*).
 
-Q3 falls away with Q2: no Photon. Q4 and Q7 to Q11 are still open, and the plan follows the recommendation for each until the owner
+Q3 falls away with Q2: no Photon. Q7, Q8, Q9 and Q11 are still open, and the plan follows the recommendation for each until the owner
 says otherwise.
 
 | # | Question | Options |

@@ -8,6 +8,8 @@ import ExportModal from "./feature/export/ExportModal";
 import MobileQuickAccess from "./components/MobileQuickAccess";
 import MobileGridInput from "./components/MobileGridInput";
 import TopBarSearch from "./feature/shell/TopBarSearch";
+import { searchPlaces } from "./feature/places/usePlaceSearch";
+import { placeZoom } from "./feature/places/placeWords";
 import SidebarCollapseToggle from "./components/SidebarCollapseToggle";
 import { useIsMobile } from "./feature/auth/useIsMobile";
 import api from "./feature/auth/api";
@@ -484,6 +486,8 @@ function App() {
     mission_brief: Boolean(uf && uf.mission_brief === true),
     // The LZ survey books' key: readers and the team editors (site admins always have it).
     lz_surveys: Boolean(uf && uf.lz_surveys === true),
+    // Airports, heliports, navaids and fixes in the map's search (docs/PLACE_SEARCH.md).
+    place_search: Boolean(uf && uf.place_search === true),
   };
   const { history, isLoadingHistory, historyError, fetchHistory, saveMap, loadMap, updateMap, deleteMap } =
     useSavedMaps();
@@ -1036,6 +1040,11 @@ function App() {
   // browser with no call to the API) starts a new LZ/PZ there; startDiagramAtTarget writes its grid into
   // the field, so a pasted coordinate is seen to become the MGRS the rest of the app uses.
   const chooseTarget = (choice) => {
+    // A place from the search is flown to, with Set as target one tap away, as a grid link is: nothing is made yet.
+    if (choice.place) {
+      choosePlaceRef.current(choice);
+      return;
+    }
     gridLinkShown.current = false;
     startDiagramAtTarget([choice.lat, choice.lon], choice.mgrs);
     setIsMobileMenuOpen(false); // Closes the menu if they chose from the sidebar
@@ -1082,6 +1091,22 @@ function App() {
       action: { label: "Set as target", onClick: () => chooseTargetRef.current(choice) },
     });
   }, [toast]);
+  // A place chosen in the search (docs/PLACE_SEARCH.md §6): the map goes there and the field holds its grid.
+  const choosePlace = useCallback((choice) => {
+    const { place, label, ...grid } = choice;
+    gridLinkShown.current = true;
+    setGridInput(grid.mgrs);
+    flights.current += 1;
+    setFlyTo({ lat: grid.lat, lon: grid.lon, zoom: placeZoom(place), key: String(flights.current) });
+    setIsMobileMenuOpen(false);
+    toast({
+      tone: "info",
+      message: `${label ? `${label}, ` : ""}${grid.mgrs}.`,
+      action: { label: "Set as target", onClick: () => chooseTargetRef.current(grid) },
+    });
+  }, [toast]);
+  const choosePlaceRef = useRef(choosePlace);
+  choosePlaceRef.current = choosePlace;
   useEffect(() => {
     showGridLink();
     const onHash = () => {
@@ -1389,8 +1414,9 @@ function App() {
             value={gridInput}
             onChange={setGridInput}
             onChoose={chooseTarget}
-            onShare={(choice) => setShareGrid({ mgrs: choice.mgrs, lat: choice.lat, lon: choice.lon })}
+            onShare={(choice) => setShareGrid({ mgrs: choice.mgrs, lat: choice.lat, lon: choice.lon, label: choice.label })}
             near={targetNear}
+            searchPlaces={feat.place_search ? searchPlaces : null}
           />
         }
         briefSlot={feat.mission_brief ? (
@@ -1537,8 +1563,9 @@ function App() {
           gridInput={gridInput}
           setGridInput={setGridInput}
           onChooseTarget={chooseTarget}
-          onShare={(choice) => setShareGrid({ mgrs: choice.mgrs, lat: choice.lat, lon: choice.lon })}
+          onShare={(choice) => setShareGrid({ mgrs: choice.mgrs, lat: choice.lat, lon: choice.lon, label: choice.label })}
           targetNear={targetNear}
+          searchPlaces={feat.place_search ? searchPlaces : null}
         />
         <MobileQuickAccess
           features={feat}
