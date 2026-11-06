@@ -1,3 +1,9 @@
+## [1.9.1](https://github.com/colinmcfadden/avtactools/compare/v1.9.0...v1.9.1) (2026-11-06)
+
+### Bug Fixes
+
+* **frontend:** draw the uh-60 as the original green helicopter at its real size ([45578fd](https://github.com/colinmcfadden/avtactools/commit/45578fd8ab49904734d30a9a813394a27501acea))
+
 ## [1.9.0](https://github.com/colinmcfadden/avtactools/compare/v1.8.0...v1.9.0) (2026-11-06)
 
 ### Features
