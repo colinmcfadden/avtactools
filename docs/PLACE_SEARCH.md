@@ -2,7 +2,7 @@
 
 Status: **NASR on the web built** (2026-11-05, §0); GNIS, Android and the layer not built. The owner asked how hard it would be to add addresses and searchable points of
 interest, so that a crew can type a name and get its grid. This file plans it for the web and Android. The owner answered §12's
-Q1, Q2, Q5 and Q6 the same day, each as recommended. Q4 and Q7 to Q11 are still open. Where this plan and the code disagree once it is built, the code wins (AGENTS.md §16).
+Q1, Q2, Q4, Q5, Q6 and Q10 the same day, each as recommended, and chose GNIS as the next step. Q7, Q8, Q9 and Q11 are still open. Where this plan and the code disagree once it is built, the code wins (AGENTS.md §16).
 
 **In short.**
 - **It is a search, not a map layer.** A name typed into the field that already reads grids and lat/longs (PR #140) lists the places it
@@ -549,11 +549,14 @@ Each has a recommendation, marked **(rec.)**.
 **Answered by the owner, 2026-11-05:**
 - **Q1, choosing a place:** fly there and offer *Set as target*, as recommended.
 - **Q2, addresses:** leave them out for now, as recommended. Overture's landmarks may come later if crews ask (§5.3).
+- **Q4, GNIS classes:** every class but *Civil* and *Census*, about 894,000 names, as recommended.
 - **Q5, the Android download:** by itself on an unmetered connection, as recommended.
 - **Q6, the map layer:** build it with no new library, as recommended.
+- **Q10, Android asking the server:** only if the person turns it on; off by default, as recommended.
+- **What is next:** GNIS in the server's index, with `contracts/fixtures/places/` (P0's other half), before Android (P3) and the layer (P4).
 - **Coverage:** the US only for now; DAFIF is out (§2.2, *US only*).
 
-Q3 falls away with Q2: no Photon. Q4 and Q7 to Q11 are still open, and the plan follows the recommendation for each until the owner
+Q3 falls away with Q2: no Photon. Q7, Q8, Q9 and Q11 are still open, and the plan follows the recommendation for each until the owner
 says otherwise.
 
 | # | Question | Options |
