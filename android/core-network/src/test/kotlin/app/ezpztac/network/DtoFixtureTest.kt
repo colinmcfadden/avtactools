@@ -26,6 +26,7 @@ class DtoFixtureTest {
 
     private val decoders: Map<String, KSerializer<*>> = mapOf(
         "config" to AppConfig.serializer(),
+        "config: a chart build live" to AppConfig.serializer(),
         "login: android" to TokenResponse.serializer(),
         "login: web, which gets no refresh token" to TokenResponse.serializer(),
         "refresh" to TokenResponse.serializer(),

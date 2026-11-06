@@ -36,6 +36,10 @@
       <label class="layer"><input type="checkbox" data-layer="lidar"> <span class="swatch" style="background:#d5a03f"></span> Downloaded LiDAR <span class="muted" id="count-lidar"></span></label>
       <label class="layer"><input type="checkbox" data-layer="tilesets"> <span class="swatch" style="background:#b07ad6"></span> Built tilesets (10 km cells) <span class="muted" id="count-tilesets"></span></label>
       <label class="layer"><input type="checkbox" data-layer="aws"> <span class="swatch" style="background:#97a0ab"></span> USGS LiDAR on AWS (where 3D streams) <span class="muted" id="count-aws"></span></label>
+      <label class="layer"><input type="checkbox" data-layer="vfr-sectional"> <span class="swatch" style="background:#47a37e"></span> VFR sectionals <span class="muted" id="count-vfr-sectional"></span></label>
+      <label class="layer"><input type="checkbox" data-layer="vfr-tac"> <span class="swatch" style="background:#47a37e"></span> VFR TACs <span class="muted" id="count-vfr-tac"></span></label>
+      <label class="layer"><input type="checkbox" data-layer="vfr-helicopter"> <span class="swatch" style="background:#47a37e"></span> VFR helicopter charts <span class="muted" id="count-vfr-helicopter"></span></label>
+      <label class="layer"><input type="checkbox" id="chart-tiles"> <span class="swatch" style="background:linear-gradient(135deg,#d9d2b8,#8fb4c9)"></span> VFR chart tiles <span class="muted" id="count-chart-tiles"></span></label>
       <div class="row" style="margin-top:8px">
         <label class="muted" for="basemap" style="font-size:12px">Base map</label>
         <select id="basemap" class="input" style="height:30px">
@@ -47,6 +51,9 @@
       </div>
       <p class="note">DEMs are coloured by resolution: <span style="color:#7cc4ff">1 m</span>, <span style="color:#5aa7d4">to 5 m</span>,
         <span style="color:#3d84b3">to 15 m</span>, <span style="color:#97a0ab">coarser</span>. A dashed amber outline states no NAVD88 datum.</p>
+      <p class="note">VFR charts are those of the build chosen in <i>VFR charts</i>, coloured by edition: <span style="color:#47a37e">in effect</span>,
+        <span style="color:#7cbde0">not in effect yet</span>, <span style="color:#d5a03f">held back (an earlier edition stands in)</span>,
+        <span style="color:#d66b64">out of date</span>. A dashed outline: the build scheduled next holds another edition, or none.</p>
     </div>
 
     <div class="card">
@@ -117,6 +124,12 @@ const URLS = {
   tag: "{{ url_for('admin.data_tag_usgs') }}",
   charts: "{{ url_for('admin.data_charts') }}",
   chartBuild: "{{ url_for('admin.data_chart_build') }}",
+  chartAction: (build, act) => "{{ url_for('admin.data') }}/charts/builds/" + encodeURIComponent(build) + "/" + act,
+  rollBack: "{{ url_for('admin.data_chart_roll_back') }}",
+  cancelSchedule: "{{ url_for('admin.data_chart_cancel_schedule') }}",
+  tryAgain: (cycle) => "{{ url_for('admin.data') }}/charts/cycles/" + encodeURIComponent(cycle) + "/try-again",
+  // The public tile route, on this same host (docs/VFR_CHARTS.md §7): what the apps draw, looked at here before a switch.
+  chartTiles: (build) => location.origin + {{ request.script_root|tojson }} + "/charts/vfr/" + encodeURIComponent(build),
 };
 
 const $ = (id) => document.getElementById(id);
@@ -174,6 +187,18 @@ const LAYERS = {
   job: [{ id: "job-line", type: "line", paint: { "line-color": ["match", ["get", "state"], "done", "#47a37e", "refused", "#d66b64", "failed", "#d66b64", "downloading", "#7cbde0", "checking", "#7cbde0", "#d5a03f"], "line-width": 2.5 } }],
   draw: [{ id: "draw-line", type: "line", paint: { "line-color": "#ffffff", "line-width": 2, "line-dasharray": [3, 2] } }],
 };
+// The VFR charts of a build, one name for each layer of the Layers card (docs/VFR_CHARTS.md §5.6): each chart's neatline,
+// filled by its edition's state, its outline dashed where the build scheduled next holds another edition.
+const VFR_COLOUR = ["match", ["get", "state"], "current", "#47a37e", "next", "#7cbde0", "kept", "#d5a03f", "expired", "#d66b64", "#97a0ab"];
+const VFR = ["vfr-sectional", "vfr-tac", "vfr-helicopter"];
+for (const name of VFR) {
+  LAYERS[name] = [
+    { id: name + "-fill", type: "fill", paint: { "fill-color": VFR_COLOUR, "fill-opacity": name === "vfr-sectional" ? 0.12 : 0.25 } },
+    { id: name + "-line", type: "line", filter: ["!", ["get", "dashed"]], paint: { "line-color": VFR_COLOUR, "line-width": 1.2 } },
+    { id: name + "-dashed", type: "line", filter: ["get", "dashed"], paint: { "line-color": VFR_COLOUR, "line-width": 2, "line-dasharray": [2, 2] } },
+  ];
+}
+const FIRST_OVERLAY = Object.values(LAYERS)[0][0].id;
 const ON_BY_DEFAULT = new Set(["dems", "search", "job", "draw"]);
 const loaded = {};
 
@@ -195,8 +220,41 @@ map.on("load", () => {
       if (box.checked) loadLayer(box.dataset.layer);
     });
   }
+  $("chart-tiles").addEventListener("change", showChartTiles);
   loadAll(false);
 });
+
+// --- the VFR charts: which build the map shows, and its tiles ----------------------------------
+let chartShown = "";        // a build chosen in the VFR charts card; "" is the live one
+let chartLive = null;       // the live build, as the card last read it
+const chartBuildShown = () => chartShown || chartLive;
+let tilesAsked = 0;
+async function showChartTiles() {
+  const asked = ++tilesAsked;
+  if (map.getLayer("chart-tiles")) map.removeLayer("chart-tiles");
+  if (map.getSource("chart-tiles")) map.removeSource("chart-tiles");
+  const label = $("count-chart-tiles");
+  const build = chartBuildShown();
+  label.textContent = "";
+  if (!$("chart-tiles").checked) return;
+  if (!build) { label.textContent = "(no build live: choose one)"; return; }
+  try {
+    // Its levels and bounds, from the build's own coverage.json (public, and never changed under its name).
+    const coverage = await getJson(URLS.chartTiles(build) + "/coverage.json");
+    if (asked !== tilesAsked || !$("chart-tiles").checked) return;
+    map.addSource("chart-tiles", { type: "raster", tiles: [URLS.chartTiles(build) + "/{z}/{x}/{y}.webp"], tileSize: 512,
+      minzoom: coverage.minLevel, maxzoom: coverage.maxLevel, bounds: coverage.bounds, attribution: "FAA VFR charts" });
+    map.addLayer({ id: "chart-tiles", type: "raster", source: "chart-tiles" }, FIRST_OVERLAY);
+    label.textContent = `(${build}, levels ${coverage.minLevel} to ${coverage.maxLevel})`;
+  } catch (error) {
+    if (asked === tilesAsked) label.textContent = "(failed to load)";
+  }
+}
+function chooseChartBuild(build) {
+  chartShown = build || "";
+  for (const name of VFR) if (document.querySelector(`[data-layer="${name}"]`).checked) loadLayer(name);
+  showChartTiles();
+}
 
 function popupOn(layerId, html) {
   map.on("click", layerId, (event) => {
@@ -214,11 +272,24 @@ popupOn("stream-fill", (p) => `<b>${esc(p.pieces)} pieces</b>${p.laz ? `, ${esc(
 popupOn("lidar-fill", (p) => `<b>${esc(p.survey || list(p.surveys).join(", "))}</b><br>${p.tiles ? esc(p.tiles) + " tiles · " : ""}${p.year ? esc(p.year) : "year unknown"}${(p.year || 0) >= 2015 ? " (classifies vegetation)" : ""}`);
 popupOn("tilesets-fill", (p) => `<b>${esc(p.tilesets)} built tileset(s)</b> in this 10 km cell`);
 popupOn("aws-fill", (p) => `<b>${esc(p.name)}</b><br>${esc(p.year || "year unknown")} · ${esc(Math.round((p.points || 0) / 1e6))} M points`);
+const VFR_STATE = { current: "in effect", next: `<span style="color:#7cbde0">not in effect yet</span>`,
+  kept: `<span class="warn">held back: an earlier edition stands in</span>`, expired: `<span class="err">out of date</span>` };
+const day = (value) => esc(String(value || "").slice(0, 10));
+for (const name of VFR) popupOn(name + "-fill", (p) => `<b>${esc(p.title)}</b> <span class="muted">${esc(p.scale)}</span><br>
+  Edition ${day(p.start)} to ${day(p.end)} · ${VFR_STATE[p.state] || esc(p.state)}${p.state === "kept" && p.over ? ", past its date" : ""}<br>
+  <span class="muted">In effect ${esc(p.effective)} to ${esc(p.expires)}</span><br>
+  Shown from level ${esc(p.shown_from)}, stored to ${esc(p.stored_to)}<br>
+  ${p.dashed ? `<span class="warn">The build scheduled next holds ${p.next_edition ? "the edition of " + day(p.next_edition) : "no copy of it"}.</span><br>` : ""}
+  <span class="muted">In ${esc(p.builds)}</span>`);
 popupOn("search-fill", (p) => `<b class="mono">${esc(p.name)}</b><br>${esc(gb(p.size))} · ${esc(p.published)}<br>${!p.held ? "New" : (p.same_tile ? "On the server: " : "Covered by ") + esc(p.held)}`);
 
 async function loadLayer(name, fresh) {
   try {
-    const data = await getJson(URLS.layer(name) + (fresh ? "?fresh=1" : ""));
+    const query = new URLSearchParams();
+    if (fresh) query.set("fresh", "1");
+    if (name.startsWith("vfr-") && chartShown) query.set("build", chartShown);
+    const asked = query.toString();
+    const data = await getJson(URLS.layer(name) + (asked ? "?" + asked : ""));
     if (name === "dems") {
       setData("dems", data);
       $("count-dems").textContent = `(${data.features.length})`;
@@ -237,6 +308,10 @@ async function loadLayer(name, fresh) {
     } else if (name === "aws") {
       setData("aws", data);
       $("count-aws").textContent = data.available ? `(${data.features.length} surveys)` : "(no index here)";
+    } else if (name.startsWith("vfr-")) {
+      setData(name, { type: "FeatureCollection", features: data.features || [] });
+      $("count-" + name).textContent = data.available ? `(${data.features.length} in ${data.build})` : "(none)";
+      $("count-" + name).title = data.available ? "" : data.reason || "";
     }
   } catch (error) {
     const label = $("count-" + name);
@@ -461,7 +536,23 @@ function jobHtml(job, open) {
   </div>`;
 }
 
-async function loadCharts() {
+const ROLE = { live: "live", previous: "previous", next: "scheduled next", built: "built" };
+const TONE = { good: "", note: "muted", warn: "warn", bad: "err" };
+const at = (value) => esc(String(value || "").replace("T", " "));
+function historyLine(h) {
+  const by = h.by ? ` by ${esc(h.by)}` : "";
+  const what = {
+    "switch": () => `switched from ${esc(h.from || "nothing")} to ${esc(h.to)}${h.how === "scheduled" ? " as scheduled" : ""}${by}${h.cleared ? `; the switch to ${esc(h.cleared)} cleared` : ""}`,
+    "schedule": () => `${esc(h.to)} scheduled for ${at(h.when)}${by}${h.replaced ? `, in place of ${esc(h.replaced)}` : ""}`,
+    "roll back": () => `rolled back from ${esc(h.from)} to ${esc(h.to)}${by}`,
+    "cancel schedule": () => `the switch to ${esc(h.build)} cancelled${by}`,
+    "delete": () => `${esc(h.build)} deleted${h.why === "retired" ? " (retired)" : ""}${by}`,
+    "try again": () => `cycle ${esc(h.cycle)} to be tried again${by}`,
+  }[h.did];
+  return `<div><span class="muted">${at(h.at)}</span> ${what ? what() : esc(h.did) + by}</div>`;
+}
+
+async function loadCharts(message) {
   let data;
   try { data = await getJson(URLS.charts); }
   catch (error) { $("charts").innerHTML = `<span class="err">${esc(error.message)}</span>`; return; }
@@ -469,22 +560,56 @@ async function loadCharts() {
     $("charts").innerHTML = `<p class="note">${esc(data.refusal || "CHART_TILES_DIR is not set on this server.")}</p>`;
     return;
   }
+  const write = CAN_WRITE && data.can_write;
+  const serving = data.serving;
+  const shownBefore = chartBuildShown();
+  chartLive = serving.live;
+  if (chartShown && !data.builds.some((b) => b.name === chartShown)) chartShown = "";
+  const auto = data.auto;
+  const autoLine = `<p class="note">Automatic cycle: ${esc(auto.why)}${auto.looks ? `<br>Last look ${at(auto.last) || "never"}${auto.next ? `, next ${at(auto.next)}` : ""}${auto.busy ? " · looking now" : ""}` : ""}</p>
+    ${auto.error ? `<p class="note err">Its last look failed: ${esc(auto.error)}</p>` : ""}`;
+  const servingRows = `<div class="kv">
+      <span>Live</span><span class="mono">${esc(serving.live || "none: the apps draw ArcGIS")}</span>
+      <span>Previous</span><span><span class="mono">${esc(serving.previous || "none")}</span>
+        ${write && serving.roll_back ? `<button class="btn btn-sm" data-chart-roll-back>Roll back</button>` : ""}</span>
+      <span>Next</span><span>${serving.next ? `<span class="mono">${esc(serving.next.build)}</span> at ${at(serving.next.at)}${serving.next.by ? `, by ${esc(serving.next.by)}` : ""}
+        ${write && serving.cancel_schedule ? `<button class="btn btn-sm" data-chart-cancel-schedule>Cancel</button>` : ""}` : `<span class="muted">none scheduled</span>`}</span>
+    </div>`;
   const cycles = data.cycles.map((c) => {
     const posted = c.posted === true ? "posted" : c.posted === false ? "not posted yet" : "the FAA could not be asked";
     const built = c.built.length ? ` · built: ${c.built.map(esc).join(", ")}` : "";
-    const can = CAN_WRITE && data.can_write && c.posted === true && !data.room;
-    return `<div class="row" style="margin-bottom:6px"><b>${esc(c.cycle)}</b> <span class="muted">${c.which === "current" ? "current" : "next"} cycle,
-      effective ${esc(c.effective)} · ${esc(posted)}${built}</span>
-      ${CAN_WRITE ? `<button class="btn btn-sm" data-build="${esc(c.cycle)}" ${can ? "" : "disabled"}>Build</button>` : ""}</div>`;
+    const can = write && c.posted === true && !data.room;
+    return `<div style="margin:8px 0"><div class="row"><b>${esc(c.cycle)}</b> <span class="muted">${c.which === "current" ? "current" : "next"} cycle,
+      in effect ${at(c.effective)} to ${at(c.ends)} · ${esc(posted)}${built}${c.serving ? ` · ${esc(c.serving === "live" ? "live" : "scheduled next")}` : ""}</span>
+      ${CAN_WRITE ? `<button class="btn btn-sm" data-build="${esc(c.cycle)}" ${can ? "" : "disabled"}>Build now</button>` : ""}</div>
+      <div class="note ${TONE[c.auto.tone] || ""}">${esc(c.auto.text)}
+        ${write && c.auto.try_again ? `<button class="btn btn-sm" data-chart-try-again="${esc(c.cycle)}">Try again</button>` : ""}</div></div>`;
   }).join("");
-  const builds = data.builds.map((b) => `<tr><td class="mono">${esc(b.name)}</td><td>${esc(gb(b.bytes))}</td><td>${count(b.tiles)} tiles</td>
-      <td class="muted">${esc((b.made || "").slice(0, 16).replace("T", " "))} · ${esc(b.by)}</td></tr>
-    ${b.held_back.map((h) => `<tr><td colspan="4" class="muted">${esc(h.title)}: ${esc(h.kept ? "held back, the copy in " + h.kept + " stands in" : "left out")} (${esc(h.reason)})</td></tr>`).join("")}`).join("");
-  $("charts").innerHTML = `${cycles}
-    <p class="note">A build is about ${esc(gb(data.estimate_bytes))} at most while it is made. Nothing is served until a build is made live (a later step).</p>
+  const builds = data.builds.map((b) => {
+    const acts = write ? [
+      b.actions.includes("switch") ? `<button class="btn btn-sm" data-chart-act="switch" data-chart-build="${esc(b.name)}">Switch now</button>` : "",
+      b.actions.includes("schedule") ? `<button class="btn btn-sm" data-chart-act="schedule" data-chart-build="${esc(b.name)}">Schedule</button>` : "",
+      b.actions.includes("delete") ? `<button class="btn btn-sm btn-danger" data-chart-act="delete" data-chart-build="${esc(b.name)}">Delete</button>` : "",
+    ].join("") : "";
+    return `<tr><td class="mono">${esc(b.name)}</td><td><span class="badge">${esc(ROLE[b.role] || b.role)}</span>${b.expired ? ` <span class="err">expired</span>` : ""}${b.retired ? ` <span class="muted">retiring</span>` : ""}</td>
+        <td>${esc(gb(b.bytes))}</td><td>${count(b.tiles)} tiles</td></tr>
+      <tr><td colspan="4" class="muted">${esc(b.cycle)} · made ${at((b.made || "").slice(0, 16))} · ${esc(b.by)}${acts ? `<div class="row" style="margin-top:4px">${acts}</div>` : ""}</td></tr>
+      ${b.held_back.map((h) => `<tr><td colspan="4" class="muted">${esc(h.title)}: ${esc(h.kept ? "held back, the copy in " + h.kept + " stands in" : "left out")} (${esc(h.reason)})</td></tr>`).join("")}`;
+  }).join("");
+  const choices = data.builds.map((b) => `<option value="${esc(b.name)}" ${b.name === chartShown ? "selected" : ""}>${esc(b.name)} (${esc(ROLE[b.role] || b.role)})</option>`).join("");
+  const history = data.history.map(historyLine).join("");
+  $("charts").innerHTML = `${servingRows}
+    ${autoLine}
+    ${cycles}
+    <p class="note">A build is about ${esc(gb(data.estimate_bytes))} at most while it is made. The apps draw the live build, from the public tiles at
+      <span class="mono">/charts/vfr/&lt;build&gt;/</span>; a switch reaches them at their next look at the config.</p>
     ${data.room ? `<p class="note err">${esc(data.room)}</p>` : ""}
-    <div id="chart-error"></div>
-    ${builds ? `<table class="files">${builds}</table>` : `<p class="note">No builds yet.</p>`}`;
+    <div id="chart-error">${message ? `<p class="note err">${esc(message)}</p>` : ""}</div>
+    ${builds ? `<div class="row" style="margin:8px 0"><label class="muted" for="chart-shown" style="font-size:12px">On the map</label>
+      <select id="chart-shown" class="input" style="height:30px"><option value="">The live build${serving.live ? " (" + esc(serving.live) + ")" : ""}</option>${choices}</select></div>
+      <table class="files">${builds}</table>` : `<p class="note">No builds yet.</p>`}
+    ${history ? `<details><summary class="muted" style="font-size:12px">History</summary><div class="files">${history}</div></details>` : ""}`;
+  if ($("chart-shown")) $("chart-shown").addEventListener("change", (event) => chooseChartBuild(event.target.value));
   for (const button of document.querySelectorAll("[data-build]")) {
     button.addEventListener("click", async () => {
       button.disabled = true;
@@ -493,6 +618,32 @@ async function loadCharts() {
       loadJobs();
     });
   }
+  const QUESTIONS = {
+    switch: (b) => `Switch the apps to build ${b} now? Crews' maps draw it at their next look at the config.`,
+    delete: (b) => `Delete build ${b} and its tiles? This cannot be undone.`,
+  };
+  for (const button of document.querySelectorAll("[data-chart-act]")) {
+    const act = button.dataset.chartAct, build = button.dataset.chartBuild;
+    button.addEventListener("click", () => chartAct(button, URLS.chartAction(build, act), QUESTIONS[act] && QUESTIONS[act](build)));
+  }
+  for (const button of document.querySelectorAll("[data-chart-try-again]")) {
+    button.addEventListener("click", () => chartAct(button, URLS.tryAgain(button.dataset.chartTryAgain)));
+  }
+  const rollBack = document.querySelector("[data-chart-roll-back]");
+  if (rollBack) rollBack.addEventListener("click", () => chartAct(rollBack, URLS.rollBack,
+    `Roll back to build ${serving.previous}? ${serving.live} becomes the previous build, and a scheduled switch is kept.`));
+  const cancel = document.querySelector("[data-chart-cancel-schedule]");
+  if (cancel) cancel.addEventListener("click", () => chartAct(cancel, URLS.cancelSchedule,
+    `Cancel the switch to build ${serving.next.build} at ${serving.next.at}?`));
+  // A switch, a roll back or the chosen build deleted changes what the map shows.
+  if (chartBuildShown() !== shownBefore) chooseChartBuild(chartShown);
+}
+
+async function chartAct(button, url, question) {
+  if (question && !confirm(question)) return;
+  button.disabled = true;
+  const result = await postJson(url);
+  await loadCharts(result.ok ? "" : result.error);
 }
 </script>
 {% endblock %}

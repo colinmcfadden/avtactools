@@ -14,13 +14,13 @@ from flask import abort, current_app, jsonify, render_template, request
 
 import data_admin
 from data_admin import jobs, layers, usgs, validate, volumes
-from charts import catalog as chart_catalog, faa, job as chart_job, locks as chart_locks, state as chart_state
+from charts import auto as chart_auto, catalog as chart_catalog, faa, job as chart_job, locks as chart_locks, \
+    state as chart_state
 from models import db, DataJob
 from routes.admin_routes import admin_bp, admin_required, _check_csrf
 
 RECENT_JOBS = 10
-# One job at a time: the check and the insert under one lock (one gunicorn process, AGENTS.md §9).
-_creating = threading.Lock()
+_creating = jobs.CREATING      # one job at a time (data_admin.jobs)
 BUSY = "Another job is under way. Wait for it, or cancel it."
 
 
@@ -89,6 +89,12 @@ def data_layer(name):
         return _json(layers.downloaded_lidar())
     if name == 'aws':
         return _json(layers.aws_coverage())
+    if name in layers.VFR_LAYERS:
+        # The live build's charts, or the one chosen in the Charts card, which state.json must list (§5.6).
+        try:
+            return _json(layers.vfr_charts(name, request.args.get('build') or None))
+        except layers.BuildNotListed:
+            return _refuse("That build is not in the chart folder's state.json.", 404)
     abort(404)
 
 
@@ -207,6 +213,16 @@ def data_job_cancel(job_id):
         job.cancel_requested = True
         if job.state == "queued" and not jobs.RUNNER.knows(job.id):
             job.state, job.finished_at = "cancelled", datetime.utcnow()
+        db.session.commit()
+        if job.kind == chart_job.KIND and job.requested_by_name == chart_state.AUTOMATIC and job.build:
+            # An automatic build cancelled is the admin's choice: not started again, and no "given up" email (§5.7).
+            where = chart_state.root()
+            if where is not None and chart_locks.supported():
+                admin = request.admin
+                try:
+                    chart_auto.cancelled(where, job.build, admin.name or admin.email or '')
+                except (chart_state.StateError, OSError):
+                    current_app.logger.warning("charts: an automatic build's cancel could not be recorded")
     db.session.commit()
     return _json({"ok": True, "job": _job_dict(job)})
 
@@ -223,9 +239,27 @@ def _chart_refusal(where):
     return None
 
 
-def _build_line(name, info):
-    return {"name": name, "cycle": info.get("cycle"), "effective": info.get("effective"), "expires": info.get("expires"),
-            "made": info.get("made"), "by": info.get("by"), "bytes": info.get("bytes"), "tiles": info.get("tiles"),
+HISTORY_SHOWN = 20
+
+
+def _build_line(name, info, roles, now):
+    """A build as the Charts card lists it: its state (live, previous, scheduled next, or built) and the actions of §5.5 it is
+    offered. What is offered is worked out on ``effective(state, now)``, as the actions themselves are."""
+    role = next((r for r in ("live", "previous", "next") if roles[r] == name), "built")
+    cycle = chart_state.cycle_of(info)
+    in_effect = cycle is not None and chart_catalog.effective_instant(cycle) <= now
+    actions = []
+    if role != "live" and cycle is not None:
+        if in_effect:
+            actions.append("switch")
+        elif role != "next":
+            actions.append("schedule")
+    if role == "built":
+        actions.append("delete")
+    return {"name": name, "role": role, "cycle": info.get("cycle"), "effective": info.get("effective"),
+            "expires": info.get("expires"), "expired": (chart_state.instant(info.get("expires")) or now) <= now,
+            "in_effect": in_effect, "made": info.get("made"), "by": info.get("by"), "bytes": info.get("bytes"),
+            "tiles": info.get("tiles"), "retired": info.get("retired"), "actions": actions,
             "held_back": [{"title": h.get("title"), "reason": h.get("reason"), "kept": h.get("kept")}
                           for h in info.get("held_back") or [] if isinstance(h, dict)]}
 
@@ -233,35 +267,128 @@ def _build_line(name, info):
 @admin_bp.route('/data/charts.json')
 @admin_required
 def data_charts():
-    """The VFR charts panel: what the chart folder holds, the cycles that can be built, and whether one can be now. Asks the FAA
-    whether a cycle is posted (kept 10 minutes)."""
+    """The VFR charts panel (docs/VFR_CHARTS.md §5.6): what the chart folder holds and what each build is, the actions that apply,
+    the cycles and what the automatic cycle did or will do for each, and the history. Asks the FAA whether a cycle is posted (kept
+    10 minutes). Reads ``state.json`` as every reader does, with a switch whose time has passed applied, and writes nothing to it."""
     _readable()
     _resume()
     where = chart_state.root()
     now = datetime.now(timezone.utc)
+    mode = chart_auto.mode()
     body = {"configured": where is not None, "can_write": data_admin.can_write(), "refusal": _chart_refusal(where),
-            "estimate_bytes": chart_job.CONUS_ESTIMATE_BYTES, "builds": [], "cycles": [], "room": None}
+            "estimate_bytes": chart_job.CONUS_ESTIMATE_BYTES, "now": chart_state.iso(now), "builds": [], "cycles": [],
+            "room": None, "serving": None, "history": [],
+            "auto": {"looks": mode["looks"], "builds": mode["builds"], "why": mode["why"], "last": None, "next": None,
+                     "busy": False, "error": None}}
     if body["refusal"]:
         return _json(body)
     try:
-        held = chart_state.read(where)
+        held = chart_state.serving(where, now)
     except chart_state.StateError as error:
         body["refusal"] = str(error)
         return _json(body)
+    roles = chart_state.roles(held)
+    nxt = held.get("next") if isinstance(held.get("next"), dict) else None
+    body["serving"] = {"live": roles["live"], "previous": roles["previous"],
+                       "next": {"build": nxt.get("build"), "at": nxt.get("at"), "by": nxt.get("by")} if nxt else None,
+                       "roll_back": bool(roles["previous"] and isinstance(held["builds"].get(roles["previous"]), dict)),
+                       "cancel_schedule": nxt is not None}
+    looks = held.get("looks") if isinstance(held.get("looks"), dict) else {}
+    body["auto"].update({key: looks.get(key) for key in ("last", "next", "error")}, busy=bool(looks.get("busy")))
     builds = held["builds"]
-    body["builds"] = [_build_line(name, info) for name, info in sorted(builds.items(), key=lambda kv: chart_state._order(kv[0]),
-                                                                       reverse=True) if isinstance(info, dict)]
+    body["builds"] = [_build_line(name, info, roles, now)
+                      for name, info in sorted(builds.items(), key=lambda kv: chart_state._order(kv[0]), reverse=True)
+                      if isinstance(info, dict)]
     for cycle, which in ((faa.current_cycle(now), "current"), (faa.next_cycle(now), "next")):
-        body["cycles"].append({"cycle": cycle.isoformat(), "which": which,
+        posted = faa.posted(cycle)
+        key = cycle.isoformat()
+        body["cycles"].append({"cycle": key, "which": which,
                                "effective": chart_catalog.effective_instant(cycle).strftime("%Y-%m-%dT%H:%MZ"),
-                               "posted": faa.posted(cycle),
-                               "built": [name for name in builds if name.startswith(cycle.isoformat() + ".")]})
+                               "ends": chart_catalog.cycle_ends(cycle).strftime("%Y-%m-%dT%H:%MZ"),
+                               "posted": posted,
+                               "built": [name for name in builds if name.startswith(key + ".")],
+                               "serving": next((r for r in ("live", "next") if roles[r] and roles[r].startswith(key + ".")),
+                                               None),
+                               "auto": chart_auto.describe(held, cycle, posted, now, mode)})
+    body["history"] = [line for line in reversed(held["history"][-HISTORY_SHOWN:]) if isinstance(line, dict)]
     if data_admin.can_write():
         try:
             volumes.check_room(where, chart_job.CONUS_ESTIMATE_BYTES, label=chart_job.LABEL)
         except volumes.NoRoom as error:
             body["room"] = str(error)
     return _json(body)
+
+
+def _chart_action(act):
+    """One of §5.5's actions, under the CSRF check and the write gate, by the admin signed in. A refusal is in words (400); it
+    answers at once (Cloudflare ends a request at 100 s)."""
+    _check_csrf()
+    refused = _writable()
+    if refused:
+        return refused
+    where = chart_state.root()
+    why = _chart_refusal(where)
+    if why:
+        return _refuse(why)
+    admin = request.admin
+    by = admin.name or admin.email or ''
+    try:
+        said = act(where, by, datetime.now(timezone.utc))
+    except chart_state.Refused as error:
+        return _refuse(str(error))
+    except ValueError:
+        return _refuse("That is not a build's name.")
+    except (chart_state.StateError, OSError) as error:
+        current_app.logger.warning("charts: state.json could not be changed (%s)", error.__class__.__name__)
+        return _refuse(str(error) if isinstance(error, chart_state.StateError) else
+                       "The chart folder's state.json could not be written.", 500)
+    return _json({"ok": True, **(said or {})})
+
+
+@admin_bp.route('/data/charts/builds/<build>/switch', methods=['POST'])
+@admin_required
+def data_chart_switch(build):
+    """Switch to this build now (§5.5): only one whose cycle is in effect."""
+    return _chart_action(lambda where, by, now: chart_state.switch(where, chart_state.check_name(build), by, now))
+
+
+@admin_bp.route('/data/charts/builds/<build>/schedule', methods=['POST'])
+@admin_required
+def data_chart_schedule(build):
+    """Switch to this build at its cycle's effective time (§5.5): only one whose cycle is not yet in effect."""
+    return _chart_action(lambda where, by, now: {"at": chart_state.schedule(where, chart_state.check_name(build), by, now)})
+
+
+@admin_bp.route('/data/charts/builds/<build>/delete', methods=['POST'])
+@admin_required
+def data_chart_delete(build):
+    """Takes a build out of ``state.json`` and deletes its folder (§5.5): never the live, previous or scheduled one."""
+    return _chart_action(lambda where, by, now: chart_state.delete_build(where, chart_state.check_name(build), by, now))
+
+
+@admin_bp.route('/data/charts/roll-back', methods=['POST'])
+@admin_required
+def data_chart_roll_back():
+    """Live and previous change places (§5.5); the scheduled switch is kept."""
+    return _chart_action(lambda where, by, now: chart_state.roll_back(where, by, now))
+
+
+@admin_bp.route('/data/charts/schedule/cancel', methods=['POST'])
+@admin_required
+def data_chart_cancel_schedule():
+    """Clears the scheduled switch (§5.5): refused once its time has come."""
+    return _chart_action(lambda where, by, now: chart_state.cancel_schedule(where, by, now))
+
+
+@admin_bp.route('/data/charts/cycles/<cycle>/try-again', methods=['POST'])
+@admin_required
+def data_chart_try_again(cycle):
+    """Clears a given-up cycle's tries, so the automatic cycle builds it at its next look (§5.6, §5.7)."""
+    def act(where, by, now):
+        key = date.fromisoformat(cycle).isoformat()
+        chart_auto.try_again(where, key, by, now)
+
+    return _chart_action(act)
 
 
 @admin_bp.route('/data/charts/builds', methods=['POST'])
@@ -296,22 +423,17 @@ def data_chart_build():
     except volumes.NoRoom as error:
         return _refuse(str(error))
     admin = request.admin
-    files = chart_job.files_for(cycle, chart_job.only())
-    with _creating:
-        if DataJob.query.filter(DataJob.state.in_(("queued", "running"))).count():
-            return _refuse(BUSY, 409)
-        try:
-            name = chart_state.take_number(where, cycle)
-        except (chart_state.StateError, OSError) as error:
-            current_app.logger.warning("charts: a build number could not be taken (%s)", error.__class__.__name__)
-            return _refuse(str(error) if isinstance(error, chart_state.StateError) else
-                           "The chart folder's state.json could not be written.")
-        job = DataJob(id=jobs.new_id(), kind=chart_job.KIND, product=chart_job.PRODUCT, files=files, files_total=len(files),
-                      bytes_total=0, build=name, stage=chart_job.STAGES[0], requested_by=admin.id,
-                      requested_by_name=admin.name or admin.email or '')
-        db.session.add(job)
-        db.session.commit()
-    jobs.RUNNER.enqueue(current_app._get_current_object(), job.id)
+    by = admin.name or admin.email or ''
+    try:
+        # A build an admin makes leaves the cycle to them: the automatic cycle neither builds, schedules nor switches it (§5.7).
+        job = chart_job.start(current_app._get_current_object(), cycle, by_id=admin.id, by_name=by,
+                              then=lambda st, name, _job: chart_auto.admin_started(st, name, by, now), now=now)
+    except jobs.Busy:
+        return _refuse(BUSY, 409)
+    except (chart_state.StateError, OSError) as error:
+        current_app.logger.warning("charts: a build number could not be taken (%s)", error.__class__.__name__)
+        return _refuse(str(error) if isinstance(error, chart_state.StateError) else
+                       "The chart folder's state.json could not be written.")
     return _json({"ok": True, "job": _job_dict(job)}, 202)
 
 
