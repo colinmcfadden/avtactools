@@ -80,8 +80,13 @@
     </div>
 
     <div class="card">
-      <h2>Downloads</h2>
+      <h2>Jobs</h2>
       <div id="jobs"><span class="muted">None yet.</span></div>
+    </div>
+
+    <div class="card">
+      <h2>VFR charts</h2>
+      <div id="charts"><span class="muted">Loading…</span></div>
     </div>
 
     <div class="card">
@@ -110,6 +115,8 @@ const URLS = {
   create: "{{ url_for('admin.data_job_create') }}",
   cancel: (id) => "{{ url_for('admin.data') }}/jobs/" + encodeURIComponent(id) + "/cancel",
   tag: "{{ url_for('admin.data_tag_usgs') }}",
+  charts: "{{ url_for('admin.data_charts') }}",
+  chartBuild: "{{ url_for('admin.data_chart_build') }}",
 };
 
 const $ = (id) => document.getElementById(id);
@@ -250,6 +257,7 @@ function loadAll(fresh) {
   for (const box of document.querySelectorAll("[data-layer]")) if (box.checked) loadLayer(box.dataset.layer, fresh);
   loadVolumes();
   loadJobs();
+  loadCharts();
 }
 
 $("refresh").addEventListener("click", () => loadAll(true));
@@ -394,37 +402,97 @@ $("search").addEventListener("click", async () => {
 });
 
 let polling = null;
+let wasActive = false;
 async function loadJobs() {
+  clearTimeout(polling);
   try {
     const data = await getJson(URLS.jobs);
     const active = data.jobs.find((j) => j.state === "queued" || j.state === "running");
     const shown = active || data.jobs[0];
     setData("job", shown ? { type: "FeatureCollection", features: shown.files.filter((f) => f.bounds).map((f) => ({ type: "Feature", properties: { state: f.state },
       geometry: { type: "Polygon", coordinates: [[[f.bounds[0], f.bounds[1]], [f.bounds[2], f.bounds[1]], [f.bounds[2], f.bounds[3]], [f.bounds[0], f.bounds[3]], [f.bounds[0], f.bounds[1]]]] } })) } : empty);
-    $("jobs").innerHTML = data.jobs.length ? data.jobs.map(jobHtml).join("") : `<span class="muted">None yet.</span>`;
+    const open = new Set([...document.querySelectorAll("#jobs details[open]")].map((d) => d.dataset.job));
+    $("jobs").innerHTML = data.jobs.length ? data.jobs.map((job) => jobHtml(job, open)).join("") : `<span class="muted">None yet.</span>`;
     for (const button of document.querySelectorAll("[data-cancel]")) {
       button.addEventListener("click", async () => { button.disabled = true; await postJson(URLS.cancel(button.dataset.cancel)); loadJobs(); });
     }
-    clearTimeout(polling);
+    polling = null;
     if (active) polling = setTimeout(loadJobs, 2000);
-    else if (polling !== null) { polling = null; loadLayer("dems"); loadVolumes(); }
+    else if (wasActive) { loadLayer("dems"); loadVolumes(); loadCharts(); }
+    wasActive = Boolean(active);
   } catch (error) {
-    $("jobs").innerHTML = `<span class="err">${esc(error.message)}</span>`;
+    // A build runs for an hour: a blip, or a sign-in that lapsed and is renewed, must not freeze the card. Asked again after a pause.
+    const note = $("jobs-error");
+    const line = `<p class="note err" id="jobs-error">${esc(error.message)} Asking again in 10 s.</p>`;
+    if (note) note.outerHTML = line; else $("jobs").insertAdjacentHTML("afterbegin", line);
+    polling = setTimeout(loadJobs, 10000);
   }
 }
-function jobHtml(job) {
-  const share = job.bytes_total ? Math.min(100, 100 * job.bytes_done / job.bytes_total) : 0;
-  const files = job.files.map((f) => `<tr><td class="mono">${esc(f.name)}</td><td>${esc(f.state)}${f.state === "downloading" ? " " + Math.round(100 * f.done / (f.size || 1)) + "%" : ""}</td></tr>
-    ${(f.reasons || []).map((r) => `<tr><td colspan="2" class="err">${esc(r)}</td></tr>`).join("")}`).join("");
+const STAGES = {
+  sizes: "Asking the FAA for the files' sizes", download: "Downloading", unzip: "Unzipping", check: "Checking each chart",
+  prepare: "Preparing the charts", tile: "Making the tiles of levels 11 to 14", lower: "Making the lower levels",
+  validate: "Validating", finish: "Finishing",
+};
+const count = (n) => n == null ? "?" : Number(n).toLocaleString("en-US");
+function jobTitle(job) {
+  if (job.kind === "chart_build") return "VFR charts " + (job.build || "");
+  return job.product === "13" ? "1/3″ DEMs" : "1 m DEMs";
+}
+function jobHtml(job, open) {
+  const chart = job.kind === "chart_build";
   const live = job.state === "queued" || job.state === "running";
+  const byWork = chart && job.stage && job.stage !== "download" && job.stage !== "sizes" && job.work_total;
+  const share = byWork ? Math.min(100, 100 * job.work_done / job.work_total)
+    : job.bytes_total ? Math.min(100, 100 * job.bytes_done / job.bytes_total) : 0;
+  const files = job.files.map((f) => `<tr><td class="mono">${esc(f.name)}</td><td>${esc(f.state)}${f.state === "downloading" ? " " + Math.round(100 * f.done / (f.size || 1)) + "%" : ""}</td></tr>
+    ${(f.reasons || []).map((r) => `<tr><td colspan="2" class="err">${esc(r)}</td></tr>`).join("")}
+    ${(f.notes || []).map((r) => `<tr><td colspan="2" class="muted">${esc(r)}</td></tr>`).join("")}`).join("");
+  const stage = chart && live && job.stage ? `<div class="note">${esc(STAGES[job.stage] || job.stage)}${byWork
+    ? ` · ${count(job.work_done)} of ${count(job.work_total)}${job.stage === "tile" || job.stage === "lower" ? " tiles" : ""}` : ""}</div>` : "";
   return `<div style="margin-bottom:12px">
-    <div class="row"><b>${esc(job.product === "13" ? "1/3″" : "1 m")}</b> <span class="badge">${esc(job.state)}</span>
+    <div class="row"><b>${esc(jobTitle(job))}</b> <span class="badge">${esc(job.state)}</span>
       <span class="muted">${esc(job.files_done)}/${esc(job.files_total)} files · ${esc(gb(job.bytes_done))} of ${esc(gb(job.bytes_total))} · ${esc(job.requested_by)}</span>
-      ${live && CAN_WRITE && !job.cancel_requested ? `<button class="btn btn-sm btn-danger" data-cancel="${esc(job.id)}">Cancel</button>` : ""}</div>
+      ${live && CAN_WRITE && !job.cancel_requested ? `<button class="btn btn-sm btn-danger" data-cancel="${esc(job.id)}">Cancel</button>` : ""}
+      ${live && job.cancel_requested ? `<span class="muted">cancelling…</span>` : ""}</div>
+    ${stage}
     ${live ? `<div class="bar"><div style="width:${share}%"></div></div>` : ""}
     ${job.error ? `<p class="note err">${esc(job.error)}</p>` : ""}
-    <details ${live ? "open" : ""}><summary class="muted" style="font-size:12px">Files</summary><table class="files">${files}</table></details>
+    <details data-job="${esc(job.id)}" ${live || open.has(job.id) ? "open" : ""}><summary class="muted" style="font-size:12px">Files</summary><table class="files">${files}</table></details>
   </div>`;
+}
+
+async function loadCharts() {
+  let data;
+  try { data = await getJson(URLS.charts); }
+  catch (error) { $("charts").innerHTML = `<span class="err">${esc(error.message)}</span>`; return; }
+  if (!data.configured || data.refusal) {
+    $("charts").innerHTML = `<p class="note">${esc(data.refusal || "CHART_TILES_DIR is not set on this server.")}</p>`;
+    return;
+  }
+  const cycles = data.cycles.map((c) => {
+    const posted = c.posted === true ? "posted" : c.posted === false ? "not posted yet" : "the FAA could not be asked";
+    const built = c.built.length ? ` · built: ${c.built.map(esc).join(", ")}` : "";
+    const can = CAN_WRITE && data.can_write && c.posted === true && !data.room;
+    return `<div class="row" style="margin-bottom:6px"><b>${esc(c.cycle)}</b> <span class="muted">${c.which === "current" ? "current" : "next"} cycle,
+      effective ${esc(c.effective)} · ${esc(posted)}${built}</span>
+      ${CAN_WRITE ? `<button class="btn btn-sm" data-build="${esc(c.cycle)}" ${can ? "" : "disabled"}>Build</button>` : ""}</div>`;
+  }).join("");
+  const builds = data.builds.map((b) => `<tr><td class="mono">${esc(b.name)}</td><td>${esc(gb(b.bytes))}</td><td>${count(b.tiles)} tiles</td>
+      <td class="muted">${esc((b.made || "").slice(0, 16).replace("T", " "))} · ${esc(b.by)}</td></tr>
+    ${b.held_back.map((h) => `<tr><td colspan="4" class="muted">${esc(h.title)}: ${esc(h.kept ? "held back, the copy in " + h.kept + " stands in" : "left out")} (${esc(h.reason)})</td></tr>`).join("")}`).join("");
+  $("charts").innerHTML = `${cycles}
+    <p class="note">A build is about ${esc(gb(data.estimate_bytes))} at most while it is made. Nothing is served until a build is made live (a later step).</p>
+    ${data.room ? `<p class="note err">${esc(data.room)}</p>` : ""}
+    <div id="chart-error"></div>
+    ${builds ? `<table class="files">${builds}</table>` : `<p class="note">No builds yet.</p>`}`;
+  for (const button of document.querySelectorAll("[data-build]")) {
+    button.addEventListener("click", async () => {
+      button.disabled = true;
+      const created = await postJson(URLS.chartBuild, { cycle: button.dataset.build });
+      if (!created.ok) { $("chart-error").innerHTML = `<p class="note err">${esc(created.error)}</p>`; button.disabled = false; return; }
+      loadJobs();
+    });
+  }
 }
 </script>
 {% endblock %}

@@ -15,7 +15,8 @@
     0.0,
     -42.333648839,
     259954.389319212
-   ]
+   ],
+   "ink": 0.997
   },
   "edges": {
    "north": "neighbour:billings-sec,great-falls-sec",

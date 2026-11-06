@@ -15,7 +15,8 @@
     0.0,
     -42.336080785,
     269487.460171753
-   ]
+   ],
+   "ink": 0.999
   },
   "edges": {
    "north": "neighbour:green-bay-sec,twin-cities-sec",

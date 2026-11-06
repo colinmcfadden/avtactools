@@ -4,10 +4,11 @@ C0 runs it by hand over a few charts, from a folder of the FAA's zips into a fol
 
     python -m charts.build <zips> <out> atlanta-sec atlanta-tac washington-hel …
 
-C1 runs the same steps as a Data tab job; downloading, unzipping, the build's number and ``state.json`` are C1's. Here:
+C1 runs the same steps as a Data tab job (``charts.job``), which downloads and unzips the zips first and keeps what it has done so it
+can resume. Here:
 
 - ``check``: a chart is a georeferenced one-band file with a palette, its edition dates are read from its metadata, and its layout is
-  the one its outline was made from (§4.2). Comparing the neatline's pixels along the outline is C1's.
+  the one its outline was made from (§4.2): the same size and transform, and ink along its outline (``neatline.ink_moved``).
 - ``prepare``: the palette expanded to RGB before anything is resampled (palette indices cannot be averaged), and the outline made an
   alpha mask; a tiled GeoTIFF in the chart's own projection.
 - ``tile``: each stored tile warped with Lanczos from every chart under it that is shown at its level, laid by tier (sectionals
@@ -20,6 +21,10 @@ C1 runs the same steps as a Data tab job; downloading, unzipping, the build's nu
 
 Levels are of 512-pixel tiles (§4.1): MapLibre's zoom, Leaflet's less one. MBTiles numbers rows from the south (TMS); everything
 here numbers them from the north, as the URL does, and flips them at the file.
+
+The heavy steps run in worker processes (``Pool``), started fresh rather than forked (§5.1): each writes only files of its own, under
+names that carry its process id until they are whole, and the build's main process alone writes the MBTiles. A worker looks between
+tasks for the build's pause file and for its parent (``_guard``), and ends with its parent.
 """
 from __future__ import annotations
 
@@ -29,6 +34,7 @@ import math
 import os
 import re
 import sqlite3
+import sys
 import time
 import zipfile
 from dataclasses import dataclass
@@ -59,6 +65,108 @@ LANCZOS = 3                     # the kernel's radius, in source pixels at 1:1
 
 class Refused(Exception):
     """A chart that cannot be built in this form, with the reason in words (§5.3, step 3)."""
+
+
+# ---------------------------------------------------------------------------------------------------------- worker processes
+
+PAUSE_FRESH_S = 60              # a pause file older than this holds nothing: its parent was killed (§5.1)
+_GUARD: tuple | None = None     # in a build's worker: (its pause file or None, its parent's pid)
+
+
+def pause_holds(path) -> bool:
+    """Whether a pause file is there and fresh: its writer keeps touching it while crews wait on an analysis (§5.1)."""
+    if not path:
+        return False
+    try:
+        return time.time() - os.stat(path).st_mtime < PAUSE_FRESH_S
+    except OSError:
+        return False
+
+
+def die_with_parent() -> None:
+    """On Linux, asks to be killed when the parent goes (``PR_SET_PDEATHSIG``). Best effort: elsewhere the parent's pid is watched."""
+    if not sys.platform.startswith("linux"):
+        return
+    try:
+        import ctypes
+        import signal
+
+        ctypes.CDLL("libc.so.6", use_errno=True).prctl(1, signal.SIGKILL)       # 1: PR_SET_PDEATHSIG
+    except Exception:  # noqa: BLE001
+        pass
+
+
+def _init_worker(pause, parent):
+    global _GUARD
+    _GUARD = (pause, parent)
+    die_with_parent()
+
+
+def _guard() -> None:
+    """Between a worker's tasks: ends it if its parent has gone, and waits while the build is paused."""
+    if _GUARD is None:
+        return
+    pause, parent = _GUARD
+    while True:
+        if os.getppid() != parent:
+            os._exit(1)
+        if not pause_holds(pause):
+            return
+        time.sleep(1)
+
+
+class _Here:
+    """A pool of one: the work in this process, so a test or a debugger sees it."""
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *exc):
+        return False
+
+
+def pool(processes: int, pause: str | None = None):
+    """``processes`` worker processes, each a fresh interpreter (spawned, never forked: §5.1), or this process alone for one."""
+    if processes <= 1:
+        return _Here()
+    import multiprocessing
+    from concurrent.futures import ProcessPoolExecutor
+
+    return ProcessPoolExecutor(processes, mp_context=multiprocessing.get_context("spawn"), initializer=_init_worker,
+                               initargs=(pause, os.getpid()))
+
+
+def run_tasks(workers, fn, tasks, take, between=None, window: int = 16) -> None:
+    """Runs ``fn`` over ``tasks`` on ``workers`` (from ``pool``), at most ``window`` at a time, handing each result to ``take`` as it
+    comes and calling ``between`` after each (where a build looks for a cancel, its parent and a pause). Nothing more is started once
+    either raises; what is running finishes."""
+    if isinstance(workers, _Here):
+        for task in tasks:
+            if between:
+                between()
+            take([fn(task)])
+        return
+    from concurrent.futures import FIRST_COMPLETED, wait
+
+    queued = iter(tasks)
+    running: set = set()
+    try:
+        while True:
+            while len(running) < window:
+                task = next(queued, None)
+                if task is None:
+                    break
+                running.add(workers.submit(fn, task))
+            if not running:
+                return
+            done, running = wait(running, return_when=FIRST_COMPLETED)
+            take([f.result() for f in done])
+            if between:
+                between()
+    except BaseException:
+        for f in running:
+            f.cancel()
+        raise
 
 
 # ------------------------------------------------------------------------------------------------------------- tile maths
@@ -101,6 +209,7 @@ class Checked:
     end: date
     scale: int                  # 1:scale, from the pixel size at 300 dpi, to three figures
     metres_per_pixel: float
+    kept: str | None = None     # the build whose copy stands in for this cycle's, which was held back (§4.2)
 
 
 _DATE = {k: re.compile(k + r"\s*:\s*(\d{8})") for k in ("Beginning_Date", "Ending_Date")}
@@ -121,13 +230,13 @@ def _metadata_dates(text: str):
     return found["Beginning_Date"], found["Ending_Date"]
 
 
-def check(zips: str, chart: catalog.Chart, outline: dict | None = None) -> Checked:
-    """Step 3: is this the chart its outline was made for, and which edition is it?"""
-    member = neatline._member(zips, chart)
+def check_file(chart: catalog.Chart, member: str, htm_text: str, outline: dict) -> Checked:
+    """Step 3: is the file at ``member`` (a path GDAL reads) the chart its outline was made for, and which edition is it? ``htm_text``
+    is its metadata."""
     try:
         ds = rasterio.open(member)
-    except rasterio.errors.RasterioIOError as e:
-        raise Refused(f"its file cannot be read ({e})") from None
+    except rasterio.errors.RasterioIOError:
+        raise Refused("its file cannot be read") from None
     with ds:
         if ds.count != 1 or ds.dtypes[0] != "uint8":
             raise Refused("it is not one band of 8 bits")
@@ -142,22 +251,37 @@ def check(zips: str, chart: catalog.Chart, outline: dict | None = None) -> Check
             raise Refused("its pixels are turned")
         width, height = ds.width, ds.height
         mpp = abs(t.a) * ds.crs.linear_units_factor[1]
-    outline = outline or neatline.load(chart.id)
     made = outline["properties"]["made_from"]
     if (width, height) != (made["width"], made["height"]):
         raise Refused(f"it is {width} by {height} pixels; its outline was made from one of {made['width']} by {made['height']}")
     if any(abs(a - b) > 1e-6 * max(1.0, abs(b)) for a, b in zip(tuple(t)[:6], made["transform"])):
         raise Refused("its georeferencing has changed since its outline was made")
-    htm = chart.tif.rsplit(".", 1)[0] + ".htm"
+    start, end = _metadata_dates(htm_text)
+    if made.get("ink") is not None:
+        moved = neatline.ink_moved(neatline.read(member), outline)
+        if moved:
+            raise Refused(moved)
+    # to three figures: 1:62,500 for an inset, whose metadata gives its main chart's scale ("Insets are of varying scales")
+    scale = int(float(f"{mpp * SCAN_DPI / 0.0254:.3g}"))
+    return Checked(chart, member, start, end, scale, mpp)
+
+
+def htm_name(chart: catalog.Chart) -> str:
+    return chart.tif.rsplit(".", 1)[0] + ".htm"
+
+
+def check(zips: str, chart: catalog.Chart, outline: dict | None = None) -> Checked:
+    """Step 3 on a chart read in place from its zip, in a folder of the FAA's zips (C0's way, and a held-back chart's: §4.2)."""
+    outline = outline or neatline.load(chart.id)
+    htm = htm_name(chart)
     try:
         with zipfile.ZipFile(os.path.join(zips, chart.zip)) as zf:
             text = zf.read(htm).decode("utf-8", "replace")
     except KeyError:
         raise Refused(f"its zip holds no {htm}") from None
-    start, end = _metadata_dates(text)
-    # to three figures: 1:62,500 for an inset, whose metadata gives its main chart's scale ("Insets are of varying scales")
-    scale = int(float(f"{mpp * SCAN_DPI / 0.0254:.3g}"))
-    return Checked(chart, member, start, end, scale, mpp)
+    except (OSError, zipfile.BadZipFile):
+        raise Refused("its zip cannot be read") from None
+    return check_file(chart, neatline._member(zips, chart), text, outline)
 
 
 # --------------------------------------------------------------------------------------------------------------- preparing
@@ -193,7 +317,7 @@ def prepare(checked: Checked, work: str, outline: dict | None = None) -> str:
     profile = dict(driver="GTiff", width=src.width, height=src.height, count=4, dtype="uint8", crs=src.crs,
                    transform=src.transform, tiled=True, blockxsize=TILE, blockysize=TILE, compress="deflate", predictor=2,
                    zlevel=6, photometric="RGB", alpha="YES", num_threads="ALL_CPUS", bigtiff="IF_SAFER")
-    part = path + ".part"
+    part = f"{path}.{os.getpid()}.part"     # its own name: a worker killed part way leaves its half to nobody
     with rasterio.open(part, "w", **profile) as dst:
         dst.colorinterp = [ColorInterp.red, ColorInterp.green, ColorInterp.blue, ColorInterp.alpha]
         step = 2048
@@ -364,8 +488,18 @@ def _seed_path(work: str, z: int, x: int, y: int) -> str:
     return os.path.join(work, "seed", str(z), f"{x}_{y}.png")
 
 
+def _write_seed(work: str, z: int, x: int, y: int, im: Image.Image) -> None:
+    """A lossless copy of a tile for the levels below, written whole under a name of its own and renamed into place."""
+    seed = _seed_path(work, z, x, y)
+    os.makedirs(os.path.dirname(seed), exist_ok=True)
+    part = f"{seed}.{os.getpid()}.part.png"
+    im.save(part, compress_level=1)
+    os.replace(part, seed)
+
+
 def _tile_one(args):
     """A worker's tile: (z, x, y, webp or None, seconds to render, seconds to encode)."""
+    _guard()
     z, x, y, layers, work = args
     t0 = time.perf_counter()
     drawn = [(tier, warp(path, z, x, y)) for tier, path in layers]
@@ -374,10 +508,7 @@ def _tile_one(args):
         alone = composite([d for tier, d in drawn if tier == "sectional"])
         if alone is None:                       # a finer chart where no sectional is: nothing below
             alone = np.zeros((TILE, TILE, 4), np.uint8)
-        seed = _seed_path(work, z, x, y)
-        os.makedirs(os.path.dirname(seed), exist_ok=True)
-        Image.fromarray(alone, "RGBA").save(seed + ".part.png", compress_level=1)
-        os.replace(seed + ".part.png", seed)
+        _write_seed(work, z, x, y, Image.fromarray(alone, "RGBA"))
     t1 = time.perf_counter()
     data = encode(rgba)
     return z, x, y, data, t1 - t0, time.perf_counter() - t1
@@ -386,6 +517,7 @@ def _tile_one(args):
 def _lower_one(args):
     """A tile of a lower level from the four below it, sectionals only: from level 11's sectional-only copy where there is one, the
     stored tile elsewhere, and below that from the lossless copy each lower tile leaves in ``work``."""
+    _guard()
     z, x, y, mbtiles, work = args
     t0 = time.perf_counter()
     mosaic = Image.new("RGBA", (2 * TILE, 2 * TILE), (0, 0, 0, 0))
@@ -415,10 +547,7 @@ def _lower_one(args):
     small = mosaic.resize((TILE, TILE), Image.Resampling.LANCZOS)      # Pillow shrinks RGBA premultiplied
     rgba = np.asarray(small)
     if z > LOWEST:
-        seed = _seed_path(work, z, x, y)
-        os.makedirs(os.path.dirname(seed), exist_ok=True)
-        small.save(seed + ".part.png", compress_level=1)
-        os.replace(seed + ".part.png", seed)
+        _write_seed(work, z, x, y, small)
     t1 = time.perf_counter()
     return z, x, y, encode(rgba), t1 - t0, time.perf_counter() - t1
 
@@ -507,7 +636,7 @@ def coverage(build: str, cycle: date, charts: list[Checked], outlines: dict[str,
                 "effective": catalog.effective_instant(c.start).strftime("%Y-%m-%dT%H:%MZ"),
                 "expires": catalog.expires_instant(c.end).strftime("%Y-%m-%dT%H:%MZ"),
             },
-            "kept": False,
+            "kept": c.kept is not None,
             "shownFrom": shown,
             "storedTo": stored,
             "nativeLevel": round(native_level(c, prints[c.chart.id]), 2),
@@ -519,7 +648,7 @@ def coverage(build: str, cycle: date, charts: list[Checked], outlines: dict[str,
         "build": build,
         "cycle": cycle.isoformat(),
         "effective": catalog.effective_instant(cycle).strftime("%Y-%m-%dT%H:%MZ"),
-        "expires": min(catalog.expires_instant(c.end) for c in charts).strftime("%Y-%m-%dT%H:%MZ"),
+        "expires": expires(charts).strftime("%Y-%m-%dT%H:%MZ"),
         "tileSize": TILE,
         "minLevel": levels_held[0],
         "maxLevel": levels_held[-1],
@@ -527,6 +656,13 @@ def coverage(build: str, cycle: date, charts: list[Checked], outlines: dict[str,
         "tiles": {str(z): counts[z] for z in levels_held},
         "charts": out,
     }
+
+
+def expires(charts: list[Checked]):
+    """When a build expires: the first of its own cycle's charts to. A chart held back from an older build keeps its own (older)
+    edition, which its line in ``coverage.json`` says; it does not make the whole build expired (§4.2, §4.5)."""
+    own = [c for c in charts if c.kept is None] or charts
+    return min(catalog.expires_instant(c.end) for c in own)
 
 
 def coverage_text(cov: dict) -> str:
@@ -630,27 +766,19 @@ def validate(mb: MBTiles, expected: dict[int, set], empty: dict[int, set], chart
 # --------------------------------------------------------------------------------------------------------------- the build
 
 
-class _Here:
-    """A pool of one: the work in this process, so a test or a debugger sees it."""
-
-    def __enter__(self):
-        return self
-
-    def __exit__(self, *exc):
-        return False
-
-    def map(self, fn, *its, chunksize=1):
-        return map(fn, *its)
-
-
-def _pool(processes: int):
-    from concurrent.futures import ProcessPoolExecutor
-
-    return ProcessPoolExecutor(processes) if processes > 1 else _Here()
-
-
 def _prepare_one(args):
+    _guard()
     return prepare(*args)
+
+
+def tile_tasks(top: dict, tiers: dict[str, str], paths: dict[str, str], work: str, have: set) -> list:
+    """Step 5's tasks: each stored tile above level 10 not yet held, with the prepared charts drawn on it."""
+    return [(z, x, y, [(tiers[i], paths[i]) for i in layers], work)
+            for z in sorted(top) for (x, y), layers in sorted(top[z].items()) if (z, x, y) not in have]
+
+
+def lower_tasks(z: int, below: set, mbtiles: str, work: str, have: set) -> list:
+    return [(z, x, y, mbtiles, work) for x, y in sorted(below) if (z, x, y) not in have]
 
 
 def build(zips: str, out: str, ids: list[str], processes: int = 2, label: str | None = None, log=print,
@@ -679,9 +807,10 @@ def build(zips: str, out: str, ids: list[str], processes: int = 2, label: str | 
     report["times"]["check"] = round(time.perf_counter() - t, 1)
 
     t = time.perf_counter()
-    with _pool(min(processes, len(checked))) as pool:
-        paths = dict(zip([c.chart.id for c in checked],
-                         pool.map(_prepare_one, [(c, work, outlines[c.chart.id]) for c in checked])))
+    paths = {}
+    with pool(min(processes, len(checked))) as workers:
+        run_tasks(workers, _prepare_one, [(c, work, outlines[c.chart.id]) for c in checked],
+                  lambda done: paths.update({os.path.basename(p)[:-4]: p for p in done}))
     report["times"]["prepare"] = round(time.perf_counter() - t, 1)
     log(f"prepared {len(paths)} charts in {report['times']['prepare']} s")
 
@@ -704,11 +833,10 @@ def build(zips: str, out: str, ids: list[str], processes: int = 2, label: str | 
                 enc.append(te)
 
     t = time.perf_counter()
-    tasks = [(z, x, y, [(tiers[i], paths[i]) for i in layers], work)
-             for z in sorted(top) for (x, y), layers in sorted(top[z].items()) if (z, x, y) not in have]
+    tasks = tile_tasks(top, tiers, paths, work, have)
     log(f"tiling {len(tasks)} tiles at levels {sorted(top)} on {processes} processes")
-    with _pool(processes) as pool:
-        take(pool.map(_tile_one, tasks, chunksize=4))
+    with pool(processes) as workers:
+        run_tasks(workers, _tile_one, tasks, take)
     mb.commit()
     report["times"]["tile"] = round(time.perf_counter() - t, 1)
     report["times"]["tile_render_mean"] = round(float(np.mean(render)), 3) if render else None
@@ -717,12 +845,11 @@ def build(zips: str, out: str, ids: list[str], processes: int = 2, label: str | 
 
     t = time.perf_counter()
     below = {xy for xy in expected.get(TOP, set())} - empty.get(TOP, set())
-    with _pool(processes) as pool:
+    with pool(processes) as workers:
         for z in range(TOP - 1, LOWEST - 1, -1):
             below = {(x // 2, y // 2) for x, y in below}
             expected[z] = set(below)
-            tasks = [(z, x, y, mb.path, work) for x, y in sorted(below) if (z, x, y) not in have]
-            take(pool.map(_lower_one, tasks, chunksize=8))
+            run_tasks(workers, _lower_one, lower_tasks(z, below, mb.path, work, have), take)
             mb.commit()
             below = below - empty.get(z, set())
     report["times"]["lower"] = round(time.perf_counter() - t, 1)

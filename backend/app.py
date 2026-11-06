@@ -12,8 +12,9 @@ except ImportError:
     __version__ = "0.0.0-dev"
 
 from database_url import database_uri, is_postgres
+from db_app import engine_options as db_engine_options
 from models import (
-    AccountToken, AircraftProfile, LoginEvent, LzSurveyRevision, SavedBrief, SavedLZ, SavedPointSet, SavedRoute, SurveyBook, User,
+    AccountToken, AircraftProfile, DataJob, LoginEvent, LzSurveyRevision, SavedBrief, SavedLZ, SavedPointSet, SavedRoute, SurveyBook, User,
     db,
 )
 from affiliation_gate import enforce_affiliation_gate
@@ -74,11 +75,9 @@ app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 # check and transparently reconnects; pool_recycle proactively retires
 # connections before the server's own idle timeout can. Only meaningful for a
 # real connection pool, so scope it to Postgres and leave SQLite dev untouched.
+# The chart build's own process opens the database with the same options (db_app.py).
 if is_postgres(database_url):
-    app.config['SQLALCHEMY_ENGINE_OPTIONS'] = {
-        'pool_pre_ping': True,
-        'pool_recycle': 280,
-    }
+    app.config['SQLALCHEMY_ENGINE_OPTIONS'] = db_engine_options(database_url)
 app.config['JWT_SECRET_KEY'] = resolve_jwt_secret(os.environ)
 validate_email_configuration(os.environ)
 # Tileset keys are an HMAC under this; a deployment without it would name new
@@ -237,6 +236,8 @@ with app.app_context():
     sync_table_columns(db, LzSurveyRevision)
     # survey_book gained a uuid, a team and archiving when one book became many (step L5).
     sync_table_columns(db, SurveyBook)
+    # data_job gained a chart build's columns (build, stage, work_done, work_total, token; docs/VFR_CHARTS.md §5).
+    sync_table_columns(db, DataJob)
     if not ensure_unique_index(db, SurveyBook, ('uuid',), 'ux_survey_book_uuid'):
         app.logger.warning("surveys: could not add the uuid index on survey_book")
     # Saved records (and a user's own aircraft profiles) gained the sync columns (client_uuid, revision, deleted_at,

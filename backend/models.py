@@ -769,15 +769,19 @@ class LzSurveyImport(db.Model):
 
 
 class DataJob(db.Model):
-    """A download the admin's Data tab asked for (data_admin/jobs.py; docs/DATA_ADMIN_AND_PREBUILT_3D_PLAN.md §10): DEMs
-    from USGS, fetched in the background one job at a time. ``files`` is each file's name, URL, size, footprint and how it
-    stands, so the map can draw them and a restart can pick up where the last process left off. Never logged."""
+    """Work the admin's Data tab asked for, one job at a time (data_admin/jobs.py; docs/DATA_ADMIN_AND_PREBUILT_3D_PLAN.md
+    §10): DEMs downloaded from USGS (``dem_download``), or a cycle of the FAA's VFR charts built into tiles (``chart_build``,
+    charts/job.py; docs/VFR_CHARTS.md §5). ``files`` is each file's name, URL, size and how it stands, so the page can show them
+    and a restart can pick up where the last process left off. Never logged.
+
+    A chart build runs in a process of its own, which owns its progress (``files``, ``stage``, ``work_*``, ``bytes_*``) and its
+    end state, and writes only while the row still carries the ``token`` it was started with (§5.1)."""
 
     __tablename__ = 'data_job'
 
     id = db.Column(db.String(32), primary_key=True)  # random hex, never a place
-    kind = db.Column(db.String(20), nullable=False, default='dem_download')
-    product = db.Column(db.String(10), nullable=False)  # 13 | 1m
+    kind = db.Column(db.String(20), nullable=False, default='dem_download')  # dem_download | chart_build
+    product = db.Column(db.String(10), nullable=False)  # 13 | 1m | vfr
     state = db.Column(db.String(10), nullable=False, default='queued')  # queued | running | done | failed | cancelled
     files = db.Column(db.JSON, nullable=False, default=list)
     files_total = db.Column(db.Integer, nullable=False, default=0)
@@ -792,3 +796,9 @@ class DataJob(db.Model):
     created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
     started_at = db.Column(db.DateTime, nullable=True)
     finished_at = db.Column(db.DateTime, nullable=True)
+    # A chart build's (docs/VFR_CHARTS.md §5): added by schema_sync on a table made before them.
+    build = db.Column(db.String(20), nullable=True)      # 2026-10-29.1: the build's name, its number taken from state.json
+    stage = db.Column(db.String(20), nullable=True)      # sizes | download | unzip | check | prepare | tile | lower | validate | finish
+    work_done = db.Column(db.Integer, nullable=True)     # tiles made in the stage, as bytes_done counts bytes
+    work_total = db.Column(db.Integer, nullable=True)
+    token = db.Column(db.String(64), nullable=True)      # the build process it was last started as

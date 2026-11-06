@@ -15,7 +15,8 @@
     0.0,
     -42.335357996,
     235458.114516944
-   ]
+   ],
+   "ink": 1.0
   },
   "edges": {
    "north": "neighbour:chicago-sec,omaha-sec",

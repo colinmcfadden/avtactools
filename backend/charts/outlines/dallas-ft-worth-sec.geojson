@@ -15,7 +15,8 @@
     0.0,
     -42.334316209,
     252841.78048021
-   ]
+   ],
+   "ink": 1.0
   },
   "edges": {
    "north": "neighbour:kansas-city-sec,wichita-sec",

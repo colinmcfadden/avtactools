@@ -15,7 +15,8 @@
     0.0,
     -42.334898969,
     240536.419747153
-   ]
+   ],
+   "ink": 0.813
   },
   "edges": {
    "north": "neighbour:cincinnati-sec,washington-sec",

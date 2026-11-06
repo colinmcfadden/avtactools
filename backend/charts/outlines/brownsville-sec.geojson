@@ -15,7 +15,8 @@
     0.0,
     -42.336093448,
     242619.502168557
-   ]
+   ],
+   "ink": 0.816
   },
   "edges": {
    "north": "neighbour:el-paso-sec,san-antonio-sec",

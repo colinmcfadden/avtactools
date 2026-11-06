@@ -1,5 +1,5 @@
 """The admin's Data tab (docs/DATA_ADMIN_AND_PREBUILT_3D_PLAN.md §10): a map of the terrain and LiDAR the server holds,
-and DEMs downloaded from USGS into the terrain folder.
+DEMs downloaded from USGS into the terrain folder, and the FAA's VFR charts built into tiles (docs/VFR_CHARTS.md §5).
 
 On the admin blueprint, behind its session and CSRF; nothing here takes a JWT, so no app and no user who is not an
 admin can reach a place. ``DATA_ADMIN`` decides what it offers (``data_admin``). Every JSON answer is
@@ -7,19 +7,21 @@ admin can reach a place. ``DATA_ADMIN`` decides what it offers (``data_admin``).
 """
 
 import threading
-from datetime import datetime
+from datetime import date, datetime, timezone
 from xml.etree.ElementTree import ParseError
 
 from flask import abort, current_app, jsonify, render_template, request
 
 import data_admin
 from data_admin import jobs, layers, usgs, validate, volumes
+from charts import catalog as chart_catalog, faa, job as chart_job, locks as chart_locks, state as chart_state
 from models import db, DataJob
 from routes.admin_routes import admin_bp, admin_required, _check_csrf
 
 RECENT_JOBS = 10
 # One job at a time: the check and the insert under one lock (one gunicorn process, AGENTS.md §9).
 _creating = threading.Lock()
+BUSY = "Another job is under way. Wait for it, or cancel it."
 
 
 def _json(body, status=200):
@@ -47,7 +49,8 @@ def _writable():
 
 def _job_dict(job):
     return {
-        "id": job.id, "product": job.product, "state": job.state, "error": job.error, "replace": job.replace,
+        "id": job.id, "kind": job.kind, "product": job.product, "state": job.state, "error": job.error, "replace": job.replace,
+        "build": job.build, "stage": job.stage, "work_done": job.work_done, "work_total": job.work_total,
         "files_total": job.files_total, "files_done": job.files_done,
         "bytes_total": job.bytes_total, "bytes_done": job.bytes_done,
         "requested_by": job.requested_by_name, "cancel_requested": job.cancel_requested,
@@ -160,7 +163,7 @@ def data_job_create():
     admin = request.admin
     with _creating:
         if DataJob.query.filter(DataJob.state.in_(("queued", "running"))).count():
-            return _refuse("A download is under way already. Wait for it, or cancel it.", 409)
+            return _refuse(BUSY, 409)
         job = DataJob(id=jobs.new_id(), product=product, files=files, files_total=len(files),
                       bytes_total=sum(f["size"] for f in files), replace=replace, requested_by=admin.id,
                       requested_by_name=admin.name or admin.email or '')
@@ -206,6 +209,110 @@ def data_job_cancel(job_id):
             job.state, job.finished_at = "cancelled", datetime.utcnow()
     db.session.commit()
     return _json({"ok": True, "job": _job_dict(job)})
+
+
+# ---------------------------------------------------------------------------------------------------- VFR charts
+
+
+def _chart_refusal(where):
+    """Why charts cannot be built here, in words, or None."""
+    if where is None:
+        return "CHART_TILES_DIR is not set on this server."
+    if not chart_locks.supported():
+        return "Chart builds need a Linux or macOS server: this one cannot lock a file across processes."
+    return None
+
+
+def _build_line(name, info):
+    return {"name": name, "cycle": info.get("cycle"), "effective": info.get("effective"), "expires": info.get("expires"),
+            "made": info.get("made"), "by": info.get("by"), "bytes": info.get("bytes"), "tiles": info.get("tiles"),
+            "held_back": [{"title": h.get("title"), "reason": h.get("reason"), "kept": h.get("kept")}
+                          for h in info.get("held_back") or [] if isinstance(h, dict)]}
+
+
+@admin_bp.route('/data/charts.json')
+@admin_required
+def data_charts():
+    """The VFR charts panel: what the chart folder holds, the cycles that can be built, and whether one can be now. Asks the FAA
+    whether a cycle is posted (kept 10 minutes)."""
+    _readable()
+    _resume()
+    where = chart_state.root()
+    now = datetime.now(timezone.utc)
+    body = {"configured": where is not None, "can_write": data_admin.can_write(), "refusal": _chart_refusal(where),
+            "estimate_bytes": chart_job.CONUS_ESTIMATE_BYTES, "builds": [], "cycles": [], "room": None}
+    if body["refusal"]:
+        return _json(body)
+    try:
+        held = chart_state.read(where)
+    except chart_state.StateError as error:
+        body["refusal"] = str(error)
+        return _json(body)
+    builds = held["builds"]
+    body["builds"] = [_build_line(name, info) for name, info in sorted(builds.items(), key=lambda kv: chart_state._order(kv[0]),
+                                                                       reverse=True) if isinstance(info, dict)]
+    for cycle, which in ((faa.current_cycle(now), "current"), (faa.next_cycle(now), "next")):
+        body["cycles"].append({"cycle": cycle.isoformat(), "which": which,
+                               "effective": chart_catalog.effective_instant(cycle).strftime("%Y-%m-%dT%H:%MZ"),
+                               "posted": faa.posted(cycle),
+                               "built": [name for name in builds if name.startswith(cycle.isoformat() + ".")]})
+    if data_admin.can_write():
+        try:
+            volumes.check_room(where, chart_job.CONUS_ESTIMATE_BYTES, label=chart_job.LABEL)
+        except volumes.NoRoom as error:
+            body["room"] = str(error)
+    return _json(body)
+
+
+@admin_bp.route('/data/charts/builds', methods=['POST'])
+@admin_required
+def data_chart_build():
+    """Builds a cycle of the FAA's VFR charts (docs/VFR_CHARTS.md §5.3): the current one or the next, once the FAA has posted it.
+    What is downloaded is the catalog's, never a list the page sent."""
+    _check_csrf()
+    refused = _writable()
+    if refused:
+        return refused
+    where = chart_state.root()
+    why = _chart_refusal(where)
+    if why:
+        return _refuse(why)
+    body = request.get_json(silent=True) or {}
+    now = datetime.now(timezone.utc)
+    offered = {faa.current_cycle(now), faa.next_cycle(now)}
+    try:
+        cycle = date.fromisoformat(str(body.get("cycle") or ""))
+    except ValueError:
+        cycle = None
+    if cycle not in offered:
+        return _refuse("Only the current cycle or the next can be built.")
+    posted = faa.posted(cycle)
+    if posted is None:
+        return _refuse("The FAA could not be asked whether that cycle is posted. Try again in a minute.")
+    if not posted:
+        return _refuse(f"The FAA has not posted the charts of {cycle.isoformat()} yet.")
+    try:
+        volumes.check_room(where, chart_job.CONUS_ESTIMATE_BYTES, label=chart_job.LABEL)
+    except volumes.NoRoom as error:
+        return _refuse(str(error))
+    admin = request.admin
+    files = chart_job.files_for(cycle, chart_job.only())
+    with _creating:
+        if DataJob.query.filter(DataJob.state.in_(("queued", "running"))).count():
+            return _refuse(BUSY, 409)
+        try:
+            name = chart_state.take_number(where, cycle)
+        except (chart_state.StateError, OSError) as error:
+            current_app.logger.warning("charts: a build number could not be taken (%s)", error.__class__.__name__)
+            return _refuse(str(error) if isinstance(error, chart_state.StateError) else
+                           "The chart folder's state.json could not be written.")
+        job = DataJob(id=jobs.new_id(), kind=chart_job.KIND, product=chart_job.PRODUCT, files=files, files_total=len(files),
+                      bytes_total=0, build=name, stage=chart_job.STAGES[0], requested_by=admin.id,
+                      requested_by_name=admin.name or admin.email or '')
+        db.session.add(job)
+        db.session.commit()
+    jobs.RUNNER.enqueue(current_app._get_current_object(), job.id)
+    return _json({"ok": True, "job": _job_dict(job)}, 202)
 
 
 @admin_bp.route('/data/dems/tag-usgs', methods=['POST'])

@@ -15,7 +15,8 @@
     0.0,
     -42.333834585,
     224871.75127304
-   ]
+   ],
+   "ink": 0.766
   },
   "edges": {
    "north": "neighbour:atlanta-sec,charlotte-sec",

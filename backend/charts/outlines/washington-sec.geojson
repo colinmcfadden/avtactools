@@ -15,7 +15,8 @@
     0.0,
     -42.330773346,
     234667.262046263
-   ]
+   ],
+   "ink": 0.874
   },
   "edges": {
    "north": "neighbour:detroit-sec,new-york-sec",

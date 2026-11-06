@@ -15,7 +15,8 @@
     0.0,
     -42.332068494,
     278559.454486756
-   ]
+   ],
+   "ink": 1.0
   },
   "edges": {
    "north": "neighbour:cincinnati-sec,st-louis-sec",

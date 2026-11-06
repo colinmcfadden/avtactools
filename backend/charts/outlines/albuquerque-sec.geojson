@@ -15,7 +15,8 @@
     0.0,
     -42.334573864,
     253556.582296931
-   ]
+   ],
+   "ink": 1.0
   },
   "edges": {
    "north": "neighbour:denver-sec,wichita-sec",
