@@ -1,6 +1,9 @@
 import React, { useEffect, useId, useMemo, useRef, useState } from "react";
 import Icon from "../feature/ui/Icon";
 import { nearestFirst, readTarget } from "../utils/targetReading";
+import { placeQueryOf } from "../feature/places/placeQuery";
+import { usePlaceSearch } from "../feature/places/usePlaceSearch";
+import { placeChoice, placeDistance, placeNote, placeTitle } from "../feature/places/placeWords";
 import "./TargetField.css";
 
 /**
@@ -22,7 +25,16 @@ import "./TargetField.css";
  * share button beside GO (docs/GRID_SHARING.md): the row's place, or the place in the
  * field (the row the arrow keys or the pointer are on, else the one place the text
  * reads as; never a guess between readings).
+ *
+ * With `searchPlaces` (the place search, docs/PLACE_SEARCH.md §6), text that could name a place (placeQuery.js: a
+ * name or an identifier, told from a grid or a lat/long by its first characters) also lists the airports, heliports,
+ * navaids and fixes it names, nearest the map first: the first few, and a row that shows the rest. A place is chosen
+ * as a reading is (`onChoose`), its choice carrying `place` and `label`; GO and Enter with no row picked choose the
+ * first place, as a Spotlight does, once the list is the answer for the text as it is.
  */
+
+// Places shown before "Show n more".
+export const PLACES_FIRST = 3;
 
 // Where the placeholder's width cannot be measured (no canvas: a test), the width taken to hold the example.
 const WIDE_PLACEHOLDER_PX = 480;
@@ -45,9 +57,10 @@ const TargetField = ({
   onChange,
   onChoose,
   near = null,
-  placeholder = "Search by grid or lat/long",
+  placeholder,
   // Shown instead where the field is wide enough to hold it.
-  widePlaceholder = "Search by grid or lat/long, e.g. 16S GC 28864 55349 or 34.54, -84.12",
+  widePlaceholder,
+  searchPlaces = null,
   onShare = null,
   autoFocus = false,
   rowClassName = "ff-input-group",
@@ -57,6 +70,10 @@ const TargetField = ({
   // Drawn in the row before the input (a search icon).
   leading = null,
 }) => {
+  const narrowWords = placeholder ?? (searchPlaces ? "Search by grid, lat/long or place" : "Search by grid or lat/long");
+  const wideWords = widePlaceholder ?? (searchPlaces
+    ? "Search by grid, lat/long or place, e.g. 16S GC 28864 55349, 34.54, -84.12 or DZJ"
+    : "Search by grid or lat/long, e.g. 16S GC 28864 55349 or 34.54, -84.12");
   const id = useId();
   const inputRef = useRef(null);
   const listId = `${id}-places`;
@@ -65,6 +82,8 @@ const TargetField = ({
   // Bumped by GO when it cannot choose, so the status says its sentence again.
   const [asked, setAsked] = useState(0);
   const [wide, setWide] = useState(false);
+  // The places past the first few are shown: until the text changes.
+  const [expanded, setExpanded] = useState(false);
 
   const shareRef = useRef(null);
 
@@ -72,17 +91,19 @@ const TargetField = ({
   // own width, which a top bar shares with its neighbours, against the example's width in the field's font.
   useEffect(() => {
     const input = inputRef.current;
-    if (!input || !widePlaceholder || typeof ResizeObserver === "undefined") return undefined;
+    if (!input || !wideWords || typeof ResizeObserver === "undefined") return undefined;
     const observer = new ResizeObserver(([entry]) => {
-      const needed = textWidth(widePlaceholder, input) ?? WIDE_PLACEHOLDER_PX;
+      const needed = textWidth(wideWords, input) ?? WIDE_PLACEHOLDER_PX;
       setWide(entry.contentRect.width >= needed + 4);
     });
     observer.observe(input);
     return () => observer.disconnect();
-  }, [widePlaceholder]);
+  }, [wideWords]);
 
   const reading = useMemo(() => readTarget(value), [value]);
-  const rows = useMemo(() => {
+  const placeKind = searchPlaces ? placeQueryOf(value, reading) : null;
+  const found = usePlaceSearch({ text: value, kind: placeKind, near, search: searchPlaces });
+  const readingRows = useMemo(() => {
     const choices = nearestFirst(reading.choices, near);
     if (choices.length === 1) {
       const [only] = choices;
@@ -95,9 +116,42 @@ const TargetField = ({
     }
     return choices.map((choice, index) => ({ key: `reading-${index}`, choice, main: choice.latLong, note: choice.mgrs }));
   }, [reading, near]);
+  const placeRows = useMemo(() => found.places.flatMap((place) => {
+    const choice = placeChoice(place);
+    return choice
+      ? [{ key: `place-${place.id}`, choice, main: placeTitle(place), note: placeNote(place), end: placeDistance(place, near) }]
+      : [];
+  }), [found.places, near]);
+  const hiddenPlaces = expanded ? 0 : Math.max(0, placeRows.length - PLACES_FIRST);
+  const rows = useMemo(() => [
+    ...readingRows,
+    ...(hiddenPlaces ? placeRows.slice(0, PLACES_FIRST) : placeRows),
+    ...(hiddenPlaces ? [{ key: "more", more: true, main: `Show ${hiddenPlaces} more ${hiddenPlaces === 1 ? "place" : "places"}` }] : []),
+  ], [readingRows, placeRows, hiddenPlaces]);
 
-  const shown = open && (rows.length > 0 || Boolean(reading.message));
+  // What is said above the list: the reader's sentence, except for text that can only be a place's name (a grid
+  // or lat/long it is not); for that, why no place is listed, once the search has answered for it.
+  const message = (() => {
+    if (placeKind === "place") {
+      if (!found.current) return null;
+      if (found.failed) return "The place search is not answering. Grids and lat/longs still work.";
+      if (!found.available) return "The place search has nothing to search on this server yet. Grids and lat/longs still work.";
+      if (placeRows.length === 0) return "No airport, heliport, navaid or fix by that name or identifier.";
+      return null;
+    }
+    return reading.message;
+  })();
+  const firstPlace = found.current && placeRows.length > 0 ? placeRows[0].choice : null;
+
+  const shown = open && (rows.length > 0 || Boolean(message));
   const optionId = (index) => `${id}-place-${index}`;
+
+  // The row the arrow keys pick is kept in sight in a list that scrolls.
+  useEffect(() => {
+    if (!shown || active < 0) return;
+    document.getElementById(optionId(active))?.scrollIntoView?.({ block: "nearest" });
+    // optionId is made from the id alone.
+  }, [shown, active]);
 
   const choose = (choice, { byPointer = false } = {}) => {
     setOpen(false);
@@ -109,8 +163,8 @@ const TargetField = ({
 
   // What the field's own share button sends: the row the arrow keys or the pointer are on, else the one place.
   // The row stays picked while the focus goes from the field to that button, so a key reaches either reading.
-  const sharable = active >= 0 && rows[active] ? rows[active].choice
-    : reading.choices.length === 1 ? reading.choices[0] : null;
+  const sharable = active >= 0 && rows[active] ? rows[active].choice ?? null
+    : reading.choices.length === 1 ? reading.choices[0] : firstPlace;
   const share = (choice, { byPointer = false } = {}) => {
     if (!choice) return;
     setOpen(false);
@@ -121,9 +175,22 @@ const TargetField = ({
     onShare(choice);
   };
 
+  // "Show n more": the list grows, and the row picked stays where it was, now the first of the places it shows.
+  const pick = (row, how) => {
+    if (row.more) {
+      setExpanded(true);
+      return;
+    }
+    choose(row.choice, how);
+  };
+
   const go = ({ byPointer = false } = {}) => {
     if (reading.choices.length === 1) {
       choose(reading.choices[0], { byPointer });
+      return;
+    }
+    if (firstPlace) {
+      choose(firstPlace, { byPointer });
       return;
     }
     // Readings to choose from, or a sentence: show them, and say it again. The focus goes back to the
@@ -147,7 +214,7 @@ const TargetField = ({
     }
     if (event.key === "Enter") {
       event.preventDefault();
-      if (shown && active >= 0 && rows[active]) choose(rows[active].choice);
+      if (shown && active >= 0 && rows[active]) pick(rows[active]);
       else go();
       return;
     }
@@ -163,9 +230,14 @@ const TargetField = ({
   const status = (() => {
     if (!shown) return "";
     const parts = [];
-    if (reading.message) parts.push(reading.message);
-    if (rows.length === 2 && reading.choices.length === 1) parts.push(`${rows[0].main}, ${rows[1].main}. Press Enter to go there.`);
-    else if (rows.length > 0) parts.push(`${rows.length} places. Use the arrow keys to choose one.`);
+    if (message) parts.push(message);
+    if (readingRows.length === 2 && reading.choices.length === 1) parts.push(`${readingRows[0].main}, ${readingRows[1].main}. Press Enter to go there.`);
+    else if (readingRows.length > 0) parts.push(`${readingRows.length} places. Use the arrow keys to choose one.`);
+    if (placeRows.length > 0) {
+      const listed = placeRows.length - hiddenPlaces;
+      parts.push(`${listed} ${listed === 1 ? "place" : "places"} by that name${hiddenPlaces ? `, and ${hiddenPlaces} more` : ""}.`
+        + (readingRows.length ? "" : " Use the arrow keys to choose one."));
+    }
     // A zero-width space that alternates, so the same sentence is read again after GO.
     return parts.join(" ") + (asked % 2 ? "​" : "");
   })();
@@ -178,13 +250,13 @@ const TargetField = ({
           {...inputProps}
           ref={inputRef}
           className={inputClassName}
-          placeholder={wide && widePlaceholder ? widePlaceholder : placeholder}
+          placeholder={wide && wideWords ? wideWords : narrowWords}
           autoFocus={autoFocus}
           autoComplete="off"
           spellCheck={false}
           value={value}
           role="combobox"
-          aria-label={inputProps["aria-label"] ?? "Search by grid or lat/long"}
+          aria-label={inputProps["aria-label"] ?? narrowWords}
           aria-autocomplete="list"
           aria-expanded={shown}
           aria-controls={listId}
@@ -193,6 +265,7 @@ const TargetField = ({
             onChange(event.target.value);
             setOpen(true);
             setActive(-1);
+            setExpanded(false);
           }}
           onFocus={(event) => {
             setOpen(true);
@@ -238,9 +311,9 @@ const TargetField = ({
       </div>
 
       <div className={`target-field__drop ${shown ? "" : "target-field__drop--hidden"}`}>
-        {shown && reading.message && (
+        {shown && message && (
           <p className={`target-field__message ${asked && rows.length !== 1 ? "target-field__message--asked" : ""}`}>
-            {reading.message}
+            {message}
           </p>
         )}
         <ul id={listId} role="listbox" aria-label="Places" className="target-field__list">
@@ -250,17 +323,18 @@ const TargetField = ({
               id={optionId(index)}
               role="option"
               aria-selected={index === active}
-              className={`target-field__option ${index === active ? "target-field__option--active" : ""}`}
+              className={`target-field__option${index === active ? " target-field__option--active" : ""}${row.more ? " target-field__option--more" : ""}${row.choice?.place ? " target-field__option--place" : ""}`}
               // Keeps the focus in the field, so choosing does not first close the list by blurring it.
               onMouseDown={(event) => event.preventDefault()}
               onMouseEnter={() => setActive(index)}
-              onClick={() => choose(row.choice, { byPointer: true })}
+              onClick={() => pick(row, { byPointer: true })}
             >
               <span className="target-field__text">
                 <span className="target-field__main">{row.main}</span>
-                <span className="target-field__note">{row.note}</span>
+                {row.note && <span className="target-field__note">{row.note}</span>}
               </span>
-              {onShare && (
+              {row.end && <span className="target-field__end">{row.end}</span>}
+              {onShare && row.choice && (
                 // For a pointer only: an option holds no control of its own (a screen reader would fold it into the
                 // option's name), and the keyboard shares the row picked with the field's own share button.
                 <span

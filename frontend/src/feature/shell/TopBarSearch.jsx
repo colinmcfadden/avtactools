@@ -26,7 +26,7 @@ export const openBox = (slot, viewportWidth) => {
   return { left: Math.round(left - slot.left), width: Math.round(width) };
 };
 
-const TopBarSearch = ({ value, onChange, onChoose, onShare, near }) => {
+const TopBarSearch = ({ value, onChange, onChoose, onShare, near, searchPlaces = null }) => {
   const slotRef = useRef(null);
   const [open, setOpen] = useState(false);
   const [box, setBox] = useState(null);
@@ -97,6 +97,7 @@ const TopBarSearch = ({ value, onChange, onChoose, onShare, near }) => {
             onShare(choice);
           }}
           near={near}
+          searchPlaces={searchPlaces}
           leading={<Icon name="search" size={16} className="topbar-search__lead" />}
           rowClassName="topbar-search"
           inputClassName="topbar-search__input"
