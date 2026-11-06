@@ -1,8 +1,8 @@
-"""The place search: NASR read into the index, the ranking, the cycle refresh and ``POST /api/places/search``
+"""The place search: NASR and GNIS read into the index, the ranking, the refresh and ``POST /api/places/search``
 (docs/PLACE_SEARCH.md).
 
-The NASR files here are written by the test, a handful of real rows in the FAA's own columns, so what is read,
-matched and ranked is the code's own; the FAA's two hosts are stood in for.
+The NASR and GNIS files here are written by the test, a handful of real rows in the FAA's and USGS's own columns,
+so what is read, matched and ranked is the code's own; the FAA's two hosts and USGS's bucket are stood in for.
 """
 
 import csv
@@ -25,7 +25,7 @@ if str(BACKEND_DIR) not in sys.path:
 from auth_harness import NativeAuthCase  # noqa: E402
 from auth_rate_limit import clear_rate_limits  # noqa: E402
 from models import User, db  # noqa: E402
-from places import index, nasr, refresh, search, store  # noqa: E402
+from places import gnis, index, nasr, refresh, search, store  # noqa: E402
 from places.text import fold  # noqa: E402
 from routes.place_routes import place_bp  # noqa: E402
 
@@ -83,6 +83,41 @@ def write_zips(folder, airports=AIRPORTS, navaids=NAVAIDS, fixes=FIXES):
     return paths
 
 
+GNIS_HEADER = ["feature_id", "feature_name", "feature_class", "state_name", "state_numeric", "county_name",
+               "county_numeric", "map_name", "date_created", "date_edited", "prim_lat_dec", "prim_long_dec"]
+GNIS = {
+    "GA": [
+        ["356130", "Blairsville", "Populated Place", "Georgia", "13", "Union", "291", "Blairsville", "", "", "34.8762", "-83.9582"],
+        # Civil and Census repeat the towns: left out.
+        ["2405232", "City of Blairsville", "Civil", "Georgia", "13", "Union", "291", "Blairsville", "", "", "34.87", "-83.95"],
+        ["1867200", "Blairsville CCD", "Census", "Georgia", "13", "Union", "291", "Blairsville", "", "", "34.86", "-83.94"],
+        ["354520", "Brasstown Bald", "Summit", "Georgia", "13", "Towns", "281", "Jacks Gap", "", "", "34.8742", "-83.8107"],
+        ["332066", "Lake Nottely", "Reservoir", "Georgia", "13", "Union", "291", "Blairsville", "", "", "34.9567", "-84.0921"],
+        ["356362", "Nottely River", "Stream", "Georgia", "13", "Union", "291", "Ranger", "", "", "35.0573", "-84.0466"],
+        ["2589130", "Blairs Mill (historical)", "Populated Place", "Georgia", "13", "Union", "291", "Coosa Bald", "", "", "34.72", "-83.91"],
+        ["2589131", "Nowhere Hill", "Summit", "Georgia", "13", "Union", "291", "", "", "", "0", "0"],
+        ["2589132", "Nameless", "Summit", "Georgia", "13", "Union", "291", "", "", "", "", ""],
+    ],
+    # The river reaches North Carolina: listed there too, under the same feature_id, read once.
+    "NC": [
+        ["356362", "Nottely River", "Stream", "North Carolina", "37", "Cherokee", "039", "Ranger", "", "", "35.0573", "-84.0466"],
+        ["1021474", "Murphy", "Populated Place", "North Carolina", "37", "Cherokee", "039", "Murphy", "", "", "35.0876", "-84.0213"],
+    ],
+}
+
+
+def write_gnis(folder, states=GNIS, date=(2026, 11, 2), name="DomesticNames_AllStates_Text.zip"):
+    """GNIS's national file, as USGS lays it out: one pipe-delimited text per state, with a byte order mark."""
+    path = os.path.join(folder, name)
+    with zipfile.ZipFile(path, "w") as archive:
+        for state, rows in states.items():
+            info = zipfile.ZipInfo(f"Text/DomesticNames_{state}.txt", date_time=(*date, 12, 0, 0))
+            body = "|".join(GNIS_HEADER) + "\n" + "".join("|".join(row) + "\n" for row in rows)
+            archive.writestr(info, "\ufeff" + body)
+        archive.writestr(zipfile.ZipInfo("Text/readme.txt", date_time=(2020, 1, 1, 0, 0, 0)), "not a state")
+    return path
+
+
 class FoldTests(unittest.TestCase):
     def test_case_accents_and_punctuation_fold_away(self):
         self.assertEqual(fold("Peña"), "pena")
@@ -134,6 +169,52 @@ class NasrTests(unittest.TestCase):
             nasr.read([path] + write_zips(self.folder)[1:])
 
 
+class GnisTests(unittest.TestCase):
+    def setUp(self):
+        self.folder = tempfile.mkdtemp()
+        self.addCleanup(lambda: __import__("shutil").rmtree(self.folder, ignore_errors=True))
+
+    def places(self):
+        return list(gnis.read(write_gnis(self.folder)))
+
+    def test_each_feature_is_read_once_with_civil_and_census_left_out(self):
+        names = [p["name"] for p in self.places()]
+        self.assertEqual(sorted(names), ["Blairs Mill (historical)", "Blairsville", "Brasstown Bald", "Lake Nottely",
+                                         "Murphy", "Nottely River"])
+
+    def test_a_feature_is_said_with_its_county_and_state(self):
+        bald = [p for p in self.places() if p["name"] == "Brasstown Bald"][0]
+        self.assertEqual(bald, {
+            "id": "gnis:354520", "source": "gnis", "kind": "summit", "detail": "Summit", "name": "Brasstown Bald",
+            "ident": None, "icao": None, "city": None, "county": "Towns", "state": "GA", "lat": 34.8742,
+            "lon": -83.8107, "elev_ft": None, "use": None, "status": "open", "military": None, "rank": gnis.RANK_TERRAIN,
+        })
+
+    def test_a_historical_name_is_a_place_that_was(self):
+        mill = [p for p in self.places() if p["name"].startswith("Blairs Mill")][0]
+        self.assertEqual((mill["status"], mill["detail"], mill["kind"]),
+                         ("historical", "Populated place, historical", "populated_place"))
+
+    def test_ranks_put_towns_before_terrain_water_and_streams(self):
+        ranks = {p["name"]: p["rank"] for p in self.places()}
+        self.assertLess(ranks["Blairsville"], ranks["Brasstown Bald"])
+        self.assertLess(ranks["Brasstown Bald"], ranks["Lake Nottely"])
+        self.assertLess(ranks["Lake Nottely"], ranks["Nottely River"])
+        self.assertGreater(ranks["Blairsville"], nasr.RANK_FIX if hasattr(nasr, "RANK_FIX") else 4)
+
+    def test_the_files_date_is_its_states_newest(self):
+        self.assertEqual(gnis.file_date(write_gnis(self.folder)), "2026-11-02")
+
+    def test_a_file_with_no_state_or_the_wrong_columns_is_refused(self):
+        with self.assertRaisesRegex(gnis.GnisError, "No state"):
+            list(gnis.read(write_gnis(self.folder, states={})))
+        bad = os.path.join(self.folder, "bad.zip")
+        with zipfile.ZipFile(bad, "w") as archive:
+            archive.writestr("Text/DomesticNames_GA.txt", "a|b\n1|2\n")
+        with self.assertRaisesRegex(gnis.GnisError, "no column"):
+            list(gnis.read(bad))
+
+
 class SearchTests(unittest.TestCase):
     NEAR = (34.80, -83.90)   # Union County, Georgia
 
@@ -159,9 +240,15 @@ class SearchTests(unittest.TestCase):
         self.assertEqual(self.idents("1ga3"), ["1GA3"])
         self.assertEqual(self.idents("bobby")[0], "BOBBY")
 
-    def test_names_starting_with_the_text_nearest_first_then_a_city_match(self):
-        # Blairsville's airport (GA) before Blairstown's (NJ); the hospital pad, found by its city, after both.
-        self.assertEqual(self.idents("blairs"), ["DZJ", "1N7", "1GA3"])
+    def test_what_is_near_comes_before_what_is_far(self):
+        # Blairsville's airport, then the hospital pad (found by its city): both near. Blairstown (NJ), far, after.
+        self.assertEqual(self.idents("blairs"), ["DZJ", "1GA3", "1N7"])
+
+    def test_where_all_is_far_names_starting_with_the_text_come_before_a_city_match(self):
+        # From central Georgia everything is far: Blairsville's, then Blairstown's, then the pad found by its city.
+        self.assertEqual(self.idents("blairs", near=(32.5, -83.5)), ["DZJ", "1N7", "1GA3"])
+        # From New Jersey, Blairstown is the near one.
+        self.assertEqual(self.idents("blairs", near=(40.9, -75.0)), ["1N7", "DZJ", "1GA3"])
 
     def test_names_come_before_identifiers_that_start_with_the_text(self):
         # GSU's name is ATLANTA; the fix ATLEE only starts with the text.
@@ -194,7 +281,8 @@ class SearchTests(unittest.TestCase):
         row = search.search(self.connection, "dzj", self.NEAR)[0]
         self.assertEqual(search.as_answer(row), {
             "id": "nasr:apt:21530.", "source": "nasr", "kind": "airport", "kindWords": "Airport", "name": "BLAIRSVILLE",
-            "ident": "DZJ", "icao": None, "city": "BLAIRSVILLE", "state": "GA", "lat": 34.85508, "lon": -83.99733,
+            "ident": "DZJ", "icao": None, "city": "BLAIRSVILLE", "county": None, "state": "GA", "lat": 34.85508,
+            "lon": -83.99733,
             "elevationFt": 1907, "use": "public", "status": "open", "military": None,
         })
 
@@ -205,9 +293,55 @@ class SearchTests(unittest.TestCase):
         self.assertEqual(index.read_meta(self.connection)["schema"], str(index.SCHEMA))
 
 
+class GnisSearchTests(unittest.TestCase):
+    """NASR and GNIS in one index: what a crew types finds an airfield first, then the names round them."""
+    NEAR = (34.80, -83.90)
+
+    @classmethod
+    def setUpClass(cls):
+        cls.folder = tempfile.mkdtemp()
+        path = os.path.join(cls.folder, "places.sqlite")
+        places = list(nasr.read(write_zips(cls.folder))) + list(gnis.read(write_gnis(cls.folder)))
+        index.build(places, path, {"nasr_cycle": "2026-10-29", "gnis_date": "2026-11-02"})
+        cls.connection = sqlite3.connect(f"file:{path}?mode=ro&immutable=1", uri=True)
+        cls.connection.row_factory = sqlite3.Row
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.connection.close()
+        __import__("shutil").rmtree(cls.folder, ignore_errors=True)
+
+    def found(self, text, near=NEAR):
+        return [row["ident"] or row["name"] for row in search.search(self.connection, text, near, 10)]
+
+    def test_a_town_is_found_by_its_name(self):
+        self.assertEqual(self.found("brasstown"), ["Brasstown Bald"])
+        self.assertEqual(self.found("murphy"), ["Murphy"])
+
+    def test_the_airfield_and_the_town_of_one_name_come_together_the_town_that_was_after(self):
+        self.assertEqual(self.found("blairs"), ["Blairsville", "DZJ", "Blairs Mill (historical)", "1GA3", "1N7"])
+
+    def test_an_identifier_typed_whole_still_comes_first(self):
+        self.assertEqual(self.found("dzj"), ["DZJ"])
+
+    def test_a_feature_in_two_states_is_found_once(self):
+        # The river's name starts with the text; the lake's only holds it.
+        self.assertEqual(self.found("nottely"), ["Nottely River", "Lake Nottely"])
+
+    def test_civil_areas_are_not_found(self):
+        self.assertEqual(self.found("city of"), [])
+
+    def test_a_gnis_place_is_said_with_its_county(self):
+        row = search.search(self.connection, "brasstown", self.NEAR)[0]
+        answer = search.as_answer(row)
+        self.assertEqual((answer["kindWords"], answer["county"], answer["state"], answer["elevationFt"], answer["ident"]),
+                         ("Summit", "Towns", "GA", None, None))
+
+
 class Reply:
-    def __init__(self, status=200, body=None, data=b""):
+    def __init__(self, status=200, body=None, data=b"", headers=None):
         self.status_code, self._body, self._data = status, body, data
+        self.headers = headers or {}
 
     def json(self):
         return self._body
@@ -227,12 +361,16 @@ class RefreshTests(unittest.TestCase):
         self.addCleanup(lambda: __import__("shutil").rmtree(self.root, ignore_errors=True))
         self.addCleanup(lambda: __import__("shutil").rmtree(self.source, ignore_errors=True))
         self.zips = {os.path.basename(p): Path(p).read_bytes() for p in write_zips(self.source)}
+        self.zips[refresh.GNIS_FILE] = Path(write_gnis(self.source)).read_bytes()
+        self.modified = "Mon, 02 Nov 2026 09:00:00 GMT"
         self.asked = []
         self.edition = "10/29/2026"
-        # The real checks need a whole cycle; a handful of rows will do here.
-        patcher = patch.dict(refresh.MINIMUM, {"airport": 1, "heliport": 1, "fix": 1}, clear=True)
-        patcher.start()
-        self.addCleanup(patcher.stop)
+        # The real checks need a whole cycle and file; a handful of rows will do here.
+        for minimum, kinds in ((refresh.MINIMUM, ("airport", "heliport", "fix")),
+                               (refresh.MINIMUM_GNIS, ("populated_place", "summit", "stream"))):
+            patcher = patch.dict(minimum, dict.fromkeys(kinds, 1), clear=True)
+            patcher.start()
+            self.addCleanup(patcher.stop)
 
     def get(self, url, **kwargs):
         self.asked.append((url, kwargs.get("allow_redirects")))
@@ -241,48 +379,128 @@ class RefreshTests(unittest.TestCase):
         name = url.rsplit("/", 1)[-1]
         return Reply(data=self.zips[name]) if name in self.zips else Reply(status=404)
 
-    def test_the_current_cycle_is_fetched_built_and_served(self):
-        self.assertEqual(refresh.refresh(self.root, get=self.get), "built")
-        current = store.read_current(self.root)
-        self.assertEqual(current, {"build": "2026-10-29.s1", "file": "places-2026-10-29.s1.sqlite", "nasr_cycle": "2026-10-29"})
-        self.assertEqual([url.rsplit("/", 1)[-1] for url, _ in self.asked[1:]],
-                         ["29_Oct_2026_APT_CSV.zip", "29_Oct_2026_NAV_CSV.zip", "29_Oct_2026_FIX_CSV.zip"])
-        # No redirect is ever followed, and nothing but the FAA's two hosts is asked.
-        self.assertTrue(all(follow is False for _, follow in self.asked))
-        self.assertEqual(sorted(os.listdir(self.root)), [".lock", "current.json", "places-2026-10-29.s1.sqlite"])
+    def head(self, url, **kwargs):
+        self.asked.append(("HEAD " + url, kwargs.get("allow_redirects")))
+        return Reply(headers={"Last-Modified": self.modified}) if refresh.GNIS_FILE in self.zips else Reply(status=404)
 
-    def test_a_cycle_already_built_is_not_fetched_again(self):
-        refresh.refresh(self.root, get=self.get)
+    def refresh(self):
+        # Built here, so the patched minimums hold; the child process is tried on its own below.
+        return refresh.refresh(self.root, get=self.get, head=self.head,
+                               run=lambda root, zips, gnis_zip, cycle: refresh.build_here(root, zips, cycle, gnis_zip))
+
+    def test_the_current_cycle_and_gnis_are_fetched_built_and_served(self):
+        self.assertEqual(self.refresh(), "built")
+        current = store.read_current(self.root)
+        self.assertEqual(current, {"build": "2026-10-29.g20261102.s2", "file": "places-2026-10-29.g20261102.s2.sqlite",
+                                   "nasr_cycle": "2026-10-29", "gnis_date": "2026-11-02"})
+        self.assertEqual([url.rsplit("/", 1)[-1] for url, _ in self.asked[1:]],
+                         ["29_Oct_2026_APT_CSV.zip", "29_Oct_2026_NAV_CSV.zip", "29_Oct_2026_FIX_CSV.zip",
+                          refresh.GNIS_FILE, refresh.GNIS_FILE])
+        self.assertTrue(self.asked[4][0].startswith("HEAD "))
+        # No redirect is ever followed.
+        self.assertTrue(all(follow is False for _, follow in self.asked))
+        self.assertEqual(sorted(os.listdir(self.root)),
+                         [".lock", "current.json", "places-2026-10-29.g20261102.s2.sqlite", "sources"])
+        self.assertTrue(os.path.exists(os.path.join(self.root, "sources", "gnis", refresh.GNIS_FILE)))
+
+    def test_what_is_already_built_is_not_fetched_again(self):
+        self.refresh()
         self.asked.clear()
-        self.assertEqual(refresh.refresh(self.root, get=self.get), "current")
-        self.assertEqual(len(self.asked), 1)
+        self.assertEqual(self.refresh(), "current")
+        # The cycle asked, GNIS's date looked at; neither file fetched.
+        self.assertEqual(len(self.asked), 2)
+        self.assertTrue(self.asked[0][0].startswith(refresh.APRA))
+        self.assertEqual(self.asked[1][0], "HEAD " + refresh.GNIS_URL)
+
+    def test_a_new_cycle_is_built_with_the_gnis_file_held(self):
+        self.refresh()
+        self.edition = "11/26/2026"
+        global CYCLE
+        saved, CYCLE = CYCLE, "2026/11/26"
+        try:
+            self.zips.update({os.path.basename(p).replace("29_Oct", "26_Nov"): Path(p).read_bytes()
+                              for p in write_zips(tempfile.mkdtemp(dir=self.source))})
+        finally:
+            CYCLE = saved
+        self.asked.clear()
+        self.assertEqual(self.refresh(), "built")
+        self.assertEqual(store.read_current(self.root)["build"], "2026-11-26.g20261102.s2")
+        self.assertNotIn(refresh.GNIS_URL, [url for url, _ in self.asked])
+        # Only the cycle being built is kept among the sources.
+        self.assertEqual(os.listdir(os.path.join(self.root, "sources", "nasr")), ["2026-11-26"])
+
+    def test_a_changed_gnis_file_is_fetched_and_built(self):
+        self.refresh()
+        self.modified = "Mon, 09 Nov 2026 09:00:00 GMT"
+        self.zips[refresh.GNIS_FILE] = Path(write_gnis(tempfile.mkdtemp(dir=self.source), date=(2026, 11, 9))).read_bytes()
+        self.assertEqual(self.refresh(), "built")
+        self.assertEqual(store.read_current(self.root)["gnis_date"], "2026-11-09")
+
+    def test_gnis_that_cannot_be_fetched_leaves_out_nothing_it_had(self):
+        self.refresh()
+        self.modified = "Mon, 09 Nov 2026 09:00:00 GMT"
+        self.zips[refresh.GNIS_FILE] = b"not a zip"
+        with self.assertLogs("places", level=logging.WARNING):
+            self.assertEqual(self.refresh(), "current")
+        self.assertEqual(store.read_current(self.root)["gnis_date"], "2026-11-02")
+
+    def test_with_no_gnis_ever_fetched_nasr_is_built_alone_until_it_comes(self):
+        gnis_zip = self.zips.pop(refresh.GNIS_FILE)
+        with self.assertLogs("places", level=logging.WARNING):
+            self.assertEqual(self.refresh(), "built")
+        self.assertEqual(store.read_current(self.root), {"build": "2026-10-29.s2", "file": "places-2026-10-29.s2.sqlite",
+                                                         "nasr_cycle": "2026-10-29"})
+        self.zips[refresh.GNIS_FILE] = gnis_zip
+        self.assertEqual(self.refresh(), "built")
+        self.assertEqual(store.read_current(self.root)["build"], "2026-10-29.g20261102.s2")
 
     def test_a_failed_download_keeps_the_build_being_served(self):
-        refresh.refresh(self.root, get=self.get)
+        self.refresh()
         self.edition = "11/26/2026"
         with self.assertRaisesRegex(refresh.RefreshError, "26_Nov_2026_APT_CSV.zip: 404"):
-            refresh.refresh(self.root, get=self.get)
+            self.refresh()
         self.assertEqual(store.read_current(self.root)["nasr_cycle"], "2026-10-29")
-        self.assertFalse([n for n in os.listdir(self.root) if n.startswith(".download-") or n.startswith(".staging-")])
+        leftovers = [name for _, _, names in os.walk(self.root) for name in names + _
+                     if name.startswith(".download-") or name.startswith(".staging-")]
+        self.assertFalse(leftovers)
 
     def test_files_of_another_cycle_are_refused(self):
         self.edition = "11/26/2026"
         self.zips = {name.replace("29_Oct", "26_Nov"): data for name, data in self.zips.items()}
         with self.assertRaisesRegex(refresh.RefreshError, "not the cycle 2026-11-26"):
-            refresh.refresh(self.root, get=self.get)
+            self.refresh()
         self.assertIsNone(store.read_current(self.root))
 
     def test_a_build_far_from_the_last_ones_counts_is_refused(self):
+        kinds = {"airport": 4, "heliport": 3, "fix": 3}
         with self.assertRaisesRegex(refresh.RefreshError, "airport: 4 against 100"):
-            refresh.check(nasr.read(list(map(self._write, self.zips.items()))), {"airport": 100})
+            refresh.check(kinds, {"airport": 100})
+
+    def test_a_build_without_gnis_never_replaces_one_with_it(self):
+        with self.assertRaisesRegex(refresh.RefreshError, "populated_place: 0 against 200000"):
+            refresh.check({"airport": 4, "heliport": 3, "fix": 3}, {"airport": 4, "populated_place": 200_000})
+
+    def test_a_gnis_file_short_of_its_minimum_is_refused(self):
+        with patch.dict(refresh.MINIMUM_GNIS, {"populated_place": 10}):
+            with self.assertRaisesRegex(refresh.RefreshError, "not a whole GNIS file"):
+                refresh.check({"airport": 4, "heliport": 3, "fix": 3, "populated_place": 2, "summit": 1,
+                               "stream": 1}, with_gnis=True)
+
+    def test_the_server_builds_in_a_process_of_its_own(self):
+        # The child knows only the real minimums, so a handful of rows is refused there, and said here.
+        zips = [self._write(item) for item in self.zips.items() if item[0] != refresh.GNIS_FILE]
+        with self.assertRaisesRegex(refresh.RefreshError, "The build failed: .*not a whole NASR cycle"):
+            refresh.build_in_child(self.root, zips, None, "2026-10-29")
+        self.assertIsNone(store.read_current(self.root))
 
     def _write(self, item):
         path = os.path.join(self.source, item[0])
         Path(path).write_bytes(item[1])
         return path
 
-    def test_only_the_faas_hosts_over_https(self):
-        for url in ("http://nfdc.faa.gov/x.zip", "https://example.com/x.zip", "https://nfdc.faa.gov.evil.com/x.zip"):
+    def test_only_the_faas_and_usgss_hosts_over_https(self):
+        for url in ("http://nfdc.faa.gov/x.zip", "https://example.com/x.zip", "https://nfdc.faa.gov.evil.com/x.zip",
+                    "http://prd-tnm.s3.amazonaws.com/x.zip", "https://other.s3.amazonaws.com/x.zip"):
             with self.assertRaises(refresh.RefreshError):
                 refresh.download(url, os.path.join(self.root, "x"), get=self.get)
 
@@ -304,7 +522,20 @@ class RefreshTests(unittest.TestCase):
             finally:
                 CYCLE = saved
         builds = sorted(n for n in os.listdir(self.root) if n.endswith(".sqlite"))
-        self.assertEqual(builds, ["places-2026-10-29.s1.sqlite", "places-2026-11-26.s1.sqlite"])
+        self.assertEqual(builds, ["places-2026-10-29.s2.sqlite", "places-2026-11-26.s2.sqlite"])
+
+
+class PlaceFixtureTests(unittest.TestCase):
+    """``contracts/fixtures/places/``: the index built from real NASR and GNIS rows, and what it answers, which Android
+    is held to (contracts/scripts/place_fixtures.py)."""
+
+    def test_the_committed_index_and_answers_are_what_the_code_makes_today(self):
+        import importlib.util
+        script = BACKEND_DIR.parent / "contracts" / "scripts" / "place_fixtures.py"
+        spec = importlib.util.spec_from_file_location("place_fixtures", script)
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        self.assertEqual(module.check(), [], "run: python contracts/scripts/place_fixtures.py write, and read the diff")
 
 
 class PlaceRouteTests(NativeAuthCase):
@@ -317,8 +548,9 @@ class PlaceRouteTests(NativeAuthCase):
         source = tempfile.mkdtemp()
         self.addCleanup(lambda: __import__("shutil").rmtree(self.root, ignore_errors=True))
         self.addCleanup(lambda: __import__("shutil").rmtree(source, ignore_errors=True))
-        with patch.dict(refresh.MINIMUM, {"airport": 1, "heliport": 1, "fix": 1}, clear=True):
-            refresh.build_from(write_zips(source), self.root)
+        with patch.dict(refresh.MINIMUM, {"airport": 1, "heliport": 1, "fix": 1}, clear=True), \
+                patch.dict(refresh.MINIMUM_GNIS, {"populated_place": 1}, clear=True):
+            refresh.build_from(write_zips(source), self.root, gnis_zip=write_gnis(source))
         patcher = patch.dict(os.environ, {"PLACES_DIR": self.root})
         patcher.start()
         self.addCleanup(patcher.stop)
@@ -339,8 +571,8 @@ class PlaceRouteTests(NativeAuthCase):
         self.assertEqual(response.status_code, 200)
         body = response.get_json()
         self.assertEqual(body["available"], True)
-        self.assertEqual(body["nasrCycle"], "2026-10-29")
-        self.assertEqual([p["ident"] for p in body["places"]], ["DZJ", "1N7"])
+        self.assertEqual((body["nasrCycle"], body["gnisDate"]), ("2026-10-29", "2026-11-02"))
+        self.assertEqual([p["ident"] or p["name"] for p in body["places"]], ["Blairsville", "DZJ"])
         self.assertEqual(response.headers["Cache-Control"], "no-store")
 
     def test_near_is_rounded_to_a_tenth_of_a_degree(self):

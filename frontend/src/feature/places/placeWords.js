@@ -3,7 +3,7 @@ import { toMgrs } from "../../utils/mgrs";
 
 /*
  * A place from the search (POST /api/places/search) as the target field shows it and as it is chosen. Names are the
- * FAA's own, in its capitals: a crew reads them against the chart and the A/FD, which spell them so.
+ * sources' own: the FAA's in its capitals, as the chart and the A/FD spell them; USGS's (GNIS) in mixed case.
  */
 
 /** "DZJ · BLAIRSVILLE"; a fix, which has only its identifier, "BOBBY". */
@@ -21,9 +21,18 @@ export const placeLabel = (place) => {
 
 const thousands = (value) => String(Math.round(value)).replace(/\B(?=(\d{3})+(?!\d))/g, ",");
 
-/** "Heliport, private · BLAIRSVILLE, GA · 1,900 ft". */
+// GNIS's county name, said as a crew would: Louisiana's are parishes; Alaska's are boroughs and census areas, which GNIS
+// names as they are ("Nome (CA)"), and so are Virginia's independent cities ("Suffolk (city)") and the territories'.
+const NO_COUNTY_WORD = new Set(["AK", "DC", "PR", "GU", "AS", "MP", "VI"]);
+export const countyWords = (county, state) => {
+  if (!county) return "";
+  if (county.includes("(") || NO_COUNTY_WORD.has(state)) return county;
+  return `${county} ${state === "LA" ? "Parish" : "County"}`;
+};
+
+/** "Heliport, private · BLAIRSVILLE, GA · 1,900 ft"; a GNIS name, "Summit · Towns County, GA". */
 export const placeNote = (place) => {
-  const where = [place.city, place.state].filter(Boolean).join(", ");
+  const where = [place.city || countyWords(place.county, place.state), place.state].filter(Boolean).join(", ");
   const elevation = Number.isFinite(place.elevationFt) ? `${thousands(place.elevationFt)} ft` : "";
   return [place.kindWords, where, elevation].filter(Boolean).join(" · ");
 };
@@ -43,9 +52,19 @@ export const placeDistance = (place, near) => {
   return `${thousands(nm)} nm`;
 };
 
-// How close the map goes: an airport's field fills the view at 14; a pad, a navaid or a fix is a point, shown closer.
-const ZOOMS = { airport: 14, seaplane_base: 14, gliderport: 14, ultralight: 14, balloonport: 14 };
+// How close the map goes: an airport's field fills the view at 14, and so does a town or an installation; a pad, a
+// navaid, a fix or a named feature (a summit, a gap) is a point, shown closer.
+const ZOOMS = {
+  airport: 14, seaplane_base: 14, gliderport: 14, ultralight: 14, balloonport: 14,
+  populated_place: 14, military: 14,
+};
 export const placeZoom = (place) => ZOOMS[place.kind] ?? 15;
+
+/** Where the places come from, as the list credits them: "FAA NASR 2026-10-29 · USGS GNIS 2026-11-02"; or "". */
+export const placeSources = (sources) => [
+  sources?.nasrCycle ? `FAA NASR ${sources.nasrCycle}` : "",
+  sources?.gnisDate ? `USGS GNIS ${sources.gnisDate}` : "",
+].filter(Boolean).join(" · ");
 
 /**
  * The field's choice for a place, as a grid or a lat/long's choice is (`{ lat, lon, mgrs, latLong, how }`), with the

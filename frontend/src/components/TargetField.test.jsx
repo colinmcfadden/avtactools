@@ -314,6 +314,25 @@ describe("TargetField with the place search", () => {
     await waitFor(() => expect(messageText()).toBe("No airport, heliport, navaid or fix by that name or identifier."));
   });
 
+  it("lists a GNIS name with its county, and credits the sources under the places", async () => {
+    const bald = { id: "gnis:354520", source: "gnis", kind: "summit", kindWords: "Summit", name: "Brasstown Bald", ident: null,
+      city: null, county: "Towns", state: "GA", lat: 34.8742, lon: -83.8107, elevationFt: null };
+    const { type } = placeSetup({ answer: { available: true, nasrCycle: "2026-10-29", gnisDate: "2026-11-02", places: [bald] } });
+    type("brasstown");
+    expect(await screen.findByText("Brasstown Bald")).toBeInTheDocument();
+    expect(screen.getByText("Summit · Towns County, GA")).toBeInTheDocument();
+    expect(document.querySelector(".target-field__credit").textContent).toBe("Places: FAA NASR 2026-10-29 · USGS GNIS 2026-11-02");
+    // The credit is no row to pick.
+    expect(optionTexts()).toEqual(["Brasstown Bald"]);
+  });
+
+  it("says named places are searched too when the server has GNIS", async () => {
+    const empty = placeSetup({ answer: { available: true, gnisDate: "2026-11-02", places: [] } });
+    empty.type("zzzq");
+    await waitFor(() => expect(messageText()).toBe("No airport, heliport, navaid, fix or named place by that name or identifier."));
+    expect(document.querySelector(".target-field__credit")).toBeNull();
+  });
+
   it("says the search failed, and that grids still work", async () => {
     const failing = placeSetup({ answer: () => { throw new Error("down"); } });
     failing.type("blairs");
