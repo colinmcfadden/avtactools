@@ -29,6 +29,7 @@ export const IMPORT_KINDS = [
 ];
 
 const TopBar = ({
+  undo,
   pack = null,
   packStatus = "live",
   people = [],
@@ -107,6 +108,16 @@ const TopBar = ({
       {searchSlot && <div className="shell-topbar__search">{searchSlot}</div>}
 
       <div className="shell-topbar__end">
+        {undo && (
+          <div className="shell-topbar__undo">
+            <button type="button" className="shell-topbar__button" onClick={undo.undo} disabled={!undo.canUndo} title={undo.undoTitle} aria-label={undo.undoTitle}>
+              <Icon name="undo" size={15} />
+            </button>
+            <button type="button" className="shell-topbar__button" onClick={undo.redo} disabled={!undo.canRedo} title={undo.redoTitle} aria-label={undo.redoTitle}>
+              <Icon name="redo" size={15} />
+            </button>
+          </div>
+        )}
         {briefSlot}
         <button type="button" className="shell-topbar__button" {...imports.buttonProps}>
           <Icon name="download" size={15} />

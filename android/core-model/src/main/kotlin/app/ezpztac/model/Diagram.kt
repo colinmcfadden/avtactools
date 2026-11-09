@@ -1,6 +1,8 @@
 package app.ezpztac.model
 
 import kotlinx.serialization.SerialName
+import kotlinx.serialization.EncodeDefault
+import kotlinx.serialization.ExperimentalSerializationApi
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonNull
@@ -54,6 +56,10 @@ public data class DiagramGraphics(
     val goArounds: List<JsonElement> = emptyList(),
     val units: List<JsonElement> = emptyList(),
     val measurements: List<JsonElement> = emptyList(),
+    // Drawn on the web alone so far. Kept as it came so a save here does not lose one, and left out of a diagram that has none, as the web leaves it.
+    @OptIn(ExperimentalSerializationApi::class)
+    @EncodeDefault(EncodeDefault.Mode.NEVER)
+    val backstops: List<JsonElement>? = null,
     val exportBox: JsonElement = JsonNull,
 )
 

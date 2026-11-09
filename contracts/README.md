@@ -14,7 +14,7 @@ contracts/
 ├─ fixtures/        golden inputs and expected outputs, one JSON file per domain
 │  ├─ mgrs/         forward.json, inverse.json      reference: PyGeodesy; grid.json: the web
 │  ├─ coords/       parse.json, reading.json        reference: the web app (coordParse.js; targetReading.js, the target field)
-│  ├─ planning/     aircraft.json, route.json, summary.json, graphics.json   reference: the web app
+│  ├─ planning/     aircraft.json, route.json, summary.json, graphics.json, backstops.json   reference: the web app
 │  ├─ workspace/    diagram.json, ops.json, doghouses.json   reference: the web app
 │  ├─ routes/       sketch.json, winds.json, handoff.json   reference: the web app (sketchOps, routeWinds, foreflight.js)
 │  ├─ formats/      number_text.json                reference: the web app (JavaScript's `String(n)`)
@@ -58,6 +58,7 @@ reference is.
 | `coords/parse.json` | `frontend/src/contracts/webFixtures.test.js` | — | `core-geo` |
 | `coords/reading.json` | `frontend/src/contracts/webFixtures.test.js` | — | `core-geo` (`PlaceSearch.read`, `nearestFirst`, `formatLatLong`) |
 | `planning/*.json` | `frontend/src/contracts/webFixtures.test.js` | — | `core-planning` (`summary.json`: `LzSummary`; `graphics.json`: `PlanningGraphics`) |
+| `planning/backstops.json` | `frontend/src/contracts/backstopFixtures.test.js` | — | not ported yet: Android carries a backstop and does not draw one |
 | `workspace/diagram.json` | `frontend/src/contracts/webFixtures.test.js` | — | `core-model` |
 | `brief/compile.json` | `frontend/src/contracts/briefCompileFixtures.test.js` | `backend/tests/test_brief_pdf.py` (prints its first model) | `core-brief` (`CompileBrief`: every case, strictly: null kept apart from absent, numbers in JavaScript's digits, keys in JavaScript's order, the strips' numbers and the slope calls too; `CompileFixtureTest`) |
 | `brief/light.json` | `frontend/src/contracts/briefLightFixtures.test.js` | — (reference: Skyfield, `scripts/light_fixtures.py`) | `core-brief` (`Light`, within the file's tolerances; `LightFixtureTest`) |

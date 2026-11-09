@@ -255,6 +255,8 @@ export const usePackWorkspace = ({
     readOnly,
     actor,
     sketchedRoutes: sketch.sketchedRoutes,
+    flots: sketch.flots,
+    setFlotsOf: sketch.setFlotsOf,
     loadSketchRoutes: sketch.loadSketchRoutes,
     replaceRouteSet: sketch.replaceRouteSet,
     removeRouteSet: sketch.removeRouteSet,

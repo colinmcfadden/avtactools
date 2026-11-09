@@ -15,6 +15,23 @@ const polygon = [
 ];
 
 describe("LZ/PZ workspace", () => {
+  it("carries backstops only in a diagram that has them", () => {
+    const diagram = createLzDiagramFromTarget({ id: "alpha", target: [34.0, -84.0], mgrs: "16S GC 11111 22222" });
+    expect(diagram.graphics).not.toHaveProperty("backstops");
+    const line = { id: "bs-1", points: [{ lat: 34.1, lon: -84 }, { lat: 34.1, lon: -83.9 }] };
+    let workspace = lzWorkspaceReducer(createInitialLzWorkspace(), {
+      type: LZ_WORKSPACE_ACTIONS.CREATE_DIAGRAM,
+      diagram: { ...diagram, status: "analyzed" },
+    });
+    workspace = lzWorkspaceReducer(workspace, {
+      type: LZ_WORKSPACE_ACTIONS.SET_GRAPHIC_COLLECTION,
+      diagramId: "alpha",
+      collection: "backstops",
+      items: [line],
+    });
+    expect(serializeLzDiagram(workspace.diagramsById.alpha).graphics.backstops).toEqual([line]);
+  });
+
   it("keeps diagram A graphics when a new target starts diagram B", () => {
     const diagramA = createLzDiagramFromTarget({
       id: "alpha",

@@ -57,6 +57,7 @@ The **LZ/PZ Tools** grid places draggable markers on the map:
 | **Sector** | Sector-of-fire triangle — drag its corner points to shape it. |
 | **Unit** | Opens a menu of unit symbols to place. |
 | **L-GA / R-GA** | Left/right go-around arrows. |
+| **Backstop** | A dashed line beyond the LZ/PZ for a crew that overflies it. Click along the terrain or landmark you want, then Finish; an arrow from the line back to the LZ/PZ is labelled with the true azimuth and the distance in km. Hover or tap the line for its handles: drag the middle to move it, the end to turn it. Right-click it to delete it. |
 
 Everything is draggable; most markers can be deleted from their own controls or right-click.
 
@@ -115,6 +116,15 @@ Use **Import → Mission file** in the top bar, **Import .msnx** at the foot of 
 
 Imported routes are fully editable: drag points (serpentine geometry updates too) and insert points on legs.
 
+### The FLOT
+
+**Draw FLOT** at the foot of the Routes panel marks the forward line of troops. Click along the line in order, then **Finish**. It draws as a scalloped blue line labelled FLOT.
+
+- **Flip** beside it in the Routes panel, or **Flip the scallops** on its right-click menu, chooses which side the scallops face.
+- Hover the line and drag a point to move it. **Delete FLOT** is on the right-click menu, and the panel has a remove button beside it.
+
+It is saved with the sketched routes, and shared with them in a Mission Pack. It never goes into an exported `.msnx`, and it can't be added to an imported mission: it goes with your sketched routes instead.
+
 ### The Routes panel
 
 Routes are listed in the dock's **Routes** panel, one card per *route set*: the routes you sketched this session, and each imported mission file.
@@ -132,6 +142,8 @@ Exported files deliberately contain geometry only — after opening one in AMPS,
 ## 6. Saving and the Library
 
 **Save is on the thing you are working on.** The open LZ/PZ's card in the **LZ/PZ** panel has a **Save** button, and so does each route set in **Routes**. The first save asks for a name (a name already in your Library offers *Keep both* or *Replace*); every later save happens without asking and shows a short note at the bottom of the screen. **Ctrl S** (**⌘ S** on a Mac) saves whatever the dock is showing.
+
+**Undo and Redo** are in the top bar and on the map's tools on a phone, and on **Ctrl Z** and **Ctrl Shift Z** (**⌘ Z** and **⇧⌘ Z** on a Mac). They take back the last thing you did on the map, wherever you did it: moving or changing an object, a route or its plan, a boundary. An analysis and fetched winds are not taken back, and neither is anything someone else did in a Mission Pack. While you are drawing a route or a boundary, Ctrl Z removes the last point.
 
 - An LZ/PZ must be analyzed before it can be saved. Saving captures the target, boundary, analysis, everything placed on it and the doghouse edits. Threats and routes are not part of it.
 - **Close** (in an LZ/PZ's **⋯** menu) takes it out of this session; with unsaved changes it asks *Cancel / Don't save / Save*.
