@@ -1715,7 +1715,9 @@ client is built around not losing one:
       least margin that keeps every stroke whole (`Uh60SvgTest`; at 231.6 it was cut flat). **The other airframes keep the web's silhouettes**
       (`aircraftIcons.js`) in those colours and at the UH-60's line weights for the size of their rotors; four blades are turned into an X, as the original's
       are, because one up the nose and its twin down the tail would hide the fuselage under lines that bold (an odd count keeps one up the nose, as on the
-      web). **Not like the web**, which still draws white silhouettes.
+      web). **The web draws the UH-60 from the same file** (`frontend/src/feature/aircraft/uh60.svg`, held to this one byte for byte by
+      `contracts/uh60Svg.test.js`, its rotor sized to `rotor_diameter_m` and its frame overflowing the sprite's box evenly); its other airframes are
+      still white silhouettes.
     - The list runs aircraft first, then PZ markers, sectors, go-arounds, doghouses, units, whatever was placed first.
     - **A helicopter has a name** (the owner's request of 2026-10-22; `core-model`: `AircraftName`; `GraphicsViewModel.setAircraftName`; `feature-map`:
       `MapLabels.aircraftNames`): a chalk or tail number, typed in the inspector (*Set name*, and *Remove name* for one it has) or in its held bar (a field taken on Done or
