@@ -1,0 +1,11 @@
+﻿feature_id|feature_name|feature_class|state_name|state_numeric|county_name|county_numeric|map_name|date_created|date_edited|bgn_type|bgn_authority|bgn_date|prim_lat_dms|prim_long_dms|prim_lat_dec|prim_long_dec|source_lat_dms|source_long_dms|source_lat_dec|source_long_dec
+329069|Nottely River|Stream|North Carolina|37|Cherokee|039|Murphy|09/25/1979|11/05/2010|Official|Board Decision|01/01/1897|350523N|0840435W|35.0898051|-84.0763001|344459N|0835047W|34.7498147|-83.8462949
+990516|Mount Pleasant|Populated Place|North Carolina|37|Moore|125|Lobelia|06/17/1980|06/07/2022||||351220N|0791015W|35.2054377|-79.1708612|||0.0|0.0
+990517|Mount Pleasant|Populated Place|North Carolina|37|Cabarrus|025|Mount Pleasant|06/17/1980|06/07/2022||||352358N|0802609W|35.399308|-80.4358963|||0.0|0.0
+990518|Mount Pleasant|Populated Place|North Carolina|37|Wake|183|Angier|06/17/1980|06/07/2022||||353343N|0784043W|35.561825|-78.6786218|||0.0|0.0
+990519|Mount Pleasant|Populated Place|North Carolina|37|Nash|127|Bailey|06/17/1980|06/07/2022||||354921N|0780645W|35.8223779|-78.1124913|||0.0|0.0
+990520|Mount Pleasant|Populated Place|North Carolina|37|Wilkes|193|Purlear|06/17/1980|06/07/2022||||360856N|0811914W|36.1490194|-81.3206476|||0.0|0.0
+990521|Mount Pleasant|Populated Place|North Carolina|37|Yadkin|197|Yadkinville|06/17/1980|06/07/2022||||361328N|0803740W|36.2245818|-80.6278401|||0.0|0.0
+1021555|Mount Pleasant|Populated Place|North Carolina|37|Hyde|095|Middletown|06/17/1980|06/07/2022||||352455N|0760459W|35.4151702|-76.0829644|||0.0|0.0
+1023584|Mount Pleasant|Populated Place|North Carolina|37|Avery|011|Newland|09/01/1989|06/07/2022||||360307N|0815719W|36.0520706|-81.9553926|||0.0|0.0
+1328447|Hiwassee River|Stream|Tennessee|47|Meigs|121|Graysville|05/19/1980|03/11/2020|Official|Board Decision|05/07/1895|352436N|0850037W|35.4100705|-85.0102305|344804N|0834405W|34.8012049|-83.7346208

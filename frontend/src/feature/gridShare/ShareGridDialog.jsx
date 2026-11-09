@@ -50,7 +50,7 @@ const ShareGridDialog = ({ place, onClose }) => {
     <Dialog
       title="Share grid"
       subtitle={label || undefined}
-      icon="send"
+      icon="share"
       onClose={onClose}
       note="Unclassified only."
       footer={
@@ -63,7 +63,7 @@ const ShareGridDialog = ({ place, onClose }) => {
           </button>
           {canShare() && (
             <button type="button" className="ui-btn ui-btn--primary" onClick={share}>
-              <Icon name="send" size={14} /> Share…
+              <Icon name="share" size={14} /> Share…
             </button>
           )}
         </div>

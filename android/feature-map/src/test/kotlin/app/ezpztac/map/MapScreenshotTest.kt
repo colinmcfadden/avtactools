@@ -56,4 +56,11 @@ class MapScreenshotTest {
     @Test
     @Config(qualifiers = "w1280dp-h800dp-xhdpi")
     fun tablet() = shot("tablet", ThemeMode.Dark, tablet = true)
+
+    // The search open in the middle of the screen, with what is typed listed under it.
+    @Test fun searchOpenDark() = shot("search-open-dark", ThemeMode.Dark, search = MapSearchState(expanded = true).apply { edit("34 84") })
+
+    @Test
+    @Config(qualifiers = "w1280dp-h800dp-xhdpi")
+    fun tabletSearchOpen() = shot("tablet-search-open", ThemeMode.Dark, tablet = true, search = MapSearchState(expanded = true).apply { edit("16S GC 28864 55349") })
 }
