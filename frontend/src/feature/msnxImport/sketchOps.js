@@ -165,6 +165,30 @@ export const removePoint = (route, pointId) => {
   };
 };
 
+/** The first `.CPn` the route has not used: what a named point is called until someone calls it something else. */
+export const nextCheckpointName = (route) => {
+  const taken = new Set(route.points.map((p) => (p.name || "").toUpperCase()));
+  let n = 1;
+  while (taken.has(`.CP${n}`)) n += 1;
+  return `.CP${n}`;
+};
+
+/**
+ * A named point after the named point `afterPointId`, or at the end of the route (null). Between that point and the
+ * next named one it goes on whichever stretch of the line is nearest, so a leg bent by shaping points does not zigzag.
+ */
+export const insertNamedPoint = (route, afterPointId, lat, lon, details = {}, newPointId) => {
+  const start = afterPointId == null ? -1 : route.points.findIndex((p) => p.id === afterPointId);
+  if (start === -1) return appendAmpsPoint(route, lat, lon, details, newPointId);
+  const nextNamed = route.points.findIndex((p, i) => i > start && p.kind === "amps");
+  const span = route.points.slice(start, nextNamed === -1 ? route.points.length : nextNamed + 1);
+  const at = start + Math.max(findNearestAdjacentIndex({ points: span }, lat, lon), 0) + 1;
+  const { name = "", ptType = "turn", chartElevationFt } = details;
+  const points = [...route.points];
+  points.splice(at, 0, { id: newPointId(), lat, lon, ele: null, kind: "amps", ptType, name, role: "waypoint", chartElevationFt });
+  return { ...route, points };
+};
+
 /** A designated AMPS point at the end of a route (snaps the line onto a named local point). */
 export const appendAmpsPoint = (route, lat, lon, { name = "", ptType = "turn", chartElevationFt } = {}, newPointId) => ({
   ...route,

@@ -149,7 +149,8 @@ export const useMsnxImport = () => {
     );
   }, [importedRoutes, editRoutes]);
 
-  const insertPoint = useCallback((routeId, lat, lon) => {
+  /** Splits the leg nearest the place with a new point, called `name` if it has one. Answers the point's id. */
+  const insertPoint = useCallback((routeId, lat, lon, { name, chartElevationFt } = {}) => {
     const route = importedRoutes.find((r) => r.id === routeId);
     if (!route) return;
     const fileEntry = filesRef.current.get(route.fileId);
@@ -157,7 +158,9 @@ export const useMsnxImport = () => {
 
     // May throw (e.g. no connecting leg near the click) — deliberately not
     // caught here so the caller's try/catch can surface it to the user.
-    const { afterPointId, point: newPoint } = insertPointOnRoute(fileEntry.docs, route, lat, lon);
+    const { afterPointId, point: inserted } = insertPointOnRoute(fileEntry.docs, route, lat, lon);
+    if (name) updatePointNameInDocs(fileEntry.docs, inserted.id, name);
+    const newPoint = { ...inserted, ...(name ? { name } : {}), ...(chartElevationFt != null ? { chartElevationFt } : {}) };
 
     // Splitting a leg in the file cannot be taken back, so nothing before it can be either.
     dispatch({
@@ -171,6 +174,7 @@ export const useMsnxImport = () => {
         return { ...r, points };
       }),
     });
+    return newPoint.id;
   }, [importedRoutes]);
 
   // --- inline plan editing (mirrors useRouteSketch, for imported routes) ---

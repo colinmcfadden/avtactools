@@ -378,3 +378,57 @@ describe("TargetField with the place search", () => {
     expect(screen.getByRole("combobox")).toHaveAttribute("placeholder", "Search by grid, lat/long or place");
   });
 });
+
+describe("TargetField with local points", () => {
+  const POINTS = [
+    { name: ".CP1", lat: 34.5, lon: -84.1, elevationFt: 1730, setName: "NORTH" },
+    { name: "HAWK", lat: 34.6, lon: -84.2, setName: "NORTH" },
+  ];
+  const LocalHarness = ({ onChoose, localPoints = POINTS, ...rest }) => {
+    const [value, setValue] = useState("");
+    return <TargetField value={value} onChange={setValue} onChoose={onChoose} localPoints={localPoints} {...rest} />;
+  };
+  const localSetup = (props) => {
+    const onChoose = vi.fn();
+    render(<LocalHarness onChoose={onChoose} {...props} />);
+    const input = screen.getByRole("combobox");
+    input.focus();
+    return { onChoose, input, type: (text) => fireEvent.change(input, { target: { value: text } }) };
+  };
+
+  it("lists a local point by name with no place search, says which set, and gives no sentence", () => {
+    const { type } = localSetup();
+    type("haw");
+    expect(optionTexts()).toEqual(["HAWK"]);
+    expect(screen.getByText("Local point · NORTH")).toBeInTheDocument();
+    expect(messageText()).toBeUndefined();
+    expect(statusText()).toContain("1 local point by that name");
+  });
+
+  it("gives the point when it is chosen, and when GO is pressed on its name", () => {
+    const { type, onChoose } = localSetup();
+    type(".cp");
+    fireEvent.click(screen.getByRole("option"));
+    expect(onChoose).toHaveBeenCalledWith(expect.objectContaining({ lat: 34.5, lon: -84.1, place: expect.objectContaining({ localPoint: POINTS[0] }) }));
+    onChoose.mockClear();
+    type("hawk");
+    fireEvent.click(screen.getByRole("button", { name: "GO" }));
+    expect(onChoose).toHaveBeenCalledWith(expect.objectContaining({ lat: 34.6 }));
+  });
+
+  it("still reads a grid, with no local point in the way", () => {
+    const { type } = localSetup();
+    type("16sgc2886455349");
+    expect(optionTexts()).toEqual(["16S GC 28864 55349", "33.91372° N, 84.52451° W"]);
+  });
+
+  it("says so in its placeholder only when there are local points to find", () => {
+    localSetup();
+    expect(screen.getByRole("combobox")).toHaveAttribute("placeholder", "Search by grid, lat/long or local point");
+  });
+
+  it("keeps its placeholder when none are held", () => {
+    localSetup({ localPoints: [] });
+    expect(screen.getByRole("combobox")).toHaveAttribute("placeholder", "Search by grid or lat/long");
+  });
+});

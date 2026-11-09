@@ -6,8 +6,10 @@ import { fetchForecastWinds, mergeWindsIntoPlan } from "./routeWinds";
 import {
   appendAmpsPoint,
   designatePoint,
+  insertNamedPoint,
   insertShapingPoint,
   movePoint,
+  nextCheckpointName,
   removePoint,
   renamePoint,
   sketchRouteVersions,
@@ -168,6 +170,14 @@ export const useRouteSketch = ({ aircraftProfile = null } = {}) => {
     });
   };
 
+  /** A named point typed or chosen in the route's plan, after `afterPointId` (null: at the end). Answers its id. */
+  const addRoutePoint = (routeId, afterPointId, { lat, lon, name, chartElevationFt }) => {
+    const pointId = crypto.randomUUID();
+    editRoute(routeId, "Add point", (route) =>
+      insertNamedPoint(route, afterPointId, lat, lon, { name: name || nextCheckpointName(route), chartElevationFt }, () => pointId));
+    return pointId;
+  };
+
   const removeSketchPoint = (routeId, pointId) => {
     editRoute(routeId, "Delete point", (route) => removePoint(route, pointId));
   };
@@ -326,6 +336,7 @@ export const useRouteSketch = ({ aircraftProfile = null } = {}) => {
     updateSketchPointPosition,
     insertSketchPoint,
     removeSketchPoint,
+    addRoutePoint,
     appendSketchPoint,
     loadSketchRoutes,
     openSavedRoutes,

@@ -4,6 +4,7 @@ import { nearestFirst, readTarget } from "../utils/targetReading";
 import { placeQueryOf } from "../feature/places/placeQuery";
 import { usePlaceSearch } from "../feature/places/usePlaceSearch";
 import { placeChoice, placeDistance, placeNote, placeSources, placeTitle } from "../feature/places/placeWords";
+import { findLocalPoints, localPointPlace } from "../feature/localPoints/localPointSearch";
 import "./TargetField.css";
 
 /**
@@ -31,6 +32,10 @@ import "./TargetField.css";
  * navaids and fixes it names, nearest the map first: the first few, and a row that shows the rest. A place is chosen
  * as a reading is (`onChoose`), its choice carrying `place` and `label`; GO and Enter with no row picked choose the
  * first place, as a Spotlight does, once the list is the answer for the text as it is.
+ *
+ * With `localPoints` (localPointSearch.js), the person's own local points whose names the text could be are listed
+ * before the places, found on the device whatever the place search says; each is chosen as a place is, its `place`
+ * carrying `localPoint`.
  */
 
 // Places shown before "Show n more".
@@ -61,19 +66,23 @@ const TargetField = ({
   // Shown instead where the field is wide enough to hold it.
   widePlaceholder,
   searchPlaces = null,
+  localPoints = null,
   onShare = null,
   autoFocus = false,
   rowClassName = "ff-input-group",
   inputClassName = "ff-input",
   buttonClassName = "ff-btn primary",
+  goLabel = "GO",
   inputProps = {},
   // Drawn in the row before the input (a search icon).
   leading = null,
 }) => {
-  const narrowWords = placeholder ?? (searchPlaces ? "Search by grid, lat/long or place" : "Search by grid or lat/long");
+  const searchWhat = ["grid", "lat/long", ...(searchPlaces ? ["place"] : []), ...(localPoints?.length ? ["local point"] : [])];
+  const searchWords = `Search by ${searchWhat.slice(0, -1).join(", ")} or ${searchWhat.at(-1)}`;
+  const narrowWords = placeholder ?? searchWords;
   const wideWords = widePlaceholder ?? (searchPlaces
-    ? "Search by grid, lat/long or place, e.g. 16S GC 28864 55349, 34.54, -84.12 or DZJ"
-    : "Search by grid or lat/long, e.g. 16S GC 28864 55349 or 34.54, -84.12");
+    ? `${searchWords}, e.g. 16S GC 28864 55349, 34.54, -84.12 or DZJ`
+    : `${searchWords}, e.g. 16S GC 28864 55349 or 34.54, -84.12`);
   const id = useId();
   const inputRef = useRef(null);
   const listId = `${id}-places`;
@@ -122,30 +131,42 @@ const TargetField = ({
       ? [{ key: `place-${place.id}`, choice, main: placeTitle(place), note: placeNote(place), end: placeDistance(place, near) }]
       : [];
   }), [found.places, near]);
+  const localRows = useMemo(() => findLocalPoints(localPoints, value, near).flatMap((point, index) => {
+    const place = localPointPlace(point);
+    const choice = placeChoice(place);
+    return choice
+      ? [{ key: `local-${index}-${point.name}`, choice, main: placeTitle(place), note: placeNote(place), end: placeDistance(place, near) }]
+      : [];
+  }), [localPoints, value, near]);
   const hiddenPlaces = expanded ? 0 : Math.max(0, placeRows.length - PLACES_FIRST);
   const rows = useMemo(() => [
     ...readingRows,
+    ...localRows,
     ...(hiddenPlaces ? placeRows.slice(0, PLACES_FIRST) : placeRows),
     ...(hiddenPlaces ? [{ key: "more", more: true, main: `Show ${hiddenPlaces} more ${hiddenPlaces === 1 ? "place" : "places"}` }] : []),
-  ], [readingRows, placeRows, hiddenPlaces]);
+  ], [readingRows, localRows, placeRows, hiddenPlaces]);
 
   // What is said above the list: the reader's sentence, except for text that can only be a place's name (a grid
-  // or lat/long it is not); for that, why no place is listed, once the search has answered for it.
+  // or lat/long it is not); for that, why no place is listed, once the search has answered for it. A local point
+  // found is an answer: the list says it, whatever the reader or the place search made of the text.
   const message = (() => {
+    if (localRows.length > 0 && reading.choices.length === 0) return null;
     if (placeKind === "place") {
       if (!found.current) return null;
       if (found.failed) return "The place search is not answering. Grids and lat/longs still work.";
       if (!found.available) return "The place search has nothing to search on this server yet. Grids and lat/longs still work.";
       if (placeRows.length === 0) {
+        const first = localPoints?.length ? "No local point, airport" : "No airport";
         return found.sources?.gnisDate
-          ? "No airport, heliport, navaid, fix or named place by that name or identifier."
-          : "No airport, heliport, navaid or fix by that name or identifier.";
+          ? `${first}, heliport, navaid, fix or named place by that name or identifier.`
+          : `${first}, heliport, navaid or fix by that name or identifier.`;
       }
       return null;
     }
     return reading.message;
   })();
-  const firstPlace = found.current && placeRows.length > 0 ? placeRows[0].choice : null;
+  // The person's own come first, and are there at once; a place only once the list is the answer for the text.
+  const firstPlace = localRows[0]?.choice ?? (found.current && placeRows.length > 0 ? placeRows[0].choice : null);
 
   const shown = open && (rows.length > 0 || Boolean(message));
   const optionId = (index) => `${id}-place-${index}`;
@@ -237,6 +258,10 @@ const TargetField = ({
     if (message) parts.push(message);
     if (readingRows.length === 2 && reading.choices.length === 1) parts.push(`${readingRows[0].main}, ${readingRows[1].main}. Press Enter to go there.`);
     else if (readingRows.length > 0) parts.push(`${readingRows.length} places. Use the arrow keys to choose one.`);
+    if (localRows.length > 0) {
+      parts.push(`${localRows.length} local ${localRows.length === 1 ? "point" : "points"} by that name.`
+        + (readingRows.length ? "" : " Use the arrow keys to choose one."));
+    }
     if (placeRows.length > 0) {
       const listed = placeRows.length - hiddenPlaces;
       parts.push(`${listed} ${listed === 1 ? "place" : "places"} by that name${hiddenPlaces ? `, and ${hiddenPlaces} more` : ""}.`
@@ -310,7 +335,7 @@ const TargetField = ({
           onClick={(event) => go({ byPointer: event.detail > 0 })}
           className={buttonClassName}
         >
-          GO
+          {goLabel}
         </button>
       </div>
 
