@@ -11,9 +11,6 @@ const renderControls = (props = {}) =>
       aircraftProfiles={[]}
       onSelectAircraft={() => {}}
       onManageAircraft={() => {}}
-      gridInput=""
-      setGridInput={() => {}}
-      handleSearch={() => {}}
       isSketching={false}
       toggleRouteSketch={() => {}}
       features={NO_LZ_TOOLS}

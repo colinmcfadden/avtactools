@@ -35,6 +35,7 @@ import SlopeLayer from "../feature/terrain/SlopeLayer";
 import { SLOPE_OPACITY } from "../feature/terrain/slopeOpacity";
 import PresenceLayer from "../feature/missionPacks/ui/PresenceLayer";
 import SandtableLayer from "../feature/brief/SandtableLayer";
+import StartAtLocation from "../feature/startLocation/StartAtLocation";
 
 // Fix for default Leaflet marker icons in React
 delete L.Icon.Default.prototype._getIconUrl;
@@ -56,7 +57,7 @@ const starIcon = new L.Icon({
 // to zoom 17 after every analysis or graphic edit. While a brief is presented
 // (`paused`) the sandtable moves the map: a target that changes meanwhile (in a
 // pack, someone else's) is noted, not flown to, then or after.
-function MapUpdater({ center, targetId, paused = false }) {
+function MapUpdater({ center, targetId, paused = false, zoom = 17 }) {
   const map = useMap();
   const lastTargetKeyRef = useRef(null);
   const latitude = center?.[0];
@@ -69,8 +70,8 @@ function MapUpdater({ center, targetId, paused = false }) {
     if (lastTargetKeyRef.current === targetKey) return;
 
     lastTargetKeyRef.current = targetKey;
-    if (!paused) map.setView([latitude, longitude], 17);
-  }, [latitude, longitude, map, targetId, paused]);
+    if (!paused) map.setView([latitude, longitude], zoom);
+  }, [latitude, longitude, map, targetId, paused, zoom]);
 
   return null;
 }
@@ -252,6 +253,9 @@ const MapView = ({
       wheelPxPerZoomLevel={30}
       updateWhenZooming={false}
     >
+      {/* First, so it hears every later move: the person's location, asked once, used only while nothing else set the view */}
+      <StartAtLocation claimed={Boolean(targetLocation || flyTo || presentation)} />
+
       {/* Base Layer - driven by the mapStyles registry */}
       <TileLayer
         key={activeMapStyle.id} // Forces Leaflet to refresh when the style changes
@@ -342,7 +346,7 @@ const MapView = ({
 
       {/* Logic to Zoom when target changes */}
       <MapUpdater center={targetLocation} targetId={activeDiagramId} paused={Boolean(presentation)} />
-      {flyTo && <MapUpdater center={[flyTo.lat, flyTo.lon]} targetId={`fly:${flyTo.key}`} paused={Boolean(presentation)} />}
+      {flyTo && <MapUpdater center={[flyTo.lat, flyTo.lon]} targetId={`fly:${flyTo.key}`} zoom={flyTo.zoom ?? 17} paused={Boolean(presentation)} />}
       <SizeWatcher />
 
       {!presentation && (<>
