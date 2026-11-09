@@ -633,7 +633,8 @@ def describe(s: dict, cycle: date, posted, now: datetime, m: dict) -> dict:
         if record.get("switched"):
             how = f"switched to at {record['switched']}"
         elif record.get("scheduled"):
-            how = f"switches at {record['scheduled']}"
+            due = state.instant(record["scheduled"])
+            how = f"{'switches' if due is None or due > now else 'was scheduled to switch'} at {record['scheduled']}"
         else:
             how = f"not switched: {record.get('left') or ''}"
         return {"text": f"Built {built.get('at')} as {built.get('build')}, {how}.", "tone": "good"}
