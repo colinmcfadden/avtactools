@@ -63,16 +63,21 @@ describe("undo in the app", () => {
     expect(map.draftPoints).toHaveLength(1);
   });
 
-  it("takes back and makes again a route drawn, from the top bar, and says what it did", async () => {
+  it("takes back and makes again a route drawn a point at a time, from the top bar, and says what it did", async () => {
     const { undo, redo } = await opened();
     await sketched();
     expect(undo.disabled).toBe(false);
+    fireEvent.click(undo);
+    expect(map.sketchedRoutes[0].points).toHaveLength(2);
+    expect(await screen.findByText("Undid: Add point")).toBeTruthy();
     fireEvent.click(undo);
     expect(map.sketchedRoutes).toEqual([]);
     expect(await screen.findByText("Undid: Draw route")).toBeTruthy();
     expect(redo.disabled).toBe(false);
     fireEvent.click(redo);
-    expect(map.sketchedRoutes).toHaveLength(1);
+    expect(map.sketchedRoutes[0].points).toHaveLength(2);
+    fireEvent.click(redo);
+    expect(map.sketchedRoutes[0].points).toHaveLength(3);
   });
 
   it("takes back a point moved on the map, by the keys, and redoes it", async () => {
@@ -86,6 +91,36 @@ describe("undo in the app", () => {
     expect(map.sketchedRoutes[0].points[1]).toMatchObject({ lat: point.lat, lon: point.lon });
     ctrl("y");
     expect(map.sketchedRoutes[0].points[1]).toMatchObject({ lat: 35, lon: -85 });
+  });
+
+  it("deletes a point from its right-click menu, which undo takes back", async () => {
+    await opened();
+    await sketched();
+    const route = map.sketchedRoutes[0];
+    act(() => map.onSketchPointContextMenu(route.id, route.points[1].id, 100, 100));
+    fireEvent.click(screen.getByRole("button", { name: /Delete point/ }));
+    expect(map.sketchedRoutes[0].points).toHaveLength(2);
+    ctrl("z");
+    expect(map.sketchedRoutes[0].points).toHaveLength(3);
+  });
+
+  it("says why a point cannot be deleted, and does not offer it", async () => {
+    await opened();
+    await sketched([[34.5, -84.1], [34.6, -84.2]]);
+    const route = map.sketchedRoutes[0];
+    act(() => map.onSketchPointContextMenu(route.id, route.points[0].id, 100, 100));
+    expect(screen.getByRole("button", { name: /Delete point/ }).disabled).toBe(true);
+    expect(screen.getByText("A route needs at least two points.")).toBeTruthy();
+  });
+
+  it("adds a point from the line's right-click menu", async () => {
+    await opened();
+    await sketched();
+    const route = map.sketchedRoutes[0];
+    act(() => map.onInsertMsnxPoint(route.id, 34.55, -84.15, 100, 100));
+    fireEvent.click(screen.getByRole("button", { name: /Add point here/ }));
+    expect(map.sketchedRoutes[0].points).toHaveLength(4);
+    expect(map.sketchedRoutes[0].points[1]).toMatchObject({ kind: "shaping", lat: 34.55 });
   });
 
   it("leaves the text being typed in a field to the field", async () => {

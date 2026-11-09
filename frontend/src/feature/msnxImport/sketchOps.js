@@ -64,6 +64,18 @@ export const buildSketchRoute = (draftPoints, { name, id, color, plan, newPointI
 };
 
 /**
+ * The route at each point drawn, from its first two points to all of them: what finishing there would
+ * have made, so undo takes a drawn route back a point at a time. A point has one id in all of them.
+ */
+export const sketchRouteVersions = (draftPoints, { newPointId, ...route }) => {
+  const ids = draftPoints.map(() => newPointId());
+  return draftPoints.slice(1).map((_, index) => {
+    const taken = ids[Symbol.iterator]();
+    return buildSketchRoute(draftPoints.slice(0, index + 2), { ...route, newPointId: () => taken.next().value });
+  });
+};
+
+/**
  * Changes a point's designation. Demoting one of a route's two remaining AMPS
  * points to shaping is refused (legs need at least two endpoints): the same route
  * comes back.
@@ -118,6 +130,39 @@ export const insertShapingPoint = (route, lat, lon, newPointId) => {
     role: "waypoint",
   });
   return { ...route, points };
+};
+
+/**
+ * Why a point cannot come off its route, in words, or null when it can. A route is a line with at
+ * least two points and, for AMPS, two named ones to run its legs between (as designatePoint keeps).
+ */
+export const whyPointStays = (route, pointId) => {
+  const point = route?.points.find((p) => p.id === pointId);
+  if (!point) return null;
+  if (route.points.length <= 2) return "A route needs at least two points.";
+  if (point.kind === "amps" && route.points.filter((p) => p.kind === "amps").length <= 2) {
+    return "A route needs two named points. Name another point first.";
+  }
+  return null;
+};
+
+/**
+ * The route without a point, and what was kept for it (its plan values, its ground elevation); the
+ * same route when the point is not there or must stay (whyPointStays).
+ */
+export const removePoint = (route, pointId) => {
+  const index = route.points.findIndex((p) => p.id === pointId);
+  if (index === -1 || whyPointStays(route, pointId) !== null) return route;
+  const points = route.points.filter((p) => p.id !== pointId);
+  if (index === 0) points[0] = { ...points[0], role: "start" };
+  const { [pointId]: _ground, ...elevations } = route.elevations ?? {};
+  const { [pointId]: _planned, ...perPoint } = route.plan?.perPoint ?? {};
+  return {
+    ...route,
+    points,
+    ...(route.elevations ? { elevations } : {}),
+    ...(route.plan?.perPoint ? { plan: { ...route.plan, perPoint } } : {}),
+  };
 };
 
 /** A designated AMPS point at the end of a route (snaps the line onto a named local point). */

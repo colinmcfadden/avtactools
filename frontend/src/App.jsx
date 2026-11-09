@@ -74,6 +74,7 @@ import NameDialog from "./feature/ui/NameDialog";
 import { useToast } from "./feature/ui/Toast";
 import { nextStepSeq } from "./feature/undo/history";
 import { useUndo } from "./feature/undo/useUndo";
+import { whyPointStays } from "./feature/msnxImport/sketchOps";
 import useApiCompat from "./feature/apiCompat/useApiCompat";
 import useFilePicker from "./feature/imports/useFilePicker";
 import useImports, { movePointsToPack } from "./feature/imports/useImports";
@@ -590,6 +591,7 @@ function App() {
     designateSketchPoint,
     updateSketchPointPosition,
     insertSketchPoint,
+    removeSketchPoint,
     appendSketchPoint,
     loadSketchRoutes,
     openSavedRoutes,
@@ -975,9 +977,27 @@ function App() {
     );
   };
 
+  const handleDeleteSketchPoint = () => {
+    removeSketchPoint(contextMenu.routeId, contextMenu.pointId);
+    setContextMenu(null);
+  };
+
+  // A named point on the line, in one step, rather than adding one and then designating it.
+  const handleInsertCheckpoint = () => {
+    const { routeId, lat, lon } = contextMenu;
+    askPointName("turn", POINT_NAMES.turn, (name) => insertSketchPoint(routeId, lat, lon, { ptType: "turn", name }));
+  };
+
+  const isSketchRoute = (routeId) => sketchedRoutes.some((route) => route.id === routeId);
+  const pointStays =
+    contextMenu?.type === "sketch-point"
+      ? whyPointStays(sketchedRoutes.find((route) => route.id === contextMenu.routeId), contextMenu.pointId)
+      : null;
+
   const handleInsertPointConfirm = () => {
     try {
-      if (contextMenu.routeId.startsWith("sketch-")) {
+      // Found by where it is, not by its id: a Mission Pack's routes keep whatever ids they came with.
+      if (isSketchRoute(contextMenu.routeId)) {
         insertSketchPoint(contextMenu.routeId, contextMenu.lat, contextMenu.lon);
       } else {
         insertPoint(contextMenu.routeId, contextMenu.lat, contextMenu.lon);
@@ -2231,8 +2251,13 @@ function App() {
                 className="ctx-btn ctx-btn--success"
                 onClick={handleInsertPointConfirm}
               >
-                Insert Point Here
+                + Add point here
               </button>
+              {isSketchRoute(contextMenu.routeId) && (
+                <button className="ctx-btn ctx-btn--primary" onClick={handleInsertCheckpoint}>
+                  ● Add checkpoint here
+                </button>
+              )}
               <button
                 className="ctx-btn ctx-btn--ghost"
                 onClick={() => setContextMenu(null)}
@@ -2266,6 +2291,14 @@ function App() {
               >
                 Rename
               </button>
+              <button
+                className="ctx-btn ctx-btn--danger"
+                onClick={handleDeleteSketchPoint}
+                disabled={Boolean(pointStays)}
+              >
+                ✕ Delete point
+              </button>
+              {pointStays && <div className="ctx-label">{pointStays}</div>}
               <button
                 className="ctx-btn ctx-btn--ghost"
                 onClick={() => setContextMenu(null)}

@@ -2049,6 +2049,23 @@ input:checked + .slider:before {
   padding: 2px 6px !important;
 }
 
+.route-line-tip {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.route-line-tip span {
+  font-weight: 500;
+  color: var(--ff-text-muted);
+}
+
+/* A route's point under the mouse. `scale` and not `transform`: a diamond is already turned by one. */
+.msnx-point-icon:hover > div {
+  scale: 1.35;
+  filter: drop-shadow(0 0 4px #ffffff) !important;
+}
+
 .leaflet-tooltip-top:before,
 .leaflet-tooltip-bottom:before,
 .leaflet-tooltip-left:before,

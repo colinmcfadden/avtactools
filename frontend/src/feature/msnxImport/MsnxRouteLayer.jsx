@@ -1,4 +1,4 @@
-import React, { useMemo } from "react";
+import React, { useState } from "react";
 import { Marker, Polyline, Tooltip, Popup, useMap } from "react-leaflet";
 import L from "leaflet";
 
@@ -45,11 +45,13 @@ const PT_TYPE_LABELS = {
 
 const smallDotIcon = (color) => {
   const size = 10;
+  // Drawn small, but a hand's width to hit: this is what gets right-clicked to delete it.
+  const hit = 22;
   return L.divIcon({
     className: "msnx-point-icon",
-    html: `<div style="width:${size}px;height:${size}px;border-radius:50%;background:${color};border:1px solid white;opacity:0.85;box-shadow:0 0 2px rgba(0,0,0,0.6);"></div>`,
-    iconSize: [size, size],
-    iconAnchor: [size / 2, size / 2],
+    html: `<div style="width:${hit}px;height:${hit}px;display:flex;align-items:center;justify-content:center;"><div style="width:${size}px;height:${size}px;border-radius:50%;background:${color};border:1px solid white;opacity:0.85;box-shadow:0 0 2px rgba(0,0,0,0.6);"></div></div>`,
+    iconSize: [hit, hit],
+    iconAnchor: [hit / 2, hit / 2],
   });
 };
 
@@ -109,12 +111,60 @@ const pointDescription = (point) => {
   return ROLE_LABELS[point.role];
 };
 
+// How wide the line is to the mouse, in pixels: far easier to find than the 3 it is drawn.
+const HIT_WEIGHT = 22;
+
+/** How a route's line and the halo under it are drawn, with the mouse on it or not. */
+export const routeLineStyles = (color, hovered) => ({
+  halo: { color: "#ffffff", weight: 12, opacity: hovered ? 0.6 : 0 },
+  line: { color, weight: hovered ? 6 : 3 },
+});
+
+/**
+ * One route's line: its own component, so the mouse coming and going redraws these and not the markers
+ * beside them (hundreds, for a real mission). What the mouse finds is a wide unseen line on top.
+ * `drawing`: a route or boundary is being drawn, so the map keeps its clicks and its right-click.
+ */
+export const RouteLine = ({ route, positions, onInsertPoint, drawing = false }) => {
+  const [hovered, setHovered] = useState(false);
+  const styles = routeLineStyles(route.color, hovered && !drawing);
+  const handlers = drawing
+    ? {}
+    : {
+        mouseover: () => setHovered(true),
+        mouseout: () => setHovered(false),
+        contextmenu: (e) => {
+          // Nowhere to insert a point (a read-only Mission Pack): the map's own menu opens.
+          if (!onInsertPoint) return;
+          L.DomEvent.stop(e);
+          e.originalEvent.preventDefault();
+          onInsertPoint(route.id, e.latlng.lat, e.latlng.lng, e.originalEvent.clientX, e.originalEvent.clientY);
+        },
+      };
+
+  return (
+    <>
+      <Polyline positions={positions} interactive={false} opacity={0} pathOptions={styles.halo} />
+      <Polyline positions={positions} interactive={false} pathOptions={styles.line} />
+      <Polyline positions={positions} weight={HIT_WEIGHT} opacity={0} eventHandlers={handlers}>
+        {!drawing && (
+          <Tooltip sticky direction="top" offset={[0, -8]} className="route-line-tip">
+            <strong>{route.name}</strong>
+            {onInsertPoint && <span>{L.Browser.mobile ? "Press and hold" : "Right-click"} to add a point</span>}
+          </Tooltip>
+        )}
+      </Polyline>
+    </>
+  );
+};
+
 const MsnxRouteLayer = ({
   routes,
   onUpdatePosition,
   onInsertPoint,
   onPointContextMenu,
   snapPoints,
+  drawing = false,
 }) => {
   const map = useMap();
   if (!routes || routes.length === 0) return null;
@@ -127,25 +177,7 @@ const MsnxRouteLayer = ({
 
         return (
           <React.Fragment key={route.id}>
-            <Polyline
-              positions={positions}
-              pathOptions={{ color: route.color, weight: 3 }}
-              eventHandlers={{
-                contextmenu: (e) => {
-                  // Nowhere to insert a point (a read-only Mission Pack): the map's own menu opens.
-                  if (!onInsertPoint) return;
-                  L.DomEvent.stop(e);
-                  e.originalEvent.preventDefault();
-                  onInsertPoint(
-                    route.id,
-                    e.latlng.lat,
-                    e.latlng.lng,
-                    e.originalEvent.clientX,
-                    e.originalEvent.clientY,
-                  );
-                },
-              }}
-            />
+            <RouteLine route={route} positions={positions} onInsertPoint={onInsertPoint} drawing={drawing} />
             {route.points.map((point, pointIndex) => {
               const showLabel = point.kind ? point.kind === "amps" : point.role !== "waypoint";
               const label =
