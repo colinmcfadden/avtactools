@@ -1,7 +1,7 @@
 # VFR charts — plan
 
-Status: **decided; C0 to C2 built** (2026-11-05: the outlines and the build; the build as a Data tab job; the tiles served, switched
-from the tab and built each cycle on production. The web and Android still draw the ArcGIS sectional until C3 and C4, §9). The owner finds the VFR base map too soft next to SkyVector and ForeFlight. This file
+Status: **decided; C0 to C3 built** (2026-11-05: the outlines and the build; the build as a Data tab job; the tiles served, switched
+from the tab and built each cycle on production; the web's VFR map and the brief's figures from them. Android still draws the ArcGIS sectional until C4, §9). The owner finds the VFR base map too soft next to SkyVector and ForeFlight. This file
 proposes replacing it with chart tiles EZ/PZ builds itself from the FAA's free digital charts: the sectional everywhere, then the
 Terminal Area Chart (TAC) and the Helicopter Route Chart stacked over it where they exist, on the web and Android.
 
@@ -1082,6 +1082,33 @@ Charts card and by the automatic cycle, and drawn on the tab's map. Where it dif
 - **Owner steps before it serves**: the Cloudflare cache rule for `/charts/*` (§7), and `CHART_AUTO=off` on the API if the first
   build is to be switched to by hand. **Not tried here**: Cloudflare in front of the route, Resend's emails, the automatic cycle's
   six-hourly looks on the VM, and staging's read-only tab, which waits for production to run C2 (only production writes `state.json`).
+
+**C3, as built** (2026-11-08). The web's VFR map and the brief's figures draw the live build. Where it differs from §4.5, §4.6 and §8, or says more:
+- **`frontend/src/feature/vfrCharts/`**: `vfrCharts.js` is plain code (what the config says, where the layers go, the words); `useVfrCharts(shown)` keeps the config; `VfrChartLayers` and
+  `VfrAttribution` draw them. `App.jsx` holds the hook, so the Layers menu and the map read one answer.
+- **Nothing is drawn until the first answer** (`known`): a page opening on the VFR map asks ArcGIS for nothing it will not draw. A look that gets no answer leaves what was known, and the
+  first such look draws ArcGIS rather than leaving the map empty. A `charts` whose fields cannot be read is none.
+- **Looks** (§4.5) are made with `cache: 'no-store'`. The one after a build runs out is at `expires` plus 61 s, since the server keeps its answer for 60 s. A tab in the back makes none; one
+  coming back after 5 minutes makes one. A new build is a new layer (keyed by the build: a Leaflet layer's options are fixed once made), and the same build changes nothing.
+- **The layers** (§4.6): one ArcGIS layer for each `fallback` rectangle at z-index 1, the chart layer within its bounds at 2, both `crossOrigin="anonymous"` for the LZ card's canvas. Only the
+  chart layer's `tileerror` asks for the config again.
+- **The attribution** is a Leaflet control of its own just above the map's, which `keepInCapture` leaves off an LZ card as it does every control. A line for each edition in view (a chart held
+  back keeps its own, §4.2): the charts drawn, finest first, those wholly under a finer one left out, two named and then `and n more`. Before `coverage.json` has come the build's own edition is
+  said. It turns red at the instant a chart expires, whether or not anyone moves the map. Words outside a build's charts are `FAA, via ArcGIS`, which publishes no edition.
+- **"No finer chart here"** is read at the map's middle, from the finest chart whose outline holds it at the level drawn: the enlargement is `2 ** (round(zoom) - 1 - stored level)`, said from 2×.
+- **The words are held** to `contracts/fixtures/charts/words.json` (24 cases over the recorded `coverage.json`, written by `frontend/src/contracts/chartWordsFixtures.test.js`), for Android to follow in C4.
+- **The switcher's thumbnail** is a tile the build has, over Denver where the build reaches it (the other base maps' thumbnails are the Rockies), else the middle of its bounds; ArcGIS's where there is no build.
+- **The brief** (`brief/figures.py`): as §8. A chart tile can be transparent where the chart ends, so each is laid over the figure's ground colour. The framing's top level at a
+  sectional-only post is 11 at 512 px, the same ground per pixel as ArcGIS's 12 at 256 px. **What is printed** is `FAA Atlanta Sectional, 29 Oct – 23 Dec 2026`, `FAA Atlanta TAC +1, …` where
+  more charts of that edition lie under the figure at its zoom (the finest named), editions joined by `; `, and `…, expired 23 Dec 2026` for a build run out, which still prints (§4.5's red notice, on paper); ArcGIS stays `FAA VFR sectional chart`.
+- **Tests**: the web's `vfrCharts.test.js`, `useVfrCharts.test.jsx`, `VfrChartLayers.test.jsx`, `VfrAttribution.test.jsx`, `MapStyleSwitcher.test.jsx`; the backend's `test_brief_chart_figures.py`, in CI's list: a figure and a strip chart at a sectional-only CONUS post,
+  in Hawaii, and on a server with no charts and with none live, each printing a chart and never grey squares. 53 mutations of the new code in `figures.py` were each failed by those tests (five first survived and now have a test of their own).
+- **Tried locally** (2026-11-08 UTC, the owner's Mac): the real API over a scratch database and the real web, against a **synthetic build** (`2026-10-29.1`, the Atlanta sectional and TAC with the real
+  `coverage.json` shape, each tile labelled with its address; the real FAA build of C1 was on a disk image since lost). VFR's thumbnail came from the build. At an Alabama post the tiles came from the build, addressed right
+  (the label on the tile read as its own address), and said `FAA Atlanta Sectional, 29 Oct – 23 Dec 2026` and `Sectional enlarged 32× — no finer chart here`; at Atlanta `FAA Atlanta TAC, …` and
+  `TAC enlarged 16× — …`; Hawaii and Alaska drew ArcGIS and said `FAA, via ArcGIS`. With the page's clock moved past the build's end the line turned red (`Expired 23 Dec 2026 — not current`).
+  The real *Export LZ card* on an LZ analysed by SAM captured the chart under the graphics, with no taint of the canvas. At 375 px wide the words fit and the page does not scroll sideways. **Not tried here:** the real FAA tiles in a browser,
+  a real switch reaching an open page (held by `useVfrCharts.test.jsx`), Cloudflare in front of the tile route, a PDF from the real Gotenberg (the figures are held by the tests, not looked at in a print).
 
 The tests of the chart routes and state go in a file CI runs (`backend.yaml`'s list), with their imports added to its install step.
 `test_data_admin.py` itself runs only locally today.
