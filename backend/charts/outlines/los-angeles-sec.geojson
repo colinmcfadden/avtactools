@@ -15,7 +15,8 @@
     0.0,
     -42.335971525,
     277738.987678517
-   ]
+   ],
+   "ink": 0.619
   },
   "edges": {
    "north": "neighbour:las-vegas-sec,san-francisco-sec",

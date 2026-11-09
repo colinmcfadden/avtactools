@@ -86,4 +86,4 @@ jobs:
           tests/test_api_version.py tests/test_lidar_stream.py tests/test_lidar_photo.py tests/test_lidar_api.py tests/test_lidar_catalog.py
           tests/test_survey_measure.py tests/test_surveys.py tests/test_survey_books.py tests/test_survey_page.py tests/test_survey_revisions.py
           tests/test_survey_book_import.py tests/test_survey_import.py tests/test_survey_book_pdf.py tests/test_survey_obstacles.py tests/test_mask_rings.py tests/test_places.py
-          tests/test_charts.py
+          tests/test_charts.py tests/test_chart_jobs.py

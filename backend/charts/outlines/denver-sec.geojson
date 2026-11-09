@@ -15,7 +15,8 @@
     0.0,
     -42.33485726,
     291529.85463451
-   ]
+   ],
+   "ink": 0.787
   },
   "edges": {
    "north": "neighbour:cheyenne-sec,salt-lake-city-sec",

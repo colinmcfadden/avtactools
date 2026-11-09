@@ -15,7 +15,8 @@
     0.0,
     -42.335894233,
     244775.463523652
-   ]
+   ],
+   "ink": 0.788
   },
   "edges": {
    "north": "neighbour:klamath-falls-sec,salt-lake-city-sec",

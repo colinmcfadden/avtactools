@@ -377,7 +377,7 @@ What the Data tab has today, and what charts change in it, from reading PR #143'
 | Today | For charts |
 |---|---|
 | One runner thread, whose `run` is DEM-only. `DataJob.kind` exists but nothing reads it, and `resume` would run any queued row as a DEM download. | The runner dispatches on `kind`; `resume` too. |
-| `product` is `String(10)`, not null, `13` or `1m`. | A chart build's `product` is `vfr`. New nullable columns, added through `schema_sync` (`sync_table_columns(db, DataJob)`, which `app.py` does not call for this table yet): `build` (`String(20)`), `stage` (`String(20)`), `work_done` / `work_total` (tiles, as `bytes_done` / `bytes_total` count bytes), and `token` (a random token the build process was started with, §5.1). |
+| `product` is `String(10)`, not null, `13` or `1m`. | A chart build's `product` is `vfr`. New nullable columns, added through `schema_sync` (`sync_table_columns(db, DataJob)`, which `app.py` calls since C1): `build` (`String(20)`), `stage` (`String(20)`), `work_done` / `work_total` (tiles, as `bytes_done` / `bytes_total` count bytes), and `token` (a random token the build process was started with, §5.1). |
 | One job at a time, of any kind (the 409 under `_creating`). | Kept: a chart build and a DEM download wait for each other. `check_room` counts only the bytes one write adds, not another job's writes running beside it, so two at once could pass the reserve check together and break it. |
 | A job resumes when the tab or its job list is next opened, never at start-up. | Every job left queued or running resumes, DEM downloads included, at the chart look 5 minutes after start (§5.7) or when an admin opens the tab, whichever comes first. A job left by a redeploy then never holds the tab, and the automatic cycle with it, until someone happens to open the page. |
 | Downloads only from USGS's two hosts, no redirects. `_download` needs every file's size before the job starts, checks no host itself, unzips nothing, and its words and User-Agent name USGS. | `_download` takes the allow-list, the source's name for its words, and the User-Agent as arguments, and checks the host itself. Chart jobs allow `aeronav.faa.gov` alone, `https`, no redirects; it answers the zips directly with `Accept-Ranges: bytes` (checked 2026-11-05). The zips' sizes are asked by `HEAD` in the job's first stage, not in the request that creates it (§5.2), and unzipping is a step of its own (§5.3). |
@@ -406,7 +406,7 @@ eight threads share one Python interpreter with SAM and the terrain tiles, and t
 behind terrain work. A build on a thread in that process would slow every analysis for an hour.
 
 **The Data tab's job starts a separate process in the same container and watches it** (§10, 6):
-- **A fresh interpreter, not a fork.** The job runs `python -m charts.build <job id> <token>`. Forking would copy SAM's gigabyte.
+- **A fresh interpreter, not a fork.** The job runs `python -m charts.job <job id> <token>` (as built in C1; `charts.build` stays C0's tool run by hand). Forking would copy SAM's gigabyte.
   - It must not import `app.py`, which loads SAM at import. It opens the database through a small factory of its own (a `db_app.py`:
     a bare Flask app with `db.init_app`, `database_url.database_uri` and the API's engine options), and imports only `models` and the
     chart code. A test starts it and checks `torch` and `ultralytics` are not in `sys.modules`.
@@ -422,8 +422,9 @@ behind terrain work. A build on a thread in that process would slow every analys
     `finished_at` changed. It does so only for its own child, which it watched die, and only once the staging lock is free.
 - **One build process, ever, judged by its lock, never by a pid.** A redeploy runs the old and new containers together for a moment,
   each with its own process numbers. A pid recorded in one means nothing in the other, and may name an unrelated process there. So:
-  - The child takes an exclusive `flock` on `.staging-<build>/.lock` and holds it until it exits. Its workers inherit the
-    descriptor, so the lock lasts until the whole group is gone. The volume is shared, so the lock holds across both containers.
+  - The child takes an exclusive `flock` on `.staging-<build>/.lock` and holds it until it exits. The volume is shared, so the lock
+    holds across both containers. (Its workers are spawned and inherit no descriptor, so they hold no lock: after a child that ended
+    with no end state the parent kills its whole group before it looks at the lock. As built in C1; this said they inherited it.)
   - A child that cannot take the lock exits at once **with a status of its own** ("already running") and writes nothing. Its parent
     takes that status as "busy, look again later". It writes no `failed`, deletes no staging, and the automation counts no try
     (§5.7).
@@ -955,6 +956,61 @@ and Baltimore helicopter charts and the Washington inset. It validated with noth
   Atlanta TAC is the sectional's own print (its legend's margin), not the build's.
 - Its `coverage.json` is `contracts/fixtures/charts/coverage.json`, and `backend/tests/test_charts.py` (in CI) holds it to the
   committed outlines and the catalog, and runs the whole build over a small sectional and TAC made in the test.
+
+**C1, as built** (2026-11-05). A cycle is built from the Data tab's *VFR charts* card as a job of its own kind (`chart_build`,
+`backend/charts/job.py`), one at a time with the DEM downloads, and lands in `builds/<cycle>.<n>/`, listed in `state.json`. Where it
+differs from §5, or says more:
+- **The build process is `python -m charts.job <job> <token> --parent <pid>`** (§5.1 named `charts.build`, which stays C0's tool run by
+  hand). It opens the database through `backend/db_app.py` and imports neither `app.py` nor torch; a test runs it and looks at
+  `sys.modules`. Its exit statuses say what it wrote: 0 its end state; 75 busy (another holds the lock), 76 its parent gone, 77 its row
+  no longer its own (the token changed): the last three wrote nothing.
+- **Its workers are spawned and hold no lock.** §5.1 had them inherit the lock's descriptor, but a spawned process inherits none, and
+  Python opens descriptors non-inheritable. So after a build process that ended with no end state, the API kills its whole group
+  (`killpg`, `SIGKILL`) and writes `failed` (or `cancelled`) only once the lock is free, waiting up to 30 s for it; while another
+  holds it, it writes nothing. Each worker looks for the pause file and its parent between tasks and ends with its parent. With
+  `CHART_BUILD_PROCESSES=1` the tiles are made in the build process itself.
+- **`PR_SET_PDEATHSIG` fires when the thread that started the process ends**, not the process, so the job thread that starts it
+  waits on it to its end; the build process also checks `getppid` against the `--parent` it was given.
+- **A job left running resumes when an admin opens the tab or its job list** (`Runner.resume`, as the downloads always did). The look
+  five minutes after start is C2's, with the automatic cycle. The same look registers a build whose parent was killed between its `done`
+  and registering it (`recover`), and lets go of what a failed or cancelled build left whose lock is free.
+- **What a build keeps**: its folder holds `vfr.mbtiles`, `coverage.json`, `report.json` (who made it, the tile counts, what was held
+  back and why, and validate's report) and `sources/<cycle>/`, the zips and outlines it was made from. A chart held back is stood in for
+  by the newest listed build that keeps a copy of it, which is copied in under that build's cycle (`sources/2026-10-29/` inside a
+  December build), so every build keeps what it was made from and a later one can find it.
+- **Staging**: the zips come down to `.incoming/<build>/` and are unzipped there; `.staging-<build>/` holds `.lock`, `.pause`,
+  `checked.json`, `empty.json`, `work/` and `out/`, and `out/` is renamed to `builds/<build>/` on the same volume when the build is
+  whole. A file is written under a name of its own (`<name>.<pid>.part`, a random suffix for `state.json`) and renamed once whole.
+- **Each stage resumes**: tiles already in the MBTiles are not made again; a stored tile found empty is noted in `empty.json`, so a
+  resume does not make it again and validate does not count it missing; the lower levels are made from what the MBTiles holds.
+- **A build expires with the first of its own cycle's charts to.** A chart held back from an older build keeps its own (older) edition
+  on its line of `coverage.json`, and does not make the whole build expired.
+- **A later cycle's chart is compared with its outline by ink as well** (`neatline.ink_moved`): the share of points along the outline's
+  outer ring that have ink within 3 pixels, against the share it was made with, now kept in each outline as `made_from.ink` (all 86
+  outlines: 0.555 to 1.0, median 0.999; lowest Halifax, Phoenix, Lake Huron and Los Angeles, whose outlines take edges from
+  neighbours or the file). More than 10 points below refuses the chart. The size and transform alone would pass a chart whose body had
+  moved on its sheet.
+- **`CHART_BUILD_ONLY`**, development only, builds a few catalog ids (`atlanta-sec,atlanta-tac`); ignored in production. The room asked
+  for is still the whole cycle's (22 GB), since the zips' sizes are known only in the job's first stage.
+- **Tests**: `backend/tests/test_chart_jobs.py`, in CI's list, with the FAA stood in for: state's numbers, never given twice and right
+  with eight writers at once; registering twice changes nothing; a state that cannot be read is said and never written over; the route
+  refusing on the container's disk, below the reserve, a cycle not offered or not posted, writes off, a second job (409); a build from its
+  first stage to registered; one stopped part way (its parent gone) resumed with a stale pause file left by the parent, making no tile
+  twice, and registered at the next look of the tab; a cancel cleaning up; no room failing in words; a sectional with no older copy
+  refusing the build, and one held back with an older build's copy standing in; the child's progress never overwritten by the API; a
+  child dead with no end state, its row untouched while the lock is held; and, with real processes, a resume while the old build process
+  holds the lock writing and starting nothing (and a second process all the same exiting 75), and one after it starting one process
+  again, which a cancel then ends as `cancelled`, never `failed`; the process importing no torch and stopping without its parent.
+  `test_schema_sync.py` adds the new columns to a `data_job` as the downloads made it. Fifteen mutations of the lock, token, pause,
+  registration, refusal and recovery code were each run against these tests, and every one failed them (one that first survived, a
+  busy process taken as dead, now has its own test).
+- **Tried locally** (2026-11-05, the owner's Mac): the real API over a scratch SQLite database, `CHART_TILES_DIR` on a mounted disk image
+  (its own device, as a Coolify mount is), `CHART_BUILD_ONLY=atlanta-sec,atlanta-tac`, two processes. The Data tab's routes (signed in as
+  an admin, as the page does) offered 2026-10-29 as posted and 2026-12-24 as not, and the build ran from the button's request: the FAA's two
+  zips (123 MB) in 10 s, the tiles in about a minute, the build registered as `2026-10-29.1` (1,730 tiles, levels 5 to 12; 261 MB with
+  its sources), validate refusing nothing, staging gone, and a second build asked meanwhile refused (409). The build process ran niced, in
+  its own process group, with spawned workers. **Not tried here:** the API's Linux image (no Docker on that machine, so §12's check of
+  rasterio's GDAL and Pillow's WebP in the image is the owner's, before release), and a whole CONUS cycle, the owner's on the VM.
 
 The tests of the chart routes and state go in a file CI runs (`backend.yaml`'s list), with their imports added to its install step.
 `test_data_admin.py` itself runs only locally today.

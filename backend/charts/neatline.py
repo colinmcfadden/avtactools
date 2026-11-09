@@ -565,8 +565,16 @@ def find_cut(src: Source, box, reach: int = 80, pieces: int = 8, pad: float = 6.
     return [meet("top", "left"), meet("top", "right"), meet("bottom", "right"), meet("bottom", "left")]
 
 
-def feature(chart: catalog.Chart, src: Source, outer, holes=(), how=None) -> dict:
-    """The committed form of a chart's outline: a GeoJSON feature with what it was made from, so a later cycle can be compared."""
+def feature(chart: catalog.Chart, src: Source, outer, holes=(), how=None, ink: float | None = None) -> dict:
+    """The committed form of a chart's outline: a GeoJSON feature with what it was made from, so a later cycle can be compared.
+    ``ink`` is ``ink_share`` of the chart it was made from (the tool gives it; a test's sheet with no pixels need not)."""
+    made = {
+        "width": src.width,
+        "height": src.height,
+        "transform": [round(v, 9) for v in tuple(src.transform)[:6]],
+    }
+    if ink is not None:
+        made["ink"] = round(float(ink), 3)
     return {
         "type": "Feature",
         "properties": {
@@ -574,11 +582,7 @@ def feature(chart: catalog.Chart, src: Source, outer, holes=(), how=None) -> dic
             "title": chart.title,
             "tier": chart.tier,
             "file": chart.tif,
-            "made_from": {
-                "width": src.width,
-                "height": src.height,
-                "transform": [round(v, 9) for v in tuple(src.transform)[:6]],
-            },
+            "made_from": made,
             "edges": how or {},
         },
         "geometry": {
@@ -586,6 +590,48 @@ def feature(chart: catalog.Chart, src: Source, outer, holes=(), how=None) -> dic
             "coordinates": [[list(p) for p in oriented(outer, True)]] + [[list(p) for p in oriented(h, False)] for h in holes],
         },
     }
+
+
+# How a later cycle's chart is compared with the one its outline was made from, along the outline (§4.2): dimensions and transform
+# say the sheet is the same size and place; ink along the outer ring says its body has not moved on it. Measured on the 86 charts
+# of 2026-10-29, where each outline was made: see ``made_from.ink``.
+INK_STEP = 8        # pixels between the points looked at along the outer ring
+INK_REACH = 3       # pixels either side of a point within which ink counts
+INK_DROP = 0.10     # how far the share may fall below the outline's own before the chart is refused
+
+
+def ink_share(src: Source, outline_or_ring) -> float:
+    """The share of points along an outline's outer ring with ink within ``INK_REACH`` pixels of them. A neatline is a line of ink, so
+    along the edges an outline takes from it this is near 1, and a chart whose body has moved on its sheet loses it there. Along an
+    edge taken from a neighbour or the file it is whatever the chart prints there, which is why it is compared with the share the
+    outline was made with, not with 1."""
+    ring = outline_or_ring
+    if isinstance(ring, dict):
+        ring = ring["geometry"]["coordinates"][0]
+    px = ring_pixels(src, [tuple(p) for p in ring])
+    pts = densify(px, INK_STEP)
+    if not pts:
+        return 0.0
+    cols = np.rint([p[0] for p in pts]).astype(int)
+    rows = np.rint([p[1] for p in pts]).astype(int)
+    found = np.zeros(len(pts), bool)
+    for dr in range(-INK_REACH, INK_REACH + 1):
+        r = np.clip(rows + dr, 0, src.height - 1)
+        for dc in range(-INK_REACH, INK_REACH + 1):
+            found |= src.is_dark(r, np.clip(cols + dc, 0, src.width - 1))
+    return float(found.mean())
+
+
+def ink_moved(src: Source, outline: dict) -> str | None:
+    """Why a chart's body is not where its outline was made, in words, or None. An outline made with no ``ink`` is not compared."""
+    made = outline["properties"]["made_from"].get("ink")
+    if made is None:
+        return None
+    now = ink_share(src, outline)
+    if now < made - INK_DROP:
+        return (f"its neatline is not where its outline was made: {now:.0%} of the outline lies on ink, against {made:.0%} on the "
+                "chart it was made from")
+    return None
 
 
 def feature_text(feat: dict) -> str:
@@ -849,6 +895,7 @@ def _feature_one(args):
     except ValueError as e:
         return cid, str(e)
     feat = feature(chart, src, outer, holes, how)
+    feat["properties"]["made_from"]["ink"] = round(ink_share(src, feat), 3)
     with open(os.path.join(out, f"{cid}.geojson"), "w", encoding="utf-8") as f:
         f.write(feature_text(feat))
     check_image(src, feat, os.path.join(out, f"{cid}.png"))

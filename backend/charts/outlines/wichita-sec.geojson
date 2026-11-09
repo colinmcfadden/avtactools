@@ -15,7 +15,8 @@
     0.0,
     -42.33270817,
     255544.627373401
-   ]
+   ],
+   "ink": 1.0
   },
   "edges": {
    "north": "neighbour:cheyenne-sec,omaha-sec",

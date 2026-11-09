@@ -15,7 +15,8 @@
     0.0,
     -42.33615073,
     238489.020483497
-   ]
+   ],
+   "ink": 1.0
   },
   "edges": {
    "north": "neighbour:albuquerque-sec,dallas-ft-worth-sec",

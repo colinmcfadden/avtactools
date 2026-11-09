@@ -90,7 +90,7 @@ reached on `admin.ezpztac.app` (the host check in `app.py` redirects `/` there).
 |---|---|---|---|
 | **Auth & access** | Google or email/password; email verification; `.mil` affiliation gate; per-user feature entitlements | `feature/auth/` | `routes/auth.py`, `entitlements.py`, `security_config.py`, `auth_rate_limit.py`, `email_service.py` |
 | **Admin dashboard** | Users, roles, entitlements, access approval, password resets, master aircraft list | — (Jinja) | `routes/admin_routes.py`, `templates/admin/` |
-| **Data tab** (admin, `docs/DATA_ADMIN_AND_PREBUILT_3D_PLAN.md` §10) | A map (MapLibre GL JS 6.15.0, vendored in `backend/static/vendor/`, USGS National Map base) of the DEMs the catalog holds (resolution, datum), the streamed LiDAR cache and built tilesets as **counts in 0.1° cells, never pieces** (D16), the downloaded collection where the API can see `LIDAR_COLLECTION`, and USGS's surveys on AWS; each volume's free space and mount; **DEMs from USGS** (TNM Access, 1/3″ or 1 m, the newest of each cell, what the server holds marked) downloaded by a background job one at a time, checked (`data_admin/validate.py`: a tiled one-band GeoTIFF in the lower 48, 15 m or finer, no stated datum but NAVD88, heights within 5 m of Terrarium's at the median), tagged NAVD88 in a `.aux.xml` (USGS's files state no vertical datum) and renamed into `<DEM root>/usgs/…`; then the catalog is scanned at once and the 3D terrain rewarmed, its old generations deleted. `DATA_ADMIN` decides what it offers. **No uploads and no LiDAR downloads yet** (the owner, 2026-11-04) | — (Jinja, `templates/admin/data.html`) | `routes/admin_data.py`, `data_admin/` (`volumes.py`, `usgs.py`, `validate.py`, `jobs.py`, `layers.py`) |
+| **Data tab** (admin, `docs/DATA_ADMIN_AND_PREBUILT_3D_PLAN.md` §10) | A map (MapLibre GL JS 6.15.0, vendored in `backend/static/vendor/`, USGS National Map base) of the DEMs the catalog holds (resolution, datum), the streamed LiDAR cache and built tilesets as **counts in 0.1° cells, never pieces** (D16), the downloaded collection where the API can see `LIDAR_COLLECTION`, and USGS's surveys on AWS; each volume's free space and mount; **DEMs from USGS** (TNM Access, 1/3″ or 1 m, the newest of each cell, what the server holds marked) downloaded by a background job one at a time, checked (`data_admin/validate.py`: a tiled one-band GeoTIFF in the lower 48, 15 m or finer, no stated datum but NAVD88, heights within 5 m of Terrarium's at the median), tagged NAVD88 in a `.aux.xml` (USGS's files state no vertical datum) and renamed into `<DEM root>/usgs/…`; then the catalog is scanned at once and the 3D terrain rewarmed, its old generations deleted. **A cycle of the FAA's VFR charts built into tiles** (`docs/VFR_CHARTS.md`, C1; *VFR charts*, the current cycle or the next once the FAA has posted it): a job of the same kind, one at a time with the downloads (409), run **in a process of its own** (`python -m charts.job`, §9) that downloads the catalog's zips from `aeronav.faa.gov`, unzips them, checks each chart against its committed outline (a sectional refused with no older build to stand in for it refuses the build; a TAC or helicopter chart is left out, or an older build's copy stands in), tiles, validates and keeps the build as `<CHART_TILES_DIR>/builds/<cycle>.<n>/` (`vfr.mbtiles`, `coverage.json`, `report.json`, the zips and outlines it was made from under `sources/`), listed in `state.json` once done (numbers never given twice); the *Jobs* card says its stage and tiles. **Nothing serves a build yet** (C2). `DATA_ADMIN` decides what it offers. **No uploads and no LiDAR downloads yet** (the owner, 2026-11-04) | — (Jinja, `templates/admin/data.html`) | `routes/admin_data.py`, `data_admin/` (`volumes.py`, `usgs.py`, `validate.py`, `jobs.py`, `layers.py`), `charts/` (`job.py`, `state.py`, `faa.py`, `locks.py`, `build.py`), `db_app.py` |
 | **App frame** (menu redesign, `docs/MENU_REDESIGN.md`) | Top bar across the whole window (workspace, the search, Brief, Import, Library, account), the control panel under it on the left as the dock is on the right (the owner, 2026-11-05: `.app-container` keeps the bar's 48 px at its top, so `.shell-map` and `.shell-dock` start at the top of `.map-area`); a right dock of panels (LZ/PZ, Routes, Threats, Imports) picked from an icon rail, a bottom sheet below 1100 px; the shared dialogs, menus and toasts. No browser `prompt`/`confirm`/`alert` on these paths. At 850 px and below the left sidebar is a full-screen menu behind the top bar's ☰, so the map's tool rail (`MobileQuickAccess`) offers Analyze and Draw LZ itself, in words: without them a phone had no visible way to analyse a target (the owner, 2026-10-19) | `feature/shell/`, `feature/ui/`, `components/MobileQuickAccess.jsx` | — |
 | **LZ/PZ workspace** | Several LZ diagrams per session; target by MGRS; switch between them in the LZ/PZ panel | `feature/lzWorkspace/`, `feature/shell/LzPanel.jsx`, `components/MapView.jsx`, `App.jsx` | — |
 | **Terrain analysis** | SAM finds the LZ boundary in imagery; slope map from DEM, with contour lines of the ground in and round the LZ, and a slope profile along and across the landing heading; how opaque the slope map is drawn is the person's (§13) | `feature/terrain/` | `routes/terrain_routes.py`, `terrain_provider.py` |
@@ -134,6 +134,7 @@ avtactools/
 ├─ backend/                  Flask API (Python 3.11)
 │  ├─ app.py                 App factory, CORS, JWT, affiliation gate, blueprints, ad hoc migrations
 │  ├─ models.py              SQLAlchemy models (§7)
+│  ├─ db_app.py              The database without app.py (and so without SAM), for a chart build's own process
 │  ├─ routes/                One blueprint per area (§6)
 │  ├─ templates/admin/       Admin dashboard (server-rendered)
 │  ├─ terrain_provider.py    DEM catalog (TERRAIN_DATA_DIR) + Terrarium fallback; slope analysis
@@ -143,7 +144,7 @@ avtactools/
 │  ├─ pack_support.py        Mission packs: roles, the per-pack change order, shapes, account release
 │  ├─ notify.py              Writes the notification outbox, with the change that causes it (models only, so pack_support calls it)
 │  ├─ data_admin/            The admin's Data tab: disk and mount rules, USGS DEM search, checks and download jobs, the map's layers
-│  ├─ charts/                The VFR chart tiles from the FAA's GeoTIFFs (docs/VFR_CHARTS.md): the catalog, the neatline tool and its outlines/, the build
+│  ├─ charts/                The VFR chart tiles from the FAA's GeoTIFFs (docs/VFR_CHARTS.md): the catalog, the neatline tool and its outlines/, the build, and the Data tab's job that runs it in a process of its own (job.py; state.py, the chart folder's state.json; faa.py; locks.py)
 │  ├─ static/vendor/         MapLibre GL JS for the admin's Data tab (one exact version, its licence beside it)
 │  ├─ survey/                LZ surveys: the asset store, the measurement (snapshot) and its LiDAR obstacles, the approach's plan, field against computed
 │  ├─ places/                The place search's index: NASR and GNIS read, folded and indexed (FTS4), ranked, served by build and kept current
@@ -227,7 +228,7 @@ the fields serves API 1.
 | teams, invites, search | `/api/teams` (+ `/<id>`, `/members/<user_id>`, `/invites`), `/api/invites` (+ `/<id>/accept`, `/<id>/decline`, `/accept`), `GET /api/users/search?q=` (teammates only) |
 | LZ surveys | `GET/POST /api/survey-books`, `GET/PATCH /api/survey-books/<uuid>`, `POST …/archive`, `…/restore`, `…/import` (multipart `bundle`, 100 MB; the drafts are measured in the background), `GET/POST …/print` (how the book's PDF stands; POST prints it in the background), `GET …/pdf` (the book's PDF, 409 `not_printed` until it is printed as the book stands); `POST /api/surveys` (into a book), `GET/PATCH /api/surveys/<uuid>`, `POST …/archive`, `…/restore`, `…/measure` (`{apply}`; a heavy request), `…/submit`, `…/draft`, `…/publish` (a sign-off; prints the PDF where it can), `GET …/pdf[?rev=]` (503 `pdf_unavailable` without Gotenberg), `GET …/page[?rev=]` (the page as HTML, no Gotenberg needed), `POST …/assets` (multipart, 20 MB), `GET/PATCH/DELETE …/assets/<id>`, `POST …/import/checked` — `lz_surveys` or a site admin (403 `feature_disabled`), then what a person may do in each book (`survey/access.py`; a book or survey they cannot read is a 404, an editor's action a 403 `not_editor`), every save with `If-Match` (428 without, 409 `revision_conflict` with the server's copy), `Cache-Control: private` throughout. Web only: not in `contracts/openapi.yaml`, so the API version does not move (`docs/LZ_SURVEYS.md` §8) |
 | places | `POST /api/places/search` (`{q, near?, limit?}`; `place_search`): `{available, build, nasrCycle, gnisDate, places}`, nearest `near` first (rounded to 0.1° before use), `Cache-Control: no-store`, the text never logged, 10 a second per account (429 `rate_limited`); `{available: false, places: []}` with no index. Web only: not in `contracts/openapi.yaml` (Android is to search a copy on the device) |
-| admin | `/admin/*` — session cookie, not JWT. `/admin/packs` and `/admin/teams` are read only and never show what a pack holds. `/admin/data` (+ `/layers/<dems|stream|tilesets|lidar|aws>.json`, `/volumes.json`, `POST /usgs/search`, `POST /jobs`, `/jobs.json`, `/jobs/<id>.json`, `POST /jobs/<id>/cancel`, `POST /dems/tag-usgs`): 404 unless `DATA_ADMIN` is `read` or `write`; writes need `write` |
+| admin | `/admin/*` — session cookie, not JWT. `/admin/packs` and `/admin/teams` are read only and never show what a pack holds. `/admin/data` (+ `/layers/<dems|stream|tilesets|lidar|aws>.json`, `/volumes.json`, `POST /usgs/search`, `POST /jobs`, `/jobs.json`, `/jobs/<id>.json`, `POST /jobs/<id>/cancel`, `POST /dems/tag-usgs`, `/charts.json`, `POST /charts/builds`): 404 unless `DATA_ADMIN` is `read` or `write`; writes need `write` |
 | app config | `GET /api/config` — **public**, cached 60 s: `minAppVersion` per platform, `maintenance`, which optional `services` are up, and the Mapbox public token (`app_config.py`, `routes/config_routes.py`) |
 | health | `GET /` → JSON status (or redirect to `/admin/login` on the admin host) |
 
@@ -243,7 +244,7 @@ tokens, stored as SHA-256), `LoginEvent`, `AircraftProfile`, `SavedRoute`,
 `MissionPack`, `MissionPackMember`, `MissionPackInvite`, `MissionPackItem`,
 `MissionPackEvent`, and the LZ survey tables `SurveyBook`, `LzSurvey`, `LzSurveyRevision`, `LzSurveyAsset`, `SurveyBookPrint` (a book's PDF, kept by the fingerprint of what it holds), `LzSurveyImport` (where an imported
 survey came from, its notes and how its measuring stands, kept apart so that state is written without moving the survey's revision),
-`DataJob` (a DEM download the admin's Data tab asked for: its files, their footprints and how each stands; never logged), and `Notification` (the outbox the devices poll, `docs/NOTIFICATIONS.md`; `User.notification_settings` beside it, added by `schema_sync`).
+`DataJob` (work the admin's Data tab asked for, a DEM download or a VFR chart build: its files and how each stands, a build's name, stage and the `token` its process was started with; never logged), and `Notification` (the outbox the devices poll, `docs/NOTIFICATIONS.md`; `User.notification_settings` beside it, added by `schema_sync`).
 
 **Notifications are written with the change, never after it** (`notify.add` before the route's commit), so a refused or rolled-back change
 tells nobody, and keep ids (`pack_uuid`, `invite_id`) and in `fields` only the actor's name and a role, never an item, a place, a token or a
@@ -304,10 +305,10 @@ keep true when touching them:
 **There is no migration framework.** `db.create_all()` creates tables;
 new columns on existing tables are added by guarded `ALTER TABLE` statements in
 `app.py`, and `schema_sync.sync_table_columns()` diffs `AircraftProfile`,
-`LoginEvent`, `AccountToken`, the five saved-record models and `User` (after
+`LoginEvent`, `AccountToken`, the five saved-record models, `DataJob` and `User` (after
 its ALTERs, so `access_approved` keeps their grandfathering default) against the
-live schema (`LoginEvent.client`, the refresh-token columns, the sync columns and
-`User.mil_pending_email` were added that way, each with a test against a
+live schema (`LoginEvent.client`, the refresh-token columns, the sync columns,
+a chart build's columns and `User.mil_pending_email` were added that way, each with a test against a
 pre-existing table).
 `schema_sync.ensure_unique_index` adds the `client_uuid` indexes the same way,
 because `create_all` never adds an index to an existing table. When you add a column, add it one of these
@@ -369,6 +370,7 @@ token carries `sid` and is refused the moment that session ends:
 | **USGS GNIS** (domestic names) | Named places for the place search: the national file `DomesticNames_AllStates_Text.zip` from `prd-tnm.s3.amazonaws.com`, fetched when its `Last-Modified` changes (about 46 MB) | `backend/places/refresh.py`, `gnis.py` | keyless, public domain; credited in the list |
 | **USGS 1/3″ DEMs** | Local terrain | mounted at `TERRAIN_DATA_DIR` | downloaded |
 | **Ultralytics SAM** | LZ detection model | `sam_b.pt`, auto-downloaded on first load | — |
+| **FAA Aeronautical Information Services** (`aeronav.faa.gov`) | The VFR charts' GeoTIFFs, each 56-day cycle (`docs/VFR_CHARTS.md`) | `charts/faa.py`, `charts/job.py` | keyless; `https`, that host and `/visual/` only, no redirects (`faa.allowed_url`) |
 | **GitHub Actions** | Semantic release | `.github/workflows/release.yaml` | `GITHUB_TOKEN` |
 
 ---
@@ -402,9 +404,9 @@ token carries `sid` and is refused the moment that session ends:
 - The container runs **one gunicorn worker with 8 threads** and a 180 s
   timeout. One worker because SAM holds about 1 GB resident and the rate
   limiter, QR store and route-share store are in-process, and so are the LZ survey
-  import's measurer (`survey/importing.py`) and book printer (`survey/book.py`): a
-  second worker would measure the same surveys, or print the same book, again after its
-  `resume` — do not add workers
+  import's measurer (`survey/importing.py`) and book printer (`survey/book.py`), and the
+  Data tab's job runner (`data_admin/jobs.py`): a second worker would measure the same
+  surveys, or print the same book, again after its `resume` — do not add workers
   or machines without moving them to Redis. Threads so terrain tiles and
   point-cloud files load side by side; SAM runs one analysis at a time behind
   `_sam_lock` (its predictor keeps state between calls). Anything else
@@ -425,6 +427,24 @@ token carries `sid` and is refused the moment that session ends:
   and the backend share `/data/tiles` — see `backend/lidar/SERVER_SETUP.md`.
 - The Fly backend has no build service, so on Fly the 3D window falls back to
   printing a build command for an operator.
+- **A VFR chart build runs in the API container, as a process of its own** (`docs/VFR_CHARTS.md` §5.1): the Data tab's
+  job thread starts `python -m charts.job <job> <token>`, a fresh interpreter (never a fork: SAM's gigabyte) that imports
+  neither `app.py` nor torch and opens the database through `db_app.py`, at `nice` 10 and in a process group of its own,
+  with `CHART_BUILD_PROCESSES` worker processes (spawned). Things to keep true:
+  - **One build process, judged by its lock, never by a pid** (a redeploy runs two containers on one volume): it holds an
+    `flock` on `.staging-<build>/.lock`; one that cannot take it exits 75 and writes nothing, and the API starts nothing
+    while it is held. Its workers hold no lock (spawned), so after a process that ended with no end state the API kills its
+    whole group and waits for the lock to be free before it writes `failed`.
+  - **It owns its row** while it lives (progress and end state), writing only while the row carries the `token` it was
+    started with; the API writes nothing meanwhile. It dies with the API (`PR_SET_PDEATHSIG` on Linux, which fires when
+    the *thread* that started it ends, so the job thread waits on it; and a look at `getppid`) and then writes no end state:
+    a redeploy mid-build is resumed, from the stage it reached, when the Data tab is next opened.
+  - **It waits while crews do**: the API keeps `.staging-<build>/.pause` touched while an analysis, viewshed or export runs;
+    a pause older than 60 s (its API killed) holds nothing.
+  - **Owner steps:** mount `/data/charts` into the API container, read-write on production and **read-only on staging**;
+    set `CHART_TILES_DIR=/data/charts` on both; confirm the container's CPU and memory limits in Coolify (a build shares
+    them for about an hour). Only production builds (`DATA_ADMIN=write`). A whole CONUS cycle is about 22 GB while it is
+    built (the room check asks for it), and its trial on the VM is the owner's, after C1's release.
 
 ### 3D loading speed — what is in place
 
@@ -514,6 +534,9 @@ which costs one warm-up (~1 min) and the first view of each area again.
 | `DATA_ADMIN_RESERVE_GB` | Free space every Data-tab write leaves on a volume, checked before each file and every 256 MB while it comes down. Default the larger of 20 GB and 10 % of the volume. |
 | `DATA_ADMIN_SAME_DISK` | `allow` lets a local run write where the container's own disk is; refused wherever the process is production (`security_config.is_production`). Without it a destination on the same device as `/` (a missing Coolify mount) is refused. |
 | `MAPBOX_PUBLIC_TOKEN` | The Mapbox token `/api/config` hands the native apps, so it can rotate without an app release. Must start `pk.`; anything else is dropped. Default: the token in `export_service.py`. |
+| `CHART_TILES_DIR` | The VFR chart folder (`docs/VFR_CHARTS.md`): its builds, `state.json` and a build in progress. A mounted volume (`/data/charts`), read-write on production and read-only on staging. Unset (or `none`): no charts, and the Data tab says why. Listed in the volumes panel. |
+| `CHART_BUILD_PROCESSES` | Processes a chart build tiles with, 1 to 8 (default 2): 1 tiles in the build process itself, more in worker processes beside it. |
+| `CHART_BUILD_ONLY` | **Development only**: a chart build of these catalog ids alone (e.g. `atlanta-sec,atlanta-tac`), for a small build on a developer's machine. Ignored wherever the process is production (`security_config.is_production`) and for ids the catalog does not have. |
 
 The build service has its own settings (`LIDAR_COLLECTION`,
 `LIDAR_BUILD_CONTEXT_M`, `LIDAR_BUILDER_QUEUE`, …) — documented at the top of
@@ -1248,7 +1271,7 @@ simplifying can fold them, so rings are split and re-checked).
 - If a section here disagrees with the code, the code wins — fix this file.
 - Deeper detail belongs in the focused docs it links to: `AUTHENTICATION.md`,
   `backend/TERRAIN_DATA.md`, `backend/lidar/SERVER_SETUP.md`, `docs/USER_GUIDE.md`,
-  `docs/NATIVE_APPS_PLAN.md`, `docs/MISSION_PACKS.md`, `docs/ANDROID_MISSION_PACKS_PLAN.md`, `docs/ANDROID_SCREENS_PLAN.md`, `docs/ANDROID_3D_PLAN.md` (the 3D view on Android), `docs/MISSION_BRIEF.md` (the mission brief: B0 to B9 done), `docs/native-design/README.md`, `docs/DATA_ADMIN_AND_PREBUILT_3D_PLAN.md` (3D streamed from USGS's octree, the admin's data map, uploads, warmed areas, organizations; decided 2026-10-23; the admin's Data section planned again in its §10 and its map and DEM downloads built, 2026-11-04; the rest not built yet), `docs/LZ_SURVEYS.md` (LZ surveys and the HLZ survey books: editors make, sign off and print them, readers open them, web only; every step built), `docs/NOTIFICATIONS.md` (notifications: which ones, delivery on Android and the web, the server's outbox; decided 2026-10-28, N0 the server and N1 Android built), `docs/VFR_CHARTS.md` (the VFR base map built from the FAA's own sectional, TAC and helicopter GeoTIFFs, stacked, CONUS only, served by build, built and switched each cycle by itself on production and watched, switched and rolled back from the admin's Data tab; decided 2026-11-05; C0, the outlines and the build run by hand, built), `docs/PLACE_SEARCH.md` (searchable places in the grid search: FAA NASR and USGS GNIS in one index, searched by the API for the web and on the device by Android; addresses weighed and left out, Mapbox ruled out by its terms; proposed 2026-11-05, NASR and GNIS on the web built the same day and refreshed by the API itself, §0 there; Android and the layer not built), `android/README.md`, `contracts/README.md`. `docs/HANDOFF.md` is the
+  `docs/NATIVE_APPS_PLAN.md`, `docs/MISSION_PACKS.md`, `docs/ANDROID_MISSION_PACKS_PLAN.md`, `docs/ANDROID_SCREENS_PLAN.md`, `docs/ANDROID_3D_PLAN.md` (the 3D view on Android), `docs/MISSION_BRIEF.md` (the mission brief: B0 to B9 done), `docs/native-design/README.md`, `docs/DATA_ADMIN_AND_PREBUILT_3D_PLAN.md` (3D streamed from USGS's octree, the admin's data map, uploads, warmed areas, organizations; decided 2026-10-23; the admin's Data section planned again in its §10 and its map and DEM downloads built, 2026-11-04; the rest not built yet), `docs/LZ_SURVEYS.md` (LZ surveys and the HLZ survey books: editors make, sign off and print them, readers open them, web only; every step built), `docs/NOTIFICATIONS.md` (notifications: which ones, delivery on Android and the web, the server's outbox; decided 2026-10-28, N0 the server and N1 Android built), `docs/VFR_CHARTS.md` (the VFR base map built from the FAA's own sectional, TAC and helicopter GeoTIFFs, stacked, CONUS only, served by build, built and switched each cycle by itself on production and watched, switched and rolled back from the admin's Data tab; decided 2026-11-05; C0, the outlines and the build run by hand, and C1, the build as a Data tab job in a process of its own, built), `docs/PLACE_SEARCH.md` (searchable places in the grid search: FAA NASR and USGS GNIS in one index, searched by the API for the web and on the device by Android; addresses weighed and left out, Mapbox ruled out by its terms; proposed 2026-11-05, NASR and GNIS on the web built the same day and refreshed by the API itself, §0 there; Android and the layer not built), `android/README.md`, `contracts/README.md`. `docs/HANDOFF.md` is the
   "where things stand, what is next" note for whoever picks the Android work up; refresh it with each commit that moves either.
 
 ---

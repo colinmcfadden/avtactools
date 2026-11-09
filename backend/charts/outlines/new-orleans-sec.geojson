@@ -15,7 +15,8 @@
     0.0,
     -42.337107666,
     242366.562611179
-   ]
+   ],
+   "ink": 1.0
   },
   "edges": {
    "north": "neighbour:atlanta-sec,memphis-sec",

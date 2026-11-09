@@ -15,7 +15,8 @@
     0.0,
     -42.337168149,
     256254.594788954
-   ]
+   ],
+   "ink": 0.971
   },
   "edges": {
    "north": "neighbour:klamath-falls-sec",

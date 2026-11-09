@@ -46,6 +46,7 @@ def places(environ=os.environ) -> list[Place]:
         ("Streamed LiDAR cache", "LIDAR_STREAM_CACHE_DIR", None),
         ("Built tilesets", "LIDAR_TILES_DIR", "/data/tiles"),
         ("3D terrain tile cache", "TERRAIN_TILE_CACHE_DIR", None),
+        ("VFR charts", "CHART_TILES_DIR", None),
     ):
         value = (environ.get(setting) or default or "").strip()
         if value and value.lower() not in ("none", "off"):
@@ -138,9 +139,10 @@ def stream_headroom(path, environ=os.environ) -> int:
     return max(0, int(stream._cap_bytes()) - held)
 
 
-def check_room(path, adding: int, environ=os.environ, *, label: str = "That folder") -> None:
+def check_room(path, adding: int, environ=os.environ, *, label: str = "That folder", headroom: int | None = None) -> None:
     """Refuses, in words, a write of ``adding`` more bytes under ``path`` that breaks either rule. The words name the
-    folder by ``label``, never by the server's own path."""
+    folder by ``label``, never by the server's own path. ``headroom`` is the streamed cache's room when the caller has worked
+    it out already (a chart build is handed it once, rather than walking the cache at every check: docs/VFR_CHARTS.md §5.4)."""
     if not data_admin.can_write(environ):
         raise NoRoom("Writes are off on this server (DATA_ADMIN is not write).")
     if on_container_disk(path) and not same_disk_allowed(environ):
@@ -153,7 +155,10 @@ def check_room(path, adding: int, environ=os.environ, *, label: str = "That fold
     disk = shutil.disk_usage(existing)
     reserve = reserve_bytes(disk.total, environ)
     # A side file or a look before starting adds nothing; only what comes down must leave the streamed cache its room.
-    headroom = stream_headroom(path, environ) if adding > 0 else 0
+    if adding <= 0:
+        headroom = 0
+    elif headroom is None:
+        headroom = stream_headroom(path, environ)
     if disk.free - max(0, adding) < reserve + headroom:
         kept = f"{_gb(reserve)} is kept free"
         if headroom:

@@ -15,7 +15,8 @@
     0.0,
     -42.334605218,
     238469.588144893
-   ]
+   ],
+   "ink": 0.999
   },
   "edges": {
    "north": "neighbour:dallas-ft-worth-sec,memphis-sec",
