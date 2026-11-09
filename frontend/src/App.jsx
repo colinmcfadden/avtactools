@@ -9,6 +9,7 @@ import MobileQuickAccess from "./components/MobileQuickAccess";
 import MobileGridInput from "./components/MobileGridInput";
 import TopBarSearch from "./feature/shell/TopBarSearch";
 import { searchPlaces } from "./feature/places/usePlaceSearch";
+import { searchablePoints } from "./feature/localPoints/localPointSearch";
 import { placeZoom } from "./feature/places/placeWords";
 import SidebarCollapseToggle from "./components/SidebarCollapseToggle";
 import { useIsMobile } from "./feature/auth/useIsMobile";
@@ -592,6 +593,7 @@ function App() {
     updateSketchPointPosition,
     insertSketchPoint,
     removeSketchPoint,
+    addRoutePoint,
     appendSketchPoint,
     loadSketchRoutes,
     openSavedRoutes,
@@ -1447,6 +1449,9 @@ function App() {
   });
   const shownPointSets = (inPack ? localPoints.pointSets.filter((set) => ofOpenPack(set.id)) : localPoints.pointSets.filter((set) => !packLocalRef(set.id)))
     .map((set) => (packLocalRef(set.id) ? { ...set, packItemId: packLocalRef(set.id).item } : set));
+  // What the search fields can find by name: the sets here now and the person's Library (useLocalPoints fetches it once they go to search).
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- shownPointSets is made anew each render from these.
+  const searchPoints = useMemo(() => searchablePoints(shownPointSets, localPoints.libraryPointSets), [localPoints.pointSets, localPoints.libraryPointSets, inPack, packs.open]);
 
   // The LZ/PZ panel in a pack lists every LZ/PZ in it; one not open here is drawn from the pack's copy.
   const packItemsByUuid = new Map(packs.items.map((item) => [item.uuid, item]));
@@ -1542,6 +1547,8 @@ function App() {
     updatePointName: updateSketchPointName,
     refreshRouteElevations,
     applyForecastWinds,
+    addPoint: addRoutePoint,
+    removePoint: removeSketchPoint,
   };
   const importedPlan = {
     updateRoutePlan: updateImportedRoutePlan,
@@ -1550,6 +1557,9 @@ function App() {
     updatePointName: updateImportedPointName,
     refreshRouteElevations: refreshImportedElevations,
     applyForecastWinds: applyImportedForecastWinds,
+    // A mission's point splits the leg nearest it, in its file; AMPS's legs leave no way to take one out here.
+    addPoint: (routeId, _after, { lat, lon, ...named }) => insertPoint(routeId, lat, lon, named),
+    addsOnNearestLeg: true,
   };
   const localPointNames = shownPointSets.flatMap((set) =>
     set.points.map((p) => ({ name: p.name, lat: p.lat, lon: p.lon, elevationFt: p.elevationFt })),
@@ -1612,6 +1622,8 @@ function App() {
             onShare={(choice) => setShareGrid({ mgrs: choice.mgrs, lat: choice.lat, lon: choice.lon, label: choice.label })}
             near={targetNear}
             searchPlaces={feat.place_search ? searchPlaces : null}
+            localPoints={searchPoints}
+            onSearchStart={localPoints.askForLibraryPoints}
           />
         }
         briefSlot={feat.mission_brief ? (
@@ -1765,6 +1777,8 @@ function App() {
           onShare={(choice) => setShareGrid({ mgrs: choice.mgrs, lat: choice.lat, lon: choice.lon, label: choice.label })}
           targetNear={targetNear}
           searchPlaces={feat.place_search ? searchPlaces : null}
+          localPoints={searchPoints}
+          onSearchStart={localPoints.askForLibraryPoints}
         />
         <MobileQuickAccess
           undo={undoControls}
@@ -2006,6 +2020,12 @@ function App() {
               }}
               plan={(set) => (set.kind === "mission" ? importedPlan : sketchedPlan)}
               localPointNames={localPointNames}
+              pointSearch={{
+                near: targetNear,
+                searchPlaces: feat.place_search ? searchPlaces : null,
+                localPoints: searchPoints,
+                onSearchStart: localPoints.askForLibraryPoints,
+              }}
               sketch={{
                 active: isSketching,
                 name: `ROUTE ${sketchedRoutes.length + 1}`,

@@ -95,6 +95,15 @@ describe("useMsnxImport undo", () => {
     expect(result.current.missionHistory[fileId]).toBeUndefined();
   });
 
+  it("names a point spliced in from the plan, in the file too, and answers its id", async () => {
+    const { result } = await opened();
+    let id;
+    act(() => { id = result.current.insertPoint(routeOf(result).id, 2, 3, { name: "HAWK", chartElevationFt: 900 }); });
+    expect(id).toBe("new");
+    expect(updatePointName).toHaveBeenCalledWith(expect.anything(), "new", "HAWK");
+    expect(routeOf(result).points[1]).toMatchObject({ id: "new", name: "HAWK", chartElevationFt: 900 });
+  });
+
   it("brings a deleted route back, and forgets everything when the mission is closed", async () => {
     const { result, fileId } = await opened();
     act(() => { result.current.removeRoute(routeOf(result, 1).id); });

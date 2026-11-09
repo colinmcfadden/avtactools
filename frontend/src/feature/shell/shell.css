@@ -518,6 +518,16 @@
 .plan__time--set { color: #92c9ea; }
 .plan__clock { display: flex; gap: 6px; align-items: center; margin-top: 6px; }
 .plan__clock .plan__input { width: 96px; flex: none; }
+.plan__add-after { display: inline-flex; align-items: center; gap: 4px; margin-top: 6px; padding: 2px 4px; border: 0; border-radius: 4px; background: none; color: #8a94a1; font: inherit; font-size: 11px; cursor: pointer; }
+.plan__add-after:hover, .plan__add-after[aria-expanded="true"] { color: #92c9ea; }
+.plan__add-after:focus-visible { outline: 2px solid var(--ff-accent); outline-offset: 1px; }
+.plan__add-end { margin: 8px 0; gap: 5px; }
+.plan__add { margin: 6px 0 8px; padding: 8px; border: 1px solid rgba(255, 255, 255, 0.13); border-radius: 6px; }
+.plan__add-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 6px; font-size: 11px; color: #8a94a1; }
+.plan__add-row { display: flex; align-items: center; gap: 6px; }
+.plan__add-row .plan__input { flex: 1; min-width: 0; }
+/* The list pushes what is under it down, in the dock's own scroll, rather than hanging over the panel's end out of reach. */
+.plan__add .target-field__drop { position: static; margin-top: 4px; box-shadow: none; }
 .plan__values { display: flex; gap: 4px; margin-top: 6px; align-items: flex-end; flex-wrap: wrap; }
 .plan__computed { display: flex; justify-content: space-between; gap: 8px; font-family: ui-monospace, SFMono-Regular, Consolas, "Liberation Mono", monospace; font-size: 11px; color: #8a94a1; margin-top: 6px; }
 .plan__totals { display: flex; justify-content: space-between; padding-top: 9px; border-top: 1px solid rgba(255, 255, 255, 0.07); font-size: 12px; font-weight: 700; color: #e3e7ec; }

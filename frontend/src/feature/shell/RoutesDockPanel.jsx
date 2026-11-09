@@ -96,7 +96,7 @@ const stateChip = (set, state) => {
   return <Chip tone="ok" icon="check">{state.savedAt ? `Saved · ${whenShort(state.savedAt)}` : "Saved"}</Chip>;
 };
 
-const SetCard = ({ set, state, threatCount, expanded, onToggleRoute, actions, plan, localPointNames }) => {
+const SetCard = ({ set, state, threatCount, expanded, onToggleRoute, actions, plan, localPointNames, pointSearch }) => {
   const [withThreats, setWithThreats] = useState(true);
   const [renaming, setRenaming] = useState(false);
   const [draft, setDraft] = useState("");
@@ -219,7 +219,7 @@ const SetCard = ({ set, state, threatCount, expanded, onToggleRoute, actions, pl
             onRemove={(id) => actions.removeRoute(set, id)}
           />
           {expanded.has(route.id) && (
-            <RoutePlanSection route={route} readOnly={readOnly} localPointNames={localPointNames} {...plan(set)} />
+            <RoutePlanSection route={route} readOnly={readOnly} localPointNames={localPointNames} {...pointSearch} {...plan(set)} />
           )}
         </React.Fragment>
       ))}
@@ -233,7 +233,7 @@ const SetCard = ({ set, state, threatCount, expanded, onToggleRoute, actions, pl
 /**
  * `sets`: [{ key, kind, fileName, routes, flots?, pack? }]; `stateOf(key)` from useRouteSaves (in a pack: a
  * stand-in with the name). `actions`: save, saveAs, rename, close, export, share, toggleVisibility,
- * removeRoute, addToPack, flipFlot, removeFlot. `plan(set)`: the plan-editing calls for that set's routes.
+ * removeRoute, addToPack, flipFlot, removeFlot. `plan(set)`: the plan-editing calls for that set's routes. `pointSearch`: what the plan's add-a-point field searches.
  */
 const RoutesDockPanel = ({
   sets,
@@ -242,6 +242,7 @@ const RoutesDockPanel = ({
   actions,
   plan,
   localPointNames,
+  pointSearch,
   sketch,
   flot = null,
   pack = null,
@@ -299,6 +300,7 @@ const RoutesDockPanel = ({
                   actions={actions}
                   plan={plan}
                   localPointNames={localPointNames}
+                  pointSearch={pointSearch}
                 />
               ))}
             </div>
