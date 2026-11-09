@@ -4309,6 +4309,7 @@ components:
         lz: { type: integer, minimum: 0 }
         route: { type: integer, minimum: 0 }
         pointset: { type: integer, minimum: 0 }
+        threatset: { type: integer, minimum: 0 }
 
     PackMember:
       type: object
@@ -4335,7 +4336,7 @@ components:
       required: [uuid, kind, name, revision, seq, created_by, updated_by, created_at, updated_at, source]
       properties:
         uuid: { type: string }
-        kind: { type: string, enum: [lz, route, pointset, brief] }
+        kind: { type: string, enum: [lz, route, pointset, brief, threatset] }
         name: { type: string }
         revision: { type: integer, minimum: 1, description: Bumped by every applied operation. }
         seq: { type: integer, minimum: 0, description: The event that last changed it. }
@@ -4354,7 +4355,7 @@ components:
           description: Where a copy from someone's library came from. Null for an item made in the pack.
           required: [kind, uuid, revision, original, original_updated_at, pack_changes, last_pack_change]
           properties:
-            kind: { type: string, enum: [lz, route, pointset] }
+            kind: { type: string, enum: [lz, route, pointset, threatset] }
             uuid:
               type: string
               nullable: true
@@ -4491,7 +4492,7 @@ components:
       additionalProperties: false
       required: [kind, id, client_uuid, name, revision]
       properties:
-        kind: { type: string, enum: [lz, route, pointset, brief] }
+        kind: { type: string, enum: [lz, route, pointset, brief, threatset] }
         id: { type: integer }
         client_uuid: { type: string }
         name: { type: string }
