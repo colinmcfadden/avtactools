@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import api from "../auth/api";
 import { parseLpsFile } from "./parseLps";
 import { nextRouteColor } from "../msnxImport/colorPalette";
@@ -17,6 +17,39 @@ export const useLocalPoints = () => {
   const [savedPointSets, setSavedPointSets] = useState([]);
   const [isLoadingSavedSets, setIsLoadingSavedSets] = useState(false);
   const [savedSetsError, setSavedSetsError] = useState(null);
+
+  // The Library's points, for the search fields. Its list has only each set's name, so the points are fetched, a set
+  // at a time, once someone goes to search; a set changed since (its updated_at) is fetched again, one deleted is
+  // no longer listed. Each focus asks again, which is also what retries a fetch that failed.
+  const [searchAsked, setSearchAsked] = useState(0);
+  const [heldSets, setHeldSets] = useState({});
+  const fetchingSets = useRef(new Set());
+  const askForLibraryPoints = useCallback(() => setSearchAsked((n) => n + 1), []);
+
+  useEffect(() => {
+    if (!searchAsked) return;
+    savedPointSets.forEach(async (entry) => {
+      const key = `${entry.id}@${entry.updated_at}`;
+      if (heldSets[entry.id]?.stamp === entry.updated_at || fetchingSets.current.has(key)) return;
+      fetchingSets.current.add(key);
+      try {
+        const { data } = await api.get(`/pointsets/${entry.id}`);
+        setHeldSets((prev) => ({ ...prev, [entry.id]: { stamp: entry.updated_at, points: data.points || [] } }));
+      } catch {
+        // Not searchable for now: the map and every other field still work, and the next focus asks again.
+      } finally {
+        fetchingSets.current.delete(key);
+      }
+    });
+  }, [searchAsked, savedPointSets, heldSets]);
+
+  const libraryPointSets = useMemo(
+    () => savedPointSets.flatMap((entry) => {
+      const held = heldSets[entry.id];
+      return held?.stamp === entry.updated_at ? [{ savedId: entry.id, name: entry.name, points: held.points }] : [];
+    }),
+    [savedPointSets, heldSets],
+  );
 
   /**
    * `name` names the set (the review dialog lets the person change it); else the file's own name.
@@ -165,6 +198,8 @@ export const useLocalPoints = () => {
     savedPointSets,
     isLoadingSavedSets,
     savedSetsError,
+    libraryPointSets,
+    askForLibraryPoints,
     fetchSavedPointSets,
     savePointSet,
     loadSavedPointSet,

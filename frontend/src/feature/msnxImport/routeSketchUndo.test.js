@@ -98,6 +98,20 @@ describe("deleting and adding a route's points", () => {
   const route = (result) => result.current.sketchedRoutes[0];
   const shapingOf = (r) => r.points.find((point) => point.kind === "shaping");
 
+  it("adds a named point from the plan in one step, called the next free checkpoint, and undo takes it off", () => {
+    const { result } = renderHook(() => useRouteSketch());
+    drawRoute(result);
+    const route = result.current.sketchedRoutes[0];
+    const after = route.points[0].id;
+    let added;
+    act(() => { added = result.current.addRoutePoint(route.id, after, { lat: 34.5, lon: -84.5 }); });
+    const points = result.current.sketchedRoutes[0].points;
+    expect(points[1]).toMatchObject({ id: added, kind: "amps", name: ".CP1" });
+    expect(stack(result).undo.at(-1).label).toBe("Add point");
+    act(() => { result.current.undoSketch(SKETCHES); });
+    expect(result.current.sketchedRoutes[0].points.map((p) => p.id)).toEqual(route.points.map((p) => p.id));
+  });
+
   it("deletes one point, and undo brings it back in its place", () => {
     const { result } = renderHook(() => useRouteSketch());
     const drawn = drawPoints(result, 5);

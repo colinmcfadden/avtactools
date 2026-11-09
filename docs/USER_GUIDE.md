@@ -15,7 +15,7 @@ The interface has four parts:
 
 ## 1. Getting started: set a target
 
-Type an MGRS grid, or a latitude and longitude in any common form (`34.5457, -84.1234`, `34°32'44.4"N 84°07'24.4"W`, `3432.740N 08407.407W`), in the search box in the top bar (on a phone, the box over the map). On a computer it opens wider over the map when you click it. As you type, a list under the box shows the grid and the lat/long it reads; choose either (or press **GO** or Enter) to go there. The share button on each row, or beside **GO**, sends that grid to someone: by your device's share sheet, a copy, a link or a QR code. If what you typed could mean two places, such as `34 84` with no minus sign or N/S/E/W, the list offers both, nearest the map first, and you choose. The map flies to the location, drops a gold star on the target, and automatically generates two **doghouses** (SP/RP flight-data cards) beside it.
+Type an MGRS grid, or a latitude and longitude in any common form (`34.5457, -84.1234`, `34°32'44.4"N 84°07'24.4"W`, `3432.740N 08407.407W`), in the search box in the top bar (on a phone, the box over the map). On a computer it opens wider over the map when you click it. As you type, a list under the box shows the grid and the lat/long it reads; choose either (or press **GO** or Enter) to go there. A local point can be found the same way by its name, whether its set is on the map or kept in your Library. The share button on each row, or beside **GO**, sends that grid to someone: by your device's share sheet, a copy, a link or a QR code. If what you typed could mean two places, such as `34 84` with no minus sign or N/S/E/W, the list offers both, nearest the map first, and you choose. The map flies to the location, drops a gold star on the target, and automatically generates two **doghouses** (SP/RP flight-data cards) beside it.
 
 ![Search result with doghouses](images/02-search.png)
 
@@ -107,6 +107,8 @@ This mirrors how AMPS models routes: only *designated* points (SP, checkpoints, 
 Symbols match AMPS iconography, and designations survive export/re-import. Each route keeps at least two designated endpoints.
 
 **Editing**: drag any point to move it. Moving the mouse onto a route thickens and lights up its line and names it. Right-click the route *line* → **Add point here** to bend the line there, or **Add checkpoint here** to add a named point. Right-click a *point* → **Delete point** to take it off (a route keeps at least two points, two of them named).
+
+The route's list of points does the same without the map. The trash button deletes a point. **Add point here** under a point, or **Add point** at the end of the list, opens a box that takes a grid, a lat/long, a place or a local point from your Library; the box stays open so you can add several in a row. A point added from a place or a local point takes its name, and a local point its charted elevation. On an imported mission a new point goes on the nearest leg, can't be undone, and points can't be deleted.
 
 ### Importing a .msnx
 
