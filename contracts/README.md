@@ -31,6 +31,7 @@ contracts/
 │  ├─ packs/        ops.json, ops-brief.json, diff.json, edit.json, shared.json, describe.json, session.json, session-brief.json, settings.json, history.json
 │  │                reference: the web app (feature/missionPacks/)
 │  ├─ charts/       coverage.json   reference: the VFR chart build (backend/charts/build.py's coverage, over the committed outlines)
+│  │                words.json   what the map says of the charts under it, over coverage.json   reference: the web app (feature/vfrCharts/)
 │  ├─ viewer3d/     routeScene.json, compass.json, terrain.json, lidarFlow.json, lidarFlowStream.json, scene.json   reference: the web app (feature/viewer3d/)
 │  │                geodesy.json   geodetic to geocentric points               reference: PROJ (scripts/geodesy_fixtures.py)
 │  │                tileset/   a LiDAR tileset as the server serves it        reference: py3dtiles 12.1.1 (scripts/tileset_fixture.py)
@@ -89,7 +90,8 @@ reference is.
 | `packs/settings.json` | `frontend/src/contracts/packSettingsFixtures.test.js` | — | `core-missionpacks` (`LzPackKind`, `RoutePackKind`, `PackDiff`: each setting's item read and written back unchanged, the web's operations for it strictly and in order, and what the port sends instead, kept whole, rebuilding the same item; `PackSettingsFixtureTest`) |
 | `packs/history.json` | `frontend/src/contracts/packHistoryFixtures.test.js` | — | `core-missionpacks` (`PackHistory`: a pack's log read as the history's lines, every case, its events read strictly as the server's; `PackHistoryFixtureTest`) |
 | `packs/session.json` | `frontend/src/contracts/packSessionFixtures.test.js` | `backend/tests/test_openapi_contract.py` (`PackSessionFixtureTests`: every input is what `openapi.yaml` says the server sends) | `core-missionpacks` (`PackSessions`: every scenario step by step, with the whole session, what is visible, each answer and the `dropped_versions`, strictly: null kept apart from absent, keys in JavaScript's order; `PackSessionFixtureTest`) |
-| `charts/coverage.json` | — (the web reads it from C3, `docs/VFR_CHARTS.md`) | `backend/tests/test_charts.py` (`CoverageFixtureTests`: its outlines are what the build makes of the committed ones, its charts what the catalog says; `UPDATE_CONTRACTS=1` regenerates) | — (Android reads it from C4) |
+| `charts/coverage.json` | `frontend/src/contracts/chartWordsFixtures.test.js` (as `words.json`'s input) | `backend/tests/test_charts.py` (`CoverageFixtureTests`: its outlines are what the build makes of the committed ones, its charts what the catalog says; `UPDATE_CONTRACTS=1` regenerates) | — (Android reads it from C4) |
+| `charts/words.json` | `frontend/src/contracts/chartWordsFixtures.test.js` (`UPDATE_CONTRACTS=1` regenerates) | — | — (Android follows it from C4) |
 | `viewer3d/*.json` | `frontend/src/contracts/viewer3dFixtures.test.js` | — | `core-scene3d` (the route scene, the compass, the terrain tiles), `core-data` (the build flow) |
 | `viewer3d/tileset/` | — (py3dtiles's own output, by `contracts/scripts/tileset_fixture.py`) | `backend/tests/test_network_fixtures.py` (served as the recorded tileset) | `core-scene3d` (`TilesetReader`, `PntsReader`) |
 | `viewer3d/geodesy.json` | — (PROJ's own transform, by `contracts/scripts/geodesy_fixtures.py`) | — | `core-scene3d` (`geodeticToEcef`, `ecefToGeodetic`, `LocalFrame`) |
@@ -134,8 +136,8 @@ it. `python contracts/scripts/geodesy_fixtures.py` writes it with the backend's 
 
 `coverage.json` is what the VFR chart build writes beside its tiles (`docs/VFR_CHARTS.md` §4.5), from C0's prototype: seven charts of the
 10-29-2026 edition, every tier (the Atlanta and Washington sectionals, the Atlanta and Baltimore-Washington TACs, the Washington and
-Baltimore helicopter charts and the Washington inset), levels 5 to 14. The web and Android are held to it when they read it (C3, C4): which
-charts are in view, their editions and expiry, and how far past a chart's own scale the map is. The FAA's files are not here (hundreds of
+Baltimore helicopter charts and the Washington inset), levels 5 to 14. `words.json` is what the web says over it for 24 views (`feature/vfrCharts/vfrCharts.js`'s `chartWords`): which
+charts are in view, their editions and expiry, and how far past a chart's own scale the map is. Android is held to it from C4. The FAA's files are not here (hundreds of
 megabytes), so the backend's test rebuilds it from its own editions and counts over the committed outlines: an outline changed, or the
 way they are simplified, fails it until it is written again.
 

@@ -34,6 +34,8 @@ import ForeFlightModal from "./feature/msnxImport/ForeFlightModal";
 import { useSavedRoutes } from "./feature/msnxImport/useSavedRoutes";
 import { exportRouteSetFiles } from "./feature/msnxImport/exportRouteSet";
 import MapStyleSwitcher from "./feature/mapStyles/MapStyleSwitcher";
+import useVfrCharts from "./feature/vfrCharts/useVfrCharts";
+import { VFR_STYLE_ID } from "./feature/vfrCharts/vfrCharts";
 import useMgrsGrid from "./feature/mgrsGrid/useMgrsGrid";
 import useSlopeOpacity from "./feature/terrain/slopeOpacity";
 import UnitBadge from "./components/UnitBadge";
@@ -123,6 +125,7 @@ function App() {
   const [drawingPoints, setDrawingPoints] = useState([]);
   const [clickedGrid, setClickedGrid] = useState("Loading...");
   const [mapStyle, setMapStyle] = useState("satellite");
+  const vfrCharts = useVfrCharts(mapStyle === VFR_STYLE_ID);
   // The MGRS grid over the map: this browser's preference, not the diagram's (unlike mapStyle).
   const { showMgrsGrid, setShowMgrsGrid } = useMgrsGrid();
   // How opaque the slope map is drawn: this browser's too.
@@ -1523,6 +1526,7 @@ function App() {
           setMapStyle={setMapStyle}
           showMgrsGrid={showMgrsGrid}
           setShowMgrsGrid={setShowMgrsGrid}
+          vfrCharts={vfrCharts}
         />
         <MobileGridInput
           gridInput={gridInput}
@@ -1616,6 +1620,7 @@ function App() {
           handleLZRightClick={editable ? handleLZRightClick : handleMapRightClick}
           setContextMenu={setContextMenu}
           mapStyle={mapStyle}
+          vfrCharts={vfrCharts}
           showMgrsGrid={showMgrsGrid}
           localPointSets={shownPointSets}
           onAddLocalPointToRoute={mapEdit(handleAddLocalPointToRoute)}

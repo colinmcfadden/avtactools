@@ -69,8 +69,9 @@ export const MAP_STYLES = [
     id: "vfr-sectional",
     label: "VFR",
     url: "https://tiles.arcgis.com/tiles/ssFJjBXIUyZDrSYZ/arcgis/rest/services/VFR_Sectional/MapServer/tile/{z}/{y}/{x}",
+    // ArcGIS's service, which draws this map where the server has no charts of the FAA's own: feature/vfrCharts decides that from
+    // /api/config, and says whose charts are in view.
     options: {
-      attribution: "FAA Aeronautical Information Services",
       // FAA only publishes levels 8-12; Leaflet stretches those tiles when
       // the map is zoomed outside that range instead of going blank.
       minNativeZoom: 8,

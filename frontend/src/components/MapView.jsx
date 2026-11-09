@@ -30,6 +30,10 @@ import MsnxRouteLayer, {
 import LocalPointsLayer from "../feature/localPoints/LocalPointsLayer";
 import ThreatLayer from "../feature/threats/ThreatLayer";
 import { getMapStyle } from "../feature/mapStyles/mapStyles";
+import { NO_CHARTS } from "../feature/vfrCharts/useVfrCharts";
+import { VFR_STYLE_ID } from "../feature/vfrCharts/vfrCharts";
+import VfrAttribution from "../feature/vfrCharts/VfrAttribution";
+import VfrChartLayers from "../feature/vfrCharts/VfrChartLayers";
 import MgrsGridLayer from "../feature/mgrsGrid/MgrsGridLayer";
 import SlopeLayer from "../feature/terrain/SlopeLayer";
 import { SLOPE_OPACITY } from "../feature/terrain/slopeOpacity";
@@ -221,6 +225,7 @@ const MapView = ({
   // The live sandtable (feature/brief): while it is given, the map shows the brief's step and nothing of the planning
   // layers, and takes no edit. They are drawn again, as they were, when it ends.
   presentation = null,
+  vfrCharts = NO_CHARTS,
 }) => {
   // Default Center (somewhere neutral)
   const defaultCenter = [34.0522, -118.2437];
@@ -253,12 +258,19 @@ const MapView = ({
       updateWhenZooming={false}
     >
       {/* Base Layer - driven by the mapStyles registry */}
-      <TileLayer
-        key={activeMapStyle.id} // Forces Leaflet to refresh when the style changes
-        url={activeMapStyle.url}
-        crossOrigin="anonymous"
-        {...activeMapStyle.options}
-      />
+      {activeMapStyle.id === VFR_STYLE_ID ? (
+        <>
+          <VfrChartLayers charts={vfrCharts} />
+          <VfrAttribution charts={vfrCharts} />
+        </>
+      ) : (
+        <TileLayer
+          key={activeMapStyle.id} // Forces Leaflet to refresh when the style changes
+          url={activeMapStyle.url}
+          crossOrigin="anonymous"
+          {...activeMapStyle.options}
+        />
+      )}
 
       {/* The MGRS grid, over any base map; screen only, never on an LZ card */}
       {showMgrsGrid && <MgrsGridLayer />}

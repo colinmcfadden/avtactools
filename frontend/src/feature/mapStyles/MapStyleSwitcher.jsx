@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState } from "react";
 import { MAP_STYLES, getMapStyle, previewTileUrl } from "./mapStyles";
+import { VFR_STYLE_ID, chartPreviewUrl } from "../vfrCharts/vfrCharts";
 import "./MapStyleSwitcher.css";
 
 /**
@@ -11,7 +12,7 @@ import "./MapStyleSwitcher.css";
  * grid goes over any base map, and while it is on the collapsed button says so,
  * so lines on the map are never a mystery.
  */
-const MapStyleSwitcher = ({ mapStyle, setMapStyle, showMgrsGrid = false, setShowMgrsGrid }) => {
+const MapStyleSwitcher = ({ mapStyle, setMapStyle, showMgrsGrid = false, setShowMgrsGrid, vfrCharts }) => {
   const [open, setOpen] = useState(false);
   const containerRef = useRef(null);
 
@@ -26,6 +27,13 @@ const MapStyleSwitcher = ({ mapStyle, setMapStyle, showMgrsGrid = false, setShow
 
   const active = getMapStyle(mapStyle);
 
+  // The VFR thumbnail is a tile the map would draw: none until the server has said whose charts those are.
+  const previewOf = (style) => {
+    if (style.id !== VFR_STYLE_ID || !vfrCharts) return previewTileUrl(style);
+    if (!vfrCharts.known) return undefined;
+    return vfrCharts.live ? chartPreviewUrl(vfrCharts.live) : previewTileUrl(style);
+  };
+
   return (
     <div className="map-style-switcher" ref={containerRef}>
       <button
@@ -36,7 +44,7 @@ const MapStyleSwitcher = ({ mapStyle, setMapStyle, showMgrsGrid = false, setShow
         aria-label={showMgrsGrid ? "Layers, MGRS grid on" : "Layers"}
         aria-expanded={open}
       >
-        <img src={previewTileUrl(active)} alt="" draggable={false} />
+        <img src={previewOf(active)} alt="" draggable={false} />
         {showMgrsGrid && (
           <span className="map-style-toggle__badge" aria-hidden="true">MGRS</span>
         )}
@@ -55,7 +63,7 @@ const MapStyleSwitcher = ({ mapStyle, setMapStyle, showMgrsGrid = false, setShow
                   setOpen(false);
                 }}
               >
-                <img src={previewTileUrl(style)} alt="" draggable={false} />
+                <img src={previewOf(style)} alt="" draggable={false} />
                 <span>{style.label}</span>
               </button>
             ))}
