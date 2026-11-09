@@ -71,12 +71,12 @@ describe("the import review", () => {
     { file: { name: "notes.docx" }, kind: null, error: "Not supported. Nothing will be imported from this file." },
   ];
 
-  it("sends points to the open pack by default, never a mission, and threats only to this session", async () => {
+  it("sends points to the open pack by default, never a mission, and threats to this tab where nothing can save them", async () => {
     const onImport = vi.fn().mockResolvedValue();
     render(<ToastProvider><ImportReviewDialog items={items(pack)} pack={pack} onCancel={() => {}} onImport={onImport} /></ToastProvider>);
 
     expect(screen.getByText("Everyone in OP DK (4 members) will see these points.")).toBeInTheDocument();
-    expect(screen.getByText("Threats are never saved or shared with a pack.")).toBeInTheDocument();
+    expect(screen.getByText("Cloud save is off for this account, so these stay in this tab.")).toBeInTheDocument();
     expect(screen.getByText("Session only")).toBeInTheDocument();
     const missionWhere = within(screen.getByRole("radiogroup", { name: "Where GOAT.msnx goes" }));
     expect(missionWhere.getByRole("radio", { name: "Session" })).toBeChecked();

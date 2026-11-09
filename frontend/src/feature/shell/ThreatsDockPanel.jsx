@@ -4,13 +4,15 @@ import { RADAR_TYPES } from "../threats/threatModel";
 import Chip from "../ui/Chip";
 import { ConfirmDialog } from "../ui/Dialog";
 import Icon from "../ui/Icon";
+import MoreMenu from "../ui/MoreMenu";
+import NameDialog from "../ui/NameDialog";
 import { PanelHead, PanelSection } from "./Dock";
 import "./shell.css";
 
 /*
- * The Threats panel of the dock (screen Threats). Threats are never saved or shared (AGENTS.md §2),
- * and the panel says so first. Add, import, the list with each one's ranges and terrain mask, the
- * exports, and Remove all, which asks first because nothing can bring them back.
+ * The Threats panel of the dock (screen Threats). Threats are kept in named sets in the Library, written as
+ * they change (AGENTS.md §2; useThreats), each open set a section of its own here, and the panel says where
+ * they are first. Add, import, the list with each one's ranges and terrain mask, the exports, and Remove all.
  */
 
 const radarText = (threat) => {
@@ -55,18 +57,53 @@ const ThreatRow = ({ threat, onEdit, onRemove, onToggleVisibility }) => {
   );
 };
 
-const ThreatsDockPanel = ({ threats, onAdd, onImport, onEdit, onRemove, onRemoveAll, onToggleVisibility, onExportThs, onExportKmz, onCollapse }) => {
+const saveChip = (set, state) => {
+  if (state === "saving") return <Chip tone="info" dot={false}>Saving…</Chip>;
+  if (state === "failed") return <Chip tone="warn" icon="alertTriangle">Not saved yet</Chip>;
+  if (state === "too_large") return <Chip tone="danger" icon="alertTriangle" title="More than 5 MB. Move some threats out of this set.">Too large to save</Chip>;
+  if (state === "off") return <Chip tone="warn" dot={false}>Saving is off</Chip>;
+  if (set.savedId) return <Chip tone="ok" dot={false}>Saved</Chip>;
+  return set.threats.length ? <Chip dot={false}>Not saved yet</Chip> : <Chip dot={false}>Empty</Chip>;
+};
+
+const ThreatsDockPanel = ({
+  threats,
+  sets = [],
+  activeId,
+  saveStates = {},
+  canSave = false,
+  onAdd,
+  onImport,
+  onEdit,
+  onRemove,
+  onRemoveAll,
+  onToggleVisibility,
+  onExportThs,
+  onExportKmz,
+  onRenameSet,
+  onCloseSet,
+  onMakeActive,
+  onCollapse,
+}) => {
   const [confirmAll, setConfirmAll] = useState(false);
+  const [renaming, setRenaming] = useState(null);
   const count = threats.length;
+  const many = sets.length > 1;
   return (
     <>
-      <PanelHead title="Threats" subtitle={`${count} on the map · this session only`} onCollapse={onCollapse} />
+      <PanelHead title="Threats" subtitle={`${count} on the map${canSave ? "" : " · this session only"}`} onCollapse={onCollapse} />
       <div className="shell-dock__body">
         <div className="shell-notice">
-          <Icon name="lock" size={15} />
-          <div>
-            <b>Session only.</b> Threats stay in this browser tab. They are never saved to your account or shared with a Mission Pack.
-          </div>
+          <Icon name={canSave ? "folder" : "lock"} size={15} />
+          {canSave ? (
+            <div>
+              <b>Saved as you work.</b> Threats are kept in your Library, and the sets open now come back when you next sign in.
+            </div>
+          ) : (
+            <div>
+              <b>Session only.</b> Cloud save is off for this account, so threats stay in this browser tab.
+            </div>
+          )}
         </div>
         <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
           <button type="button" className="ui-btn ui-btn--primary ui-btn--grow" onClick={onAdd}>
@@ -82,16 +119,40 @@ const ThreatsDockPanel = ({ threats, onAdd, onImport, onEdit, onRemove, onRemove
           Add threat puts one in the middle of the map. You can also right-click the map and choose Add threat here.
         </div>
 
-        {count > 0 && (
-          <>
-            <div style={{ height: 16 }} />
-            <PanelSection label="On the map" count={count}>
+        {sets.map((set) => (
+          <div key={set.id} style={{ marginTop: 16 }}>
+            <PanelSection
+              label={set.name}
+              count={set.threats.length}
+              action={
+                <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
+                  {canSave && saveChip(set, saveStates[set.id])}
+                  {many && set.id === activeId && <Chip tone="info" dot={false}>New threats go here</Chip>}
+                  {canSave && (
+                    <MoreMenu
+                      label={`More actions for ${set.name}`}
+                      size={30}
+                      items={[
+                        { icon: "pencil", title: "Rename", onSelect: () => setRenaming(set) },
+                        { icon: "plus", title: "Put new threats here", onSelect: () => onMakeActive(set.id), hidden: !many || set.id === activeId },
+                        { icon: "x", title: "Close", text: "It stays in your Library", onSelect: () => onCloseSet(set.id) },
+                      ]}
+                    />
+                  )}
+                </span>
+              }
+            >
               <div className="shell-list">
-                {threats.map((threat) => (
+                {set.threats.map((threat) => (
                   <ThreatRow key={threat.id} threat={threat} onEdit={onEdit} onRemove={onRemove} onToggleVisibility={onToggleVisibility} />
                 ))}
               </div>
             </PanelSection>
+          </div>
+        ))}
+
+        {count > 0 && (
+          <>
             <div style={{ height: 16 }} />
             <div className="shell-box">
               <div className="ui-label" style={{ marginBottom: 10 }}>Export</div>
@@ -107,7 +168,7 @@ const ThreatsDockPanel = ({ threats, onAdd, onImport, onEdit, onRemove, onRemove
                 </button>
               </div>
               <div style={{ marginTop: 10, fontSize: 11.5, lineHeight: 1.45, color: "#8a94a1" }}>
-                Building a file sends threat positions to the server once, to draw the terrain mask. Nothing is kept.
+                Building a file sends threat positions to the server once, to make the file. The file is not kept.
               </div>
             </div>
             <div style={{ marginTop: 14, textAlign: "center" }}>
@@ -116,10 +177,23 @@ const ThreatsDockPanel = ({ threats, onAdd, onImport, onEdit, onRemove, onRemove
           </>
         )}
       </div>
+      {renaming && (
+        <NameDialog
+          title={`Rename “${renaming.name}”`}
+          initialName={renaming.name}
+          confirmLabel="Rename"
+          hint="Press Enter to rename. It changes on every device you use."
+          onCancel={() => setRenaming(null)}
+          onConfirm={(name) => {
+            onRenameSet(renaming.id, name);
+            setRenaming(null);
+          }}
+        />
+      )}
       {confirmAll && (
         <ConfirmDialog
           title="Remove all threats?"
-          text={`${count} ${count === 1 ? "threat comes" : "threats come"} off the map. Threats are never saved, so they cannot be brought back.`}
+          text={`${count} ${count === 1 ? "threat comes" : "threats come"} off the map${canSave ? " and out of the sets they are saved in. The sets stay, empty." : ", and cannot be brought back."}`}
           icon="trash"
           iconTone="danger"
           confirmLabel="Remove all"

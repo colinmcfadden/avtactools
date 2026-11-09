@@ -16,7 +16,8 @@ The rules (docs/MISSION_PACKS.md has the reasons):
   reopens it. Reading, exporting and copying out still work.
 * **Nothing reaches back into the library.** Items are copies; a pack never edits
   or reveals someone's one-off records.
-* **Threats are never part of a pack.** There is no item kind for them.
+* **Threats are not part of a pack yet.** There is no item kind for them; they are saved in the
+  person's library (``SavedThreatSet``), and step T of docs/ANDROID_SCREENS_PLAN.md adds the kind.
 """
 
 import hashlib

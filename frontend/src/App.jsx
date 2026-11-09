@@ -573,6 +573,7 @@ function App() {
   } = useRouteSketch({ aircraftProfile: activeProfile });
 
   const localPoints = useLocalPoints();
+  const threatSets = useThreats({ userId: user?.id ?? null, canSave: feat.threats && feat.cloud_save, notify: toast });
   const {
     threats,
     editingThreat,
@@ -586,7 +587,12 @@ function App() {
     importThsFile,
     exportThsFile,
     exportKmzFile,
-  } = useThreats();
+  } = threatSets;
+  // The last change to a set is written before the session ends, but a server that does not answer keeps nobody here.
+  const signOut = async () => {
+    await Promise.race([threatSets.flush(), new Promise((resolve) => setTimeout(resolve, 2000))]);
+    logout();
+  };
   const [mapCenter, setMapCenter] = useState([34.0522, -118.2437]);
   const [showThreatExport, setShowThreatExport] = useState(false);
   const [showUnitBuilder, setShowUnitBuilder] = useState(false);
@@ -1126,11 +1132,12 @@ function App() {
 
   const imports = useImports({
     pack: packs.packForPanels,
+    threatsSaved: threatSets.canSave,
     importers: {
       msnx: importMission,
       lps: (file, options) => localPoints.importLpsFile(file, options),
-      ths: async (file) => {
-        const count = await importThsFile(file);
+      ths: async (file, options) => {
+        const count = await importThsFile(file, options);
         if (!count) throw new Error("No threats found in this file.");
         return count;
       },
@@ -1235,6 +1242,23 @@ function App() {
       onRenamed: (entry, name) =>
         localPoints.setPointSets((prev) => prev.map((set) => (set.savedId === entry.id ? { ...set, name } : set))),
     },
+    ...(threatSets.canSave
+      ? {
+          threats: {
+            entries: threatSets.savedSets,
+            loading: threatSets.isLoadingSaved,
+            error: threatSets.savedError,
+            openIds: threatSets.openSavedIds,
+            refresh: threatSets.fetchSavedSets,
+            onOpen: async (entry) => {
+              await threatSets.openSavedSet(entry);
+              dock.show("threats");
+            },
+            onDelete: (entry) => threatSets.deleteSavedSet(entry),
+            onRenamed: () => threatSets.pull(),
+          },
+        }
+      : {}),
   };
   const recentLz = history.filter((entry) => !sessionLzIds.has(entry.id)).slice(0, 3);
   // In a pack, opening something from the Library adds a copy of it to the pack.
@@ -1243,7 +1267,8 @@ function App() {
     ? Object.fromEntries(
         Object.entries(librarySources).map(([tab, source]) => [
           tab,
-          { ...source, openIds: new Set(), onOpen: (entry) => packs.copyIn(PACK_KIND[tab], entry) },
+          // A pack cannot hold threats yet: that tab stays the person's own.
+          tab === "threats" ? source : { ...source, openIds: new Set(), onOpen: (entry) => packs.copyIn(PACK_KIND[tab], entry) },
         ]),
       )
     : librarySources;
@@ -1407,7 +1432,7 @@ function App() {
         user={user}
         isAdmin={Boolean(user?.is_admin)}
         onOpenSurveys={user?.is_admin || feat.lz_surveys ? () => setSurveysOpen(true) : undefined}
-        onSignOut={logout}
+        onSignOut={signOut}
         onOpenLibrary={() => openLibrary("lz")}
         searchSlot={
           <TopBarSearch
@@ -1792,7 +1817,14 @@ function App() {
               onImport={pickers.ths.open}
               onEdit={beginEditThreat}
               onRemove={removeThreat}
-              onRemoveAll={() => threats.forEach((threat) => removeThreat(threat.id))}
+              onRemoveAll={threatSets.removeAllThreats}
+              sets={threatSets.sets}
+              activeId={threatSets.activeId}
+              saveStates={threatSets.saveStates}
+              canSave={threatSets.canSave}
+              onRenameSet={threatSets.renameSet}
+              onCloseSet={threatSets.closeSet}
+              onMakeActive={threatSets.setActiveSet}
               onToggleVisibility={toggleThreatVisibility}
               onExportThs={() =>
                 Promise.resolve(exportThsFile("threats")).catch((err) => toast({ tone: "error", message: `The .ths could not be made: ${err.message}` }))
@@ -1809,6 +1841,7 @@ function App() {
                 .filter((set) => set.kind === "mission")
                 .map((set) => ({ key: set.key, fileName: set.fileName, summary: setSummary(set.routes), saved: Boolean(routeSaves.stateOf(set.key).link) }))}
               threatFiles={imports.threatFiles}
+              threatsSaved={threatSets.canSave}
               onImport={pickers.any.open}
               onTogglePoints={localPoints.togglePointSetVisibility}
               onSavePoints={

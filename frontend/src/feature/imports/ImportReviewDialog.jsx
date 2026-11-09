@@ -9,8 +9,8 @@ import "./imports.css";
  * The one review every import goes through (docs/MENU_REDESIGN.md §6, screen ImportReview): what each
  * file is, what is in it, and where it should live. Local points can go to the open pack, the Library
  * or just this session; a mission file to the Library or this session (not a pack: v1 packs hold
- * sketched routes only); threats only ever to this session. A file that is not one of these says so
- * and is left out.
+ * sketched routes only); threats to the Library as a set named for the file (no pack holds them yet),
+ * or this tab where the account has no cloud save. A file that is not one of these says so and is left out.
  */
 
 const ICONS = { lps: "mapPin", msnx: "route", ths: "diamond" };
@@ -56,8 +56,11 @@ const destinationsFor = (kind, pack) => {
 
 // While a pack is open only its own things are shown (docs/MISSION_PACKS.md §5a): what goes to the
 // Library or stays in this session appears once the person switches back to the Library.
-const noteFor = (item, pack) => {
-  if (item.kind === "ths") return { tone: "warn", text: "Threats are never saved or shared with a pack." };
+const noteFor = (item, pack, threatsSaved) => {
+  if (item.kind === "ths") {
+    if (!threatsSaved) return { tone: "warn", text: "Cloud save is off for this account, so these stay in this tab." };
+    return pack ? { tone: "warn", text: "Saved to your Library. Mission Packs cannot hold threats yet." } : { tone: "", text: "Saved to your Library and shown on the map." };
+  }
   if (item.kind === "msnx" && pack) return { tone: "warn", text: "Mission files cannot go into a pack yet (sketched routes only). Shown when you switch back to Library." };
   if (item.destination === "pack") return { tone: "pack", text: `Everyone in ${pack.name} (${pack.memberCount} ${pack.memberCount === 1 ? "member" : "members"}) will see these points.` };
   if (item.destination === "library") {
@@ -66,12 +69,13 @@ const noteFor = (item, pack) => {
   return { tone: "", text: pack ? "Kept until you close this tab. Shown when you switch back to Library." : "Shown on the map until you close this tab." };
 };
 
-export const defaultDestination = (kind, pack) => {
+export const defaultDestination = (kind, pack, threatsSaved = false) => {
   if (kind === "lps") return pack && !packRefusal(kind, pack) ? "pack" : "library";
+  if (kind === "ths" && threatsSaved) return "library";
   return "session";
 };
 
-const ImportReviewDialog = ({ items: initial, pack, onCancel, onImport }) => {
+const ImportReviewDialog = ({ items: initial, pack, threatsSaved = false, onCancel, onImport }) => {
   const [items, setItems] = useState(initial);
   const [busy, setBusy] = useState(false);
   const usable = items.filter((item) => item.kind);
@@ -132,10 +136,10 @@ const ImportReviewDialog = ({ items: initial, pack, onCancel, onImport }) => {
                   <Chip dot={false}>{KIND_LABELS[item.kind]}</Chip>
                 </div>
                 <div className="imports__row-meta">{[item.summary, item.size].filter(Boolean).join(" · ")}</div>
-                {item.kind === "lps" && (
+                {(item.kind === "lps" || item.kind === "ths") && (
                   <input
                     className="ui-input imports__row-input"
-                    aria-label={`Name for the points in ${item.file.name}`}
+                    aria-label={`Name for the ${item.kind === "lps" ? "points" : "threats"} in ${item.file.name}`}
                     value={item.name}
                     maxLength={100}
                     onChange={(event) => update(index, { name: event.target.value.toUpperCase() })}
@@ -151,13 +155,13 @@ const ImportReviewDialog = ({ items: initial, pack, onCancel, onImport }) => {
                     onChange={(destination) => update(index, { destination })}
                   />
                 ) : (
-                  <div className="imports__fixed imports__fixed--warn">
-                    <Icon name="lock" size={13} />
-                    Session only
+                  <div className={`imports__fixed${threatsSaved ? "" : " imports__fixed--warn"}`}>
+                    <Icon name={threatsSaved ? "folder" : "lock"} size={13} />
+                    {threatsSaved ? "Library" : "Session only"}
                   </div>
                 )}
                 {(() => {
-                  const note = noteFor(item, pack);
+                  const note = noteFor(item, pack, threatsSaved);
                   return <div className={`imports__note${note.tone ? ` imports__note--${note.tone}` : ""}`}>{note.text}</div>;
                 })()}
               </div>
