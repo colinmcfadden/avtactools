@@ -1,4 +1,6 @@
 import { useCallback, useMemo, useReducer } from "react";
+import { nextStepSeq } from "../undo/history";
+import { LZ_UNDO_ACTIONS, withLzUndo } from "./lzUndo";
 
 /**
  * A saved LZ/PZ diagram is deliberately versioned independently from the API
@@ -21,6 +23,7 @@ export const LZ_GRAPHIC_COLLECTIONS = Object.freeze([
   "goArounds",
   "units",
   "measurements",
+  "backstops",
 ]);
 
 export const LZ_WORKSPACE_ACTIONS = Object.freeze({
@@ -166,6 +169,8 @@ const normalizeGraphics = (source = {}) => {
     goArounds: cloneArray(graphics.goArounds ?? graphics.goAround),
     units: cloneArray(graphics.units),
     measurements: cloneArray(graphics.measurements),
+    // Only where the document has them: a diagram with none keeps the shape it was saved in, so nothing is reshaped by being opened.
+    ...(Array.isArray(graphics.backstops) ? { backstops: cloneArray(graphics.backstops) } : {}),
     exportBox: graphics.exportBox ?? null,
   };
 };
@@ -292,7 +297,7 @@ export const createLzDiagramFromTarget = ({
 };
 
 /**
- * Converts the current App.js save shape into exactly one versioned diagram.
+ * Converts the current App.jsx save shape into exactly one versioned diagram.
  * It accepts the API record as well, so callers may provide `id`/`name` from
  * the SavedLZ listing without changing the legacy payload itself.
  */
@@ -717,9 +722,14 @@ export const lzWorkspaceReducer = (state, action) => {
  * Session-oriented API for the LZ/PZ workflow. The reducer keeps diagrams
  * separate even though the current map UI renders only one active diagram.
  */
+const undoableReducer = withLzUndo(lzWorkspaceReducer, LZ_WORKSPACE_ACTIONS);
+
+// `options` as the setters take them: { key, label } for a step, { quiet: true } for what is nobody's doing.
+const stepOf = (options) => ({ seq: nextStepSeq(), key: options?.key ?? null, label: options?.label ?? null });
+
 export const useLzWorkspace = (initialWorkspace) => {
   const [state, dispatch] = useReducer(
-    lzWorkspaceReducer,
+    undoableReducer,
     initialWorkspace,
     createInitialLzWorkspace,
   );
@@ -771,12 +781,13 @@ export const useLzWorkspace = (initialWorkspace) => {
   }, [activeDiagramId]);
 
   const setAnalysisDraft = useCallback(
-    (analysis, diagramId = activeDiagramId) => {
+    (analysis, diagramId = activeDiagramId, step = null) => {
       if (!diagramId) return;
       dispatch({
         type: LZ_WORKSPACE_ACTIONS.SET_ANALYSIS_DRAFT,
         diagramId,
         analysis,
+        ...(step ? { step: stepOf(step) } : {}),
       });
     },
     [activeDiagramId],
@@ -806,9 +817,9 @@ export const useLzWorkspace = (initialWorkspace) => {
     [activeDiagramId],
   );
 
-  const resetAnalysis = useCallback((diagramId = activeDiagramId) => {
+  const resetAnalysis = useCallback((diagramId = activeDiagramId, step = null) => {
     if (!diagramId) return;
-    dispatch({ type: LZ_WORKSPACE_ACTIONS.RESET_ANALYSIS, diagramId });
+    dispatch({ type: LZ_WORKSPACE_ACTIONS.RESET_ANALYSIS, diagramId, ...(step ? { step: stepOf(step) } : {}) });
   }, [activeDiagramId]);
 
   const setGraphics = useCallback(
@@ -824,13 +835,14 @@ export const useLzWorkspace = (initialWorkspace) => {
   );
 
   const setGraphicCollection = useCallback(
-    (collection, items, diagramId = activeDiagramId) => {
+    (collection, items, diagramId = activeDiagramId, options = {}) => {
       if (!diagramId) return;
       dispatch({
         type: LZ_WORKSPACE_ACTIONS.SET_GRAPHIC_COLLECTION,
         diagramId,
         collection,
         items,
+        ...(options.quiet ? {} : { step: stepOf(options) }),
       });
     },
     [activeDiagramId],
@@ -844,6 +856,7 @@ export const useLzWorkspace = (initialWorkspace) => {
         diagramId,
         collection,
         item,
+        step: stepOf(),
       });
     },
     [activeDiagramId],
@@ -858,6 +871,7 @@ export const useLzWorkspace = (initialWorkspace) => {
         collection,
         id,
         patch,
+        step: stepOf(),
       });
     },
     [activeDiagramId],
@@ -871,6 +885,7 @@ export const useLzWorkspace = (initialWorkspace) => {
         diagramId,
         collection,
         id,
+        step: stepOf(),
       });
     },
     [activeDiagramId],
@@ -946,9 +961,19 @@ export const useLzWorkspace = (initialWorkspace) => {
     dispatch({ type: LZ_WORKSPACE_ACTIONS.HYDRATE_WORKSPACE, workspace });
   }, []);
 
-  const applyRemoteDiagram = useCallback((diagram, diagramId) => {
+  // `rebase` lays someone else's change over each version in the history; `dropHistory` is for a change put
+  // back because the pack would not take it, which leaves steps nothing can be undone to.
+  const applyRemoteDiagram = useCallback((diagram, diagramId, { rebase, dropHistory } = {}) => {
     if (!diagramId) return;
-    dispatch({ type: LZ_WORKSPACE_ACTIONS.APPLY_REMOTE_DIAGRAM, diagramId, diagram });
+    dispatch({ type: LZ_WORKSPACE_ACTIONS.APPLY_REMOTE_DIAGRAM, diagramId, diagram, rebase, dropHistory });
+  }, []);
+
+  const undoDiagram = useCallback((diagramId) => {
+    dispatch({ type: LZ_UNDO_ACTIONS.UNDO, diagramId, seq: nextStepSeq() });
+  }, []);
+
+  const redoDiagram = useCallback((diagramId) => {
+    dispatch({ type: LZ_UNDO_ACTIONS.REDO, diagramId, seq: nextStepSeq() });
   }, []);
 
   const serializeActiveDiagram = useCallback(
@@ -992,6 +1017,8 @@ export const useLzWorkspace = (initialWorkspace) => {
     clearSaved,
     hydrateWorkspace,
     applyRemoteDiagram,
+    undoDiagram,
+    redoDiagram,
     serializeActiveDiagram,
     dispatch,
   };

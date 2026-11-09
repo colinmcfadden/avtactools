@@ -6,7 +6,7 @@ const MOVED = [[35, -85], [35.01, -84.99]];
 
 describe("an LZ card's capture area", () => {
   it("is the LZ/PZ's own where the person may edit it", () => {
-    const setShared = jest.fn();
+    const setShared = vi.fn();
     const { result } = renderHook(() => useCaptureArea({ own: false, diagramId: "a", shared: BOX, setShared }));
     expect(result.current.exportBox).toBe(BOX);
     act(() => result.current.setExportBox(MOVED));
@@ -14,7 +14,7 @@ describe("an LZ card's capture area", () => {
   });
 
   it("is kept here, per LZ/PZ, in a pack the person cannot change, and the pack's is left alone", () => {
-    const setShared = jest.fn();
+    const setShared = vi.fn();
     const { result, rerender } = renderHook((props) => useCaptureArea({ setShared, ...props }), {
       initialProps: { own: true, diagramId: "a", shared: null },
     });
@@ -38,7 +38,7 @@ describe("an LZ card's capture area", () => {
   });
 
   it("goes back to the LZ/PZ's own once the person may edit again", () => {
-    const setShared = jest.fn();
+    const setShared = vi.fn();
     const { result, rerender } = renderHook((props) => useCaptureArea({ setShared, diagramId: "a", ...props }), {
       initialProps: { own: true, shared: BOX },
     });

@@ -55,7 +55,12 @@ class SwitcherActions(
     val close: () -> Unit = {},
     val newPack: (() -> Unit)? = null,
     val teams: (() -> Unit)? = null,
+    /** The offer of notifications, while it is made (docs/NOTIFICATIONS.md §4.5): *Turn on* asks the system, *Not now* puts it away for the account. */
+    val notify: SwitcherNotify? = null,
 )
+
+/** The switcher's offer to turn notifications on. */
+class SwitcherNotify(val turnOn: () -> Unit, val notNow: () -> Unit)
 
 /**
  * The workspace switcher (the design's Switcher, the web's WorkspaceSwitcher): invitations waiting, the Library, the packs (those still worked on, then
@@ -64,12 +69,15 @@ class SwitcherActions(
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun SwitcherSheet(viewModel: WorkspaceViewModel, onDismiss: () -> Unit, onPick: (String?) -> Unit = {}, onNewPack: (() -> Unit)? = null, onTeams: (() -> Unit)? = null) {
+fun SwitcherSheet(
+    viewModel: WorkspaceViewModel, onDismiss: () -> Unit, onPick: (String?) -> Unit = {}, onNewPack: (() -> Unit)? = null, onTeams: (() -> Unit)? = null,
+    notify: SwitcherNotify? = null,
+) {
     val state by viewModel.switcher.collectAsStateWithLifecycle()
     LaunchedEffect(Unit) { viewModel.switcherOpened() }
     val sheet = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     ModalBottomSheet(onDismissRequest = onDismiss, sheetState = sheet, containerColor = MaterialTheme.colorScheme.surfaceContainerLow) {
-        SwitcherContent(state, actionsOf(viewModel, onDismiss, onPick, onNewPack, onTeams), Modifier.verticalScroll(rememberScrollState()))
+        SwitcherContent(state, actionsOf(viewModel, onDismiss, onPick, onNewPack, onTeams, notify), Modifier.verticalScroll(rememberScrollState()))
     }
 }
 
@@ -83,12 +91,14 @@ fun actionsOf(
     onPick: (String?) -> Unit = {},
     onNewPack: (() -> Unit)? = null,
     onTeams: (() -> Unit)? = null,
+    notify: SwitcherNotify? = null,
 ) = SwitcherActions(
     pick = { uuid -> close(); onPick(uuid); viewModel.switchTo(uuid) },
     answer = { id, accept -> viewModel.answer(id, accept, onJoined = close) },
     close = close,
     newPack = onNewPack?.let { open -> { close(); open() } },
     teams = onTeams?.let { open -> { close(); open() } },
+    notify = notify,
 )
 
 /**
@@ -104,6 +114,7 @@ fun SwitcherContent(state: SwitcherUi, actions: SwitcherActions, modifier: Modif
                 Icon(painterResource(EzpzIcons.close), contentDescription = "Close workspace switcher", tint = MaterialTheme.colorScheme.onSurfaceVariant)
             }
         }
+        actions.notify?.let { NotifyLine(it) }
         state.invites.forEach { invite -> InviteCard(invite, enabled = !state.busy, actions) }
         state.answerError?.let {
             Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error, modifier = Modifier.padding(start = Tokens.Spacing.lg.dp, top = Tokens.Spacing.sm.dp, end = Tokens.Spacing.lg.dp))
@@ -164,6 +175,21 @@ fun SwitcherContent(state: SwitcherUi, actions: SwitcherActions, modifier: Modif
             },
             wordsMin = 168.dp, space = Tokens.Spacing.sm.dp,
         )
+    }
+}
+
+/** The offer of notifications, under the heading: what the person gets for it, *Turn on* and *Not now*. */
+@Composable
+private fun NotifyLine(notify: SwitcherNotify) {
+    Column(Modifier.fillMaxWidth().padding(start = Tokens.Spacing.lg.dp, end = Tokens.Spacing.sm.dp, bottom = Tokens.Spacing.sm.dp)) {
+        Text(
+            "Get told of invitations and finished packs, even when the app is closed.",
+            style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(end = Tokens.Spacing.sm.dp),
+        )
+        Row(horizontalArrangement = Arrangement.spacedBy(Tokens.Spacing.sm.dp)) {
+            TextButton(onClick = notify.turnOn, modifier = Modifier.heightIn(min = 48.dp)) { Text("Turn on") }
+            TextButton(onClick = notify.notNow, modifier = Modifier.heightIn(min = 48.dp)) { Text("Not now") }
+        }
     }
 }
 

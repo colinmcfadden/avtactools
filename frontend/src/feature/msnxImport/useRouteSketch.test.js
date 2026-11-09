@@ -4,14 +4,14 @@ import { useRouteSketch } from "./useRouteSketch";
 
 // Building the file needs the AMPS template over the network; what is under test is what the hook
 // does with the outcome.
-jest.mock("./createMsnx", () => ({ ...jest.requireActual("./createMsnx"), buildSketchMsnx: jest.fn() }));
+vi.mock("./createMsnx", async (importOriginal) => ({ ...(await importOriginal()), buildSketchMsnx: vi.fn() }));
 
 const ROUTES = [{ id: "sketch-1", name: "RED 1", points: [] }];
 
 describe("exporting sketched routes", () => {
   let alertSpy;
   beforeEach(() => {
-    alertSpy = jest.spyOn(window, "alert").mockImplementation(() => {});
+    alertSpy = vi.spyOn(window, "alert").mockImplementation(() => {});
     buildSketchMsnx.mockReset();
   });
   afterEach(() => alertSpy.mockRestore());

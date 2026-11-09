@@ -34,6 +34,8 @@ public fun content(kind: RecordKind, tag: String): JsonObject = when (kind) {
     RecordKind.MISSION -> doc("version" to 1, "note" to tag)
     // The server does not look inside a brief document.
     RecordKind.BRIEF -> doc("version" to 1, "template" to "amb", "note" to tag)
+    // The server refuses a set with no list of threats, counts them, and does not look inside one (an empty list is a set too).
+    RecordKind.THREAT_SET -> JsonObject(doc("version" to 1, "note" to tag) + ("threats" to JsonArray(emptyList())))
 }
 
 /** The file a record of [kind] carries when a scenario gives it [tag]: only a mission has one. The bytes say the tag, so a scenario can tell whose file it is looking at. */
@@ -82,6 +84,7 @@ public suspend fun Env.live(kind: RecordKind): List<SyncChange> = serverView().f
         RecordKind.MISSION -> it.type == "route" && it.kind == "mission"
         RecordKind.POINT_SET -> it.type == "pointset"
         RecordKind.BRIEF -> it.type == "brief"
+        RecordKind.THREAT_SET -> it.type == "threatset"
     }
     matches && !it.deleted
 }

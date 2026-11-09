@@ -46,6 +46,10 @@ export const createPackClient = ({
   api,
   openSocket,
   getToken,
+  // Who is signed in, in which session: unlike the token, the same across a refresh. Defaults to the token.
+  getSession = getToken,
+  // Hears each new token (a refresh), to pass it on to the live stream. Returns the way to stop hearing.
+  onToken = null,
   timers = defaultTimers,
   newId = newOpId,
   isHidden = () => typeof document !== "undefined" && document.hidden,
@@ -54,7 +58,7 @@ export const createPackClient = ({
   let state = { status: "loading", session: null, items: [], people: [], error: null };
   const listeners = new Set();
   let stopped = false;
-  // Set by stop(): the token then and how many edits had been dropped, while what waits is still sent.
+  // Set by stop(): the session then and how many edits had been dropped, while what waits is still sent.
   let closing = null;
   const active = () => !stopped && !closing;
   let socket = null;
@@ -96,6 +100,7 @@ export const createPackClient = ({
 
   const halt = () => {
     stopped = true;
+    stopHearingTokens?.();
     Object.keys(timer).forEach(clear);
     if (socket) socket.close(1000);
     socket = null;
@@ -118,7 +123,7 @@ export const createPackClient = ({
   // Since it was stopped the person signed out, or someone else signed in. Signing out clears the token
   // before the pack closes, so none at all counts too: a send with no token can only be refused, and that
   // refusal would read as an expired session.
-  const signedOut = () => Boolean(closing) && (!closing.token || getToken() !== closing.token);
+  const signedOut = () => Boolean(closing) && (!closing.session || getSession() !== closing.session);
 
   // What waits is never sent as anyone but who made it.
   const giveUp = () => {
@@ -310,6 +315,16 @@ export const createPackClient = ({
     );
   };
 
+  // The live service checks again, now and then, with the last token it was given: each new one goes to it.
+  const stopHearingTokens = onToken?.((token) => {
+    if (!socket || !welcomed || !token) return;
+    try {
+      socket.send(JSON.stringify({ type: "token", token }));
+    } catch {
+      // A socket that cannot send is closing; the next one starts with a fresh hello.
+    }
+  });
+
   // -- presence -------------------------------------------------------------------------
 
   const sendPresence = () => {
@@ -381,7 +396,7 @@ export const createPackClient = ({
     /** Closes the stream and asks nothing more; what is still waiting is sent first (see above). */
     stop() {
       if (closing || stopped) return;
-      closing = { token: getToken(), dropped: state.session?.dropped.length ?? 0 };
+      closing = { session: getSession(), dropped: state.session?.dropped.length ?? 0 };
       ["poll", "reconnect", "presence", "load"].forEach(clear);
       if (socket) socket.close(1000);
       socket = null;

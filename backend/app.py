@@ -1,5 +1,4 @@
 from flask import Flask, redirect, request
-from flask_cors import CORS
 from flask_jwt_extended import JWTManager
 from dotenv import load_dotenv
 from datetime import timedelta
@@ -13,12 +12,17 @@ except ImportError:
     __version__ = "0.0.0-dev"
 
 from database_url import database_uri, is_postgres
-from models import AccountToken, AircraftProfile, LoginEvent, SavedBrief, SavedLZ, SavedPointSet, SavedRoute, User, db
+from db_app import engine_options as db_engine_options
+from models import (
+    AccountToken, AircraftProfile, DataJob, LoginEvent, LzSurveyRevision, SavedBrief, SavedLZ, SavedPointSet, SavedRoute, SavedThreatSet, SurveyBook, User,
+    db,
+)
 from affiliation_gate import enforce_affiliation_gate
 from token_revocation import is_revoked
 from aircraft_seed import seed_aircraft_profiles
 from schema_sync import ensure_unique_index, sync_table_columns
 from security_config import (
+    is_production,
     resolve_jwt_secret,
     session_cookie_secure,
     validate_email_configuration,
@@ -26,17 +30,20 @@ from security_config import (
 
 # Import your Blueprints
 import lidar_builder
+from lidar import catalog as lidar_catalog
 import terrain_tiles
+from charts import auto as chart_auto
 from routes.terrain_routes import terrain_bp
 from routes.lidar_routes import lidar_bp
 from routes.location_routes import location_bp
 from routes.weather_routes import weather_bp
 from routes.export_routes import export_bp
-from routes.auth import auth_bp
+from routes.auth import auth_bp, keep_unconfirmed_mil_addresses_pending
 from routes.lz_routes import lz_bp
 from routes.brief_routes import brief_bp
 from routes.saved_routes import saved_routes_bp
 from routes.point_sets import point_sets_bp
+from routes.threat_set_routes import threat_set_bp
 from routes.threat_routes import threat_bp
 from routes.route_share_routes import route_share_bp
 from routes.aircraft_routes import aircraft_bp
@@ -45,23 +52,15 @@ from routes.config_routes import config_bp
 from routes.sync_routes import sync_bp
 from routes.pack_routes import pack_bp
 from routes.team_routes import team_bp
-from client_header import CLIENT_HEADER
+from routes.survey_routes import survey_bp
+from routes.notification_routes import notification_bp
+from routes.chart_routes import chart_bp
+from routes.place_routes import place_bp
+from places import refresh as places_refresh
+from cors_config import configure_cors, cors_origins
 
 app = Flask(__name__)
-cors_origins = [
-    origin.strip()
-    for origin in os.environ.get(
-        'CORS_ORIGINS', 'http://localhost:3000'
-    ).split(',')
-    if origin.strip()
-]
-CORS(
-    app,
-    resources={r'/api/*': {'origins': cors_origins}},
-    # The native apps (and, later, the web) identify themselves with X-EZPZ-Client.
-    allow_headers=['Authorization', 'Content-Type', CLIENT_HEADER],
-    methods=['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-)
+configure_cors(app, cors_origins(os.environ))
 
 basedir = os.path.abspath(os.path.dirname(__file__))
 
@@ -81,16 +80,18 @@ app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 # check and transparently reconnects; pool_recycle proactively retires
 # connections before the server's own idle timeout can. Only meaningful for a
 # real connection pool, so scope it to Postgres and leave SQLite dev untouched.
+# The chart build's own process opens the database with the same options (db_app.py).
 if is_postgres(database_url):
-    app.config['SQLALCHEMY_ENGINE_OPTIONS'] = {
-        'pool_pre_ping': True,
-        'pool_recycle': 280,
-    }
+    app.config['SQLALCHEMY_ENGINE_OPTIONS'] = db_engine_options(database_url)
 app.config['JWT_SECRET_KEY'] = resolve_jwt_secret(os.environ)
 validate_email_configuration(os.environ)
-# A one-day session balances an operational planning workflow with reasonable
-# exposure if a bearer token is lost. Password resets revoke older tokens via
-# the per-account session-version claim below.
+# Tileset keys are an HMAC under this; a deployment without it would name new
+# tilesets with a public secret, which hashes back into places.
+lidar_catalog.key_secret(os.environ)
+# An access token lives a day at most: a native app's, and a web sign-in's, which a browser that will not
+# keep the refresh cookie holds as the web always has. A web refresh mints 15-minute ones (routes/auth.py).
+# Any token tied to a device session (`sid`) is refused the moment that session ends, and a password reset
+# revokes older tokens through the per-account session-version claim.
 app.config['JWT_ACCESS_TOKEN_EXPIRES'] = timedelta(hours=24)
 
 # Server-side session for the admin dashboard (separate from the SPA's JWT).
@@ -131,6 +132,7 @@ app.register_blueprint(lz_bp)
 app.register_blueprint(brief_bp)
 app.register_blueprint(saved_routes_bp)
 app.register_blueprint(point_sets_bp)
+app.register_blueprint(threat_set_bp)
 app.register_blueprint(threat_bp)
 app.register_blueprint(route_share_bp)
 app.register_blueprint(aircraft_bp)
@@ -139,6 +141,10 @@ app.register_blueprint(config_bp)
 app.register_blueprint(sync_bp)
 app.register_blueprint(pack_bp)
 app.register_blueprint(team_bp)
+app.register_blueprint(survey_bp)
+app.register_blueprint(notification_bp)
+app.register_blueprint(chart_bp)
+app.register_blueprint(place_bp)
 
 # Compute the coarse terrain tiles ahead of the first 3D view, in the
 # background; see terrain_tiles. A no-op without TERRAIN_DATA_DIR. Under
@@ -146,6 +152,11 @@ app.register_blueprint(team_bp)
 # watches files, then in the one that serves — so warm only in the latter.
 if not (__name__ == "__main__" and os.environ.get("WERKZEUG_RUN_MAIN") != "true"):
     terrain_tiles.start_warming()
+    # The VFR charts' automatic cycle (docs/VFR_CHARTS.md §5.7): a look every 6 hours, only where writes are on and
+    # CHART_TILES_DIR is set; whether a look may build is CHART_AUTO's (charts.auto.mode).
+    chart_auto.start(app)
+    # Keep the place search's index to the FAA's current NASR cycle; a no-op without PLACES_DIR.
+    places_refresh.start()
     # Say at startup what the 3D view will lack, rather than leave it to be
     # found later as a "can't build" panel, or as terrain sitting 30 m off the
     # point cloud. Both have happened after a restart lost its settings.
@@ -154,6 +165,10 @@ if not (__name__ == "__main__" and os.environ.get("WERKZEUG_RUN_MAIN") != "true"
     if os.environ.get("TERRAIN_DATA_DIR") and not terrain_tiles.geoid_grids_available():
         app.logger.warning("3D: geoid grids unavailable, so terrain will sit ~30 m off the "
                            "LiDAR. Set PROJ_NETWORK=ON or install the grids (projsync).")
+    # A survey's photos cannot be taken again; in the temp directory they would go with the next redeploy.
+    if is_production(os.environ) and not os.environ.get("SURVEY_ASSETS_DIR"):
+        app.logger.warning("LZ surveys: SURVEY_ASSETS_DIR is not set, so photos are kept in a temporary "
+                           "directory and lost on redeploy. Point it at a persistent, backed-up mount.")
 
 @app.route('/')
 def health_check():
@@ -205,6 +220,18 @@ with app.app_context():
             db.session.commit()
         except Exception:
             db.session.rollback()  # column already exists
+    # user gained mil_pending_email (a .mil address asked for, not yet confirmed). After the ALTERs
+    # above, so access_approved is never added here with the model's DEFAULT FALSE.
+    sync_table_columns(db, User)
+    # Then the addresses the .mil flow once left in mil_email unconfirmed go back to pending,
+    # where an emailed invitation does not trust them (routes/auth.py).
+    try:
+        _moved = keep_unconfirmed_mil_addresses_pending()
+        if _moved:
+            app.logger.warning("auth: %d unconfirmed .mil address(es) moved back to pending", _moved)
+    except Exception:  # noqa: BLE001 — never block boot; the next start tries again
+        db.session.rollback()
+        app.logger.exception("auth: could not settle unconfirmed .mil addresses")
 
     # aircraft_profile is young enough that deployments (and dev databases from
     # a reloader that caught the model mid-change) can hold an older shape of
@@ -212,14 +239,24 @@ with app.app_context():
     # tables above do, diff the model against the live schema and add whatever
     # is absent.
     sync_table_columns(db, AircraftProfile)
+    # user gained `notification_settings` (docs/NOTIFICATIONS.md §5); the ALTERs above came before schema_sync.
+    sync_table_columns(db, User)
     # login_event gained `client` (the X-EZPZ-Client app version) after launch.
     sync_table_columns(db, LoginEvent)
     # account_token gained the refresh-token columns (family, client, session_version).
     sync_table_columns(db, AccountToken)
+    # lz_survey_revision gained `page` (what a published page said of itself) after step L1 made the table.
+    sync_table_columns(db, LzSurveyRevision)
+    # survey_book gained a uuid, a team and archiving when one book became many (step L5).
+    sync_table_columns(db, SurveyBook)
+    # data_job gained a chart build's columns (build, stage, work_done, work_total, token; docs/VFR_CHARTS.md §5).
+    sync_table_columns(db, DataJob)
+    if not ensure_unique_index(db, SurveyBook, ('uuid',), 'ux_survey_book_uuid'):
+        app.logger.warning("surveys: could not add the uuid index on survey_book")
     # Saved records (and a user's own aircraft profiles) gained the sync columns (client_uuid, revision, deleted_at,
     # change_seq, last_idem_key). The unique index that stops a retried create
     # duplicating has to be added by hand: create_all never alters an existing table.
-    for _model in (SavedLZ, SavedRoute, SavedPointSet, SavedBrief, AircraftProfile):
+    for _model in (SavedLZ, SavedRoute, SavedPointSet, SavedBrief, SavedThreatSet, AircraftProfile):
         sync_table_columns(db, _model)
         if not ensure_unique_index(
             db, _model, ('user_id', 'client_uuid'), f'ux_{_model.__tablename__}_user_client_uuid'

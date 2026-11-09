@@ -17,11 +17,24 @@
   <h1 style="font-size:20px;margin:0;">Users <span class="muted" style="font-size:14px;">({{ total }})</span></h1>
 </div>
 
+<form id="bulk" method="post" action="{{ url_for('admin.bulk_feature') }}" class="row" style="gap:8px;margin-bottom:10px;flex-wrap:wrap;">
+  <input type="hidden" name="csrf" value="{{ csrf_token() }}">
+  <input type="hidden" name="q" value="{{ q }}">
+  <input type="hidden" name="page" value="{{ page }}">
+  <label class="muted" style="font-size:12px;" for="bulk-feature">For everyone ticked below:</label>
+  <select class="input" id="bulk-feature" name="feature" style="width:auto;">
+    {% for key, label, _desc in FEATURES %}<option value="{{ key }}"{% if key == 'lz_surveys' %} selected{% endif %}>{{ label }}</option>{% endfor %}
+  </select>
+  <button class="btn btn-sm" type="submit" name="action" value="grant">Give it</button>
+  <button class="btn btn-sm" type="submit" name="action" value="revoke">Take it away</button>
+</form>
+
 <div class="card" style="padding:0;overflow-x:auto;">
   <table>
     <thead>
       <tr>
-        <th>User</th><th>Role</th><th>Access</th><th>Auth</th><th>Verified</th><th>Joined</th>
+        <th style="width:28px;"><span class="muted" title="Tick people for the feature above">✓</span></th>
+        <th>User</th><th>Role</th><th>Access</th><th>LZ surveys</th><th>Auth</th><th>Verified</th><th>Joined</th>
       </tr>
     </thead>
     <tbody>
@@ -29,6 +42,7 @@
       {% set is_google = u.google_id and not u.google_id.startswith('local:') %}
       {% set verified = (u.local_credential and u.local_credential.email_verified_at) or is_google %}
       <tr onclick="location='{{ url_for('admin.user_detail', uid=u.id) }}'" style="cursor:pointer;">
+        <td onclick="event.stopPropagation()"><input type="checkbox" form="bulk" name="uid" value="{{ u.id }}" aria-label="Tick {{ u.name }}"></td>
         <td>
           <div><a href="{{ url_for('admin.user_detail', uid=u.id) }}">{{ u.name }}</a></div>
           <div class="muted mono" style="font-size:12px;">{{ u.email }}</div>
@@ -42,6 +56,7 @@
           {% if account_active(u) %}<span class="badge badge-ok">active</span>
           {% else %}<span class="badge badge-off">suspended</span>{% endif %}
         </td>
+        <td>{% if resolve_features(u).get('lz_surveys') %}<span class="badge badge-ok">reads</span>{% else %}<span class="muted">—</span>{% endif %}</td>
         <td class="muted" style="font-size:12px;">
           {% if is_google %}Google{% endif %}{% if is_google and u.local_credential %} · {% endif %}{% if u.local_credential %}Password{% endif %}
         </td>
@@ -49,7 +64,7 @@
         <td class="muted" style="font-size:12px;">{{ u.created_at.strftime('%Y-%m-%d') if u.created_at else '—' }}</td>
       </tr>
       {% else %}
-      <tr><td colspan="6" class="muted" style="padding:24px;text-align:center;">No users found.</td></tr>
+      <tr><td colspan="8" class="muted" style="padding:24px;text-align:center;">No users found.</td></tr>
       {% endfor %}
     </tbody>
   </table>

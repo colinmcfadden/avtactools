@@ -13,6 +13,7 @@ import app.ezpztac.model.RoutePlan
 import app.ezpztac.model.RoutePoint
 import app.ezpztac.model.SketchRoute
 import app.ezpztac.network.LidarBuildDto
+import app.ezpztac.network.LidarFrameDto
 import app.ezpztac.network.LidarResolveDto
 import app.ezpztac.scene3d.ImageryTileId
 import app.ezpztac.scene3d.RouteHeights
@@ -28,13 +29,19 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import java.util.Collections
 
 /** The build service as the 3D view's tests need it: a lookup that finds the tileset built, or not and buildable, and every call written down. */
-internal class FakeLidar(var built: Boolean = true, var resolveMs: Long = 0) : LidarApi {
+internal class FakeLidar(var built: Boolean = true, var resolveMs: Long = 0, var frame: LidarFrameDto? = null) : LidarApi {
     val calls = mutableListOf<String>()
+    val streamAsked = mutableListOf<Boolean>()
 
-    override suspend fun resolve(at: LatLon, radiusM: Double?): LidarResolveDto {
+    override suspend fun resolve(at: LatLon, radiusM: Double?, stream: Boolean): LidarResolveDto {
         calls += "resolve ${at.lat},${at.lon}"
+        streamAsked += stream
         if (resolveMs > 0) delay(resolveMs)
-        return if (built) LidarResolveDto(KEY, available = true, url = "/lidar/tilesets/$KEY/tileset.json") else LidarResolveDto(KEY, available = false, canBuild = true)
+        return when {
+            frame != null && stream -> LidarResolveDto(KEY, available = true, url = "/lidar/tilesets/$KEY/tileset.json", streamed = true, frame = frame)
+            built -> LidarResolveDto(KEY, available = true, url = "/lidar/tilesets/$KEY/tileset.json")
+            else -> LidarResolveDto(KEY, available = false, canBuild = true)
+        }
     }
 
     override suspend fun build(at: LatLon, keep: Boolean, watcher: String?, radiusM: Double?): LidarBuildDto {
@@ -87,7 +94,9 @@ internal fun scenes(
     files: TilesetFiles = FixtureFiles(),
     dispatcher: CoroutineDispatcher = Dispatchers.Unconfined,
     clock: () -> Long = { System.nanoTime() / 1_000_000 },
-) = SceneMaker { target, core, ring, parent, size -> SceneSession(target, core, ring, SceneSources(files), SceneBudgets.DEFAULT, parent, size, dispatcher, dispatcher, clock) }
+) = SceneMaker { target, core, ring, lz, parent, size ->
+    SceneSession(target, core, ring, SceneSources(files), SceneBudgets.DEFAULT, parent, size, dispatcher, dispatcher, clock, lz)
+}
 
 /** The routes the map shows, as a test sets them. */
 internal class FakeRoutes(initial: List<SketchRoute> = emptyList()) : ShownRoutes {

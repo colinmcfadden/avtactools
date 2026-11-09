@@ -256,31 +256,7 @@ internal class PackEditorSync<D : Any>(
         }
     }
 
-    // [held]'s change, saved to the library as this person's own version, "NAME (my edits)", named as they had it. Only into its owner's library:
-    // while nobody's packs are on it waits (held again), and once another account's are it is dropped. Null when it was not kept (nothing was
-    // changed, or it waits, or the library could not be written, in which case it waits too).
-    private suspend fun keep(localId: String, ref: PackItemRef, held: Undelivered<D>): KeptOutcome.Saved? {
-        val me = engine.me.value?.id
-        if (me == null) {
-            items.holdAgain(localId, held)
-            return null
-        }
-        if (me != held.owner) return null
-        val mine = PackItemSync.mine(kind, held.base, null, held.document)
-        if (!PackItemSync.changedHere(held.base, mine)) return null
-        val data = mine.doc ?: return null
-        val name = kind.nameOf(held.document).trim().ifEmpty { held.base.name }
-        // Its own record each time: an item can leave the editor with a change more than once.
-        val version = KeptVersion("${ref.pack}:${ref.item}:unsent:${UUID.randomUUID()}", kind.kind, PackSentences.myEditsName(name), data)
-        return try {
-            keeper.keep(ref.pack, listOf(version)).filterIsInstance<KeptOutcome.Saved>().firstOrNull()
-        } catch (e: CancellationException) {
-            throw e
-        } catch (_: Exception) {
-            items.holdAgain(localId, held)
-            null
-        }
-    }
+    private suspend fun keep(localId: String, ref: PackItemRef, held: Undelivered<D>): KeptOutcome.Saved? = keepUndelivered(items, engine, keeper, localId, ref, held)
 
     private fun packName(pack: String): String? =
         (engine.open.value?.takeIf { it.uuid == pack }?.session?.pack?.get("name") as? JsonPrimitive)?.takeIf { it.isString }?.content
@@ -301,3 +277,37 @@ internal class PackEditorSync<D : Any>(
  */
 internal fun sameForALook(a: PackState?, b: PackState?): Boolean =
     a?.uuid == b?.uuid && a?.status == b?.status && a?.session === b?.session && a?.items === b?.items && a?.error == b?.error
+
+/**
+ * [held]'s change, saved to the library as this person's own version, "NAME (my edits)", named as they had it. Only into its owner's library: while nobody's packs are on it waits (held
+ * again), and once another account's are it is dropped. Null when it was not kept (nothing was changed, or it waits, or the library could not be written, in which case it waits too).
+ */
+internal suspend fun <D : Any> keepUndelivered(
+    items: PackItemStore<D>,
+    engine: PackEngine,
+    keeper: PackKeeper,
+    localId: String,
+    ref: PackItemRef,
+    held: Undelivered<D>,
+): KeptOutcome.Saved? {
+    val me = engine.me.value?.id
+    if (me == null) {
+        items.holdAgain(localId, held)
+        return null
+    }
+    if (me != held.owner) return null
+    val mine = PackItemSync.mine(items.kind, held.base, null, held.document)
+    if (!PackItemSync.changedHere(held.base, mine)) return null
+    val data = mine.doc ?: return null
+    val name = items.kind.nameOf(held.document).trim().ifEmpty { held.base.name }
+    // Its own record each time: an item can leave the editor with a change more than once.
+    val version = KeptVersion("${ref.pack}:${ref.item}:unsent:${UUID.randomUUID()}", items.kind.kind, PackSentences.myEditsName(name), data)
+    return try {
+        keeper.keep(ref.pack, listOf(version)).filterIsInstance<KeptOutcome.Saved>().firstOrNull()
+    } catch (e: CancellationException) {
+        throw e
+    } catch (_: Exception) {
+        items.holdAgain(localId, held)
+        null
+    }
+}

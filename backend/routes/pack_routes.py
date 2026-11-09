@@ -18,6 +18,7 @@ from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm.attributes import flag_modified
 
+import notify
 import pack_ops
 import pack_support as packs
 import sync_support as sync
@@ -26,7 +27,7 @@ from email_service import send_pack_added_email, send_pack_invite_email
 from entitlements import account_active, has_feature, require_feature
 from models import (
     MissionPack, MissionPackEvent, MissionPackInvite, MissionPackItem, MissionPackMember,
-    SavedBrief, SavedLZ, SavedPointSet, SavedRoute, User, db,
+    SavedBrief, SavedLZ, SavedPointSet, SavedRoute, SavedThreatSet, User, db,
 )
 from routes.auth import _normalize_email, _valid_email
 
@@ -34,7 +35,7 @@ pack_bp = Blueprint('packs', __name__)
 
 _CLIENT_OP_ID = re.compile(r'^[\x21-\x7e]{1,64}\Z')       # printable ASCII, as an Idempotency-Key
 _CONTROL = re.compile(r'[\x00-\x1f\x7f]')
-_KIND_WORDS = {'lz': 'LZ', 'route': 'routes', 'pointset': 'points', 'brief': 'brief'}
+_KIND_WORDS = {'lz': 'LZ', 'route': 'routes', 'pointset': 'points', 'brief': 'brief', 'threatset': 'threats'}
 
 
 # -- Helpers --------------------------------------------------------------------
@@ -333,6 +334,7 @@ def delete_pack(pack_uuid):
     # A tombstone, so a device that asks learns it was deleted; everything in it is gone.
     for model in packs.PACK_CONTENT:
         model.query.filter_by(pack_id=pack.id).delete(synchronize_session=False)
+    notify.withdraw(pack_uuid=pack.uuid)
     pack.name, pack.description, pack.team_id = '', '', None
     pack.deleted_at = packs.now()
     packs.announce_deleted(pack.uuid)
@@ -355,6 +357,8 @@ def finish_pack(pack_uuid):
         pack.status, pack.finished_at, pack.finished_by = 'finished', packs.now(), me.id
         packs.append(pack, me, {'type': 'pack.finish'},
                      f'{packs.actor_name(me)} finished the pack. It is read-only for everyone.')
+        for user_id in notify.people_in(pack):
+            notify.add(user_id, 'pack_finished', pack=pack, actor=me, delay=notify.FINISH_DELAY)
         db.session.commit()
     return _reply(_full(pack, me.id))
 
@@ -373,6 +377,8 @@ def reopen_pack(pack_uuid):
     if pack.status == 'finished':
         pack.status, pack.finished_at, pack.finished_by = 'active', None, None
         packs.append(pack, me, {'type': 'pack.reopen'}, f'{packs.actor_name(me)} reopened the pack.')
+        # A finish not yet sent is never sent; one sent is no longer so, and every device takes it down.
+        notify.withdraw(pack_uuid=pack.uuid, types=('pack_finished',))
         db.session.commit()
     return _reply(_full(pack, me.id))
 
@@ -631,11 +637,36 @@ def _library_record(kind, user_id, source):
     return None
 
 
+def _threats_of_copy(data, item_uuid):
+    """A set of threats as a copy of it is kept in a pack: each threat's id its own to this item. Everything finds a
+    threat by its id across all the sets open at once, so a set copied in twice, or beside its Library duplicate, would
+    otherwise be one set of threats moving together. The same original gives the same ids, so an update lands on them."""
+    if not isinstance(data, dict) or not isinstance(data.get('threats'), list):
+        return data
+    prefix = f'{item_uuid}.'
+    taken = set()
+
+    def own(threat):
+        if not isinstance(threat, dict) or isinstance(threat.get('id'), bool) or not isinstance(threat.get('id'), (str, int)):
+            return threat
+        was = str(threat['id'])
+        # A copy of a copy (saved from a pack to the Library, then copied in) keeps one prefix, not a growing chain.
+        made = prefix + was.rsplit('.', 1)[-1]
+        if made in taken:
+            made = prefix + was
+        taken.add(made)
+        return {**threat, 'id': made}
+
+    return {**data, 'threats': [own(threat) for threat in data['threats']]}
+
+
 def _library_data(kind, record):
     if kind == 'lz':
         return record.lz_data
     if kind == 'route':
         return record.route_data
+    if kind == 'threatset':
+        return record.threat_data
     return record.points_data
 
 
@@ -658,7 +689,9 @@ def copy_in(pack_uuid):
     source = body.get('source') if isinstance(body.get('source'), dict) else {}
     kind = source.get('kind')
     if kind not in packs.LIBRARY_MODELS:
-        return _error('source.kind must be lz, route or pointset.', 400, 'invalid_source')
+        return _error('source.kind must be lz, route, pointset or threatset.', 400, 'invalid_source')
+    if kind == 'threatset' and not has_feature(me, 'threats'):
+        return _error("This feature isn't enabled for your account.", 403, 'feature_disabled')
     item_uuid = body.get('item') if body.get('item') is not None else str(uuid_lib.uuid4())
     if not isinstance(item_uuid, str) or pack_ops.validate({'type': 'item.delete', 'item': item_uuid}):
         return _error('item must be an id of letters, digits and _ . : -, 64 at most.', 400, 'invalid_item')
@@ -698,6 +731,8 @@ def copy_in(pack_uuid):
     name = body['name'] if 'name' in body else ((record.name or '')[:100].strip() or _KIND_WORDS[kind].upper())
     summary = packs.clean_summary(body.get('summary')) or \
         f'{packs.actor_name(me)} added "{name}" (copied from their library).'
+    if kind == 'threatset':
+        data = _threats_of_copy(data, item_uuid)
     item, event = _add_item(pack, me, item_uuid, kind, name, copy.deepcopy(data), summary,
                             source={'kind': kind, 'uuid': record.client_uuid, 'revision': record.revision})
     db.session.commit()
@@ -752,6 +787,8 @@ def update_from_original(pack_uuid, item_uuid):
     if original is None:
         return _error('The original is no longer in your library.', 409, 'original_gone')
     data = _library_data(item.source_kind, original)
+    if item.source_kind == 'threatset':
+        data = _threats_of_copy(data, item.uuid)
     if _too_large(data):
         return _error('The original is larger than 5 MB.', 413, 'item_too_large')
 
@@ -796,6 +833,8 @@ def save_to_library(pack_uuid, item_uuid):
     data = copy.deepcopy(item.data)
     if item.kind == 'brief' and not has_feature(me, 'mission_brief'):
         return _error("This feature isn't enabled for your account.", 403, 'feature_disabled')
+    if item.kind == 'threatset' and not has_feature(me, 'threats'):
+        return _error("This feature isn't enabled for your account.", 403, 'feature_disabled')
     if item.kind == 'lz':
         record = SavedLZ(user_id=me.id, name=name, lz_data=data)
     elif item.kind == 'brief':
@@ -806,6 +845,10 @@ def save_to_library(pack_uuid, item_uuid):
         if not data:
             return _error('A point set with no points cannot be saved.', 400, 'empty_point_set')
         record = SavedPointSet(user_id=me.id, name=name, points_data=data)
+    elif item.kind == 'threatset':
+        if not isinstance(data.get('threats'), list):
+            return _error('That set of threats cannot be read.', 400, 'unreadable_source')
+        record = SavedThreatSet(user_id=me.id, name=name, threat_data=data, threat_count=len(data['threats']))
     else:
         return _error('That item cannot be saved to a library.', 400, 'unreadable_source')
     record.client_uuid = sync.new_client_uuid()
@@ -853,6 +896,7 @@ def add_member(pack_uuid):
     db.session.add(MissionPackMember(pack_id=pack.id, user_id=target.id, role=role, added_by=me.id))
     packs.append(pack, me, {'type': 'member.add', 'user_id': target.id, 'name': target.name, 'role': role},
                  f'{packs.actor_name(me)} added {target.name} as {"an editor" if role == "editor" else "a viewer"}.')
+    notify.add(target.id, 'pack_added', pack=pack, actor=me, role=role)
     db.session.commit()
     try:
         send_pack_added_email(target, me.name, pack.name)
@@ -893,6 +937,7 @@ def change_member(pack_uuid, user_id):
         member.role, pack.owner_id = 'owner', user_id
         packs.append(pack, me, {'type': 'pack.transfer', 'user_id': user_id, 'name': name},
                      f'{who} made {name} the owner of the pack.')
+        notify.add(user_id, 'pack_owner', pack=pack, actor=me)
     else:
         member.role = role
         packs.append(pack, me, {'type': 'member.role', 'user_id': user_id, 'name': name, 'role': role},
@@ -929,6 +974,12 @@ def remove_member(pack_uuid, user_id):
 
 
 # -- Invites --------------------------------------------------------------------
+
+def _notify_invitee(pack, invite, inviter):
+    """Tell whoever has an account at the invitation's address. One with none finds it in the switcher once signed up."""
+    for account in notify.accounts_at(invite.email):
+        notify.add(account.id, 'pack_invite', pack=pack, actor=inviter, invite=invite, role=invite.role)
+
 
 def _send_pack_invite(pack, invite, raw_token, inviter):
     has_account = User.query.filter(func.lower(User.email) == invite.email).first() is not None
@@ -987,6 +1038,7 @@ def invite_to_pack(pack_uuid):
     invite.expires_at = packs.now() + packs.INVITE_LIFETIME
     packs.append(pack, me, {'type': 'invite.create', 'email': email, 'role': role},
                  f'{packs.actor_name(me)} invited {email} as {"an editor" if role == "editor" else "a viewer"}.')
+    _notify_invitee(pack, invite, me)
     db.session.commit()
     sent = _send_pack_invite(pack, invite, raw, me)
     return _reply({'invite': packs.invite_body(invite), 'email_sent': sent}, status)
@@ -1013,6 +1065,7 @@ def resend_pack_invite(pack_uuid, invite_id):
         return limited
     raw, invite.token_hash = packs.new_token()
     invite.expires_at = packs.now() + packs.INVITE_LIFETIME
+    _notify_invitee(pack, invite, me)
     db.session.commit()
     sent = _send_pack_invite(pack, invite, raw, me)
     return _reply({'invite': packs.invite_body(invite), 'email_sent': sent})
@@ -1033,6 +1086,7 @@ def revoke_pack_invite(pack_uuid, invite_id):
     if invite is None:
         return _error('Not found', 404, 'invite_not_found')
     invite.status = 'revoked'
+    notify.withdraw(invite_ids=[invite.id])
     packs.append(pack, me, {'type': 'invite.revoke', 'email': invite.email},
                  f"{packs.actor_name(me)} withdrew {invite.email}'s invitation.")
     db.session.commit()

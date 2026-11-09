@@ -1,7 +1,9 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { computeRoutePlan, defaultRoutePlan, planPoints } from "../msnxImport/routeCalc";
+import { savedFlots } from "../flot/flots";
 import { useToast } from "../ui/Toast";
 import SaveDialog, { nextFreeName } from "./SaveDialog";
+import { SKETCHES } from "../msnxImport/routeSketchReducer";
 
 /*
  * Saving route sets to the Library (docs/MENU_REDESIGN.md §4, screen SaveRoutes). A set is this
@@ -14,11 +16,13 @@ import SaveDialog, { nextFreeName } from "./SaveDialog";
  * opened): routes keep no dirty flag of their own. Hiding or showing a route is not a change.
  */
 
-export const SKETCHES = "sketches";
+export { SKETCHES };
 const PENDING = Symbol("pending");
 
-export const routesFingerprint = (routes) =>
-  JSON.stringify((routes ?? []).map(({ visible, ...rest }) => rest));
+export const routesFingerprint = (routes, flots = []) => {
+  const shown = (routes ?? []).map(({ visible, ...rest }) => rest);
+  return JSON.stringify(flots?.length ? { routes: shown, flots: savedFlots(flots) } : shown);
+};
 
 const plural = (n, one, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
 
@@ -31,9 +35,11 @@ export const routeTotals = (route) => {
   }
 };
 
-export const setSummary = (routes) => {
+export const setSummary = (routes, flots = []) => {
   const points = routes.reduce((sum, route) => sum + (route.points?.length ?? 0), 0);
-  return `${plural(routes.length, "route")} · ${plural(points, "point")}`;
+  const parts = routes.length > 0 || flots.length === 0 ? [plural(routes.length, "route"), plural(points, "point")] : [];
+  if (flots.length > 0) parts.push(plural(flots.length, "FLOT"));
+  return parts.join(" · ");
 };
 
 const contentsFor = (set) => {
@@ -50,6 +56,7 @@ const contentsFor = (set) => {
   return [
     { text: `${plural(routes.length, "route")}, ${plural(points, "point")}${nm ? `, ${nm.toFixed(1)} nm` : ""}` },
     { text: "Speeds, altitudes, winds, fuel flow and the start time" },
+    ...(set.flots?.length ? [{ text: plural(set.flots.length, "FLOT") }] : []),
     { icon: "info", text: "Threats are never saved. Export them as a .ths if you need them next to the mission." },
   ];
 };
@@ -58,7 +65,7 @@ export const defaultSetName = (set) =>
   set.kind === "mission" ? (set.fileName || "MISSION").replace(/\.msnx$/i, "") : "SKETCHED ROUTES";
 
 /**
- * `sets`: [{ key, kind: "sketch" | "mission", fileName, routes }]. `library`: the useSavedRoutes calls
+ * `sets`: [{ key, kind: "sketch" | "mission", fileName, routes, flots? }]. `library`: the useSavedRoutes calls
  * plus `serializeFile(fileId)` from useMsnxImport.
  */
 export const useRouteSaves = ({ sets, library, signedIn, onOpenLibrary }) => {
@@ -74,12 +81,12 @@ export const useRouteSaves = ({ sets, library, signedIn, onOpenLibrary }) => {
   const setsRef = useRef(sets);
   setsRef.current = sets;
 
-  const prints = useMemo(() => Object.fromEntries(sets.map((set) => [set.key, routesFingerprint(set.routes)])), [sets]);
+  const prints = useMemo(() => Object.fromEntries(sets.map((set) => [set.key, routesFingerprint(set.routes, set.flots)])), [sets]);
 
   // A set just opened from the Library is clean once its routes have arrived; a set that has gone
   // (every sketch removed, a mission closed) is no longer linked, so the next save is a new record.
   useEffect(() => {
-    const present = new Set(sets.filter((set) => set.routes.length > 0).map((set) => set.key));
+    const present = new Set(sets.filter((set) => set.routes.length > 0 || set.flots?.length > 0).map((set) => set.key));
     setSnapshots((prev) => {
       let changed = false;
       const next = { ...prev };
@@ -147,7 +154,7 @@ export const useRouteSaves = ({ sets, library, signedIn, onOpenLibrary }) => {
   const write = useCallback(async (key, name, recordId) => {
     const set = setsRef.current.find((s) => s.key === key);
     if (!set) throw new Error("Those routes are no longer open.");
-    const print = routesFingerprint(set.routes);
+    const print = routesFingerprint(set.routes, set.flots);
     let saved;
     if (set.kind === "mission") {
       const file = await lib.current.serializeFile(key);
@@ -159,7 +166,8 @@ export const useRouteSaves = ({ sets, library, signedIn, onOpenLibrary }) => {
     } else {
       // Which set a route is filed under here (useRouteSketch) is not part of what is saved.
       const routes = set.routes.map(({ setId: _filed, ...route }) => route);
-      saved = recordId != null ? await lib.current.updateSketch(recordId, routes, name) : await lib.current.saveSketch(name, routes);
+      const flots = savedFlots(set.flots);
+      saved = recordId != null ? await lib.current.updateSketch(recordId, routes, name, flots) : await lib.current.saveSketch(name, routes, flots);
     }
     const id = recordId ?? saved?.id;
     setLinks((prev) => ({ ...prev, [key]: { id, name } }));
@@ -252,13 +260,7 @@ export const useRouteSaves = ({ sets, library, signedIn, onOpenLibrary }) => {
       <SaveDialog
         key={`${dialog.key}-${dialog.copy}`}
         title={dialog.copy ? "Save as new routes" : kind === "mission" ? "Save mission" : "Save routes"}
-        subtitle={
-          dialog.copy
-            ? "Saves a copy under a new name. What is open becomes the copy."
-            : kind === "mission"
-              ? "Saves the mission file with your edits to its points and plans."
-              : "Saves the sketched routes with their plans."
-        }
+        subtitle={dialog.copy ? "Saves a copy under a new name. What is open becomes the copy." : undefined}
         icon="route"
         initialName={dialog.copy ? nextFreeName(name, existing) : name}
         contents={contentsFor(set)}

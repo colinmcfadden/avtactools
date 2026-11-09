@@ -5,7 +5,10 @@ import app.ezpztac.data.Viewer3DTarget
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.ViewModelStore
+import app.ezpztac.network.LidarFrameDto
+import app.ezpztac.scene3d.CameraPose
 import app.ezpztac.scene3d.SceneLook
+import app.ezpztac.scene3d.Sphere
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.StandardTestDispatcher
@@ -136,6 +139,26 @@ class Viewer3DViewModelTest {
         advanceUntilIdle()
         assertNull(model.session.value)
         assertNull("closed: it draws nothing more", scene.listener)
+    }
+
+    @Test
+    fun `it asks for the place streamed, and a streamed survey's scene opens on the server's frame`() = runTest(main) {
+        val lz = LidarFrameDto(hawk.lat, hawk.lon, radiusM = 500.0, heightM = 371.2)
+        val api = FakeLidar(frame = lz)
+        val model = model(api)
+        model.show(hawk)
+        advanceUntilIdle()
+        assertEquals("the view opens on frame, so it may ask", listOf(true), api.streamAsked)
+        val scene = model.session.value!!
+        val view: () -> Unit = {}
+        scene.listener = view
+        val camera = scene.frame(1080, 2200, 2.75, view)!!.camera
+        val opening = CameraPose.framing(scene.frame, Sphere(scene.frame.fromGeodetic(lz.lat, lz.lon, 371.2), 500.0), 1080.0 / 2200)
+        assertEquals(opening.position.x, camera.position.x, 1e-9)
+        assertEquals(opening.position.y, camera.position.y, 1e-9)
+        assertEquals(opening.position.z, camera.position.z, 1e-9)
+        model.close()
+        advanceUntilIdle()
     }
 
     @Test

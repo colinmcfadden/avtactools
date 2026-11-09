@@ -63,6 +63,8 @@ class TerrainGrid:
     xres_m: float
     yres_m: float
     vertical_datum: str
+    # The files (or the service) the heights came from, by name: a survey names the DEM its elevation was read in.
+    names: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -186,6 +188,7 @@ def load_terrarium_bounds(bounds_latlon, zoom: int = 13) -> TerrainGrid | None:
         xres_m=ground_mpp,
         yres_m=ground_mpp,
         vertical_datum="source-dependent Terrarium DEM",
+        names=(f"Terrarium z{zoom}",),
     )
 
 
@@ -262,10 +265,19 @@ class LocalRasterCatalog:
                 return self._entries
             return self._refresh()
 
+    def refresh(self):
+        """Scan now, rather than when the interval next runs out: a DEM the admin's Data tab just put in place
+        (data_admin) is used at once."""
+        with self._refresh_lock:
+            return self._refresh()
+
     def _refresh(self):
         entries: list[RasterEntry] = []
         for root in self._roots():
-            for directory, _, files in os.walk(root):
+            for directory, folders, files in os.walk(root):
+                # Dot folders hold what is not in place yet (data_admin's .incoming, .trash): a DEM there may be half
+                # written, and would change the 3D terrain's fingerprint (terrain_tiles) before it is checked.
+                folders[:] = [name for name in folders if not name.startswith(".")]
                 for name in files:
                     path = os.path.join(directory, name)
                     kind = _entry_kind(path)
@@ -318,6 +330,7 @@ class LocalRasterCatalog:
 
         with ExitStack() as stack:
             sources = []
+            names = set()
             for entry in entries:
                 try:
                     dataset = stack.enter_context(rasterio.open(entry.path))
@@ -326,6 +339,7 @@ class LocalRasterCatalog:
                             WarpedVRT(dataset, crs=target_crs, resampling=Resampling.bilinear)
                         )
                     )
+                    names.add(os.path.basename(entry.path))
                 except (rasterio.errors.RasterioError, OSError, ValueError):
                     continue
             if not sources:
@@ -361,6 +375,7 @@ class LocalRasterCatalog:
             xres_m=abs(affine.a),
             yres_m=abs(affine.e),
             vertical_datum=datums.pop() if len(datums) == 1 else "mixed local source metadata",
+            names=tuple(sorted(names)),
         )
 
     def load_best(self, requested) -> TerrainGrid | None:

@@ -13,6 +13,13 @@ import app.ezpztac.android.LastDiagram
 import app.ezpztac.android.LastDiagramPreferences
 import app.ezpztac.android.LastRouteSet
 import app.ezpztac.android.LastRouteSetPreferences
+import app.ezpztac.android.ApiChartCalls
+import app.ezpztac.android.ChartCalls
+import app.ezpztac.android.ChartConfig
+import app.ezpztac.android.ChartMemory
+import app.ezpztac.android.CoverageFile
+import app.ezpztac.android.CoverageFileStore
+import app.ezpztac.android.MapChartsSink
 import app.ezpztac.android.MapPreferences
 import app.ezpztac.android.MapTokenSink
 import app.ezpztac.android.LidarWaitingPreferences
@@ -21,9 +28,20 @@ import app.ezpztac.android.MinimumVersionPreferences
 import app.ezpztac.android.HiddenDiagramPreferences
 import app.ezpztac.android.OpenDiagramPreferences
 import app.ezpztac.android.OpenRouteSetPreferences
+import app.ezpztac.android.OpenThreatSetPreferences
 import app.ezpztac.android.PointSetViewPreferences
 import app.ezpztac.android.WeatherFileCache
 import app.ezpztac.android.export.AssetMissionTemplate
+import app.ezpztac.android.notifications.ApiNotificationApi
+import app.ezpztac.android.notifications.AppNotifications
+import app.ezpztac.android.notifications.NotificationApi
+import app.ezpztac.android.notifications.NotificationBook
+import app.ezpztac.android.notifications.NotificationPreferences
+import app.ezpztac.android.notifications.NotificationScheduler
+import app.ezpztac.android.notifications.NotificationShell
+import app.ezpztac.android.notifications.Notifier
+import app.ezpztac.android.notifications.SystemNotifier
+import app.ezpztac.android.notifications.WorkManagerNotificationScheduler
 import app.ezpztac.android.export.AssetThsTemplate
 import app.ezpztac.android.export.ExportCleaner
 import app.ezpztac.android.export.ShareExport
@@ -59,6 +77,9 @@ import app.ezpztac.data.MissionTemplate
 import app.ezpztac.data.HiddenDiagramStore
 import app.ezpztac.data.OpenDiagramStore
 import app.ezpztac.data.OpenRouteSetStore
+import app.ezpztac.data.OpenThreatSetStore
+import app.ezpztac.data.OpenThreatSets
+import app.ezpztac.data.ThreatSetRepository
 import app.ezpztac.data.PlanningApi
 import app.ezpztac.data.PointSetViewStore
 import app.ezpztac.data.SlopeOpacityMemory
@@ -77,6 +98,7 @@ import app.ezpztac.map.GridMemory
 import app.ezpztac.map.LocationSource
 import app.ezpztac.map.MapTokenSource
 import app.ezpztac.map.PlatformLocationSource
+import app.ezpztac.map.VfrChartSource
 import app.ezpztac.missionpacks.ApiPackApi
 import app.ezpztac.missionpacks.PackApi
 import app.ezpztac.network.ApiClient
@@ -217,8 +239,8 @@ object AppModule {
     /** Threats outlive any screen (a write finishes with the sheet closed), so they run in a scope of their own that is never cancelled with one. */
     @Provides
     @Singleton
-    fun threatStore(vault: ThreatVault): ThreatStore =
-        ThreatStore(vault, kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.SupervisorJob() + kotlinx.coroutines.Dispatchers.Default))
+    fun threatStore(vault: ThreatVault, library: ThreatSetRepository, open: OpenThreatSets): ThreatStore =
+        ThreatStore(vault, kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.SupervisorJob() + kotlinx.coroutines.Dispatchers.Default), library = library, openSets = open)
 
     @Provides
     @Singleton
@@ -321,6 +343,10 @@ interface AppBindings {
     fun openRouteSets(impl: OpenRouteSetPreferences): OpenRouteSetStore
 
     @Binds
+    @Singleton
+    fun openThreatSets(impl: OpenThreatSetPreferences): OpenThreatSetStore
+
+    @Binds
     fun conflictResolver(impl: SyncEngine): ConflictResolver
 
     @Binds
@@ -330,6 +356,21 @@ interface AppBindings {
     fun mapTokenSink(impl: MapPreferences): MapTokenSink
 
     @Binds
+    fun vfrCharts(impl: ChartConfig): VfrChartSource
+
+    @Binds
+    fun mapCharts(impl: ChartConfig): MapChartsSink
+
+    @Binds
+    fun chartCalls(impl: ApiChartCalls): ChartCalls
+
+    @Binds
+    fun chartMemory(impl: MapPreferences): ChartMemory
+
+    @Binds
+    fun coverageFile(impl: CoverageFileStore): CoverageFile
+
+    @Binds
     fun cameraMemory(impl: MapPreferences): CameraMemory
 
     @Binds
@@ -337,4 +378,19 @@ interface AppBindings {
 
     @Binds
     fun slopeOpacityMemory(impl: MapPreferences): SlopeOpacityMemory
+
+    @Binds
+    fun notificationShell(impl: AppNotifications): NotificationShell
+
+    @Binds
+    fun notificationScheduler(impl: WorkManagerNotificationScheduler): NotificationScheduler
+
+    @Binds
+    fun notificationBook(impl: NotificationPreferences): NotificationBook
+
+    @Binds
+    fun notifier(impl: SystemNotifier): Notifier
+
+    @Binds
+    fun notificationApi(impl: ApiNotificationApi): NotificationApi
 }

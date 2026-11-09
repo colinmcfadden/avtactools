@@ -3,7 +3,11 @@ package app.ezpztac.android
 import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import app.ezpztac.geo.GridShare
 import app.ezpztac.android.export.ExportCleaner
+import app.ezpztac.android.notifications.NotificationShell
+import app.ezpztac.android.notifications.NotificationTap
+import app.ezpztac.android.notifications.NotificationToast
 import app.ezpztac.android.packs.MISSION_PACKS
 import app.ezpztac.android.packs.PackInvites
 import app.ezpztac.android.packs.PackRuntime
@@ -44,10 +48,16 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.distinctUntilChangedBy
+import kotlinx.coroutines.flow.filterNotNull
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+
+/** The entitlements that let an account save threats: `/api/threatsets` needs both, and a write it refused would wait in the outbox for good. */
+private const val THREATS = "threats"
+private const val CLOUD_SAVE = "cloud_save"
 
 /**
  * The shell: reads the session, asks the server what it will allow, works out whose plans are on this device, and says which [Gate]
@@ -68,12 +78,14 @@ class AppViewModel @Inject constructor(
     private val incoming: IncomingFiles,
     private val sessionPoints: SessionPointSets,
     private val mapTokens: MapTokenSink,
+    private val mapCharts: MapChartsSink,
     private val packs: PackRuntime,
     private val briefs: BriefFlush,
     invites: PackInvites,
     private val minimumVersion: MinimumVersion,
     private val saved: SavedStateHandle,
     @Named("appVersion") private val version: String,
+    private val notifications: NotificationShell,
 ) : ViewModel() {
     private val config = MutableStateFlow<AppConfig?>(null)
     private val link = MutableStateFlow<AuthRoute?>(null)
@@ -104,6 +116,26 @@ class AppViewModel @Inject constructor(
     // A look at the server's config under way: one at a time, or the launch's and the first coming to the front's would both ask.
     private var configLook: Job? = null
 
+    private val tap = MutableStateFlow<NotificationTap?>(null)
+
+    /**
+     * A grid link the app was opened with (`https://ezpztac.app/#grid=…`), until the map has gone there: its fragment kept in the saved state, as
+     * the invitation's token is, so a sign-in, a turn of the phone and the process being ended (verifying an email in another app) keep it.
+     */
+    val gridLink: StateFlow<GridShare.Link?> = saved.getStateFlow<String?>(GRID_LINK, null)
+        .map { fragment -> fragment?.let(GridShare::readGridLink) }
+        .stateIn(viewModelScope, SharingStarted.Eagerly, saved.get<String>(GRID_LINK)?.let(GridShare::readGridLink))
+
+    fun gridLinkHandled() {
+        saved[GRID_LINK] = null
+    }
+
+    /** A notification tapped for the account signed in, and shown on this device, until the frame has done what it says (§7 of docs/NOTIFICATIONS.md). */
+    val notificationTap: StateFlow<NotificationTap?> = tap.asStateFlow()
+
+    /** What a notification says while the frame is in front and listening: a toast instead of the system's. */
+    val notificationToasts: Flow<NotificationToast> = notifications.toasts
+
     /**
      * Whether this app may send anything now: this version is not below the server's minimum as last heard (the owner's decision: nothing is sent
      * below it), and the server serves an API major this build talks ([holdsBack]), which every look at the config updates first, the background
@@ -116,7 +148,6 @@ class AppViewModel @Inject constructor(
     init {
         viewModelScope.launch {
             backend.restore()
-            backend.endSessionIfOfflineTooLong()
             if (backend.state.value is AuthState.SignedIn) refreshUserQuietly()
         }
         lookAtConfig()
@@ -143,6 +174,13 @@ class AppViewModel @Inject constructor(
                     PackGate.Leave -> Unit
                 }
             }
+        }
+        viewModelScope.launch {
+            // Threats are saved sets once the plans here are this account's and it may save them (`threats` and `cloud_save`, which an admin can change at any time). A
+            // null passes through, so the same account coming back after a sign-out asks again.
+            combine(backend.state, ownership) { auth, owner ->
+                (auth as? AuthState.SignedIn)?.user?.takeIf { it.accessOk && owner == Ownership.Yours }?.let { it.id.toString() to (it.hasFeature(THREATS) && it.hasFeature(CLOUD_SAVE)) }
+            }.distinctUntilChanged().filterNotNull().collect { (account, saves) -> quietly { threats.attach(account, saves) } }
         }
         viewModelScope.launch {
             // An invitation is accepted once the person is in (signed in, past the gate, the plans here theirs) and the app may send (accepting
@@ -179,6 +217,7 @@ class AppViewModel @Inject constructor(
     /** The app has come to the front: an open pack is followed again, with whatever could not get through tried now, and the server's config is looked at. */
     fun appStarted() {
         lookAtConfig()                                                    // the server may have raised its minimum, or begun maintenance, meanwhile
+        notifications.foreground(true)                                    // looked at now: in front, what is new is a toast
         packs.foreground(true)
         packs.wake()
     }
@@ -192,12 +231,14 @@ class AppViewModel @Inject constructor(
     fun appStopped() {
         // At once, not after the writes: a quick return to the front (a turn of the phone) must not find packs sent to the back after it.
         packs.foreground(false)
+        notifications.foreground(false)
         // Not this screen's to cut short: for an activity that is finishing (Back, swiped from recents) this view model is cleared at once,
         // and a write cancelled half way, having cancelled the session's own delayed one, would leave the change in memory only.
         viewModelScope.launch(start = CoroutineStart.UNDISPATCHED) {
             withContext(NonCancellable) {
                 quietly { session.flush() }
                 quietly { routeSession.flush() }
+                quietly { threats.flush() }
                 quietly { briefs.flush() }
                 quietly { if (packs.unsentCount() > 0) sync.requestSync() }
             }
@@ -220,6 +261,8 @@ class AppViewModel @Inject constructor(
         if (auth !is AuthState.SignedIn) {
             if (auth is AuthState.SignedOut) {
                 invitation.forget()                                              // what became of a link names a pack: it does not stay for the next person
+                tap.value = null                                                 // nor does a notification tapped for this account
+                quietly { notifications.signedOut() }                            // nor anything posted for it, or what this device kept of its notifications
                 // First, before anything here waits: a file another app handed over and nobody has answered (held in memory), and the points brought in for this
                 // session only. An import still under way asks for these before it lands ([IncomingFiles.generation]), so none of it reaches the next person.
                 incoming.clear()
@@ -231,12 +274,13 @@ class AppViewModel @Inject constructor(
                 // follows from being cleared.
                 quietly { packs.disable() }
                 weather.clear()                                                  // where this account's landing zones are does not stay for the next person
-                threats.wipe()                                                   // nor does the threat picture: it is the most sensitive thing on the device
+                quietly { threats.signOut() }                                    // what was changed is saved first; then none of it stays in memory, and a device-only picture goes
                 exports.clear()                                                  // nor a .ths or mission that was shared: they are in the clear in the cache
                 tiles.clear()                                                    // nor the point clouds the 3D view kept: each is a place
             }
             return
         }
+        notifications.signedIn()                                          // at the gate too: it is how the person hears their access was approved
         if (!auth.user.accessOk) return                                   // held at the gate: nothing of this account is touched yet
         val owner = accounts.ownership(auth.user.id)
         if (owner == Ownership.Unclaimed) {
@@ -297,6 +341,7 @@ class AppViewModel @Inject constructor(
             minimumVersion.remember(fetched.minAppVersion.android, fetched.servedApiMajors)   // first: packs, invitations and the sync all go by it
             config.value = fetched
             mapTokens.update(fetched.mapbox.publicToken)                  // remembered, so the next start with no signal can draw imagery
+            mapCharts.update(fetched.charts?.vfr)                         // and the FAA's charts, which no build at all takes back to ArcGIS
         } catch (_: ApiException) {
             // Offline: nothing is blocked for want of a config, and the minimum last heard stands.
         }
@@ -319,6 +364,7 @@ class AppViewModel @Inject constructor(
      */
     fun onLink(url: String?) {
         AuthLinks.parse(url)?.let { link.value = it }
+        GridLinks.fragmentOf(url)?.takeIf { GridShare.readGridLink(it) != null }?.let { saved[GRID_LINK] = it }
         InviteLinks.parse(url)?.let { token ->
             // The link kept, opened again: the person is asking again, perhaps after closing what it said, as a reload asks on the web.
             if (token == saved.get<String>(INVITE_TOKEN)) retryInvite() else saved[INVITE_TOKEN] = token
@@ -328,6 +374,45 @@ class AppViewModel @Inject constructor(
     fun linkHandled() {
         link.value = null
     }
+
+    /**
+     * A notification the app was opened from: acted on only for the account it was posted for, once whoever is signed in is known, and only as this device
+     * showed it ([NotificationShell.tapped]: what it opens is what was shown, not what the intent says). The frame acts on it at once; marking it seen on
+     * every device goes apart, and not while this version may send nothing. Access approved asks the server again, which lifts the gate.
+     */
+    fun onNotification(tapped: NotificationTap?) {
+        tapped ?: return
+        viewModelScope.launch {
+            val user = (backend.state.first { it !is AuthState.Unknown } as? AuthState.SignedIn)?.user ?: return@launch
+            val shown = notifications.tapped(tapped, user.id) ?: return@launch
+            if (shown.type == NotificationTap.ACCESS_APPROVED) return@launch refreshUserQuietly()
+            tap.value = shown
+            if (!holdsBack(version, minimumVersion.remembered.value, minimumVersion.rememberedApi.value)) notifications.seen(user.id, shown.id)
+        }
+    }
+
+    /** A toast's action: a tap on what the toast said (it was shown on this device, and is marked seen now that it was read). */
+    fun openFromToast(tapped: NotificationTap) = onNotification(tapped)
+
+    /** The frame has done what the tap said. */
+    fun notificationHandled() {
+        tap.value = null
+    }
+
+    /** Whether to offer the system's permission dialog: not where it is given, nor after it has been asked for twice (the system shows no more). */
+    fun offersNotifications(): Boolean = !notifications.hasPermission() && notifications.asks() < MAX_ASKS
+
+    /** Whether the switcher's line offers it to [user]: as [offersNotifications], unless they said *Not now* to it. */
+    fun switcherOffersNotifications(user: Int): Boolean = offersNotifications() && !notifications.saidNotNow(user)
+
+    /** The system's dialog is being shown. */
+    fun askedForNotifications() = notifications.noteAsked()
+
+    /** *Not now* to the switcher's offer, for [user]: the account menu still has it (docs/NOTIFICATIONS.md §4.5). */
+    fun notNowToNotifications(user: Int) = notifications.notNow(user)
+
+    /** The person allowed notifications: what waits is looked at now. */
+    fun notificationsAllowed() = notifications.foreground(true)
 
     fun signOut() {
         viewModelScope.launch { backend.logout() }
@@ -341,6 +426,11 @@ class AppViewModel @Inject constructor(
     private companion object {
         // The invitation link waiting to be accepted, in the saved state (the web's sessionStorage key).
         const val INVITE_TOKEN = "ezpz.packInvite"
+        // A grid link's fragment, until the map has gone there (the web's sessionStorage key).
+        const val GRID_LINK = "ezpz.gridLink"
+
+        // The system shows its dialog twice at most; after a second refusal only its own settings can turn notifications on.
+        const val MAX_ASKS = 2
     }
 }
 

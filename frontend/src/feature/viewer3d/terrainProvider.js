@@ -15,6 +15,7 @@
 
 import { absoluteTilesetUrl } from "./tilesetResource";
 import { priorityActive, whenIdle } from "../auth/requestPriority";
+import { freshAccessToken } from "../auth/session";
 
 // Must match terrain_tiles.TILE_SAMPLES. Cesium asks for a fixed grid size up
 // front and cannot renegotiate per tile.
@@ -59,7 +60,7 @@ export const fetchHeightmap = async (level, x, y, { fetchImpl = fetch } = {}) =>
   if (priorityActive()) await whenIdle();
 
   try {
-    const token = localStorage.getItem("auth_token");
+    const token = await freshAccessToken();
     const response = await fetchImpl(
       absoluteTilesetUrl(`${HEIGHTMAP_PATH}/${level}/${x}/${y}`),
       { headers: token ? { Authorization: `Bearer ${token}` } : {} },

@@ -62,7 +62,7 @@ No existing table is altered.
 | `mission_pack` | The pack: owner, optional team share (`team_id`, `team_role`), status (`active` / `finished`), and `head_seq`, its own change counter. Deleting it leaves a tombstone with the content gone |
 | `mission_pack_member` | Who is in it and as what (owner, editor, viewer) |
 | `mission_pack_invite` | Invitations to a pack or a team: an email address (or, for a team, none: a single-use link), a SHA-256 token, role, status, expiry |
-| `mission_pack_item` | An item: `kind` (`lz`, `route`, `pointset`, `brief`), `name`, and `data`, **exactly the JSON the library keeps** (`lz_data`, `route_data`, `points_data`), so every editor, exporter and native normalizer works on it unchanged. `source_*` records where a copy came from |
+| `mission_pack_item` | An item: `kind` (`lz`, `route`, `pointset`, `brief`, `threatset`), `name`, and `data`, **exactly the JSON the library keeps** (`lz_data`, `route_data`, `points_data`), so every editor, exporter and native normalizer works on it unchanged. `source_*` records where a copy came from |
 | `mission_pack_event` | The log: one row per operation, numbered by `seq` within the pack, with who, a sentence, the operation, and whether it was applied or skipped (and why). A change sent as several operations is several rows with its one sentence; the history shows them as one line |
 | `mission_pack_seen` | How far each person has looked in a pack (`seen_seq`, `seen_at`): what "changed since you looked" is measured from on every device, and a member's "Seen" time. Not part of the log |
 
@@ -92,12 +92,12 @@ and how an open pack is held (`packs/session.json`); `contracts/README.md` lists
 them. Change the rules on the web first and regenerate:
 
 ```powershell
-cd frontend; $env:UPDATE_CONTRACTS="1"; $env:CI="true"; npx react-scripts test --watchAll=false src/contracts/pack
+cd frontend; $env:UPDATE_CONTRACTS="1"; npx vitest run src/contracts/pack
 ```
 
 | Operation | Fields | Does |
 |---|---|---|
-| `item.create` | `kind`, `name`, `data` | Adds an item. `data` is an object for `lz`, `route` and `brief`, a list for `pointset` |
+| `item.create` | `kind`, `name`, `data` | Adds an item. `data` is an object for `lz`, `route`, `brief` and `threatset`, a list for `pointset` |
 | `item.rename` | `name` | |
 | `item.delete` | | Deletes it; name and content go too. Its uuid is never used again |
 | `set` | `path` (not empty), `value` | Sets a field. Objects missing or null on the way are made |
@@ -212,9 +212,9 @@ The web does all of this in `feature/missionPacks/`: `packSession.js` is the sta
 
 The editors are not changed to know about packs: every LZ/PZ stays in the workspace
 (`useLzWorkspace`), every route in the sketch (`useRouteSketch`, now in sets: each
-route's `setId`), every point set in `useLocalPoints`. A pack item open in one of them
-has an id naming the pack and the item (`packRef.js`). `usePackLz`, `usePackRoutes`
-and `usePackPoints` join them to the pack, on one engine (`usePackItemSync`):
+route's `setId`), every point set in `useLocalPoints`, every set of threats in `useThreats` (as `packSets`). A pack item open in one of them
+has an id naming the pack and the item (`packRef.js`). `usePackLz`, `usePackRoutes`,
+`usePackPoints` and `usePackThreats` join them to the pack, on one engine (`usePackItemSync`):
 
 - **A change made here is sent once the item has been still for 400 ms**, so a drag
   is one change, not one per frame, as the operations `packDiff.js` works out (an
@@ -233,7 +233,7 @@ and `usePackPoints` join them to the pack, on one engine (`usePackItemSync`):
 - **Someone else's change is put into the editor, keeping what is each person's own**:
   an LZ's view (base map, outline, slope map), its slope raster while the boundary is
   the same, its library link and unsaved flag; a route's being hidden; a point set's
-  colour and visibility. None of that is ever in a pack.
+  colour and visibility; whether a threat is hidden, and its terrain mask. None of that is ever in a pack.
 - A change the pack will not take (finished, or this person may only look) is put back
   to the pack's version, and `droppedVersions` rebuilds the person's own version of what
   they had changed, to save to their library as "NAME (my edits)" (`myEditsName`,
@@ -259,7 +259,7 @@ to the app by `usePackWorkspace`. Things worth keeping true:
 - **Just after a switch the hook still holds the previous pack's client for one render.** Its
   session names the other pack: `usePackWorkspace` ignores a session whose `pack.uuid` is not the
   open one. Without that the first LZ/PZ of the new pack was never opened.
-- In a pack, all its route sets and point sets go on the map (and new ones as they arrive, unless
+- In a pack, all its route sets, point sets and sets of threats go on the map (and new ones as they arrive, unless
   closed here), its first LZ/PZ opens, a new target is a new LZ/PZ in it, a finished sketch goes
   into the chosen route set (made if there is none), local points can be imported straight into it,
   and the Library's Open becomes Add to pack.
@@ -377,7 +377,7 @@ Its docstring has the `docker run` line.
 - **A role that comes through a team is best effort.** A change to a team's members (someone removed or leaving, an account deleted) does not take the lock of the packs shared with the team. A write reads the team role again under its own lock, so a removal that committed before then is seen; one that commits while the write holds the lock is not, and the write lands as if it had come just before the removal. That gap is Postgres's only: SQLite runs one writer at a time. Unsharing a pack and deleting a team do take the packs' locks, so those are exact, and a team's own roles (owner, admin, member) change nobody's role in a pack. Making team member changes take the lock of every pack on the team was weighed and left: the lock as writes take it would move each of those packs' `updated_at` (all of them jumping to the top of everyone's list for one person leaving a team; `touch=False` would not), one transaction locking many packs beside account and team deletion, which lock several in other orders, can deadlock (Postgres answers one of them with a 500), and none of it can be shown on SQLite, where the tests run. If it is ever needed, take the team's packs' locks in id order with `touch=False` (or a plain `SELECT … FOR UPDATE` in id order), so `updated_at` stays.
 - **The log is the record.** `mission_pack_event` is append-only. Pack-level changes are events too: `pack.create`, `pack.update`, `pack.share`, `pack.finish`, `pack.reopen`, `pack.transfer`, `member.add`, `member.join`, `member.role`, `member.remove`, `invite.create`, `invite.revoke`. `actor_name` is kept as written, so the log still reads after an account is deleted.
 - **Nothing reaches back into the library.** A copy is the pack's. Pack edits never touch the original, and only the person who copied an item in can see whether their original changed.
-- **Threats are never part of a pack.** There is no item kind for them, and `item.create` with `kind: threat` is malformed.
+- **Threats are a pack's as a set, kind `threatset`** (the owner, 2026-10-12: shared in packs, where every member can edit them). `data` is the Library's document, `{version: 1, threats: […]}`. **A terrain mask is never sent**, though the Library keeps one with its threat: every operation stays in `mission_pack_event` for good and a mask is a picture of 100 to 400 KB that any member can work out again. One that came with a copy is in the item and is drawn while it fits. A copy's threat ids are made the item's own (`pack_routes._threats_of_copy`), the same original giving the same ids, so an update from it lands on them and two copies never move together. A copy in or out needs `threats`.
 - **Finished means read-only for everyone**, the owner included, until the owner reopens it. The server enforces it from step 1, so a client that forgets cannot get round it.
 - **Deleting an account** calls `pack_support.release_account` before the user row goes, from both `DELETE /api/auth/me` and the admin dashboard. `mission_pack.owner_id` has no `ON DELETE` on purpose: Postgres refuses to delete an owner that was not released. `tests/test_packs.py` turns on SQLite's foreign keys so the tests catch this too.
 - **The admin dashboard is read only** here (`/admin/packs`, `/admin/teams`). It shows who owns what and who is in it, never what a pack holds.

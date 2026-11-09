@@ -1,0 +1,184 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<pdf2xml producer="poppler" note="Pages 1 and 5 of AASF 1's HLZ survey book (OCT 2023), text and picture places only, exactly as pdftohtml -xml writes them (no whitespace added: a piece's words are its text): the unit's own data, approved for EZ/PZ (docs/LZ_SURVEYS.md section 10, answer 2).">
+<page number="1" position="absolute" top="0" left="0" height="1188" width="918">
+	<fontspec id="0" size="24" family="Arial" color="#000000"/>
+	<fontspec id="1" size="18" family="Arial" color="#000000"/>
+	<fontspec id="2" size="14" family="Arial" color="#000000"/>
+	<fontspec id="3" size="15" family="ArialMT" color="#000000"/>
+	<fontspec id="4" size="18" family="ArialMT" color="#000000"/>
+	<fontspec id="5" size="15" family="Arial" color="#000000"/>
+	<fontspec id="6" size="18" family="ABCDEE+CambriaMath" color="#000000"/>
+	<fontspec id="7" size="12" family="Arial" color="#000000"/>
+	<fontspec id="8" size="12" family="ArialMT" color="#000000"/>
+	<fontspec id="9" size="15" family="TimesNewRomanPSMT" color="#000000"/>
+	<fontspec id="10" size="14" family="ArialMT" color="#000000"/>
+	<fontspec id="11" size="15" family="FNXCDD+Arial" color="#000000"/>
+	<fontspec id="12" size="15" family="WOWOLB+Arial" color="#000000"/>
+	<fontspec id="13" size="10" family="ArialMT" color="#000000"/>
+	<fontspec id="14" size="21" family="ArialMT" color="#000000"/>
+	<fontspec id="15" size="21" family="ABCDEE+CambriaMath" color="#000000"/>
+<image top="188" left="355" width="533" height="406" src="book-1_1.jpg"/>
+<image top="656" left="355" width="533" height="419" src="book-1_2.jpg"/>
+<image top="1031" left="311" width="84" height="30" src="book-1_3.png"/>
+<image top="1058" left="159" width="120" height="12" src="book-1_4.png"/>
+<image top="1003" left="129" width="125" height="12" src="book-1_5.png"/>
+<image top="1039" left="99" width="48" height="12" src="book-1_6.png"/>
+<text top="84" left="153" width="152" height="22" font="0"><b>HLZ SURVEY</b></text>
+<text top="76" left="452" width="105" height="17" font="1"><b>HLZ Name:  </b></text>
+<text top="97" left="449" width="105" height="17" font="1"><b>BIG STAMP </b></text>
+<text top="76" left="724" width="69" height="17" font="1"><b>HLZ ID: </b></text>
+<text top="97" left="719" width="80" height="17" font="1"><b>NGA 030 </b></text>
+<text top="129" left="76" width="258" height="17" font="1"><b>Hazards for Risk Assessment </b></text>
+<text top="149" left="118" width="173" height="17" font="1"><b>(RA) and Additional </b></text>
+<text top="170" left="153" width="104" height="17" font="1"><b>Information </b></text>
+<text top="149" left="507" width="152" height="17" font="1"><b>Landing Diagram </b></text>
+<text top="146" left="659" width="68" height="20" font="1"><b>– North </b></text>
+<text top="190" left="69" width="77" height="12" font="2"><b>Reference   </b></text>
+<text top="206" left="69" width="36" height="12" font="2"><b>Grid: </b></text>
+<text top="222" left="69" width="133" height="14" font="3">16S GD 5973 3631 </text>
+<text top="254" left="69" width="65" height="12" font="2"><b>Lat/Long: </b></text>
+<text top="270" left="69" width="86" height="14" font="3">N 34 38.149 </text>
+<text top="288" left="69" width="93" height="14" font="3">W084 09.996 </text>
+<text top="324" left="69" width="65" height="12" font="2"><b>Max A/C:  </b></text>
+<text top="321" left="134" width="113" height="17" font="4">2 day / 2 night</text>
+<text top="356" left="69" width="39" height="12" font="2"><b>Size:  </b></text>
+<text top="392" left="69" width="96" height="12" font="2"><b>Best Approach</b></text>
+<text top="391" left="165" width="9" height="14" font="5"><b>: </b></text>
+<text top="389" left="174" width="30" height="17" font="4">290</text>
+<text top="387" left="204" width="7" height="18" font="6">°</text>
+<text top="444" left="69" width="66" height="12" font="2"><b>Best Exit: </b></text>
+<text top="441" left="135" width="30" height="17" font="4">290</text>
+<text top="440" left="165" width="7" height="18" font="6">°</text>
+<text top="441" left="172" width="5" height="17" font="4"> </text>
+<text top="496" left="69" width="68" height="12" font="2"><b>Elevation: </b></text>
+<text top="492" left="137" width="88" height="17" font="4">3175 ft msl</text>
+<text top="543" left="69" width="124" height="12" font="2"><b>Surface Condition: </b></text>
+<text top="594" left="69" width="45" height="12" font="2"><b>Slope: </b></text>
+<text top="591" left="114" width="20" height="17" font="4">+9</text>
+<text top="590" left="134" width="11" height="18" font="6">° </text>
+<text top="591" left="145" width="167" height="17" font="4">roll (right side down) </text>
+<text top="612" left="69" width="20" height="17" font="4">+5</text>
+<text top="611" left="89" width="7" height="18" font="6">°</text>
+<text top="612" left="96" width="43" height="17" font="4"> pitch</text>
+<text top="663" left="69" width="214" height="12" font="2"><b>Maximum Weight  (if applicable): </b></text>
+<text top="710" left="69" width="107" height="12" font="2"><b>PPR Required? (</b></text>
+<text top="711" left="175" width="143" height="11" font="7"><b>If so, contact information</b></text>
+<text top="710" left="319" width="8" height="12" font="2"><b>) </b></text>
+<text top="732" left="69" width="10" height="17" font="4">5</text>
+<text top="724" left="79" width="13" height="11" font="8">th </text>
+<text top="732" left="92" width="196" height="17" font="4">RTB Ops: 706-864-3327</text>
+<text top="753" left="69" width="54" height="17" font="4">x5233 </text>
+<text top="788" left="69" width="61" height="12" font="2"><b>Hazards: </b></text>
+<text top="836" left="69" width="73" height="12" font="2"><b>Remarks: : </b></text>
+<text top="835" left="142" width="166" height="14" font="3">To reduce the possibility </text>
+<text top="852" left="69" width="206" height="14" font="3">either of injury  to ground crew </text>
+<text top="870" left="69" width="247" height="14" font="3">personnel from  flying debris or of an </text>
+<text top="887" left="69" width="266" height="14" font="3">accident resulting from debris drawn up </text>
+<text top="904" left="69" width="214" height="14" font="3"> into the helicopter rotor blades, </text>
+<text top="921" left="69" width="236" height="13" font="9"> police the operational area thoroughly.</text>
+<text top="922" left="305" width="4" height="12" font="2"><b> </b></text>
+<text top="969" left="69" width="59" height="12" font="2"><b>Warning:</b></text>
+<text top="969" left="127" width="4" height="12" font="10"> </text>
+<text top="618" left="467" width="152" height="17" font="1"><b>Landing Diagram </b></text>
+<text top="615" left="619" width="143" height="20" font="1"><b>– Best Approach</b></text>
+<text top="1098" left="69" width="96" height="14" font="5"><b>Survey Date: </b></text>
+<text top="1093" left="165" width="61" height="21" font="11"><b>OCT 202</b></text>
+<text top="1093" left="225" width="8" height="21" font="12"><b>3</b></text>
+<text top="1098" left="352" width="202" height="14" font="5"><b>Last Survey by: AASF 1, CW</b></text>
+<text top="1093" left="555" width="8" height="21" font="12"><b>3</b></text>
+<text top="1098" left="563" width="135" height="14" font="5"><b> J. SIMPSON, ASO </b></text>
+<text top="1034" left="322" width="6" height="10" font="13">8</text>
+<text top="1032" left="328" width="11" height="12" font="13">0’ </text>
+<text top="1046" left="322" width="24" height="10" font="13">Feet </text>
+<text top="1061" left="170" width="60" height="11" font="8">75  Meters </text>
+<text top="1005" left="142" width="104" height="11" font="8">HLZ Survey Profile </text>
+<text top="1042" left="109" width="26" height="11" font="8">HLZ </text>
+<text top="963" left="531" width="86" height="19" font="14">View 290</text>
+<text top="961" left="617" width="8" height="21" font="15">°</text>
+<text top="963" left="625" width="6" height="19" font="14"> </text>
+</page>
+<page number="5" position="absolute" top="0" left="0" height="1188" width="918">
+	<fontspec id="30" size="10" family="TimesNewRomanPSMT" color="#000000"/>
+	<fontspec id="31" size="15" family="ERJYLA+Arial" color="#000000"/>
+	<fontspec id="32" size="15" family="QJFQRI+Arial" color="#000000"/>
+	<fontspec id="33" size="18" family="TimesNewRomanPSMT" color="#000000"/>
+<image top="188" left="355" width="528" height="339" src="book-5_1.jpg"/>
+<image top="597" left="355" width="526" height="471" src="book-5_2.jpg"/>
+<image top="1038" left="311" width="84" height="30" src="book-5_3.png"/>
+<image top="1065" left="159" width="120" height="12" src="book-5_4.png"/>
+<image top="1009" left="129" width="125" height="12" src="book-5_5.png"/>
+<image top="1046" left="99" width="48" height="12" src="book-5_6.png"/>
+<text top="84" left="153" width="152" height="22" font="0"><b>HLZ SURVEY</b></text>
+<text top="76" left="452" width="100" height="17" font="1"><b>HLZ Name: </b></text>
+<text top="97" left="454" width="97" height="17" font="1"><b>DONOVAN </b></text>
+<text top="76" left="724" width="69" height="17" font="1"><b>HLZ ID: </b></text>
+<text top="97" left="725" width="67" height="17" font="1"><b>GA 034 </b></text>
+<text top="129" left="76" width="258" height="17" font="1"><b>Hazards for Risk Assessment </b></text>
+<text top="149" left="118" width="173" height="17" font="1"><b>(RA) and Additional </b></text>
+<text top="170" left="153" width="104" height="17" font="1"><b>Information </b></text>
+<text top="149" left="507" width="152" height="17" font="1"><b>Landing Diagram </b></text>
+<text top="146" left="659" width="68" height="20" font="1"><b>– North </b></text>
+<text top="190" left="69" width="69" height="12" font="2"><b>Reference </b></text>
+<text top="206" left="69" width="36" height="12" font="2"><b>Grid: </b></text>
+<text top="223" left="69" width="186" height="19" font="14">16S GD 6341 3199 </text>
+<text top="261" left="69" width="65" height="12" font="2"><b>Lat/Long: </b></text>
+<text top="278" left="69" width="120" height="19" font="14">N 34 35.579 </text>
+<text top="302" left="69" width="131" height="19" font="14">W084 07.402 </text>
+<text top="345" left="69" width="65" height="12" font="2"><b>Max A/C:  </b></text>
+<text top="342" left="134" width="118" height="17" font="4">2 day / 2 night </text>
+<text top="392" left="69" width="35" height="12" font="2"><b>Size: </b></text>
+<text top="428" left="69" width="104" height="12" font="2"><b>Best Approach: </b></text>
+<text top="425" left="173" width="30" height="17" font="4">360</text>
+<text top="424" left="203" width="7" height="18" font="6">°</text>
+<text top="480" left="69" width="66" height="12" font="2"><b>Best Exit: </b></text>
+<text top="477" left="135" width="30" height="17" font="4">360</text>
+<text top="476" left="165" width="7" height="18" font="6">°</text>
+<text top="516" left="69" width="60" height="12" font="2"><b>Elevation</b></text>
+<text top="513" left="129" width="103" height="17" font="4">: 1850 ft msl </text>
+<text top="568" left="69" width="124" height="12" font="2"><b>Surface Condition: </b></text>
+<text top="565" left="193" width="49" height="17" font="4">grass </text>
+<text top="620" left="69" width="41" height="12" font="2"><b>Slope:</b></text>
+<text top="617" left="110" width="31" height="17" font="4"> -10</text>
+<text top="616" left="141" width="7" height="18" font="6">°</text>
+<text top="617" left="148" width="150" height="17" font="4">  roll (left side low) </text>
+<text top="668" left="69" width="214" height="12" font="2"><b>Maximum Weight  (if applicable): </b></text>
+<text top="714" left="69" width="107" height="12" font="2"><b>PPR Required? (</b></text>
+<text top="715" left="175" width="143" height="11" font="7"><b>If so, contact information</b></text>
+<text top="714" left="319" width="8" height="12" font="2"><b>) </b></text>
+<text top="737" left="69" width="7" height="13" font="9">5</text>
+<text top="729" left="76" width="10" height="9" font="30">th </text>
+<text top="737" left="86" width="191" height="13" font="9">RTB Ops: 706-864-3327 x5233</text>
+<text top="737" left="278" width="4" height="12" font="10"> </text>
+<text top="773" left="69" width="65" height="12" font="2"><b>Hazards:  </b></text>
+<text top="770" left="133" width="198" height="17" font="4">Tall dead trees in center </text>
+<text top="790" left="69" width="41" height="17" font="4">of LZ</text>
+<text top="825" left="69" width="65" height="12" font="2"><b>Remarks: </b></text>
+<text top="874" left="69" width="59" height="12" font="2"><b>Warning:</b></text>
+<text top="874" left="127" width="4" height="12" font="10"> </text>
+<text top="873" left="131" width="207" height="14" font="3">To reduce the possibility either </text>
+<text top="890" left="69" width="268" height="14" font="3">of injury  to ground crew personnel from </text>
+<text top="907" left="69" width="208" height="14" font="3"> flying debris or of an accident  </text>
+<text top="924" left="69" width="206" height="14" font="3">resulting from debris drawn up </text>
+<text top="942" left="69" width="214" height="14" font="3"> into the helicopter rotor blades, </text>
+<text top="959" left="69" width="236" height="13" font="9"> police the operational area thoroughly.</text>
+<text top="960" left="305" width="4" height="12" font="10"> </text>
+<text top="559" left="467" width="152" height="17" font="1"><b>Landing Diagram </b></text>
+<text top="556" left="619" width="143" height="20" font="1"><b>– Best Approach</b></text>
+<text top="1105" left="69" width="96" height="14" font="5"><b>Survey Date: </b></text>
+<text top="1100" left="165" width="61" height="21" font="31"><b>OCT 202</b></text>
+<text top="1100" left="225" width="8" height="21" font="32"><b>3</b></text>
+<text top="1105" left="352" width="198" height="14" font="5"><b>Last Survey by: AASF1, CW</b></text>
+<text top="1100" left="551" width="8" height="21" font="32"><b>3</b></text>
+<text top="1105" left="559" width="135" height="14" font="5"><b> J. SIMPSON, ASO </b></text>
+<text top="1040" left="322" width="17" height="10" font="13">100</text>
+<text top="1038" left="339" width="5" height="12" font="13">’ </text>
+<text top="1052" left="322" width="24" height="10" font="13">Feet </text>
+<text top="1067" left="170" width="67" height="11" font="8">200  Meters </text>
+<text top="1012" left="142" width="104" height="11" font="8">HLZ Survey Profile </text>
+<text top="1048" left="109" width="26" height="11" font="8">HLZ </text>
+<text top="989" left="573" width="89" height="19" font="29"><b>View 360</b></text>
+<text top="988" left="661" width="8" height="21" font="15">°</text>
+<text top="989" left="669" width="6" height="19" font="29"><b> </b></text>
+<text top="562" left="549" width="5" height="16" font="33"> </text>
+</page>
+</pdf2xml>

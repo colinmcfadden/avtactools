@@ -24,7 +24,7 @@ afterAll(() => {
 beforeEach(() => {
   narrow = true;
   mediaListeners = new Set();
-  window.matchMedia = jest.fn(() => ({
+  window.matchMedia = vi.fn(() => ({
     get matches() {
       return narrow;
     },
@@ -34,7 +34,7 @@ beforeEach(() => {
 });
 afterEach(() => {
   delete window.matchMedia;
-  jest.useRealTimers();
+  vi.useRealTimers();
 });
 const widen = () =>
   act(() => {
@@ -46,7 +46,7 @@ const items = [
   { key: "lz", label: "LZ/PZ", icon: "hexagon" },
   { key: "threats", label: "Threats", icon: "diamond" },
 ];
-// As in App.js: the map and the dock are siblings in the map area.
+// As in App.jsx: the map and the dock are siblings in the map area.
 const Harness = () => {
   const dock = useDock("lz");
   return (
@@ -70,7 +70,7 @@ describe("the bottom sheet on a narrow window", () => {
   });
 
   it("grows the map as soon as the sheet lowers, and shrinks it only once the sheet is up", () => {
-    jest.useFakeTimers();
+    vi.useFakeTimers();
     render(<Harness />);
     fireEvent.click(screen.getByRole("button", { name: "LZ/PZ" })); // its own tab lowers the sheet to the peek
     expect(sheetHeight()).toBe("132px");
@@ -79,12 +79,12 @@ describe("the bottom sheet on a narrow window", () => {
     fireEvent.click(screen.getByRole("button", { name: "Threats" })); // another tab raises it to half
     expect(sheetHeight()).toBe("369px");
     expect(mapBottom()).toBe("132px"); // the sheet slides up over the map
-    act(() => jest.advanceTimersByTime(200));
+    act(() => vi.advanceTimersByTime(200));
     expect(mapBottom()).toBe("369px");
   });
 
   it("while the handle is dragged, slides the sheet over a map that reaches down to the peek", () => {
-    jest.useFakeTimers();
+    vi.useFakeTimers();
     render(<Harness />);
     const handle = screen.getByRole("button", { name: "Raise the panel" });
     const sheet = screen.getByRole("complementary", { name: "Panels" });
@@ -98,7 +98,7 @@ describe("the bottom sheet on a narrow window", () => {
     expect(sheetHeight()).toBe("369px");
     expect(sheet.style.transition).toBe("");
     expect(mapBottom()).toBe("132px");
-    act(() => jest.advanceTimersByTime(200));
+    act(() => vi.advanceTimersByTime(200));
     expect(mapBottom()).toBe("369px");
   });
 

@@ -4,7 +4,7 @@ import useSlopeOpacity, { SLOPE_OPACITY, SLOPE_OPACITY_STORAGE_KEY, slopeOpacity
 describe("the slope map's opacity", () => {
   afterEach(() => {
     window.localStorage.clear();
-    jest.restoreAllMocks();
+    vi.restoreAllMocks();
   });
 
   it("runs from 10 to 100 percent in steps of 5, from 55 (as Android's SlopeOpacity does)", () => {
@@ -42,8 +42,8 @@ describe("the slope map's opacity", () => {
   });
 
   it("still works where the browser keeps nothing, starting at 55", () => {
-    jest.spyOn(Storage.prototype, "getItem").mockImplementation(() => { throw new Error("blocked"); });
-    jest.spyOn(Storage.prototype, "setItem").mockImplementation(() => { throw new Error("blocked"); });
+    vi.spyOn(Storage.prototype, "getItem").mockImplementation(() => { throw new Error("blocked"); });
+    vi.spyOn(Storage.prototype, "setItem").mockImplementation(() => { throw new Error("blocked"); });
     const { result } = renderHook(() => useSlopeOpacity());
     expect(result.current.slopeOpacity).toBe(55);
     act(() => result.current.setSlopeOpacity(20));

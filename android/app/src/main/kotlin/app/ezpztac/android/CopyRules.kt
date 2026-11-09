@@ -27,6 +27,7 @@ internal object CopyRules {
         LibraryTab.LZ -> RecordKind.LZ
         LibraryTab.ROUTES -> RecordKind.ROUTE
         LibraryTab.POINTS -> RecordKind.POINT_SET
+        LibraryTab.THREATS -> RecordKind.THREAT_SET
     }
 
     /** The Library tab a kind of pack item (`lz`, `route`, `pointset`) is kept under once saved there. */
@@ -34,6 +35,7 @@ internal object CopyRules {
         "lz" -> LibraryTab.LZ
         "route" -> LibraryTab.ROUTES
         "pointset" -> LibraryTab.POINTS
+        "threatset" -> LibraryTab.THREATS
         else -> null
     }
 

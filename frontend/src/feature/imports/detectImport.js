@@ -1,3 +1,4 @@
+import { setNameFromFile } from "../threats/threatSets";
 import { parseLpsFile } from "../localPoints/parseLps";
 import { parseMsnxFile } from "../msnxImport/parseMsnx";
 import { parseThsFile } from "../threats/parseThs";
@@ -46,7 +47,7 @@ const asMission = async (file) => {
 const asThreats = async (file) => {
   const threats = await parseThsFile(file);
   if (!threats?.length) throw new Error("No threats found in this file.");
-  return { kind: "ths", summary: plural(threats.length, "threat"), count: threats.length, name: file.name };
+  return { kind: "ths", summary: plural(threats.length, "threat"), count: threats.length, name: setNameFromFile(file.name) };
 };
 
 const asPoints = async (file) => {

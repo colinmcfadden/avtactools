@@ -3,6 +3,7 @@ import { useMap } from "react-leaflet";
 import L from "leaflet";
 import * as turf from "@turf/turf";
 import { createMapObjectHandleIcon } from "../utils/mapObjectControls";
+import { lzMeasureFor } from "../feature/lzMeasure/lzMeasure";
 
 // --- HELPERS ---
 const toTurf = (latlng) => turf.point([latlng.lng, latlng.lat]);
@@ -50,12 +51,22 @@ const createLabelIcon = (text) =>
     iconAnchor: [0, 0],
   });
 
-const LZDimensions = ({ detectedLZ }) => {
+const toLatLng = (p) => ({ lat: p.lat, lng: p.lon });
+const toPoint = (p) => ({ lat: p.lat, lon: p.lng });
+
+/**
+ * The orange line measuring the LZ's length and width. Where it stands is the diagram's (`lzMeasure.js`): it is
+ * drawn from `measurements`, and a drag that ends hands the whole line to `onChange`, which saves it. Without
+ * `onChange` (a read-only Mission Pack) it is drawn and cannot be moved.
+ */
+const LZDimensions = ({ detectedLZ, measurements, onChange }) => {
   const map = useMap();
 
   const hoverTimers = useRef({});
   const isDraggingRef = useRef(false);
   const isHoveringRef = useRef({ len: false, wid: false });
+  const onChangeRef = useRef(onChange);
+  onChangeRef.current = onChange;
 
   const layersRef = useRef({
     group: L.layerGroup(),
@@ -102,44 +113,6 @@ const LZDimensions = ({ detectedLZ }) => {
     widT: 0.1,
   });
 
-  useEffect(() => {
-    const layers = layersRef.current;
-    layers.group.addTo(map);
-
-    Object.values(layers).forEach((layer) => {
-      if (layer !== layers.group) layer.addTo(layers.group);
-    });
-
-    return () => {
-      layers.group.clearLayers();
-      layers.group.remove();
-    };
-  }, [map]);
-
-  useEffect(() => {
-    if (!detectedLZ || detectedLZ.length < 3) return;
-    if (stateRef.current.corner) return;
-
-    const lats = detectedLZ.map((p) => p[0]);
-    const lngs = detectedLZ.map((p) => p[1]);
-
-    stateRef.current.corner = {
-      lat: Math.max(...lats),
-      lng: Math.min(...lngs),
-    };
-    stateRef.current.lenTip = {
-      lat: Math.min(...lats),
-      lng: Math.min(...lngs),
-    };
-    stateRef.current.widTip = {
-      lat: Math.max(...lats),
-      lng: Math.max(...lngs),
-    };
-
-    updateVisuals();
-    setupEventListeners();
-  }, [detectedLZ]);
-
   const updateVisuals = () => {
     const { corner, lenTip, widTip } = stateRef.current;
     const layers = layersRef.current;
@@ -167,6 +140,60 @@ const LZDimensions = ({ detectedLZ }) => {
 
     layers.widLabel.setLatLng(widMid);
     layers.widLabel.setIcon(createLabelIcon(getDistance(corner, widTip)));
+  };
+
+  useEffect(() => {
+    const layers = layersRef.current;
+    layers.group.addTo(map);
+
+    Object.values(layers).forEach((layer) => {
+      if (layer !== layers.group) layer.addTo(layers.group);
+    });
+    setupEventListeners();
+
+    return () => {
+      layers.group.clearLayers();
+      layers.group.remove();
+    };
+  }, [map]);
+
+  // The line as the diagram has it, whenever that changes (opened again, someone else's change in a pack), but
+  // never under a drag in progress.
+  useEffect(() => {
+    if (isDraggingRef.current) return;
+    const line = lzMeasureFor(measurements, detectedLZ);
+    if (!line) return;
+    stateRef.current = {
+      corner: toLatLng(line.corner),
+      lenTip: toLatLng(line.lengthTip),
+      widTip: toLatLng(line.widthTip),
+      lenT: line.lengthLabelAt,
+      widT: line.widthLabelAt,
+    };
+    updateVisuals();
+  }, [measurements, detectedLZ]);
+
+  // Leaflet makes a marker's dragging when it is added to the map, so this runs after that.
+  const editable = Boolean(onChange);
+  useEffect(() => {
+    const layers = layersRef.current;
+    [layers.corner, layers.lenTip, layers.widTip, layers.lenLabel, layers.widLabel].forEach((marker) => {
+      if (!marker.dragging) return;
+      if (editable) marker.dragging.enable();
+      else marker.dragging.disable();
+    });
+  }, [editable, map]);
+
+  const save = () => {
+    const { corner, lenTip, widTip, lenT, widT } = stateRef.current;
+    if (!corner || !lenTip || !widTip) return;
+    onChangeRef.current?.({
+      corner: toPoint(corner),
+      lengthTip: toPoint(lenTip),
+      widthTip: toPoint(widTip),
+      lengthLabelAt: lenT,
+      widthLabelAt: widT,
+    });
   };
 
   const setupEventListeners = () => {
@@ -221,6 +248,8 @@ const LZDimensions = ({ detectedLZ }) => {
       marker.on("dragend", () => {
         isDraggingRef.current = false;
         if (rafId) cancelAnimationFrame(rafId);
+        updateVisuals();
+        save();
 
         affectedGroups.forEach((group) => {
           if (!isHoveringRef.current[group]) {

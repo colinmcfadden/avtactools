@@ -17,9 +17,6 @@ interface AuthBackend {
     /** Reads the stored session, once per process; after that it is the state as it is now. Nothing is asked of the server. */
     suspend fun restore(): AuthState
 
-    /** Ends the session on this device if the server has not confirmed the account for too long. */
-    suspend fun endSessionIfOfflineTooLong(): Boolean
-
     /** Asks who this is now, and keeps the answer. Throws if there is no signal. */
     suspend fun refreshUser(): ApiUser
 
@@ -33,7 +30,6 @@ interface AuthBackend {
 class ApiClientBackend @Inject constructor(private val api: ApiClient) : AuthBackend {
     override val state: StateFlow<AuthState> get() = api.state
     override suspend fun restore() = api.restore()
-    override suspend fun endSessionIfOfflineTooLong() = api.endSessionIfOfflineTooLong()
     override suspend fun refreshUser() = api.refreshUser()
     override suspend fun config() = api.config()
     override suspend fun logout() = api.logout()

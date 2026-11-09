@@ -17,11 +17,12 @@ import "./packs.css";
  * says so, and offers Update when the original has moved on.
  */
 
-const KIND_ICON = { lz: "hexagon", route: "route", pointset: "mapPin" };
+const KIND_ICON = { lz: "hexagon", route: "route", pointset: "mapPin", threatset: "diamond" };
 const GROUPS = [
   { kind: "lz", label: "LZ/PZ" },
   { kind: "route", label: "Routes" },
   { kind: "pointset", label: "Point sets" },
+  { kind: "threatset", label: "Threats" },
 ];
 const ROLE_WORDS = { owner: "the owner", editor: "an editor", viewer: "a viewer" };
 
@@ -41,6 +42,10 @@ const itemDetail = (item) => {
   if (item.kind === "pointset") {
     const n = Array.isArray(item.data) ? item.data.length : 0;
     return `${n.toLocaleString("en-US")} ${n === 1 ? "point" : "points"}`;
+  }
+  if (item.kind === "threatset") {
+    const n = Array.isArray(item.data?.threats) ? item.data.threats.length : 0;
+    return `${n.toLocaleString("en-US")} ${n === 1 ? "threat" : "threats"}`;
   }
   return null;
 };
@@ -343,7 +348,7 @@ const PackPanel = ({ pack, members = [], audience, items = [], openIds, people =
           <div className="shell-empty">
             {readOnly
               ? "This pack is empty."
-              : "Nothing in this pack yet. Add from your Library, or set a target, sketch a route or import local points while the pack is open."}
+              : "Nothing in this pack yet. Add from your Library, or set a target, sketch a route, add a threat or import local points while the pack is open."}
           </div>
         ) : (
           GROUPS.map((group) => {

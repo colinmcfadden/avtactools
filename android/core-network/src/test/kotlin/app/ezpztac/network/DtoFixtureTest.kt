@@ -26,6 +26,7 @@ class DtoFixtureTest {
 
     private val decoders: Map<String, KSerializer<*>> = mapOf(
         "config" to AppConfig.serializer(),
+        "config: a chart build live" to AppConfig.serializer(),
         "login: android" to TokenResponse.serializer(),
         "login: web, which gets no refresh token" to TokenResponse.serializer(),
         "refresh" to TokenResponse.serializer(),
@@ -60,6 +61,11 @@ class DtoFixtureTest {
         "brief: list" to ListSerializer(BriefSummary.serializer()),
         "brief: get" to BriefFull.serializer(),
         "brief: update" to BriefSummary.serializer(),
+        "threatset: create" to ThreatSetSummary.serializer(),
+        "threatset: create again with the same identity" to ThreatSetSummary.serializer(),
+        "threatset: list" to ListSerializer(ThreatSetSummary.serializer()),
+        "threatset: get" to ThreatSetFull.serializer(),
+        "threatset: update" to ThreatSetSummary.serializer(),
         "aircraft: list with no profiles of my own" to ListSerializer(AircraftProfileDto.serializer()),
         "aircraft: create" to AircraftProfileDto.serializer(),
         "aircraft: list" to ListSerializer(AircraftProfileDto.serializer()),
@@ -90,6 +96,7 @@ class DtoFixtureTest {
         "sync: changes" to ChangeFeed.serializer(),
         "sync: nothing new" to ChangeFeed.serializer(),
         "sync: changes, with a brief" to ChangeFeed.serializer(),
+        "sync: changes, with a set of threats" to ChangeFeed.serializer(),
         // Mission packs, teams, invitations and finding people
         "packs" to PacksBody.serializer(),
         "pack: create" to Pack.serializer(),
@@ -127,6 +134,12 @@ class DtoFixtureTest {
         "pack invites" to InvitesBody.serializer(),
         "invites: mine, to a team" to InvitesBody.serializer(),
         "invites: mine, to a pack" to InvitesBody.serializer(),
+        "notifications: an invitation to a team" to NotificationFeed.serializer(),
+        "notifications: an invitation to a pack" to NotificationFeed.serializer(),
+        "notifications: a pack finished" to NotificationFeed.serializer(),
+        "notifications: added to a pack, and handed it" to NotificationFeed.serializer(),
+        "notifications: seen" to NotificationsSeen.serializer(),
+        "notifications: settings" to NotificationSettingsReply.serializer(),
         "invite: accept" to InviteAccepted.serializer(),
         "invite: accept from a link" to InviteAccepted.serializer(),
         "invite: decline" to InviteBody.serializer(),
@@ -146,6 +159,8 @@ class DtoFixtureTest {
         "lidar: resolve, nothing built here" to LidarResolveDto.serializer(),
         "lidar: resolve, built" to LidarResolveDto.serializer(),
         "lidar: resolve, on a server that cannot build" to LidarResolveDto.serializer(),
+        "lidar: resolve, streamed" to LidarResolveDto.serializer(),
+        "lidar: resolve, streamed but not asked for" to LidarResolveDto.serializer(),
         "lidar: build" to LidarBuildDto.serializer(),
         "lidar: build, asked for again" to LidarBuildDto.serializer(),
         "lidar: build of a saved LZ/PZ, nobody waiting" to LidarBuildDto.serializer(),
@@ -162,7 +177,7 @@ class DtoFixtureTest {
     )
 
     /** Documents a format reader reads, not records: a tileset's `tileset.json` is 3D Tiles, whose reader passes over what it does not know. */
-    private val documents = setOf("lidar: the tileset's root", "lidar: the ring's root")
+    private val documents = setOf("lidar: the tileset's root", "lidar: the ring's root", "lidar: a streamed survey's root")
 
     @TestFactory
     fun `every successful response decodes strictly`(): List<DynamicTest> =
@@ -183,7 +198,7 @@ class DtoFixtureTest {
             .filter { it.status in 200..202 && it.body != null && it.body !is JsonNull && it.name !in decoders }
             .map { it.name }
             // Bodies that are a status word only, not a record.
-            .filterNot { it in setOf("logout", "lz: delete", "route: delete", "pointset: delete", "brief: delete", "aircraft: delete", "account deletion") }
+            .filterNot { it in setOf("logout", "lz: delete", "route: delete", "pointset: delete", "brief: delete", "threatset: delete", "aircraft: delete", "account deletion") }
             .filterNot { it in documents }
         assertTrue(uncovered.isEmpty(), "recorded responses with no type decoding them: $uncovered")
     }
@@ -207,6 +222,7 @@ class DtoFixtureTest {
     fun `a pack's item counts take briefs, and a server that does not count them says none`() {
         assertEquals(PackItemCounts(1, 2, 0, 0), strict.decodeFromString(PackItemCounts.serializer(), """{"lz": 1, "route": 2, "pointset": 0}"""))
         assertEquals(3, strict.decodeFromString(PackItemCounts.serializer(), """{"lz": 1, "route": 2, "pointset": 0, "brief": 3}""").brief)
+        assertEquals(4, strict.decodeFromString(PackItemCounts.serializer(), """{"lz": 1, "route": 2, "pointset": 0, "threatset": 4}""").threatset)
     }
 
     @Test

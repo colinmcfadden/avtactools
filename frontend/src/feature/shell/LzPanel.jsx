@@ -220,6 +220,7 @@ const LzPanel = ({
   onBrowseAll,
   onAddToPack,
   onExportCard,
+  onShareGrid,
   onCollapse,
 }) => {
   const [renamingId, setRenamingId] = useState(null);
@@ -238,6 +239,8 @@ const LzPanel = ({
       { icon: "layers", title: "Add to Mission Pack…", onSelect: () => onAddToPack?.(diagram.id), hidden: Boolean(pack) || !onAddToPack, disabled: diagram.savedId == null, text: diagram.savedId == null ? "Save it first" : undefined },
       // Exporting changes nothing, so it stays in a pack this person cannot change.
       { icon: "download", title: "Export LZ card", onSelect: () => onExportCard?.(diagram.id), hidden: !onExportCard, disabled: diagram.status !== "analyzed" },
+      // Sending its grid changes nothing either: offered wherever it has a target.
+      { icon: "send", title: "Share grid…", onSelect: () => onShareGrid?.(diagram.id), hidden: !onShareGrid || !gridOf(diagram) },
       { divider: true },
       { icon: "x", title: pack ? "Close here" : "Close", text: pack ? "It stays in the pack" : `Takes ${title} out of this session`, onSelect: () => onClose(diagram.id) },
     ];
@@ -252,8 +255,8 @@ const LzPanel = ({
             {pack
               ? readOnly
                 ? `Nothing in ${pack.name}.`
-                : `Nothing in ${pack.name} yet. Set a target with the MGRS box, or right-click the map and choose Set as target, and the new LZ/PZ goes into the pack.`
-              : "No LZ/PZ open. Enter a grid in the MGRS target box, or right-click the map and choose Set as target."}
+                : `Nothing in ${pack.name} yet. Search a grid or lat/long in the top bar, or right-click the map and choose Set as target, and the new LZ/PZ goes into the pack.`
+              : "No LZ/PZ open. Search a grid or lat/long in the top bar, or right-click the map and choose Set as target."}
           </div>
         ) : (
           <PanelSection label={pack ? `In ${pack.name}` : "Open"} count={diagrams.length}>
@@ -315,18 +318,17 @@ const LzPanel = ({
           </>
         )}
 
-        <div className="shell-hint">
-          <Icon name="info" size={14} />
-          <span>
-            {pack
-              ? pack.finished
+        {/* Only what changes a decision: why nothing here can be changed. */}
+        {pack && (pack.finished || readOnly) && (
+          <div className="shell-hint">
+            <Icon name="info" size={14} />
+            <span>
+              {pack.finished
                 ? "This pack is finished. Viewing and export still work; nothing can be changed."
-                : readOnly
-                  ? "You are a viewer in this pack: you can look at everything in it, but not change it. Its owner can make you an editor."
-                  : `New LZ/PZs you start while ${pack.name} is open are added to it.`
-              : "Set a new target with the MGRS box, or right-click the map, to open another LZ/PZ."}
-          </span>
-        </div>
+                : "You are a viewer in this pack: you can look at everything in it, but not change it. Its owner can make you an editor."}
+            </span>
+          </div>
+        )}
       </div>
     </>
   );

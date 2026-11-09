@@ -9,11 +9,12 @@ from flask import Blueprint, current_app, jsonify, request
 from flask_jwt_extended import create_access_token, get_jwt, get_jwt_identity, jwt_required
 from google.auth.transport import requests as google_requests
 from google.oauth2 import id_token
-from sqlalchemy import func
+from sqlalchemy import func, or_
 from sqlalchemy.exc import IntegrityError
 from werkzeug.security import check_password_hash, generate_password_hash
 
 import pack_support
+import refresh_cookie
 import refresh_tokens
 from auth_rate_limit import check_rate_limits
 from client_header import client_from_request
@@ -32,6 +33,7 @@ from models import (
     LocalCredential,
     LoginEvent,
     SavedBrief,
+    SavedThreatSet,
     SavedLZ,
     SavedPointSet,
     SavedRoute,
@@ -55,6 +57,7 @@ PASSWORD_MAX_LENGTH = 128
 VERIFY_PURPOSE = 'verify_email'
 RESET_PURPOSE = 'password_reset'
 MIL_VERIFY_PURPOSE = 'mil_verify'
+MIL_CODE_LIFETIME = timedelta(minutes=30)
 EMAIL_PATTERN = re.compile(r"^[^\s@]+@[^\s@]+\.[^\s@]+$")
 # Any .mil address (all DoD services), e.g. army.mil, mail.mil, us.army.mil.
 MIL_EMAIL_PATTERN = re.compile(r"^[^\s@]+@[^\s@]+\.mil$", re.IGNORECASE)
@@ -139,8 +142,9 @@ def _rate_limit(scope, email=None):
         'resend': ((10, 3600), (3, 3600)),
         'forgot': ((10, 3600), (5, 3600)),
         'google': ((30, 600), None),
-        # Behind a unit's shared NAT many devices share an address, so this is generous.
-        'refresh': ((120, 600), None),
+        # Behind a unit's shared NAT many devices share an address, and every open web tab refreshes
+        # about every 13 minutes, so this is generous.
+        'refresh': ((300, 600), None),
         'delete_account': ((5, 3600), None),
         'reset': ((20, 3600), None),
         'mil_request': ((10, 3600), None),
@@ -176,6 +180,14 @@ def _is_google_identity(user):
     return bool(user.google_id and not user.google_id.startswith('local:'))
 
 
+def _email_verified(user):
+    """Whether the account has proven its sign-in address: a confirmed email link, or Google's word for it."""
+    credential = user.local_credential
+    if credential is not None:
+        return credential.email_verified_at is not None
+    return _is_google_identity(user)
+
+
 def _serialize_user(user):
     credential = user.local_credential
     return {
@@ -183,18 +195,16 @@ def _serialize_user(user):
         "email": user.email,
         "name": user.name,
         "picture": user.picture,
-        "email_verified": (
-            credential.email_verified_at is not None
-            if credential is not None
-            else _is_google_identity(user)
-        ),
+        "email_verified": _email_verified(user),
         "account_status": credential.status if credential else "active",
         "has_password": credential is not None,
         "role": user.role or "user",
         "is_admin": is_admin(user),
         "is_active": account_active(user),
         "features": resolve_features(user),
-        "mil_email": user.mil_email,
+        # The confirmed address, else the one waiting for its code: the clients' .mil screen,
+        # shown only to an account held at the gate, opens on the code step when there is one.
+        "mil_email": user.mil_email or user.mil_pending_email,
         "affiliation_verified": user.mil_verified_at is not None,
         "access_ok": affiliation_ok(user),
     }
@@ -266,7 +276,50 @@ def _auth_success(user, method='password'):
     except Exception:  # noqa: BLE001 — history is best-effort, never blocks login
         db.session.rollback()
 
-    return _token_response(user, refresh_tokens.native_client_label(request))
+    native_label = refresh_tokens.native_client_label(request)
+    if native_label is None and refresh_cookie.requested(request):
+        return _web_session_response(user)
+    return _token_response(user, native_label)
+
+
+# A web access token minted by a refresh lives this long. It is kept in the page's memory only, and
+# the page refreshes it before it lapses; a sign-in's lives the usual 24 hours, because a browser that
+# will not keep the cookie (see refresh_cookie) keeps that token instead, as the web always has.
+WEB_ACCESS_LIFETIME = timedelta(minutes=15)
+
+
+def _web_session_response(user, family=None, refresh_token=None):
+    """A web sign-in or refresh: an access token tied to the browser's session, the refresh token as a cookie.
+
+    A sign-in (``family`` unset) starts the session, and ends the one whose cookie it replaces: the
+    browser can hold one cookie, so the older family could never be refreshed again and would only
+    linger in the account's list of devices.
+    """
+    credential = user.local_credential
+    session_version = credential.session_version if credential else 0
+    lifetime = WEB_ACCESS_LIFETIME
+    if family is None:
+        replaced = refresh_tokens.find(refresh_cookie.presented(request))
+        if refresh_cookie.is_web_family(replaced):
+            refresh_tokens.revoke_family(replaced.family)
+        refresh_token, family = refresh_tokens.issue_family(
+            user.id, session_version, refresh_cookie.WEB_CLIENT
+        )
+        db.session.commit()
+        lifetime = current_app.config['JWT_ACCESS_TOKEN_EXPIRES']
+    access_token = create_access_token(
+        identity=str(user.id),
+        additional_claims={"sv": session_version, "sid": family},
+        expires_delta=lifetime,
+    )
+    response = jsonify({
+        "status": "success",
+        "access_token": access_token,
+        "expires_in": int(lifetime.total_seconds()),
+        "session": refresh_cookie.SESSION_HEADER_VALUE,
+        "user": _serialize_user(user),
+    })
+    return refresh_cookie.set_on(response, refresh_token, refresh_tokens.REFRESH_LIFETIME)
 
 
 def _token_response(user, native_label, family=None, refresh_token=None):
@@ -627,45 +680,64 @@ def google_auth():
 def refresh():
     """Swap a refresh token for a new access token and the next refresh token.
 
-    Native apps only (they are the only clients issued one). The presented token
-    is spent: using it again is read as a lost response for 30 seconds and as a
-    copy after that, which signs the device out (see refresh_tokens).
+    A native app sends its token in the body and is answered with the next one in
+    the body. The web sends none: with ``X-EZPZ-Session: cookie`` it is read from
+    the HttpOnly cookie, and the next one goes back as the cookie (refresh_cookie).
+    The presented token is spent: using it again is read as a lost response for 30
+    seconds and as a copy after that, which signs the device out (see refresh_tokens).
     """
     limited = _rate_limit('refresh')
     if limited:
         return limited
 
+    body_token = _payload().get('refresh_token')
+    by_cookie = body_token is None and refresh_cookie.requested(request)
+
+    def refused(message, status, code):
+        response, status = _error(message, status, code)
+        # A cookie that will never work again is not sent again.
+        return (refresh_cookie.clear_on(response) if by_cookie else response), status
+
+    if by_cookie and refresh_cookie.presented(request) is None:
+        # Said apart from an expired session: the web asks once after signing in, to learn whether
+        # this browser keeps the cookie at all.
+        return _error("This browser did not send its session.", 401, "refresh_cookie_missing")
+
     now = _now()
-    found = refresh_tokens.find(_payload().get('refresh_token'), now)
-    if found is None:
-        return _error("This session has expired. Sign in again.", 401, "invalid_refresh_token")
+    found = refresh_tokens.find(refresh_cookie.presented(request) if by_cookie else body_token, now)
+    # A token is refreshed only the way its family was issued, so a web family's never leaves its cookie.
+    if found is None or refresh_cookie.is_web_family(found) != by_cookie:
+        return refused("This session has expired. Sign in again.", 401, "invalid_refresh_token")
 
     user = found.user
     credential = user.local_credential
     if not account_active(user) or (credential is not None and credential.status == 'suspended'):
         refresh_tokens.revoke_family(found.family, now)
         db.session.commit()
-        return _error("This account is not available.", 403, "account_unavailable")
+        return refused("This account is not available.", 403, "account_unavailable")
     # A password reset bumps the session version, which ends every device session.
     if found.session_version != (credential.session_version if credential else 0):
         refresh_tokens.revoke_family(found.family, now)
         db.session.commit()
-        return _error("This session has expired. Sign in again.", 401, "invalid_refresh_token")
+        return refused("This session has expired. Sign in again.", 401, "invalid_refresh_token")
 
     new_token, failure = refresh_tokens.rotate(found, now)
     db.session.commit()
     if failure:
-        return _error("This session has expired. Sign in again.", 401, failure)
+        return refused("This session has expired. Sign in again.", 401, failure)
+    if by_cookie:
+        return _web_session_response(user, family=found.family, refresh_token=new_token)
     return _token_response(user, found.client, family=found.family, refresh_token=new_token)
 
 
 @auth_bp.route('/api/auth/logout', methods=['POST'])
 @jwt_required()
 def logout():
-    """End this device's session. The access token stops working at once."""
+    """End this device's session. The access token stops working at once, and a web session's cookie goes."""
     refresh_tokens.revoke_family(get_jwt().get('sid'))
     db.session.commit()
-    return jsonify({"status": "success"})
+    response = jsonify({"status": "success"})
+    return refresh_cookie.clear_on(response) if refresh_cookie.presented(request) else response
 
 
 @auth_bp.route('/api/auth/sessions', methods=['GET'])
@@ -690,6 +762,25 @@ def revoke_session(session_id):
     return jsonify({"status": "success"})
 
 
+def _mil_verified_elsewhere(address, user):
+    """Another account that has confirmed ``address`` as its .mil address."""
+    return User.query.filter(
+        func.lower(User.mil_email) == address,
+        User.mil_verified_at.isnot(None),
+        User.id != user.id,
+    ).first()
+
+
+def _signs_in_elsewhere(address, user):
+    """Another account that signs in with ``address`` and has proven it.
+
+    Invitations sent to that address already reach that account. A sign-up never confirmed
+    proves nothing, and counting it would let anyone keep a .mil address from its owner.
+    """
+    other = User.query.filter(func.lower(User.email) == address, User.id != user.id).first()
+    return other if other is not None and _email_verified(other) else None
+
+
 @auth_bp.route('/api/auth/mil/request', methods=['POST'])
 @jwt_required()
 def mil_request():
@@ -705,23 +796,23 @@ def mil_request():
     if len(email) > 120 or not MIL_EMAIL_PATTERN.fullmatch(email):
         return _error("Enter a valid .mil email address.")
 
-    # A .mil address can clear only one account.
-    taken = User.query.filter(
-        func.lower(User.mil_email) == email,
-        User.mil_verified_at.isnot(None),
-        User.id != user.id,
-    ).first()
-    if taken:
+    # A .mil address can clear only one account. Whether another account signs in with it is
+    # asked only once the code proves the caller holds the inbox (mil_verify): asked here, it
+    # would tell anyone signed in which .mil addresses have an account.
+    if _mil_verified_elsewhere(email, user):
         return _error("That .mil address is already verified on another account.", 409)
 
-    user.mil_email = email  # pending until the code is confirmed
+    # Pending until its code is entered: mil_email, and the clearance, stay as they were, so
+    # a request alone never makes this account the address's (pack_support.addresses).
+    user.mil_pending_email = email
     code = _generate_mil_code()
+    # The one code that is good is the one sent to the address now pending.
     _invalidate_tokens(user.id, MIL_VERIFY_PURPOSE)
     db.session.add(AccountToken(
         user_id=user.id,
         purpose=MIL_VERIFY_PURPOSE,
         token_hash=_token_hash(code),
-        expires_at=_now() + timedelta(minutes=30),
+        expires_at=_now() + MIL_CODE_LIFETIME,
     ))
     db.session.commit()
     send_mil_verification_email(email, code, user.name)
@@ -747,21 +838,60 @@ def mil_verify():
     if token is None or token.user_id != user.id:
         return _error("That code is invalid or has expired.", 400, "invalid_code")
 
-    if user.mil_email:
-        taken = User.query.filter(
-            func.lower(User.mil_email) == user.mil_email.lower(),
-            User.mil_verified_at.isnot(None),
-            User.id != user.id,
-        ).first()
-        if taken:
-            return _error("That .mil address is already verified on another account.", 409)
+    # The code proves the address it was sent to, which is the one pending (a new request
+    # spends every earlier code). With none pending there is nothing for it to prove.
+    address = (user.mil_pending_email or '').strip().casefold()
+    if not address:
+        return _error("That code is invalid or has expired.", 400, "invalid_code")
+    if _mil_verified_elsewhere(address, user):
+        return _error("That .mil address is already verified on another account.", 409)
+    if _signs_in_elsewhere(address, user):
+        return _error("That .mil address is another account's sign-in address.", 409)
 
     now = _now()
-    user.mil_verified_at = now
+    user.mil_email, user.mil_pending_email, user.mil_verified_at = address, None, now
     token.used_at = now
     _invalidate_tokens(user.id, MIL_VERIFY_PURPOSE, now)
     db.session.commit()
     return jsonify({"status": "success", "user": _serialize_user(user)})
+
+
+def keep_unconfirmed_mil_addresses_pending():
+    """Move each .mil address no code confirmed out of ``mil_email``, where the flow once left it. Run at startup.
+
+    Before ``mil_pending_email``, a request wrote its address into ``mil_email`` and left
+    ``mil_verified_at`` as it was, so an account that had verified one address and then asked a
+    code for another was trusted with the second, code or none. Two kinds of row are left: one
+    that never verified, whose ``mil_email`` is only an address asked for; and one that asked a
+    code after it last verified (a code spent after, or never spent), whose ``mil_email`` may be
+    the address asked for, since which one it verified was never kept. Either way the address
+    waits in ``mil_pending_email``, where its code, if still good, confirms it, and
+    ``mil_verified_at`` stays, so a cleared account stays cleared.
+
+    Safe on every start: the flow now writes ``mil_email`` only with a confirmed code, a
+    verification spends every code then out, and a code asked after it leaves its address
+    pending until the next verification. Returns how many accounts it changed.
+    """
+    never_verified = User.query.filter(User.mil_email.isnot(None), User.mil_verified_at.is_(None)).all()
+    asked_since = (
+        User.query.join(AccountToken, AccountToken.user_id == User.id)
+        .filter(
+            User.mil_email.isnot(None),
+            User.mil_verified_at.isnot(None),
+            User.mil_pending_email.is_(None),
+            AccountToken.purpose == MIL_VERIFY_PURPOSE,
+            or_(AccountToken.used_at.is_(None), AccountToken.used_at > User.mil_verified_at),
+        )
+        .all()
+    )
+    unconfirmed = {user.id: user for user in never_verified + asked_since}
+    for user in unconfirmed.values():
+        # One already pending was asked later, and its request spent the older one's code.
+        user.mil_pending_email = user.mil_pending_email or user.mil_email
+        user.mil_email = None
+    if unconfirmed:
+        db.session.commit()
+    return len(unconfirmed)
 
 
 @auth_bp.route('/api/auth/me', methods=['GET'])
@@ -843,6 +973,7 @@ def delete_account():
     SavedLZ.query.filter_by(user_id=uid).delete()
     SavedPointSet.query.filter_by(user_id=uid).delete()
     SavedBrief.query.filter_by(user_id=uid).delete()
+    SavedThreatSet.query.filter_by(user_id=uid).delete()
     AircraftProfile.query.filter_by(user_id=uid).delete()
     LoginEvent.query.filter_by(user_id=uid).delete()
     SyncCounter.query.filter_by(user_id=uid).delete()

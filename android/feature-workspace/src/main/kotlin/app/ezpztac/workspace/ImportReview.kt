@@ -212,8 +212,23 @@ private fun ReviewItem(item: ImportItemUi, actions: ImportReviewActions, enabled
             }
         }
         is ImportItemUi.Threats -> ItemBlock(EzpzIcons.crisisAlert, item.fileName, "Threats", "${plural(item.count, "threat")} · ${item.size}", enabled, remove) {
-            LockedPlace("This device only", "Threats are not saved to your account or shared yet.")
-            Note(EzpzIcons.encrypted, "Kept in an encrypted file on this device until you sign out.", top = Tokens.Spacing.sm.dp)
+            if (item.saved) {
+                // Typed into a field of its own, for the reasons a set of points' is, above.
+                var name by remember(item.id) { mutableStateOf(item.name) }
+                val focus = LocalFocusManager.current
+                EzpzTextField(
+                    name, { name = it; actions.setName(item.id, it) }, "Name", capitalization = KeyboardCapitalization.Characters, imeAction = ImeAction.Done,
+                    onImeAction = { focus.clearFocus() }, enabled = enabled, modifier = Modifier.padding(top = 14.dp),
+                )
+                if (item.pack != null) {
+                    LockedPlace(item.pack, "A set of its own in the pack, for everyone in it.")
+                } else {
+                    LockedPlace("Library", "A set of its own, on the map and synced with your account.")
+                }
+            } else {
+                LockedPlace("This device only", "Threats are not saved to your account or shared yet.")
+                Note(EzpzIcons.encrypted, "Kept in an encrypted file on this device until you sign out.", top = Tokens.Spacing.sm.dp)
+            }
         }
         is ImportItemUi.Mission -> ItemBlock(
             EzpzIcons.route, item.fileName, "Mission file", "${plural(item.routes, "route")} · ${plural(item.namedPoints, "named point")} · ${item.size}", enabled, remove,

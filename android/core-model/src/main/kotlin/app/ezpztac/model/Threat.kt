@@ -4,9 +4,9 @@ import kotlinx.serialization.Serializable
 
 /*
  * A threat, as the web sends it to the server and writes it into an AMPS `.ths`
- * file (`threatToPayload` in `threatModel.js`). Threats are never stored on a
- * server and never saved to the device's database (AGENTS.md, section 2): they live
- * in memory and are exported, so nothing here is a persistence model.
+ * file (`threatToPayload` in `threatModel.js`). What is saved to the Library is the
+ * web's document, read and written by [ThreatSets], so nothing here is a persistence
+ * model.
  *
  * A threat has a position, a MIL-STD-2525C symbol id, and up to two radars: type 0 is
  * Detection, type 1 is Engagement. Each radar has a range, an antenna height, an AGL or

@@ -126,7 +126,7 @@ const packBody = ({
   member_count: members.length,
   audience_count: audienceCount,
   item_count: items.length,
-  item_counts: Object.fromEntries(["lz", "route", "pointset"].map((kind) => [kind, items.filter((i) => i.kind === kind).length])),
+  item_counts: Object.fromEntries(["lz", "route", "pointset", "threatset"].map((kind) => [kind, items.filter((i) => i.kind === kind).length])),
   finished_at: finishedAt,
   finished_by: finishedBy,
   created_at: at(1),
@@ -153,7 +153,7 @@ const deleteItem = (item) => ({ type: "item.delete", item });
 const NEW_LZ = (id, name) => ({ schemaVersion: 2, id, name, status: "targeted" });
 
 const ITEM_TYPES = new Set(["item.create", "item.delete", "item.rename", "item.replace", "set", "patch", "upsert", "insert", "remove"]);
-const KIND_WORDS = { lz: "LZ", route: "routes", pointset: "points", brief: "brief" };
+const KIND_WORDS = { lz: "LZ", route: "routes", pointset: "points", brief: "brief", threatset: "threats" };
 const NAMES = { "lz-1": "LZ HAWK", "ps-1": "LOCAL", "br-1": "OP DK BRIEF" };
 const roleWords = (role) => (role === "editor" ? "an editor" : "a viewer");
 
@@ -1187,7 +1187,7 @@ const RESULT_KEYS = ["client_op_id", "seq", "status", "reason"];
 const SOURCE_KEYS = ["kind", "uuid", "revision", "original", "original_updated_at", "pack_changes", "last_pack_change"];
 const PERSON_KEYS = ["id", "name"];
 const TEAM_KEYS = ["id", "name", "member_count", "role"];
-const COUNT_KEYS = ["lz", "route", "pointset"];
+const COUNT_KEYS = ["lz", "route", "pointset", "threatset"];
 const LAST_CHANGE_KEYS = ["actor", "summary", "created_at"];
 const sorted = (keys) => [...keys].sort();
 

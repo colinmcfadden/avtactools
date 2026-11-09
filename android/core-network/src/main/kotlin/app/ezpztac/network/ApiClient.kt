@@ -145,19 +145,6 @@ public class ApiClient(
 
     private fun nowSeconds(): Long = time.nowMillis() / 1000
 
-    /**
-     * Whether this device has gone [OfflineGrace.DAYS] without the server confirming the account, so the person has to sign in again.
-     * Ends the session (locally: the server cannot be reached to say so) and announces it on [state]; what the person saved stays.
-     */
-    public suspend fun endSessionIfOfflineTooLong(): Boolean = refreshLock.withLock {
-        val stored = sessions.read() ?: return@withLock false
-        if (!OfflineGrace.expired(stored, nowSeconds())) return@withLock false
-        sessions.end(EndedSession("offline_too_long"))
-        token.tryEmit(null)
-        holder.set(AuthState.SignedOut(SignedOutReason.SESSION_ENDED, "offline_too_long"))
-        true
-    }
-
     // -- Sign-in, refresh and sign-out ------------------------------------------------
 
     public suspend fun login(email: String, password: String): ApiUser = signIn(

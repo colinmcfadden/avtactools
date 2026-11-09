@@ -1,0 +1,40 @@
+{
+ "type": "Feature",
+ "properties": {
+  "id": "brownsville-sec",
+  "title": "Brownsville Sectional",
+  "tier": "sectional",
+  "file": "Brownsville SEC.tif",
+  "made_from": {
+   "width": 16602,
+   "height": 12323,
+   "transform": [
+    42.335117258,
+    0.0,
+    -367473.131540979,
+    0.0,
+    -42.336093448,
+    242619.502168557
+   ],
+   "ink": 0.816
+  },
+  "edges": {
+   "north": "neighbour:el-paso-sec,san-antonio-sec",
+   "east": "content",
+   "south": "neatline",
+   "west": "neatline"
+  }
+ },
+ "geometry": {
+  "type": "Polygon",
+  "coordinates": [
+   [
+    [-103.0,24.0],
+    [-96.75,24.0],
+    [-96.75,28.0],
+    [-103.0,28.0],
+    [-103.0,24.0]
+   ]
+  ]
+ }
+}

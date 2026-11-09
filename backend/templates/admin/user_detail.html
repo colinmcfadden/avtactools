@@ -103,7 +103,9 @@
         {% else %}<span class="badge badge-off">pending</span>{% endif %}
       </div>
       <div class="muted">.mil email</div>
-      <div class="mono">{{ u.mil_email or '—' }}{% if u.mil_email and not u.mil_verified_at %} <span class="muted">(unverified)</span>{% endif %}</div>
+      <div class="mono">{{ u.mil_email or '—' }}</div>
+      <div class="muted">Code sent to</div>
+      <div class="mono">{{ u.mil_pending_email or '—' }}{% if u.mil_pending_email %} <span class="muted">(not entered)</span>{% endif %}</div>
       <div class="muted">Verified at</div>
       <div>{{ u.mil_verified_at.strftime('%Y-%m-%d %H:%M') if u.mil_verified_at else '—' }}</div>
     </div>

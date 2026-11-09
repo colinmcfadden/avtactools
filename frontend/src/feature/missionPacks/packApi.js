@@ -1,7 +1,7 @@
 import api from "../auth/api";
 
 // Every mission-pack, team and invitation route (contracts/openapi.yaml, docs/MISSION_PACKS.md §4).
-// Paths are relative to REACT_APP_API_URL, which already ends in /api. Each call resolves to the
+// Paths are relative to VITE_API_URL, which already ends in /api. Each call resolves to the
 // response body; a refusal rejects with the axios error, which failureOf reads.
 
 const pack = (uuid) => `/packs/${encodeURIComponent(uuid)}`;
@@ -43,7 +43,7 @@ export const markSeen = (uuid, seq) => api.put(`${pack(uuid)}/seen`, { seq }).th
 // -- Items ---------------------------------------------------------------------------
 
 /**
- * Copies one of the person's library records in. `source`: { kind: "lz"|"route"|"pointset", id } or
+ * Copies one of the person's library records in. `source`: { kind: "lz"|"route"|"pointset"|"threatset", id } or
  * { kind, client_uuid }. Pass `item` (the new item's uuid) so a retry returns the first copy.
  */
 export const copyIntoPack = (uuid, { source, item: itemUuid, name, summary } = {}) =>

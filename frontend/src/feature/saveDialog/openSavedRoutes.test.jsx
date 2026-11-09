@@ -39,8 +39,8 @@ const useHarness = (library) => {
 const setup = () => {
   const library = {
     savedRoutes: [],
-    updateSketch: jest.fn().mockResolvedValue({ updated_at: "2026-10-07T12:00:00" }),
-    saveSketch: jest.fn(),
+    updateSketch: vi.fn().mockResolvedValue({ updated_at: "2026-10-07T12:00:00" }),
+    saveSketch: vi.fn(),
   };
   const view = renderHook(() => useHarness(library), { wrapper: ToastProvider });
   return { ...view, library };
@@ -98,6 +98,38 @@ describe("opening a saved set of routes", () => {
     sent.forEach((route) => expect(route).not.toHaveProperty("setId"));
     expect(result.current.saves.stateOf(alpha.key).dirty).toBe(false);
     expect(result.current.saves.stateOf(SKETCHES)).toMatchObject({ link: null, dirty: true });
+  });
+
+  it("sees a FLOT as a change, saves it beside the routes, and is clean again", async () => {
+    const flots = [];
+    const library = { savedRoutes: [], updateSketch: vi.fn().mockResolvedValue({ updated_at: "2026-10-07T12:00:00" }), saveSketch: vi.fn() };
+    const useFlotHarness = ({ flots: list }) => {
+      const saves = useRouteSaves({ sets: [{ key: "k", kind: "sketch", routes: [savedRoute("a", "ALPHA 1")], flots: list }], library, signedIn: true });
+      return saves;
+    };
+    const { result, rerender } = renderHook(useFlotHarness, { wrapper: ToastProvider, initialProps: { flots } });
+    act(() => result.current.adopt("k", ALPHA));
+    rerender({ flots });
+    expect(result.current.stateOf("k").dirty).toBe(false);
+    const drawn = [{ id: "f", setId: "k", points: [{ lat: 34, lon: -84 }, { lat: 35, lon: -85 }] }];
+    rerender({ flots: drawn });
+    expect(result.current.stateOf("k").dirty).toBe(true);
+    await act(async () => {
+      await result.current.save("k");
+    });
+    expect(library.updateSketch.mock.calls[0][3]).toEqual([{ id: "f", points: drawn[0].points }]);
+    expect(result.current.stateOf("k").dirty).toBe(false);
+  });
+
+  it("keeps a set open that has only a FLOT", () => {
+    const library = { savedRoutes: [], updateSketch: vi.fn(), saveSketch: vi.fn() };
+    const useOnlyFlot = ({ flots }) =>
+      useRouteSaves({ sets: flots.length > 0 ? [{ key: "k", kind: "sketch", routes: [], flots }] : [], library, signedIn: true });
+    const flots = [{ id: "f", points: [] }];
+    const { result, rerender } = renderHook(useOnlyFlot, { wrapper: ToastProvider, initialProps: { flots } });
+    act(() => result.current.adopt("k", ALPHA));
+    rerender({ flots });
+    expect(result.current.stateOf("k")).toMatchObject({ link: { id: 42 }, dirty: false });
   });
 
   it("beside sketches saved as another record keeps both records", () => {

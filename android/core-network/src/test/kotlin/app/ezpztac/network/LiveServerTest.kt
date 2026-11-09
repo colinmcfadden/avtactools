@@ -187,6 +187,26 @@ class LiveServerTest {
         assertEquals(emptyList<LzSummary>(), client.listLzs())
     }
 
+    @Test
+    fun `a device used within each 30 days stays signed in past the old 180 days, and one left 30 days must sign in`() = runBlocking<Unit> {
+        val email = newAccount()
+        val store = InMemorySessionStore()
+        val client = clientFor(store)
+        client.login(email, LiveServer.PASSWORD)
+        repeat(7) {                                                                         // 7 x 29 days: 203 days signed in
+            live().ageSessions(29)
+            lapse()
+            assertEquals(emptyList<LzSummary>(), client.listLzs())
+        }
+        assertEquals(1, client.deviceSessions().size)                                       // the one sign-in, all along
+
+        live().ageSessions(31)
+        lapse()
+        val e = assertThrows<SessionEndedException> { client.listLzs() }
+        assertEquals("invalid_refresh_token", e.code)
+        assertNull(store.read())
+    }
+
     // -- Devices -----------------------------------------------------------------------------
 
     @Test

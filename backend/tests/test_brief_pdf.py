@@ -455,7 +455,7 @@ def test_a_tile_is_kept_as_it_came_and_fetched_once():
         again = figures._fetch_tile('topo', 'https://tiles.test/{z}/{x}/{y}', 9, 1, 2)
     assert get.call_count == 1
     assert first.mode == 'RGB' and again.getpixel((5, 5)) == (10, 20, 30)
-    assert figures._cache[('topo', 9, 1, 2)] == png.getvalue()        # the bytes, not a decoded image
+    assert figures._cache[('topo', None, 9, 1, 2)] == png.getvalue()        # the bytes, not a decoded image
     figures._cache.clear()
 
 

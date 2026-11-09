@@ -1,0 +1,40 @@
+{
+ "type": "Feature",
+ "properties": {
+  "id": "wichita-sec",
+  "title": "Wichita Sectional",
+  "tier": "sectional",
+  "file": "Wichita SEC.tif",
+  "made_from": {
+   "width": 16680,
+   "height": 12378,
+   "transform": [
+    42.33316199,
+    0.0,
+    -373121.847474152,
+    0.0,
+    -42.33270817,
+    255544.627373401
+   ],
+   "ink": 1.0
+  },
+  "edges": {
+   "north": "neighbour:cheyenne-sec,omaha-sec",
+   "east": "neighbour:kansas-city-sec",
+   "south": "neatline",
+   "west": "neatline"
+  }
+ },
+ "geometry": {
+  "type": "Polygon",
+  "coordinates": [
+   [
+    [-104.0,36.0],
+    [-97.0,36.0],
+    [-97.0,40.0],
+    [-104.0,40.0],
+    [-104.0,36.0]
+   ]
+  ]
+ }
+}

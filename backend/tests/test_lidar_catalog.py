@@ -1,10 +1,14 @@
 """Tileset naming, and the checks that keep a URL from reaching the disk."""
 
+import hashlib
+import hmac
+import os
 import shutil
 import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 BACKEND_DIR = Path(__file__).resolve().parents[1]
 if str(BACKEND_DIR) not in sys.path:
@@ -182,3 +186,43 @@ class CoverageLookupTests(unittest.TestCase):
     def test_a_manifest_round_trips(self):
         area = catalog.read_manifest(self.root / self.key)
         self.assertEqual(area, (self.LAT, self.LON, self.RADIUS))
+
+
+class KeyedKeyTests(unittest.TestCase):
+    """A key is an HMAC under a server secret, so it cannot be hashed back.
+
+    The unkeyed SHA-256 it was could be reversed by trying every rounded place
+    in a region (about 1.5e11 cells over CONUS, seconds on a GPU).
+    """
+
+    def key(self, secret, lat=TARGET[0], lon=TARGET[1], radius=250):
+        with patch.dict(os.environ, {"LIDAR_KEY_SECRET": secret}):
+            return catalog.key_for(lat, lon, radius_m=radius)
+
+    def test_the_key_is_an_hmac_of_the_rounded_target(self):
+        secret = "s" * 40
+        seed = f"{round(TARGET[0], 4)}:{round(TARGET[1], 4)}:250"
+        expected = hmac.new(secret.encode(), seed.encode(), hashlib.sha256).hexdigest()[:16]
+        self.assertEqual(self.key(secret), expected)
+
+    def test_the_unkeyed_hash_no_longer_names_the_place(self):
+        seed = f"{round(TARGET[0], 4)}:{round(TARGET[1], 4)}:250"
+        self.assertNotEqual(self.key("s" * 40), hashlib.sha256(seed.encode()).hexdigest()[:16])
+
+    def test_another_secret_gives_another_key(self):
+        self.assertNotEqual(self.key("a" * 40), self.key("b" * 40))
+
+    def test_a_bare_local_run_falls_back_to_a_development_secret(self):
+        with patch.dict(os.environ, {}, clear=True):
+            self.assertTrue(catalog.is_valid_key(catalog.key_for(*TARGET, radius_m=250)))
+            self.assertEqual(catalog.key_secret(os.environ), catalog.DEV_KEY_SECRET)
+
+    def test_a_deployment_refuses_a_missing_or_short_secret(self):
+        """As JWT_SECRET_KEY: the public fallback must never name real places."""
+        for signal in ({"FLY_APP_NAME": "x"}, {"TRUSTED_PROXY": "cloudflare"},
+                       {"APP_ENV": "production"}, {"LIDAR_BUILDER_TOKEN": "t"}):
+            for secret in ({}, {"LIDAR_KEY_SECRET": "short"}):
+                with self.subTest(signal=signal, secret=secret):
+                    with self.assertRaises(RuntimeError):
+                        catalog.key_secret({**signal, **secret})
+            self.assertEqual(catalog.key_secret({**signal, "LIDAR_KEY_SECRET": "k" * 32}), "k" * 32)

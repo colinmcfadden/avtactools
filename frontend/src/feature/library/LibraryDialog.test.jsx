@@ -3,16 +3,16 @@ import React from "react";
 import { ToastProvider } from "../ui/Toast";
 import LibraryDialog from "./LibraryDialog";
 
-jest.mock("../auth/api", () => ({ __esModule: true, default: { get: jest.fn(), put: jest.fn(), post: jest.fn() } }));
+vi.mock("../auth/api", () => ({ __esModule: true, default: { get: vi.fn(), put: vi.fn(), post: vi.fn() } }));
 
 const source = (patch = {}) => ({
   entries: [],
   loading: false,
   error: null,
   openIds: new Set(),
-  refresh: jest.fn(),
-  onOpen: jest.fn(),
-  onDelete: jest.fn(),
+  refresh: vi.fn(),
+  onOpen: vi.fn(),
+  onDelete: vi.fn(),
   ...patch,
 });
 
@@ -63,8 +63,8 @@ describe("the Library", () => {
   });
 
   it("links its footer to Mission Packs: the Library closes and the workspace switcher opens", () => {
-    const onClose = jest.fn();
-    const onOpenPacks = jest.fn();
+    const onClose = vi.fn();
+    const onOpenPacks = vi.fn();
     show({}, { onClose, onOpenPacks });
     expect(screen.getByText(/^0 saved LZ\/PZs/)).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Working with a team? Open a Mission Pack" }));
@@ -75,5 +75,19 @@ describe("the Library", () => {
   it("has no Mission Pack link where packs are not offered", () => {
     show({});
     expect(screen.queryByText(/Working with a team/)).toBeNull();
+  });
+
+  it("has a Threats tab only for an account given its source, and a set can go to a pack", () => {
+    const { unmount } = show({});
+    expect(screen.queryByRole("tab", { name: /Threats/ })).toBeNull();
+    unmount();
+
+    const threats = source({ entries: [{ id: 3, name: "OP DK THREATS", threat_count: 1, updated_at: "2026-11-08T10:00:00" }] });
+    show({ threats }, { initialTab: "threats", onAddToPack: vi.fn() });
+    expect(screen.getByRole("tab", { name: /Threats/ })).toHaveAttribute("aria-selected", "true");
+    expect(screen.getByText(/^1 threat · Updated/)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "More actions for OP DK THREATS" }));
+    expect(screen.getByRole("menuitem", { name: /Duplicate/ })).toBeInTheDocument();
+    expect(screen.getByRole("menuitem", { name: /Add to Mission Pack/ })).toBeInTheDocument();
   });
 });

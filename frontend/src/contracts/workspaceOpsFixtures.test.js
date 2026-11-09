@@ -206,7 +206,7 @@ const DOGHOUSE_CASES = [
   ["a short array gives none", [34.5], "n"],
 ];
 
-// What App.js does when an analysis comes back (`handleAnalysisComplete`): complete it, and make the standard doghouses once, only
+// What App.jsx does when an analysis comes back (`handleAnalysisComplete`): complete it, and make the standard doghouses once, only
 // if the diagram has none. A later analysis, or a second target, never regenerates them.
 const afterAnalysis = (diagram, analysis) => {
   let state = createInitialLzWorkspace([diagram]);

@@ -64,10 +64,8 @@ class EngineSyncRunner @Inject constructor(
     override suspend fun runOnce(): SyncOutcome {
         if (auth.state.value is AuthState.Unknown) {
             // WorkManager can start the process for this alone, with no shell to have read the stored session: this is the process's launch, so do
-            // what the shell does at one. The 14-day rule comes before any call, because a refresh would stamp the session as confirmed; a process
-            // already launched is left alone, so nobody is signed out in the middle of their work.
+            // what the shell does at one.
             auth.restore()
-            if (auth.endSessionIfOfflineTooLong()) return SyncOutcome.Done
         }
         val user = (auth.state.value as? AuthState.SignedIn)?.user ?: return SyncOutcome.Done     // nobody to sync for
         // Only this account's own plans: another account's are never uploaded under this one, and a device nobody has claimed is left to the
@@ -76,7 +74,7 @@ class EngineSyncRunner @Inject constructor(
         // An app the server no longer supports sends nothing, packs or library, until it is updated (the owner's decision): what waits stays on
         // the device, and asking again cannot help (the updated app's launch asks for a sync of its own). A device nobody opens must still hear
         // that the server has raised its minimum, or lowered it again, so it is asked first: the config is public, needs no session and confirms
-        // none (the 14-day rule above is untouched), and the server keeps it for a minute. With no answer, the minimum last heard stands.
+        // none, and the server keeps it for a minute. With no answer, the minimum last heard stands.
         lookAtMinimum()
         if (tooOld()) return SyncOutcome.Done
         // Mission packs first: what a pack refused is kept in the library as a record of the person's, which then goes up with the rest.

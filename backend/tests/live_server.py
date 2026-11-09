@@ -16,12 +16,16 @@ Settings, by environment variable:
                                 set 1, so a token lapses and the refresh flow runs for real.
     EZPZ_LIVE_DATABASE_URL      a Postgres database to use instead of the throwaway SQLite one, for what
                                 only Postgres does (the mission packs' NOTIFY; tests/test_realtime_live.py)
+    CORS_ORIGINS                the pages that may call it from a browser, as in production (default
+                                http://localhost:3000); the web's cookie session is answered to these alone
 
 Test-only routes, under ``/__test__`` (they exist only here):
 
     POST /__test__/account      {email, password, approved?} makes a verified account
     POST /__test__/age-refresh  {seconds, user_id?} moves every spent refresh token that far into the
                                 past, standing in for time passing (the 30 s grace period)
+    POST /__test__/age-sessions {days} moves every refresh token's times (made, spent, expires) that far into the
+                                past, standing in for days passing between uses of a device
     POST /__test__/clear-rate-limits  forgets the sign-in rate limiter's counts (every client here shares one address)
     POST /__test__/lidar/run    builds every point cloud queued, one at a time, as the build service's worker would: a build is the
                                 3D view's fixture tileset (contracts/fixtures/viewer3d/tileset) put where a build puts one
@@ -58,6 +62,7 @@ from affiliation_gate import enforce_affiliation_gate  # noqa: E402
 from database_url import database_uri  # noqa: E402
 from lidar import catalog as lidar_catalog, worker as lidar_worker  # noqa: E402
 from auth_rate_limit import clear_rate_limits  # noqa: E402
+from cors_config import configure_cors, cors_origins  # noqa: E402
 from models import AccountToken, LocalCredential, User, db  # noqa: E402
 from routes.aircraft_routes import aircraft_bp  # noqa: E402
 from routes.auth import auth_bp  # noqa: E402
@@ -65,11 +70,13 @@ from routes.brief_routes import brief_bp  # noqa: E402
 from routes.config_routes import config_bp  # noqa: E402
 from routes.lidar_routes import lidar_bp  # noqa: E402
 from routes.lz_routes import lz_bp  # noqa: E402
+from routes.notification_routes import notification_bp  # noqa: E402
 from routes.pack_routes import pack_bp  # noqa: E402
 from routes.point_sets import point_sets_bp  # noqa: E402
 from routes.saved_routes import saved_routes_bp  # noqa: E402
 from routes.sync_routes import sync_bp  # noqa: E402
 from routes.team_routes import team_bp  # noqa: E402
+from routes.threat_set_routes import threat_set_bp  # noqa: E402
 from token_revocation import is_revoked  # noqa: E402
 
 
@@ -144,6 +151,7 @@ def create_app():
         JWT_ACCESS_TOKEN_EXPIRES=timedelta(seconds=int(os.environ.get("EZPZ_ACCESS_TOKEN_SECONDS", "86400"))),
         GOOGLE_CLIENT_ID="live-test-client-id",
     )
+    configure_cors(app, cors_origins(os.environ))
     db.init_app(app)
     jwt = JWTManager(app)
 
@@ -152,7 +160,8 @@ def create_app():
         return is_revoked(payload)
 
     app.before_request(enforce_affiliation_gate)
-    for blueprint in (auth_bp, config_bp, lz_bp, saved_routes_bp, point_sets_bp, brief_bp, sync_bp, aircraft_bp, pack_bp, team_bp, lidar_bp):
+    for blueprint in (auth_bp, config_bp, lz_bp, saved_routes_bp, point_sets_bp, brief_bp, threat_set_bp, sync_bp, aircraft_bp, pack_bp, team_bp, lidar_bp,
+                      notification_bp):
         app.register_blueprint(blueprint)
     _lidar(app)
 
@@ -177,6 +186,18 @@ def create_app():
         rows = AccountToken.query.filter(AccountToken.purpose == "refresh", AccountToken.used_at.isnot(None)).all()
         for row in rows:
             row.used_at = row.used_at - timedelta(seconds=seconds)
+        db.session.commit()
+        return jsonify({"moved": len(rows)})
+
+    @app.post("/__test__/age-sessions")
+    def age_sessions():
+        back = timedelta(days=float(request.get_json()["days"]))
+        rows = AccountToken.query.filter(AccountToken.purpose == "refresh").all()
+        for row in rows:
+            row.created_at -= back
+            row.expires_at -= back
+            if row.used_at is not None:
+                row.used_at -= back
         db.session.commit()
         return jsonify({"moved": len(rows)})
 

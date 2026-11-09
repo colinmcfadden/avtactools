@@ -49,14 +49,14 @@ const reduce = (diagram, action) => {
   return lzWorkspaceReducer(state, { ...action, diagramId: diagram.id }).diagramsById[diagram.id];
 };
 
-// The flight data following the doghouses (useDoghouses's effect), as App.js sets it.
+// The flight data following the doghouses (useDoghouses's effect), as App.jsx sets it.
 const following = (diagram) =>
   reduce(diagram, { type: LZ_WORKSPACE_ACTIONS.SET_FLIGHT_DATA, flightData: flightDataFromDoghouses(diagram.graphics.doghouses, diagram.flightData) });
 
 const targeted = () =>
   createLzDiagramFromTarget({ target: [34.783817, -84.08219], mgrs: "16S GD 66993 52949", id: packLocalId(PACK, LZ), name: "LZ HAWK" });
 
-// App.js's handleAnalysisComplete: what was found, the standard doghouses made once, and the flight data they give.
+// App.jsx's handleAnalysisComplete: what was found, the standard doghouses made once, and the flight data they give.
 const analysed = (diagram) => {
   const done = reduce(diagram, {
     type: LZ_WORKSPACE_ACTIONS.COMPLETE_ANALYSIS,

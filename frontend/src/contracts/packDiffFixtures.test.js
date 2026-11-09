@@ -34,8 +34,8 @@ const withoutClockOrRandomness = (build) => {
     throw new Error(`a diff case relied on ${what}`);
   };
   const spies = [
-    jest.spyOn(Date, "now").mockImplementation(refuse("the clock")),
-    jest.spyOn(Math, "random").mockImplementation(refuse("randomness")),
+    vi.spyOn(Date, "now").mockImplementation(refuse("the clock")),
+    vi.spyOn(Math, "random").mockImplementation(refuse("randomness")),
   ];
   try {
     return build();

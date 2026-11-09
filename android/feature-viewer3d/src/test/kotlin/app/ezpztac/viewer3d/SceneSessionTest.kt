@@ -5,6 +5,7 @@ import app.ezpztac.data.TilesetAddress
 import app.ezpztac.data.TilesetFiles
 import app.ezpztac.model.LatLon
 import app.ezpztac.network.ApiException
+import app.ezpztac.network.LidarFrameDto
 import app.ezpztac.network.NetworkException
 import app.ezpztac.scene3d.BoundingSpheres
 import app.ezpztac.scene3d.CameraGesture
@@ -78,12 +79,13 @@ class SceneSessionTest {
         size: Int = 5,
         sources: SceneSources = SceneSources(files),
         io: CoroutineDispatcher? = null,
+        lz: LidarFrameDto? = null,
     ): Rig {
         val dispatcher = StandardTestDispatcher(testScheduler)
         val parent = CoroutineScope(SupervisorJob() + dispatcher)
         val session = SceneSession(
             here, address, if (withRing) ring else null, sources, SceneBudgets.DEFAULT, parent, size,
-            io = io ?: dispatcher, decode = dispatcher, clock = { testScheduler.currentTime },
+            io = io ?: dispatcher, decode = dispatcher, clock = { testScheduler.currentTime }, lzFrame = lz,
         )
         return Rig(this, session, parent)
     }
@@ -140,6 +142,42 @@ class SceneSessionTest {
         assertEquals(opening.heading, camera.heading, 1e-12)
         assertEquals(opening.pitch, camera.pitch, 1e-12)
         r.close()
+    }
+
+    @Test
+    fun `a streamed survey opens on the server's frame and LZ flies back to it, never the tileset's own sphere`() = runTest {
+        // A streamed survey's root is a state; frame is where the LZ is, 400 m up from the ellipsoid here.
+        val lz = LidarFrameDto(here.lat, here.lon, radiusM = 250.0, heightM = 400.0)
+        val r = rig(lz = lz)
+        advanceUntilIdle()
+        val sphere = Sphere(frame.fromGeodetic(lz.lat, lz.lon, 400.0), 250.0)
+        assertEquals(400.0, sphere.center.z, 1e-6)
+        val opening = CameraPose.framing(frame, sphere, upright)
+        val camera = r.frame()!!.camera
+        assertEquals(opening.position.x, camera.position.x, 1e-9)
+        assertEquals(opening.position.y, camera.position.y, 1e-9)
+        assertEquals(opening.position.z, camera.position.z, 1e-9)
+        assertEquals(SceneLook.framingRange(250.0, upright), (camera.position - sphere.center).length, 1e-6)
+        r.session.gesture(listOf(CameraGesture.Turn(Math.toRadians(70.0))))
+        r.frame()
+        r.session.frameLz()
+        advanceTimeBy(SceneLook.FRAME_MS + 1)
+        val back = r.frame()!!.camera
+        assertEquals(opening.position.x, back.position.x, 1e-6)
+        assertEquals(opening.position.z, back.position.z, 1e-6)
+        r.close()
+    }
+
+    @Test
+    fun `a frame whose ground nobody knows opens on the tileset's sphere, rather than on a height made up`() = runTest {
+        val doc = TilesetReader.read(Fixtures.bytes("viewer3d/tileset/tileset.json"), "tileset.json", frame)
+        val root = Sphere(doc.root.volume.center, doc.root.volume.radius)
+        for (lz in listOf(null, LidarFrameDto(here.lat, here.lon, 250.0, null), LidarFrameDto(here.lat, here.lon, 0.0, 400.0),
+                          LidarFrameDto(Double.NaN, here.lon, 250.0, 400.0))) {
+            val sphere = lzSphere(frame, lz, root)
+            assertEquals("$lz", root.center, sphere.center)
+            assertEquals("$lz", root.radius, sphere.radius, 0.0)
+        }
     }
 
     @Test

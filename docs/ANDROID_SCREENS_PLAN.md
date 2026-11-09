@@ -213,16 +213,18 @@ can be opened and moved as wanted, and shared in mission packs, where every memb
 first: a saved threat set (`/api/threatsets`, a sync kind, `contracts/openapi.yaml` and fixtures), a pack item kind (`pack_ops.py`, `packOps.js`,
 `contracts/fixtures/packs`), the web's Threats panel saving to and opening from the Library and its pack rows; then Android: `ThreatStore` onto the
 sync engine (the sealed device file becomes the open picture's working copy), `RecordKind.THREATS`, the pack item kind in `core-missionpacks`, and the
-Library's tab (S7). To decide when it is planned: whether a saved set is the whole picture or a named group of threats (the web's `.ths` is a whole
-picture); whether several can be open at once, as route sets are; and what the viewshed, KMZ and QR stores keep once threats are records. AGENTS.md §2
-records the decision.
+Library's tab (S7). AGENTS.md §2 records the decision. **The server and the web's personal half are built** (AGENTS.md §4, *Threats*), with the owner's answers of
+2026-11-08: a Library item is a named group of threats, several open at once and all drawn; autosaved, with no Save; terrain masks stored with their threats, beside what
+they were worked out for; the viewshed, KMZ and QR stores stay transient; API 2.0.0 for the feed's new `threatset`, majors 1 and 2 both served. **Still to build:** Android (`RecordKind.THREAT_SET`,
+`ThreatStore` onto records, the wipe at sign-out gone, the Library's tab, a cursor reset so a device past those feed entries picks them up, and the picture on the device
+carried into that account's Library at the first launch after the update, as a set: **built**, AGENTS.md §17, *Threats*), then the pack item kind `threatset`: **built** (AGENTS.md §4, *Mission packs*, and §17, *Threats*, *In a mission pack*; terrain masks are not sent in a pack, so each member works them out).
 
 **S6 — Import. Built.** The Import menu (`ImportSheet.kt`, a modal bottom sheet from the frame's Import chip and the Imports panel's header: a mission, local points, threats for an
 account with them; each opens the system picker), the import review (`ImportReview.kt` over `IncomingViewModel`: every file waiting, from the picker or another app, with what it is,
 how much is in it and where it goes, the choice locked where a kind has one place; *Remove* on each, *Cancel* and *Import N files*), and the Imports panel (`ImportsPanel.kt` over
 `PointsViewModel`: the sets of points with *Library* or *This session*, hide, and *More*; the missions kept with their files and *Open in Routes*; the threat files and *Open in
 Threats*; the held point's card). The Threats panel's *Import .ths* and Routes' *Import .msnx* open the picker straight into the review. **Amended while building:**
-- **Where each goes:** local points to the Library or *This session* (held in memory for the session, never saved; `SessionPointSets`); threats to this device only (until *T*); a mission to
+- **Where each goes:** local points to the Library or *This session* (held in memory for the session, never saved; `SessionPointSets`); threats to this device only (until *T*, since built: the Library, or the open pack); a mission to
   the Library with its file (*This session* would need a session route set, which does not exist). No overlays (owner decision 2), no pack destination (the P-steps).
 - **Every file can be taken out of the review**, not only one that cannot be brought in, so a person can bring in two of three.
 - **The panel lists every mission in the Library** (the Library page, S7, will too): an imported mission is its file, kept in the Library, and that is what the design's row says.

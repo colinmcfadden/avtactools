@@ -37,15 +37,20 @@ internal object LidarPaths {
     }
 }
 
-private fun place(at: LatLon, radiusM: Double?) = buildJsonObject {
+private fun place(at: LatLon, radiusM: Double?, stream: Boolean = false) = buildJsonObject {
     put("lat", at.lat)
     put("lon", at.lon)
     if (radiusM != null) put("radius_m", radiusM)
+    if (stream) put("stream", true)
 }
 
-/** Whether the point cloud covering [at] is built, and where it is if so; if not, the key a build would have and whether this server can build. */
-public suspend fun ApiClient.lidarResolve(at: LatLon, radiusM: Double? = null): LidarResolveDto =
-    decode(execute(ApiClient.Call("POST", "/api/lidar/resolve", body = place(at, radiusM))))
+/**
+ * Whether the point cloud covering [at] is built, and where it is if so; if not, the key a build would have and whether this server can build.
+ * [stream] asks, where nothing is built, for the place's survey streamed from USGS's octree (`streamed`, with `frame` saying where to look): only
+ * a view that opens on `frame` may ask, since the tileset is a whole survey.
+ */
+public suspend fun ApiClient.lidarResolve(at: LatLon, radiusM: Double? = null, stream: Boolean = false): LidarResolveDto =
+    decode(execute(ApiClient.Call("POST", "/api/lidar/resolve", body = place(at, radiusM, stream))))
 
 /**
  * Asks for the point cloud at [at] to be built: the build, queued or running (202), or the tileset when it is built already (200). [watcher]

@@ -56,8 +56,13 @@ Environment:
 
 ```
 LIDAR_BUILDER_TOKEN=<the secret>
+LIDAR_KEY_SECRET=<openssl rand -hex 32>
 LIDAR_COLLECTION=/data/lidar
 ```
+
+`LIDAR_KEY_SECRET` names new tilesets (an HMAC of the place, so a key cannot be
+hashed back into it). The service refuses to start without it once a token is
+set, and the API (production and staging) must have **the same value**.
 
 The first image build takes several minutes and about 5 GB; later deploys only
 rebuild the final code layer. The image refuses to finish building if the
@@ -71,11 +76,27 @@ Add to its environment, then redeploy:
 LIDAR_TILES_DIR=/data/tiles
 LIDAR_BUILDER_URL=http://<build service hostname>:8090
 LIDAR_BUILDER_TOKEN=<the same secret>
+LIDAR_KEY_SECRET=<the build service's>
 ```
 
 Use the build service's internal container hostname, which Coolify shows on
 that application. Both applications must be on the same Docker network — if
 the backend cannot reach it, enable **Connect to Predefined Network** on both.
+
+### 2b. Streaming from USGS's octree (the backend only)
+
+Streamed 3D (docs/DATA_ADMIN_AND_PREBUILT_3D_PLAN.md, Part C) runs in the API, not
+here: the API fetches each octree piece from AWS the first time a viewer asks,
+converts it and caches it. Give the backend a persistent, writable directory and
+point it there, then redeploy:
+
+```
+LIDAR_STREAM_CACHE_DIR=/data/cache/lidar
+```
+
+(`/data/cache` must then be mounted into the backend too.) Without it nothing
+streams and the 3D view builds as before. The cache can be deleted at any time;
+it keeps itself under 200 GB (`LIDAR_STREAM_CACHE_MAX_GB`).
 
 ### 3. Check it
 
@@ -158,8 +179,8 @@ On a host without the service, set these for the frontend build so the 3D
 window's fallback prints a command that works there:
 
 ```
-REACT_APP_LIDAR_BUILD_CWD=/opt/avtactools
-REACT_APP_LIDAR_COLLECTION=/data/lidar
+VITE_LIDAR_BUILD_CWD=/opt/avtactools
+VITE_LIDAR_COLLECTION=/data/lidar
 ```
 
 ## Later: an index instead of a directory

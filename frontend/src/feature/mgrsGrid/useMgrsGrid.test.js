@@ -4,7 +4,7 @@ import useMgrsGrid, { MGRS_GRID_STORAGE_KEY } from "./useMgrsGrid";
 const storage = () => window.localStorage;
 
 afterEach(() => {
-  jest.restoreAllMocks();
+  vi.restoreAllMocks();
   storage().clear();
 });
 
@@ -42,9 +42,9 @@ describe("useMgrsGrid", () => {
     const refuse = () => {
       throw new Error("SecurityError: storage is disabled");
     };
-    jest.spyOn(Storage.prototype, "getItem").mockImplementation(refuse);
-    jest.spyOn(Storage.prototype, "setItem").mockImplementation(refuse);
-    jest.spyOn(Storage.prototype, "removeItem").mockImplementation(refuse);
+    vi.spyOn(Storage.prototype, "getItem").mockImplementation(refuse);
+    vi.spyOn(Storage.prototype, "setItem").mockImplementation(refuse);
+    vi.spyOn(Storage.prototype, "removeItem").mockImplementation(refuse);
 
     const { result } = renderHook(() => useMgrsGrid());
     expect(result.current.showMgrsGrid).toBe(false);
@@ -55,7 +55,7 @@ describe("useMgrsGrid", () => {
   });
 
   it("still works when even reaching storage throws (site data blocked)", () => {
-    const reach = jest.spyOn(window, "localStorage", "get").mockImplementation(() => {
+    const reach = vi.spyOn(window, "localStorage", "get").mockImplementation(() => {
       throw new Error("SecurityError: access denied");
     });
     const { result } = renderHook(() => useMgrsGrid());

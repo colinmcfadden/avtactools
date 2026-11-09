@@ -5,6 +5,26 @@ rules that bit once, what cannot be verified without a device); this file is the
 Read both, then `docs/NATIVE_APPS_PLAN.md` for the plan and its phases. Refresh this file in the same commit as any change
 that moves the "where things stand" or "next" sections.
 
+**Threats saved (2026-11-08, `docs/ANDROID_SCREENS_PLAN.md`, *T*).** On `feat/android-saved-threats`: threats are named sets in the Library, autosaved and synced, several open at once, their terrain masks with them, there
+again after a sign-out or a restart (AGENTS.md §17, *Threats*; database version 5 forgets the sync cursor once). A picture on the device from before becomes a set at that account's first launch after the update. An account without `threats` or `cloud_save` keeps the
+sealed file as before. **To try first on a device:** a threat added, the app closed and opened, signed out and in; then the same set on a second device and on the web.
+
+**Threats in mission packs (2026-11-09, on `feat/pack-threats`).** A set of threats is a pack item of kind `threatset`, on the server, the web and Android: `PackThreats` and `ThreatPackKind` in core-missionpacks, `PackThreatSync` and `ThreatStore`'s pack mode in core-data, the Pack panel's Threats group, and the Threats panel and the import review while a pack is open (AGENTS.md §17, *Threats*, *In a mission pack*). Every test, lint and the debug build pass; none of it has run on a device. **To try first on a device:** a set copied into a pack, one threat moved on one device and seen on another and on the web; the same pack finished while a threat is being dragged; and leaving the pack to see the person's own sets come back. **The server of PR 163 must be live before an Android build with this reaches anyone.**
+
+**The VFR map from the FAA's own charts (2026-11-08, `docs/VFR_CHARTS.md`, C4).** Android draws the server's chart tiles where `/api/config` names a build, ArcGIS elsewhere, with the charts named above the readout (AGENTS.md §17, *The VFR charts*).
+
+**The VFR map from the FAA's own charts (2026-11-09, `docs/VFR_CHARTS.md`, C4 built, C5 rehearsed; what is left is the owner's run on production, its steps in §9 there).** Android draws the server's chart tiles where `/api/config` names a build, ArcGIS elsewhere, with the charts named above the readout (AGENTS.md §17, *The VFR charts*).
+**To try first on a device:** against a server with a live build, open the VFR map over CONUS and then Hawaii; take the build away (roll back on the Data tab) and see the map follow within a minute of a tile failing. No device has run it.
+
+**3D streamed from USGS (2026-10-26, `docs/DATA_ADMIN_AND_PREBUILT_3D_PLAN.md`).** Phase 0 is built: new tileset keys are an HMAC under
+`LIDAR_KEY_SECRET` (the same value on the API, staging's API and the build service, or they refuse to start), the tileset list is admins' only and a
+tileset's `area.json` is never served. Android's calls are unchanged (one test's recorded key moved). Phase 1 (streaming) is built for the backend and the web
+(`feat/lidar-streaming`) and for Android (`feat/android-lidar-streaming`): `LidarBuilds` sends `stream: true` (held to
+`contracts/fixtures/viewer3d/lidarFlowStream.json`), `LidarLookup` carries `frame`, and `SceneSession` opens and flies *LZ* on it
+(`lzSphere`) instead of the root's sphere, a state; a save builds nothing where the place streams. **To try first on a device:** open 3D
+on an LZ/PZ in north Georgia against a server with `LIDAR_STREAM_CACHE_DIR` set; it should open on the LZ in seconds, not a build's
+minutes. What it costs a phone's link and memory to draw the landscape at error 2 is untried (AGENTS.md §15).
+
 Last refreshed: 2026-10-24 (every finished branch merged into `develop`: *Moving to a new computer*, below). Before that, 2026-10-23 (the owner moves to a new
 computer: every branch with work is pushed, and what is not in git is listed in *Moving to a new computer*; the device-run work of 2026-10-21/22 is §0).
 Before that, 2026-10-21 (the 3D LZ view's first device run, §0b, on `claude/android-3d-view-e38b76`).
@@ -475,6 +495,11 @@ plan's) is dark.
 0. **Two devices in one pack again**, after the settings audit: what only a device run shows is the live stream end to end, a drag and its pointer on the real map, and
    the clock form and the unit builder with someone else's change arriving while they are open. Then the owner's calls in AGENTS.md §15 (an aircraft's own airframe
    on other devices, two clocks, the web's partial values and forms, which want the web first).
+0a. **Notifications** (`docs/NOTIFICATIONS.md`, decided 2026-10-28): N0 (the server's outbox and routes) and N1 (Android) are built: a worker every
+   15 minutes, one channel per group, the names on the lock screen, a toast while the app is in front, taps opening the switcher or the pack, access
+   approved, and the permission asked on the gate's screen or the switcher (AGENTS.md §17, *Notifications on Android*). **A device run is what N1 most
+   needs**: invite a test account on a phone and time the notification with the app in front, in the back, and left still overnight; tap it from the
+   lock screen. Then N2 (the account menu's *Notifications*, *Changes kept*) and N3 (the web).
 1. **The screens**, S1–S9, P1, P2a–P2e, P3a–P3c and P4a–P4c done and reviewed, the fixes in (`docs/ANDROID_SCREENS_PLAN.md`, each step's *Reviewed*): the
    owner tries the app on a device now (the owner's order, 2026-10-12: no device testing before S7–S9 and P1–P4), then *T*
    (threats saved and shared: web and server first) beside S7, now that the mission-pack engine is built (A1–A15: `docs/ANDROID_MISSION_PACKS_PLAN.md`; what each piece holds is in
@@ -649,9 +674,8 @@ set it to an Android version.
 Full list in AGENTS.md; the ones that matter most for a fresh agent:
 
 - **Unclassified only.** The mission brief's handbook is CUI-marked: never commit it or send it to a service; the templates carry its item lists
-  and standard values in the app's own words, by the owner's leave (2026-10-16). Threats are never synced or persisted server-side; on the device they
-  live in memory plus a sealed no-backup file, wiped at sign-out. **The only Android threat network call is the terrain mask, made
-  when the person presses its button**: do not add another, or make this one on its own, without the person asking for it.
+  and standard values in the app's own words, by the owner's leave (2026-10-16). Threats are saved and synced as sets in the Library (AGENTS.md §17, *Threats*); an account without
+  `cloud_save` keeps them in memory plus a sealed no-backup file, wiped at sign-out. **The viewshed is asked for only when the person presses its button**: do not make it run on its own.
 - **Agents do not deploy.** Never push `main`, run `fly deploy`, or trigger production. No new major dependency without asking.
 - **The web is the reference; `contracts/` fixtures are the contract.** Never hand-edit a fixture; change the web (or backend)
   first, regenerate, review the diff, then follow in the clients.

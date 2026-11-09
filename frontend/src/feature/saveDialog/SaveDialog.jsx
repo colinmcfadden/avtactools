@@ -1,6 +1,7 @@
 import React, { useEffect, useId, useMemo, useRef, useState } from "react";
 import Dialog from "../ui/Dialog";
 import Icon from "../ui/Icon";
+import { BusyButton } from "../ui/Spinner";
 import { dateAtTime } from "../ui/time";
 
 /*
@@ -92,10 +93,9 @@ const SaveDialog = ({
       footer={
         <>
           <button type="button" className="ui-btn ui-btn--ghost ui-btn--38" onClick={onCancel} disabled={busy}>Cancel</button>
-          <button type="button" className="ui-btn ui-btn--primary ui-btn--38" onClick={submit} disabled={busy}>
-            <Icon name="save" size={15} />
-            {busy ? "Saving" : primaryLabel}
-          </button>
+          <BusyButton className="ui-btn ui-btn--primary ui-btn--38" icon="save" iconSize={15} busy={busy} onClick={submit}>
+            {busy ? "Saving…" : primaryLabel}
+          </BusyButton>
         </>
       }
     >
@@ -117,21 +117,21 @@ const SaveDialog = ({
             autoComplete="off"
             spellCheck={false}
             aria-invalid={Boolean(error)}
-            aria-describedby={`${fieldId}-hint`}
+            aria-describedby={error || clash ? `${fieldId}-hint` : undefined}
             onChange={(event) => {
               setName(event.target.value);
               setError(null);
             }}
           />
-          <div
-            id={`${fieldId}-hint`}
-            className={`ui-field__hint${error ? " ui-field__hint--error" : clash ? " ui-field__hint--warn" : ""}`}
-          >
-            {error ??
-              (clash
-                ? `You already have ${kindPhrase} with this name${clash.updatedAt ? `, last saved ${dateAtTime(clash.updatedAt)}` : ""}.`
-                : "Press Enter to save. You can rename it any time.")}
-          </div>
+          {(error || clash) && (
+            <div
+              id={`${fieldId}-hint`}
+              className={`ui-field__hint${error ? " ui-field__hint--error" : " ui-field__hint--warn"}`}
+            >
+              {error ??
+                `You already have ${kindPhrase} with this name${clash.updatedAt ? `, last saved ${dateAtTime(clash.updatedAt)}` : ""}.`}
+            </div>
+          )}
         </div>
         {clash && (
           <div role="radiogroup" aria-label="What to do with the name" style={{ display: "flex", flexDirection: "column", gap: 8, marginTop: 12 }}>

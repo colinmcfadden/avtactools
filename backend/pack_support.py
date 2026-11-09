@@ -16,7 +16,8 @@ The rules (docs/MISSION_PACKS.md has the reasons):
   reopens it. Reading, exporting and copying out still work.
 * **Nothing reaches back into the library.** Items are copies; a pack never edits
   or reveals someone's one-off records.
-* **Threats are never part of a pack.** There is no item kind for them.
+* **Threats are not part of a pack yet.** There is no item kind for them; they are saved in the
+  person's library (``SavedThreatSet``), and step T of docs/ANDROID_SCREENS_PLAN.md adds the kind.
 """
 
 import hashlib
@@ -30,9 +31,10 @@ from datetime import datetime, timedelta
 from sqlalchemy import case, event, func, select, text, update
 from sqlalchemy.orm import Session
 
+import notify
 from models import (
     MissionPack, MissionPackEvent, MissionPackInvite, MissionPackItem, MissionPackMember, MissionPackSeen,
-    SavedLZ, SavedPointSet, SavedRoute, Team, TeamMember, User, db,
+    SavedLZ, SavedPointSet, SavedRoute, SavedThreatSet, SurveyBook, Team, TeamMember, User, db,
 )
 
 ROLES = ('owner', 'editor', 'viewer')
@@ -50,7 +52,7 @@ MAX_DESCRIPTION = 2000
 MAX_SUMMARY = 300
 SYSTEM_ACTOR = 'EZ-PZ'
 
-LIBRARY_MODELS = {'lz': SavedLZ, 'route': SavedRoute, 'pointset': SavedPointSet}
+LIBRARY_MODELS = {'lz': SavedLZ, 'route': SavedRoute, 'pointset': SavedPointSet, 'threatset': SavedThreatSet}
 # Everything a pack holds, which goes when the pack does (a deleted pack keeps only its tombstone row).
 PACK_CONTENT = (MissionPackEvent, MissionPackItem, MissionPackInvite, MissionPackMember, MissionPackSeen)
 
@@ -495,6 +497,7 @@ def invite_body(invite):
 def _purge_pack(pack):
     """Delete a pack and everything in it, rows and all. Only when nobody else is in it."""
     announce_deleted(pack.uuid)
+    notify.withdraw(pack_uuid=pack.uuid)
     for model in PACK_CONTENT:
         model.query.filter_by(pack_id=pack.id).delete(synchronize_session=False)
     db.session.delete(pack)
@@ -532,6 +535,7 @@ def _hand_on(pack, user_id):
     heir_name = names([heir.user_id]).get(heir.user_id, '')
     append(pack, None, {'type': 'pack.transfer', 'user_id': heir.user_id, 'name': heir_name},
            f"{heir_name} owns the pack now: its owner's account was deleted.")
+    notify.add(heir.user_id, 'pack_owner', pack=pack)
     return False
 
 
@@ -554,6 +558,7 @@ def release_account(user_id):
         _purge_pack(pack)
 
     MissionPackSeen.query.filter_by(user_id=user_id).delete(synchronize_session=False)
+    notify.forget_account(user_id)
     leaving = names([user_id]).get(user_id, '')
     for membership in MissionPackMember.query.filter_by(user_id=user_id).all():
         pack = db.session.get(MissionPack, membership.pack_id)
@@ -602,6 +607,10 @@ def delete_team(team, actor):
         append(pack, actor, {'type': 'pack.share', 'team_id': None},
                f'The team "{team.name}" was deleted, so its members no longer see this pack through it.')
     MissionPack.query.filter(MissionPack.team_id == team.id).update({'team_id': None}, synchronize_session=False)
+    # Its survey books are archived, not handed to everyone: a book with no team is read by everyone with lz_surveys.
+    SurveyBook.query.filter(SurveyBook.team_id == team.id, SurveyBook.archived_at.is_(None)).update(
+        {'archived_at': datetime.utcnow()}, synchronize_session=False)
+    notify.withdraw(invite_ids=[row.id for row in db.session.query(MissionPackInvite.id).filter_by(team_id=team.id)])
     MissionPackInvite.query.filter_by(team_id=team.id).delete(synchronize_session=False)
     TeamMember.query.filter_by(team_id=team.id).delete(synchronize_session=False)
     db.session.delete(team)

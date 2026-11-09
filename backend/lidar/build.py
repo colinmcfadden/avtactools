@@ -17,10 +17,8 @@ from .catalog import CONTEXT_DIRNAME
 from .tiles import (TileBuildError, build_pointcloud_tiles, context_spacing,
                     estimated_size_mb, spacing_for_radius, _run)
 
-# Entwine-indexed 3DEP on AWS Open Data. Each survey is its own index, and
-# which one to read is resolved per target by lidar.coverage — most ground is
-# covered several times over by surveys of very different quality.
-EPT_BASE = "https://s3-us-west-2.amazonaws.com/usgs-lidar-public"
+# Entwine-indexed 3DEP on AWS Open Data (lidar.coverage.EPT_BASE).
+EPT_BASE = coverage.EPT_BASE
 
 # Below this a downloaded collection is treated as not covering the target. A
 # target on the edge of a download intersects its outer tiles, and building

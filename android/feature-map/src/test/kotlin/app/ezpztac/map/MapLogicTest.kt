@@ -20,6 +20,56 @@ class MapLogicTest {
 
     // -- Base styles --------------------------------------------------------------------------------
 
+    private val live = VfrLive(
+        build = "2026-10-29.1", tiles = "https://api.test/charts/vfr/2026-10-29.1/{z}/{x}/{y}.webp", coverage = "/charts/vfr/2026-10-29.1/coverage.json",
+        tileSize = 512, minZoom = 5, maxZoom = 14, effective = "2026-10-29T09:01Z", expires = "2026-12-24T09:01Z",
+        bounds = ChartBox(-125.0, 24.0, -66.0, 50.0), fallback = listOf(ChartBox(-158.9, 18.6, -154.7, 22.6), ChartBox(165.9, 12.9, 180.0, 21.9)),
+    )
+
+    private fun styleDoc(style: MapBaseStyle) = Fixtures.json.parseToJsonElement(MapStyles.styleJson(style)).jsonObject
+
+    private fun boundsOf(doc: JsonObject, source: String) =
+        doc.getValue("sources").jsonObject.getValue(source).jsonObject["bounds"]?.jsonArray?.map { it.jsonPrimitive.content.toDouble() }
+
+    @Test
+    fun `the VFR map is the live build, its zooms and size the config's, within its bounds`() {
+        val doc = styleDoc(MapStyles.byId(MapStyles.VFR_ID, token, live))
+        val source = doc.getValue("sources").jsonObject.getValue("base").jsonObject
+        assertEquals(live.tiles, source.getValue("tiles").jsonArray.single().jsonPrimitive.content)
+        assertEquals("512", source.getValue("tileSize").jsonPrimitive.content)
+        assertEquals("5", source.getValue("minzoom").jsonPrimitive.content)
+        assertEquals("14", source.getValue("maxzoom").jsonPrimitive.content)
+        assertEquals(listOf(-125.0, 24.0, -66.0, 50.0), boundsOf(doc, "base"))
+    }
+
+    @Test
+    fun `each region with no chart of ours is ArcGIS within its own bounds, under the chart layer`() {
+        val doc = styleDoc(MapStyles.byId(MapStyles.VFR_ID, token, live))
+        assertEquals(listOf(-158.9, 18.6, -154.7, 22.6), boundsOf(doc, "fallback-0"))
+        assertEquals(listOf(165.9, 12.9, 180.0, 21.9), boundsOf(doc, "fallback-1"))
+        val under = doc.getValue("sources").jsonObject.getValue("fallback-1").jsonObject
+        assertTrue(under.getValue("tiles").jsonArray.single().jsonPrimitive.content.startsWith("https://tiles.arcgis.com/"))
+        assertEquals("256", under.getValue("tileSize").jsonPrimitive.content)
+        // On top is `base`, which the MGRS grid and everything else is put above.
+        assertEquals(listOf("background", "fallback-0", "fallback-1", "base"), (doc.getValue("layers") as JsonArray).map { it.jsonObject.getValue("id").jsonPrimitive.content })
+    }
+
+    @Test
+    fun `with no build at all the VFR map is ArcGIS everywhere, and has no bounds`() {
+        val doc = styleDoc(MapStyles.byId(MapStyles.VFR_ID, token, null))
+        assertTrue(doc.getValue("sources").jsonObject.getValue("base").jsonObject.getValue("tiles").jsonArray.single().jsonPrimitive.content.startsWith("https://tiles.arcgis.com/"))
+        assertNull(boundsOf(doc, "base"))
+        assertEquals(setOf("base"), doc.getValue("sources").jsonObject.keys)
+    }
+
+    @Test
+    fun `a build changes the VFR map alone, and keeps its id and the name a diagram saves`() {
+        val with = MapStyles.available(token, live)
+        assertEquals(listOf("satellite", "topo", MapStyles.VFR_ID), with.map { it.id })
+        assertEquals(MapStyles.available(token).take(2), with.take(2))
+        assertEquals("VFR", with.last().label)
+    }
+
     @Test
     fun `the three base maps have the ids a saved diagram uses`() {
         assertEquals(listOf("satellite", "topo", "vfr-sectional"), MapStyles.available(token).map { it.id })

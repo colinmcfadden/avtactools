@@ -165,7 +165,7 @@ describe("symbol fixtures", () => {
 
   it("the vendored milsymbol is the one the web runs", () => {
     const vendored = fs.readFileSync(path.join(ASSETS, "milsymbol.js"));
-    const installed = fs.readFileSync(require.resolve("milsymbol/dist/milsymbol.js"));
+    const installed = fs.readFileSync(path.join(path.dirname(require.resolve("milsymbol")), "milsymbol.js"));
     expect(vendored.equals(installed)).toBe(true);
   });
 

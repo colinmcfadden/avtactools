@@ -71,17 +71,20 @@ describe("the import review", () => {
     { file: { name: "notes.docx" }, kind: null, error: "Not supported. Nothing will be imported from this file." },
   ];
 
-  it("sends points to the open pack by default, never a mission, and threats only to this session", async () => {
-    const onImport = jest.fn().mockResolvedValue();
+  it("sends points and threats to the open pack by default, never a mission", async () => {
+    const onImport = vi.fn().mockResolvedValue();
     render(<ToastProvider><ImportReviewDialog items={items(pack)} pack={pack} onCancel={() => {}} onImport={onImport} /></ToastProvider>);
 
     expect(screen.getByText("Everyone in OP DK (4 members) will see these points.")).toBeInTheDocument();
-    expect(screen.getByText("Threats are never saved or shared with a pack.")).toBeInTheDocument();
-    expect(screen.getByText("Session only")).toBeInTheDocument();
+    expect(screen.getByText("Everyone in OP DK (4 members) will see these threats and can change them.")).toBeInTheDocument();
+    const threatsWhere = within(screen.getByRole("radiogroup", { name: "Where THREATS.ths goes" }));
+    expect(threatsWhere.getByRole("radio", { name: "OP DK" })).toBeChecked();
+    expect(threatsWhere.getByRole("radio", { name: "Session" })).not.toBeChecked();
+    expect(threatsWhere.queryByRole("radio", { name: "Library" })).toBeNull();
     const missionWhere = within(screen.getByRole("radiogroup", { name: "Where GOAT.msnx goes" }));
     expect(missionWhere.getByRole("radio", { name: "Session" })).toBeChecked();
-    expect(screen.getAllByRole("radio", { name: "OP DK" })[1]).toBeDisabled();
-    expect(screen.getByText("1 to OP DK · 2 stay in this session")).toBeInTheDocument();
+    expect(missionWhere.getByRole("radio", { name: "OP DK" })).toBeDisabled();
+    expect(screen.getByText("2 to OP DK · 1 stays in this session")).toBeInTheDocument();
 
     // The unsupported file is left out, and can be taken off the list.
     fireEvent.click(screen.getByLabelText("Remove notes.docx from the list"));
@@ -91,9 +94,17 @@ describe("the import review", () => {
     await waitFor(() => expect(onImport).toHaveBeenCalledTimes(1));
     expect(onImport.mock.calls[0][0].map((item) => [item.kind, item.destination])).toEqual([
       ["lps", "pack"],
-      ["ths", "session"],
+      ["ths", "pack"],
       ["msnx", "session"],
     ]);
+  });
+
+  it("offers threats the Library beside the pack for an account that saves them, and says where they will be", () => {
+    render(<ToastProvider><ImportReviewDialog items={items(pack)} pack={pack} threatsSaved onCancel={() => {}} onImport={() => {}} /></ToastProvider>);
+    const threatsWhere = within(screen.getByRole("radiogroup", { name: "Where THREATS.ths goes" }));
+    fireEvent.click(threatsWhere.getByRole("radio", { name: "Library" }));
+    expect(threatsWhere.getByRole("radio", { name: "Library" })).toBeChecked();
+    expect(screen.getAllByText("Saved to your Library. Shown when you switch back to Library.").length).toBeGreaterThan(0);
   });
 
   it("outside a pack, offers the Library or this session", () => {
@@ -131,11 +142,11 @@ describe("importing into an open pack", () => {
   it("drops the session's copy of the points only once the pack has taken them", () => {
     const set = { id: "lps-1", name: "NORTH GA POINTS", points: [{ lat: 34, lon: -84 }] };
     const order = [];
-    const removePointSet = jest.fn(() => order.push("remove"));
-    movePointsToPack(set, { createItem: jest.fn(() => order.push("create") && "ps-1"), removePointSet });
+    const removePointSet = vi.fn(() => order.push("remove"));
+    movePointsToPack(set, { createItem: vi.fn(() => order.push("create") && "ps-1"), removePointSet });
     expect(order).toEqual(["create", "remove"]);
 
-    const refusing = jest.fn(() => null);
+    const refusing = vi.fn(() => null);
     removePointSet.mockClear();
     expect(() => movePointsToPack(set, { createItem: refusing, removePointSet })).toThrow(/did not take them\. They stay in this session/);
     expect(refusing).toHaveBeenCalledWith("NORTH GA POINTS", set.points);
@@ -143,9 +154,9 @@ describe("importing into an open pack", () => {
   });
 
   it("tells the app where each imported file went, leaving out the ones that failed", async () => {
-    const onDone = jest.fn();
+    const onDone = vi.fn();
     const sets = { "NORTH_GA.LPS": { id: "lps-1", name: "NORTH GA" }, "SOUTH.LPS": { id: "lps-2", name: "SOUTH" } };
-    const removePointSet = jest.fn();
+    const removePointSet = vi.fn();
     let imports;
     const Harness = () => {
       imports = useImports({

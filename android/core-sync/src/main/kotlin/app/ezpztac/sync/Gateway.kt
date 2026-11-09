@@ -11,11 +11,13 @@ import app.ezpztac.network.createLz
 import app.ezpztac.network.createMission
 import app.ezpztac.network.createPointSet
 import app.ezpztac.network.createRoute
+import app.ezpztac.network.createThreatSet
 import app.ezpztac.network.deleteAircraftProfile
 import app.ezpztac.network.deleteBrief
 import app.ezpztac.network.deleteLz
 import app.ezpztac.network.deletePointSet
 import app.ezpztac.network.deleteRoute
+import app.ezpztac.network.deleteThreatSet
 import app.ezpztac.network.routeFile
 import app.ezpztac.network.updateMission
 import app.ezpztac.network.updateAircraftProfile
@@ -23,6 +25,7 @@ import app.ezpztac.network.updateBrief
 import app.ezpztac.network.updateLz
 import app.ezpztac.network.updatePointSet
 import app.ezpztac.network.updateRoute
+import app.ezpztac.network.updateThreatSet
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
@@ -92,6 +95,7 @@ public class ApiSyncApi(private val client: ApiClient) : SyncApi {
             client.createMission(record.name, record.data, record.uuid, part.name, part.bytes, key).let { Remote(it.value.id, it.value.revision, it.created) }
         }
         RecordKind.BRIEF -> client.createBrief(record.name, record.data, record.uuid, key).let { Remote(it.value.id, it.value.revision, it.created) }
+        RecordKind.THREAT_SET -> client.createThreatSet(record.name, record.data, record.uuid, key).let { Remote(it.value.id, it.value.revision, it.created) }
     }
 
     override suspend fun update(record: LocalRecord, baseRevision: Int, key: String, file: FilePart?): Remote {
@@ -104,6 +108,7 @@ public class ApiSyncApi(private val client: ApiClient) : SyncApi {
             RecordKind.POINT_SET -> client.updatePointSet(id, baseRevision, record.name, pointsOf(record), key).let { Remote(it.id, it.revision, created = false) }
             RecordKind.MISSION -> client.updateMission(id, baseRevision, record.name, record.data, file?.name, file?.bytes, key).let { Remote(it.id, it.revision, created = false) }
             RecordKind.BRIEF -> client.updateBrief(id, baseRevision, record.name, record.data, key).let { Remote(it.id, it.revision, created = false) }
+            RecordKind.THREAT_SET -> client.updateThreatSet(id, baseRevision, record.name, record.data, key).let { Remote(it.id, it.revision, created = false) }
         }
     }
 
@@ -116,6 +121,7 @@ public class ApiSyncApi(private val client: ApiClient) : SyncApi {
             RecordKind.POINT_SET -> client.deletePointSet(id, baseRevision, key)
             RecordKind.MISSION -> client.deleteRoute(id, baseRevision, key)
             RecordKind.BRIEF -> client.deleteBrief(id, baseRevision, key)
+            RecordKind.THREAT_SET -> client.deleteThreatSet(id, baseRevision, key)
         }
     }
 
@@ -155,6 +161,7 @@ public fun serverCopyOf(kind: RecordKind, server: JsonObject): ServerCopy? {
         RecordKind.POINT_SET -> pointSetDocument(server["points"] ?: return null) ?: return null
         RecordKind.MISSION -> server["route_data"] as? JsonObject ?: return null
         RecordKind.BRIEF -> server["data"] as? JsonObject ?: return null
+        RecordKind.THREAT_SET -> server["data"] as? JsonObject ?: return null
     }
     val hasFile = (server["has_file"] as? JsonPrimitive)?.booleanOrNull == true
     return ServerCopy(

@@ -82,7 +82,7 @@ const CASES = [
 ];
 
 const run = (c) => {
-  const spy = jest.spyOn(Date.prototype, "toISOString").mockReturnValue(c.now);
+  const spy = vi.spyOn(Date.prototype, "toISOString").mockReturnValue(c.now);
   try {
     const route = saved(c.route);
     return {

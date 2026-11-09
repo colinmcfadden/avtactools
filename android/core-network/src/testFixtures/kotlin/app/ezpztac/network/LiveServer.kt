@@ -81,6 +81,11 @@ public class LiveServer private constructor(private val process: Process, public
         post("/__test__/age-refresh", """{"seconds":$seconds}""")
     }
 
+    /** Moves every refresh token's times (made, spent, expires) this many days into the past: days passing between uses of a device. */
+    public fun ageSessions(days: Int) {
+        post("/__test__/age-sessions", """{"days":$days}""")
+    }
+
     /** Runs every point-cloud build queued, as the build service's worker would; each puts the 3D view's fixture tileset in place. Their keys. */
     public fun runLidarBuilds(): List<String> =
         ApiJson.parseToJsonElement(post("/__test__/lidar/run", "{}")).jsonObject.getValue("built").jsonArray.map { it.jsonPrimitive.content }

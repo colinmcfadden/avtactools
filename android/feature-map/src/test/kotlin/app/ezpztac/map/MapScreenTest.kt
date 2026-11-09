@@ -3,26 +3,32 @@ package app.ezpztac.map
 import androidx.activity.ComponentActivity
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.Surface
-import androidx.compose.runtime.getValue
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.semantics.SemanticsProperties
+import androidx.compose.ui.test.isFocused
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.test.ExperimentalTestApi
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsFocused
 import androidx.compose.ui.test.assertIsOff
 import androidx.compose.ui.test.assertIsOn
+import androidx.compose.ui.test.click
 import androidx.compose.ui.test.hasClickAction
 import androidx.compose.ui.test.hasContentDescription
 import androidx.compose.ui.test.hasSetTextAction
@@ -34,11 +40,15 @@ import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.onRoot
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performImeAction
+import androidx.compose.ui.test.performKeyInput
 import androidx.compose.ui.test.performTextInput
+import androidx.compose.ui.test.performTouchInput
+import androidx.compose.ui.test.pressKey
 import androidx.compose.ui.unit.dp
 import app.ezpztac.designsystem.EzpzIcons
 import app.ezpztac.designsystem.EzpzTheme
 import app.ezpztac.designsystem.ThemeMode
+import app.ezpztac.geo.PlaceSearch
 import app.ezpztac.model.LatLon
 import kotlin.math.abs
 import org.junit.Assert.assertEquals
@@ -51,6 +61,7 @@ import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 import org.robolectric.annotation.GraphicsMode
 
+@OptIn(ExperimentalTestApi::class)
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [36], qualifiers = "w411dp-h891dp-xxhdpi")
 class MapScreenTest {
@@ -73,7 +84,8 @@ class MapScreenTest {
         readout: Readout? = Readout.of(LatLon(34.783817, -84.08219)),
         error: String? = null,
         style: MapBaseStyle = styles.first(),
-    ) = MapUiState(styles = styles, style = style, readout = readout, searchError = error)
+        center: LatLon? = null,
+    ) = MapUiState(styles = styles, style = style, readout = readout, searchError = error, center = center)
 
     private fun show(
         state: MapUiState, gps: GpsState = GpsState.Off, camera: CameraState? = CameraState(LatLon(34.78, -84.08), 16.0, 30.0), mode: ThemeMode = ThemeMode.Dark,
@@ -95,7 +107,7 @@ class MapScreenTest {
                     onToggleGps = { log += "gps" }, onGpsPermissionResult = { log += "permission $it" }, onLocateMe = { log += "locate" },
                     onFaceNorth = { log += "north" }, onCopyReadout = { log += "copy $it" }, padding = padding, buttonsAtFoot = buttonsAtFoot,
                     onToggleGrid = grid?.let { { log += "grid" } }, chrome = chrome, search = search, hiding = hiding, controls = controls,
-                    tools = tools, overlay = overlay, controlsBottom = controlsBottom,
+                    tools = tools, overlay = overlay, controlsBottom = controlsBottom, onChoosePlace = { log += "go ${it.mgrs}" },
                     map = { Box(Modifier.fillMaxSize().background(Color(0xFF3A5A40)).semantics { contentDescription = "The map" }) },  // stands in for the GPU-drawn map
                 )
             }
@@ -207,20 +219,137 @@ class MapScreenTest {
     }
 
     @Test
-    fun `the folded search is one named button, and opening it puts the field in focus across the row`() {
+    fun `as a grid is typed its grid and its lat and long are listed under the field, and choosing one goes there and folds the search`() {
+        show(state())
+        openSearch()
+        compose.onNode(hasSetTextAction()).performTextInput("16sgc2886455349")
+        compose.waitForIdle()
+        compose.onNodeWithText("16S GC 28864 55349").assertIsDisplayed()
+        compose.onNodeWithText("33.91372° N, 84.52451° W").assertIsDisplayed()
+        compose.onNodeWithText("MGRS grid, to 1 m").assertIsDisplayed()
+        compose.onNodeWithText("33.91372° N, 84.52451° W").performClick()
+        compose.waitForIdle()
+        assertEquals(listOf("go 16S GC 28864 55349"), log.filter { it.startsWith("go") })
+        assertFalse(search.expanded)
+        assertEquals("16S GC 28864 55349", search.text)                                          // the field then says the grid gone to
+    }
+
+    @Test
+    fun `an unsigned pair is listed as both its readings, nearest the map first, and the search key does not guess between them`() {
+        found = false
+        show(state(center = LatLon(34.5, -84.0)))
+        openSearch()
+        compose.onNode(hasSetTextAction()).performTextInput("34 84")
+        compose.waitForIdle()
+        compose.onNodeWithText(PlaceSearch.Messages.EAST_OR_WEST).assertIsDisplayed()
+        val west = compose.onNodeWithText("34.00000° N, 84.00000° W").fetchSemanticsNode().boundsInRoot
+        val east = compose.onNodeWithText("34.00000° N, 84.00000° E").fetchSemanticsNode().boundsInRoot
+        assertTrue("west, nearer the map, first: $west, $east", west.top < east.top)
+        compose.onNode(hasSetTextAction()).performImeAction()
+        compose.waitForIdle()
+        assertTrue(search.expanded)
+        compose.onNodeWithText("34.00000° N, 84.00000° W").assertIsDisplayed()                   // still there to choose from
+        compose.onNodeWithText("34.00000° N, 84.00000° W").performClick()
+        compose.waitForIdle()
+        assertEquals("go 17S KT 22908 66214", log.last())
+    }
+
+    @Test
+    fun `the search key on one place writes its grid into the field, as choosing a row does`() {
+        show(state())
+        openSearch()
+        compose.onNode(hasSetTextAction()).performTextInput("34.5457, -84.1234")
+        compose.onNode(hasSetTextAction()).performImeAction()
+        compose.waitForIdle()
+        assertEquals("16S GD 63976 26424", search.text)
+    }
+
+    @Test
+    fun `a refused search lists what was typed again, so its readings are there to choose from`() {
+        found = false
+        show(state(), buttonsAtFoot = true)
+        openSearch()
+        compose.onNode(hasSetTextAction()).performTextInput("34 84")
+        compose.waitForIdle()
+        search.hide()                                                                              // a tap on the map
+        compose.waitForIdle()
+        compose.onNodeWithText("34.00000° N, 84.00000° W").assertDoesNotExist()
+        compose.onNode(hasSetTextAction()).performImeAction()
+        compose.waitForIdle()
+        compose.onNodeWithText("34.00000° N, 84.00000° W").assertIsDisplayed()
+    }
+
+    @Test
+    fun `what is not a place yet is said in words under the field, as it is typed`() {
+        show(state())
+        openSearch()
+        compose.onNode(hasSetTextAction()).performTextInput("16S GC 288")
+        compose.waitForIdle()
+        compose.onNodeWithText(PlaceSearch.Messages.GRID_ODD).assertIsDisplayed()
+    }
+
+    @Test
+    fun `a tablet's search bar lists the places too, and lets the list go once one is chosen`() {
+        show(state(), buttonsAtFoot = true)
+        openSearch()
+        compose.onNode(hasSetTextAction()).performTextInput("34°32'44.4\"N 84°07'24.4\"W")
+        compose.waitForIdle()
+        compose.onNodeWithText("16S GD 63972 26420").assertIsDisplayed()
+        compose.onNodeWithText("Lat/long, read as degrees, minutes and seconds").assertIsDisplayed()
+        compose.onNodeWithText("16S GD 63972 26420").performClick()
+        compose.waitForIdle()
+        assertEquals("go 16S GD 63972 26420", log.last())
+        compose.onNodeWithText("Lat/long, read as degrees, minutes and seconds").assertDoesNotExist()
+    }
+
+    @Test
+    fun `the folded search is one named button, and opening it puts the field in focus in the middle of the screen`() {
         show(state())
         compose.onNode(hasSetTextAction()).assertDoesNotExist()                                   // folded: a button, no field
         compose.onNode(hasContentDescription("Search a grid or lat/long") and hasClickAction()).assertIsDisplayed()
         openSearch()
         assertTrue(search.expanded)
         compose.onNode(hasSetTextAction()).assertIsFocused()
-        // Across the row, over the chips and the account: from one side of the screen to the other but for its margins.
-        val field = compose.onNode(hasSetTextAction()).fetchSemanticsNode().boundsInRoot
+        // Centred across, nearly the screen's width on a phone, and well down from the row: the main thing on the screen.
         val back = compose.onNodeWithContentDescription("Close the search").fetchSemanticsNode().boundsInRoot
         val go = compose.onNodeWithContentDescription("Search").fetchSemanticsNode().boundsInRoot
-        val width = compose.onRoot().fetchSemanticsNode().size.width
-        assertTrue("the bar spans the row: $back … $go of $width", back.left < width * 0.1f && go.right > width * 0.85f && field.width > width * 0.5f)
+        val root = compose.onRoot().fetchSemanticsNode().size
+        assertTrue("across the screen: $back … $go of ${root.width}", back.left < root.width * 0.1f && go.right > root.width * 0.9f)
+        assertEquals(root.width / 2f, (back.left + go.right) / 2f, root.width * 0.02f)
+        assertTrue("below the row, in the upper half: ${back.top} of ${root.height}", back.top > root.height * 0.12f && back.bottom < root.height / 2f)
         compose.onNodeWithContentDescription("Search a grid or lat/long").assertDoesNotExist()   // the row under it says nothing
+    }
+
+    @Test
+    fun `open with nothing typed, it says what it takes`() {
+        show(state())
+        openSearch()
+        compose.onNodeWithText("Search by grid or lat/long").assertIsDisplayed()
+        compose.onNodeWithText("A grid at any precision, or a lat/long in any notation").assertIsDisplayed()
+        compose.onNode(hasSetTextAction()).performTextInput("16S")
+        compose.waitForIdle()
+        compose.onNodeWithText("A grid at any precision, or a lat/long in any notation").assertDoesNotExist()
+    }
+
+    @Test
+    fun `a tap beside the open search folds it, and Escape folds it once the list has gone`() {
+        show(state())
+        openSearch()
+        compose.onRoot().performTouchInput { click(Offset(width / 2f, height * 0.85f)) }
+        compose.waitForIdle()
+        assertFalse(search.expanded)
+        assertTrue(log.isEmpty())                                                                  // the tap was the search's alone
+        openSearch()
+        compose.onNode(hasSetTextAction()).performTextInput("34 84")
+        compose.waitForIdle()
+        compose.onNode(hasSetTextAction()).performKeyInput { pressKey(Key.Escape) }
+        compose.waitForIdle()
+        assertTrue(search.expanded)                                                                // the list went
+        assertFalse(search.listed)
+        compose.onNode(hasSetTextAction()).performKeyInput { pressKey(Key.Escape) }
+        compose.waitForIdle()
+        assertFalse(search.expanded)
+        assertEquals("34 84", search.text)
     }
 
     @Test
@@ -342,12 +471,49 @@ class MapScreenTest {
     }
 
     @Test
-    fun `a tablet's search bar is always open, and sends what is typed`() {
+    @Config(qualifiers = "w1280dp-h800dp")
+    fun `on a wide tablet the open field is narrower than the bar it grew from, and its contents fit it`() {
         show(state(), buttonsAtFoot = true)
+        openSearch()
+        val back = compose.onNodeWithContentDescription("Close the search").fetchSemanticsNode().boundsInRoot
+        val go = compose.onNodeWithContentDescription("Search").fetchSemanticsNode().boundsInRoot
+        val root = compose.onRoot().fetchSemanticsNode().size
+        val widest = with(compose.density) { SPOTLIGHT_WIDTH.toPx() }
+        assertTrue("within the open field: $back … $go", go.right - back.left <= widest)
+        assertEquals(root.width / 2f, (back.left + go.right) / 2f, root.width * 0.02f)
+    }
+
+    @Test
+    fun `a keyboard's Tab stays in the open search, never reaching the dimmed controls under it`() {
+        show(state())
+        openSearch()
+        compose.onNode(hasSetTextAction()).performTextInput("16S GC 28864 55349")
+        compose.waitForIdle()
+        repeat(8) {
+            compose.onNode(isFocused()).performKeyInput { pressKey(Key.Tab) }
+            compose.waitForIdle()
+            val focused = compose.onNode(isFocused()).fetchSemanticsNode()
+            val said = focused.config.getOrElseNullable(SemanticsProperties.ContentDescription) { null }.orEmpty() +
+                focused.config.getOrElseNullable(SemanticsProperties.Text) { null }.orEmpty()
+            assertFalse("Tab reached $said", said.toString().contains("Base map") || said.toString().contains("GPS"))
+        }
+        assertTrue(search.expanded)
+    }
+
+    @Test
+    fun `a tablet's search bar opens the search over the screen, and says what was searched once it folds`() {
+        show(state(), buttonsAtFoot = true)
+        compose.onNode(hasSetTextAction()).assertDoesNotExist()                                   // the bar is a button
+        openSearch()
+        assertTrue(search.expanded)
         compose.onNode(hasSetTextAction()).performTextInput("34.5, -84.1")
-        compose.onNodeWithContentDescription("Search a grid or lat/long").performClick()
+        compose.onNodeWithContentDescription("Search").performClick()
+        compose.waitForIdle()
         assertEquals(listOf("search 34.5, -84.1"), log)
-        compose.onNode(hasSetTextAction()).assertIsDisplayed()                                    // never folded
+        assertFalse(search.expanded)
+        // The field said the grid gone to, as the web's does, and the bar says it.
+        assertEquals(PlaceSearch.read("34.5, -84.1").choices.single().mgrs, search.text)
+        compose.onNodeWithContentDescription("Search a grid or lat/long: ${search.text}").assertIsDisplayed()
     }
 
     @Test
@@ -551,11 +717,11 @@ class MapScreenTest {
     }
 
     @Test
-    fun `on a tablet what is said under the search bar pushes the tools down below it`() {
-        show(state(error = "Could not read that as a grid or a coordinate."), buttonsAtFoot = true, tools = toolsSlot)
+    fun `on a tablet the tools start below the search bar`() {
+        show(state(), buttonsAtFoot = true, tools = toolsSlot)
         compose.waitForIdle()
-        val said = compose.onNodeWithText("Could not read that as a grid or a coordinate.").fetchSemanticsNode().boundsInRoot
-        assertTrue("the tools start under what is said: ${box("Tools").top} and ${said.bottom}", box("Tools").top >= said.bottom)
+        val bar = compose.onNodeWithContentDescription("Search a grid or lat/long").fetchSemanticsNode().boundsInRoot
+        assertTrue("the tools start under the bar: ${box("Tools").top} and ${bar.bottom}", box("Tools").top >= bar.bottom)
     }
 
     @Test

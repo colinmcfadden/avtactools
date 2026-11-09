@@ -1,7 +1,7 @@
 openapi: 3.0.3
 info:
   title: EZ/PZ API (the parts the native apps call)
-  version: 1.0.0
+  version: 2.1.0
   description: |
     The contract between the Flask API and the web and native clients. It holds
     the routes the apps call, one at a time as each arrives; a route missing from
@@ -21,8 +21,11 @@ info:
     the majors it supports (`ezpz.apiMajors` in `android/gradle.properties`,
     `frontend/src/apiSupport.json`).
 
-    Every route is under `/api`. The base URL is the deployment's (the same host
-    the web app uses); it is not part of the spec.
+    Every route is under `/api`, but for the public `/charts/` routes (the VFR chart
+    tiles and each build's coverage, docs/VFR_CHARTS.md §7): no sign-in, CORS `*`,
+    outside `/api` on purpose, so neither the affiliation gate nor the API's CORS rules
+    apply to them. The base URL is the deployment's (the same host the web app uses);
+    it is not part of the spec.
 servers:
   - url: https://prod-ezpz-api.mcfadd.in
     description: Self-hosted production (Coolify behind Cloudflare Tunnel)
@@ -61,10 +64,13 @@ paths:
       summary: Sign in with email and password
       description: |
         A native app (`X-EZPZ-Client` platform `android` or `ios`) also receives a
-        `refresh_token`, which keeps it signed in for days with no signal. The web
-        app does not: its exposure is unchanged.
+        `refresh_token`, which keeps it signed in while the account is active and the
+        device is used at least once in 30 days. The web, when it sends
+        `X-EZPZ-Session: cookie`, receives its refresh token only as an HttpOnly cookie
+        (`ezpz_refresh`, under `/api/auth`), never in the body.
       parameters:
         - $ref: "#/components/parameters/ClientHeader"
+        - $ref: "#/components/parameters/SessionHeader"
       requestBody:
         required: true
         content:
@@ -93,9 +99,11 @@ paths:
       summary: Sign in with a Google ID token
       description: |
         The token's audience must be one of the server's `GOOGLE_CLIENT_IDS` (the
-        web, Android and iOS clients each have their own).
+        web, Android and iOS clients each have their own). Refresh tokens are given
+        as for `/api/auth/login`.
       parameters:
         - $ref: "#/components/parameters/ClientHeader"
+        - $ref: "#/components/parameters/SessionHeader"
       requestBody:
         required: true
         content:
@@ -259,9 +267,12 @@ paths:
       operationId: milRequest
       summary: Email a code to a .mil address, to clear the affiliation gate
       description: |
-        Any `.mil` address clears the gate. The code lives 30 minutes. A `.mil` address clears one
-        account only (409 if it is already verified elsewhere). This route and `/mil/verify` are
-        reachable by a signed-in account that has not cleared the gate.
+        Any `.mil` address clears the gate. The code lives 30 minutes, and a new request spends the
+        last one. Until its code is entered the address only waits: the account is not trusted with
+        it (an emailed invitation does not reach it there), and an account already cleared stays
+        cleared with the address it confirmed. A `.mil` address clears one account only (409 if it is
+        already verified elsewhere). This route and `/mil/verify` are reachable by a signed-in account
+        that has not cleared the gate.
       security:
         - bearer: []
       requestBody:
@@ -291,6 +302,10 @@ paths:
     post:
       operationId: milVerify
       summary: Confirm the emailed code
+      description: |
+        The code proves the address it was sent to, the one asked for last, which becomes the
+        account's `mil_email`. 409 if another account has verified that address meanwhile, or signs
+        in with it and has proven it.
       security:
         - bearer: []
       requestBody:
@@ -329,18 +344,30 @@ paths:
         The refresh token is spent: use the new one. If a response is lost, repeating
         the same request within 30 seconds is safe and is answered again. After that, a
         spent token coming back signs the device out (`refresh_reuse_detected`): it
-        looks like a copy. A password reset, a suspension, a sign-out from another
-        device, and 180 days since sign-in all end the session; the answer is 401 and
-        the app must ask the user to sign in.
+        looks like a copy. A password reset, a suspension or deletion of the account,
+        a sign-out from another device, and 30 days without a refresh all end the
+        session; the answer is 401 (403 `account_unavailable` for a suspension) and the
+        app must ask the user to sign in. There is no other limit: a session in use has
+        no end. (A server before API 1.2 also ended one 180 days after sign-in,
+        `refresh_expired`.)
+
+        A native app sends `refresh_token` in the body and is answered with the next
+        one. The web sends no body token but `X-EZPZ-Session: cookie` and its
+        `ezpz_refresh` cookie, and is answered with a 15-minute access token and the
+        next refresh token as the cookie. Without the header the cookie is not read, which
+        is what keeps a page on another site from spending it. A token is refreshed only
+        the way it was issued. With the header and no cookie the answer is 401
+        `refresh_cookie_missing`: this browser does not keep the cookie.
+      parameters:
+        - $ref: "#/components/parameters/SessionHeader"
       requestBody:
-        required: true
+        required: false
         content:
           application/json:
             schema:
               type: object
-              required: [refresh_token]
               properties:
-                refresh_token: { type: string }
+                refresh_token: { type: string, description: A native app's token. The web sends none. }
       responses:
         "200":
           description: A new access token and the next refresh token.
@@ -357,6 +384,7 @@ paths:
     post:
       operationId: logout
       summary: End this device's session
+      description: A web session's `ezpz_refresh` cookie, when it is sent, is cleared too.
       security:
         - bearer: []
       responses:
@@ -1075,6 +1103,159 @@ paths:
         "409":
           $ref: "#/components/responses/BriefConflict"
 
+  /api/threatsets:
+    get:
+      operationId: listThreatSets
+      summary: The caller's saved sets of threats (summaries, without deleted ones)
+      description: |
+        Threats kept in the Library. Every `/api/threatsets` route needs the `threats` entitlement and answers 403
+        `feature_disabled` without it; a create or an edit needs `cloud_save` too.
+      security:
+        - bearer: []
+      responses:
+        "200":
+          description: Summaries, newest edit first.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/ThreatSetSummary"
+    post:
+      operationId: createThreatSet
+      summary: Save a set of threats
+      description: |
+        As `POST /api/lz`: send `client_uuid`, a UUID the device chose, so a retry after a lost response returns the
+        first record (200) instead of making a second (201). `data` is `{version, threats}`; the server reads only how many
+        threats it lists. A set may have none. A body over 5 MB is answered 413 `too_large`.
+      security:
+        - bearer: []
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name, data]
+              properties:
+                name: { type: string, minLength: 1, maxLength: 100 }
+                data: { description: "`{version: 1, threats: [...]}`. Each threat may carry its terrain mask.", type: object, required: [threats] }
+                client_uuid: { type: string }
+      responses:
+        "201":
+          description: Created.
+          headers:
+            ETag: { $ref: "#/components/headers/ETag" }
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ThreatSetSummary"
+        "200":
+          description: A record with this `client_uuid` already existed; here it is.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ThreatSetSummary"
+        "400":
+          $ref: "#/components/responses/SimpleError"
+        "413":
+          description: "`too_large`: more than 5 MB."
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SimpleError" }
+
+  /api/threatsets/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema: { type: integer }
+    get:
+      operationId: getThreatSet
+      summary: One saved set of threats, with its document
+      security:
+        - bearer: []
+      responses:
+        "200":
+          description: The record.
+          headers:
+            ETag: { $ref: "#/components/headers/ETag" }
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ThreatSetFull"
+        "404":
+          $ref: "#/components/responses/SimpleError"
+    put:
+      operationId: updateThreatSet
+      summary: Edit a saved set of threats
+      description: |
+        As `PUT /api/lz/{id}`: send `If-Match: "<revision>"`; a server that has moved on overwrites nothing and answers
+        409 with its copy. Without `If-Match` the last writer wins. A retry with the same `Idempotency-Key` is answered,
+        not refused. Only what is sent changes.
+      security:
+        - bearer: []
+      parameters:
+        - $ref: "#/components/parameters/IfMatch"
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name: { type: string, minLength: 1, maxLength: 100 }
+                data: { type: object }
+      responses:
+        "200":
+          description: Saved (or recognised as a retry, which answers the whole record).
+          headers:
+            ETag: { $ref: "#/components/headers/ETag" }
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ThreatSetSummary"
+        "400":
+          $ref: "#/components/responses/SimpleError"
+        "413":
+          description: "`too_large`: more than 5 MB."
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SimpleError" }
+        "404":
+          $ref: "#/components/responses/SimpleError"
+        "409":
+          $ref: "#/components/responses/ThreatSetConflict"
+    delete:
+      operationId: deleteThreatSet
+      summary: Delete a saved set of threats
+      description: |
+        Leaves a tombstone, with the content gone, so devices learn of the deletion through `/api/sync/changes`.
+        Deleting twice is not an error. A stale `If-Match` is a 409 and deletes nothing.
+      security:
+        - bearer: []
+      parameters:
+        - $ref: "#/components/parameters/IfMatch"
+        - $ref: "#/components/parameters/IdempotencyKey"
+      responses:
+        "200":
+          description: Deleted.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [status]
+                properties:
+                  status: { type: string, enum: [deleted] }
+                  revision: { type: integer }
+        "404":
+          $ref: "#/components/responses/SimpleError"
+        "409":
+          $ref: "#/components/responses/ThreatSetConflict"
+
   /api/brief/pdf:
     post:
       operationId: printBrief
@@ -1537,6 +1718,13 @@ paths:
         `/api`, so these must not repeat it). Not built: `available` is false, `canBuild` says whether
         `POST /api/lidar/build` can do anything on this server, and `target` echoes the caller's own
         place, so a client can say what to build. `radius_m` is 50 to 2,000 (default 500).
+
+        Streamed (docs/DATA_ADMIN_AND_PREBUILT_3D_PLAN.md, Part C): a client that sends `stream: true`
+        and whose place nothing built covers is answered, where this server streams and USGS has a
+        survey there, with that survey's tileset, `streamed: true` and `frame`. The tileset is a whole
+        survey, a state's octree, so the client opens the view, and its *LZ* button, on `frame` (the
+        caller's place, its radius and the ground's ellipsoidal height there, null where nothing says
+        it), never on the tileset's own sphere. A client that does not send it is answered as before.
       security:
         - bearer: []
       parameters:
@@ -1677,6 +1865,17 @@ paths:
         inside the tileset and may hold slashes (`points/r0.pnts`, `context/tileset.json`); a tile's
         `content.uri` is relative to the tileset.json that names it. A file that is not there is 404
         (Flask's own page, not JSON). Private and cached a week: a key's content never changes.
+
+        A streamed survey (`resolve`'s `streamed`) is written from USGS's own octree: its files are
+        `tileset.json` and `<16 hex>.json` (external tilesets, one every four levels) and `<16 hex>.pnts`,
+        names that say nothing of the place. Tiles have a `region` and `refine: ADD`; its `.pnts` carry
+        `POSITION_QUANTIZED` (with `QUANTIZED_VOLUME_OFFSET` and `QUANTIZED_VOLUME_SCALE`, in WGS84
+        geocentric metres, no `transform`) and `RGB`: first a natural palette, kept an hour
+        (`max-age=3600`), then, once the server has laid USDA NAIP imagery on it in the background,
+        photographic, kept the week. The points never move between the two. A piece is fetched from AWS the
+        first time anyone asks for it: AWS unreachable is 502 `upstream_unavailable`, a server without
+        its geoid grids 503 `geoid_unavailable` (heights would be about 30 m out), and a name never
+        handed out a JSON 404 `not_found`; each is worth asking again later but the last.
       security:
         - bearer: []
       parameters:
@@ -1701,11 +1900,15 @@ paths:
         "400":
           $ref: "#/components/responses/SimpleError"
         "404":
-          description: No such tileset (`{error}`), or no such file in it (Flask's own page, not JSON).
+          description: No such tileset (`{error}`), no such file in it (Flask's own page, not JSON), or a file it does not serve (`{error}`).
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/SimpleError"
+        "502":
+          $ref: "#/components/responses/SimpleError"
+        "503":
+          $ref: "#/components/responses/SimpleError"
 
   /api/terrain/heightmap/{level}/{x}/{y}:
     get:
@@ -2020,7 +2223,7 @@ paths:
       summary: Apply a batch of edits, in order, each numbered and logged
       description: |
         Each operation is applied, or logged as `skipped` when what it edits is gone or in the
-        way; the rules are `contracts/fixtures/packs/ops.json` (and `ops-brief.json`). Each carries a `client_op_id`
+        way; the rules are `contracts/fixtures/packs/ops.json` (and `ops-brief.json`, `ops-threatset.json`). Each carries a `client_op_id`
         (printable ASCII, 64 at most): one the pack has seen is answered from the log and not
         applied again, so a batch whose answer was lost is safe to send again. A malformed
         operation refuses the whole batch (400 `invalid_op`, with `index` and `reason`) before
@@ -2176,7 +2379,7 @@ paths:
                   required: [kind]
                   description: The library record, by `id` or by `client_uuid`.
                   properties:
-                    kind: { type: string, enum: [lz, route, pointset] }
+                    kind: { type: string, enum: [lz, route, pointset, threatset] }
                     id: { type: integer }
                     client_uuid: { type: string }
                 item: { type: string }
@@ -2806,8 +3009,228 @@ paths:
         "410":
           $ref: "#/components/responses/PackError"
 
+  /api/notifications:
+    get:
+      operationId: listNotifications
+      summary: What the caller's devices should show, and which groups they want
+      description: |
+        The caller's notifications of the last 30 days that are still so, newest first: an invitation
+        still waiting for them, a pack they are still in (still finished, still theirs), under the names
+        the pack and the team have now. A pack's finish is listed two minutes after it, and not at all if
+        the pack was reopened meanwhile. There is no cursor: a device keeps the ids it has shown, shows
+        those it has not (unless `seen`, or their group is off in `settings`) and takes down any it shows
+        that is seen or no longer listed. A notification names people, packs and teams only, never what a
+        pack holds: it is meant for a lock screen (docs/NOTIFICATIONS.md §6).
+
+        A person without Mission Packs is answered an empty list. Poll with the last `ETag` in
+        `If-None-Match`: nothing new is a 304 with no body.
+      security:
+        - bearer: []
+      parameters:
+        - name: If-None-Match
+          in: header
+          required: false
+          schema: { type: string }
+          description: The `ETag` of the last answer.
+      responses:
+        "200":
+          description: The notifications and the settings.
+          headers:
+            ETag:
+              description: Of this answer; changes whenever anything in it does.
+              schema: { type: string, example: '"5f2b9c0e1d7a4c3b8e6f0a2d4c6b8e10"' }
+            Cache-Control:
+              schema: { type: string, example: "private, no-store" }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/NotificationFeed" }
+        "304":
+          description: Nothing changed since the answer whose `ETag` was sent.
+
+  /api/notifications/seen:
+    post:
+      operationId: markNotificationsSeen
+      summary: Seen on this device, so taken down on every other
+      description: |
+        The caller has seen (or acted on) these. Ids that are not the caller's are passed over; seeing one
+        twice changes nothing.
+      security:
+        - bearer: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [ids]
+              properties:
+                ids:
+                  type: array
+                  maxItems: 200
+                  items: { type: integer }
+      responses:
+        "200":
+          description: The ids asked about that are the caller's, all now seen.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [ids]
+                properties:
+                  ids:
+                    type: array
+                    items: { type: integer }
+        "400":
+          description: "`invalid_ids`: not a list of at most 200 integers."
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SimpleError" }
+
+  /api/notifications/settings:
+    put:
+      operationId: changeNotificationSettings
+      summary: Turn groups of notifications on or off, on every device
+      description: |
+        Any of the groups, each `true` or `false`; those not sent keep what they were. A group this server
+        does not know is passed over: the answer says what holds. An off group's notifications are still
+        listed (an invitation still waits in the switcher) and no device shows them.
+      security:
+        - bearer: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                invitations: { type: boolean }
+                pack_finished: { type: boolean }
+                pack_owner: { type: boolean }
+      responses:
+        "200":
+          description: The settings as they now are.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [settings]
+                properties:
+                  settings: { $ref: "#/components/schemas/NotificationSettings" }
+        "400":
+          description: "`invalid_settings`: a group sent as something other than true or false."
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SimpleError" }
+
+  /charts/vfr/{build}/{z}/{x}/{y}.webp:
+    get:
+      operationId: getChartTile
+      summary: A tile of a VFR chart build
+      description: |
+        Public: no token, `Access-Control-Allow-Origin: *`. A 512-px Web Mercator tile, rows from
+        the north, of any build `state.json` lists (not only the live one: a client holding an older
+        config still draws). The URL template is `/api/config`'s `charts.vfr.tiles`.
+
+        Every tile within the build's levels and `bounds` is answered: a stored tile; past level 11
+        one not stored, from its nearest stored ancestor enlarged; ground with nothing to draw, one
+        shared transparent tile. So a chart tile that fails means the build is gone (or the network
+        failed): a client then asks for the config again, at most once a minute and past its cache.
+      parameters:
+        - name: build
+          in: path
+          required: true
+          schema: { type: string, pattern: '^\d{4}-\d{2}-\d{2}\.[1-9][0-9]{0,5}$' }
+        - name: z
+          in: path
+          required: true
+          schema: { type: integer, minimum: 0 }
+        - name: x
+          in: path
+          required: true
+          schema: { type: integer, minimum: 0 }
+        - name: y
+          in: path
+          required: true
+          schema: { type: integer, minimum: 0 }
+      responses:
+        "200":
+          description: The tile. A build never changes under its name, so it is kept for good.
+          headers:
+            Cache-Control:
+              schema: { type: string, example: "public, max-age=31536000, immutable" }
+            Access-Control-Allow-Origin:
+              schema: { type: string, example: "*" }
+          content:
+            image/webp:
+              schema: { type: string, format: binary }
+        "404":
+          description: |
+            `build_gone` (with `X-Chart-Build: gone` and `Cache-Control: no-store`, so no cache keeps the
+            refusal): a build not listed, deleted or never made, or whose files will not open. Or
+            `out_of_range` (`Cache-Control: public, max-age=86400`): outside the build's levels or
+            `bounds`, or numbers that are not a tile's. Clients ask for neither: the layer is bounded.
+          headers:
+            Cache-Control:
+              schema: { type: string, example: no-store }
+            X-Chart-Build:
+              schema: { type: string, enum: [gone] }
+            Access-Control-Allow-Origin:
+              schema: { type: string, example: "*" }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ChartRefusal" }
+
+  /charts/vfr/{build}/coverage.json:
+    get:
+      operationId: getChartCoverage
+      summary: Every chart in a VFR chart build, with its edition and outline
+      description: |
+        Public: no token, `Access-Control-Allow-Origin: *`. The URL is `/api/config`'s
+        `charts.vfr.coverage`. The clients name the charts in view with their edition (red from its
+        `expires`), and say when the map shows a chart enlarged past its `nativeLevel`.
+      parameters:
+        - name: build
+          in: path
+          required: true
+          schema: { type: string, pattern: '^\d{4}-\d{2}-\d{2}\.[1-9][0-9]{0,5}$' }
+      responses:
+        "200":
+          description: The build's coverage, which never changes under its name.
+          headers:
+            Cache-Control:
+              schema: { type: string, example: "public, max-age=31536000, immutable" }
+            Access-Control-Allow-Origin:
+              schema: { type: string, example: "*" }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ChartCoverage" }
+        "404":
+          description: "`build_gone`, with `X-Chart-Build: gone` and `Cache-Control: no-store`."
+          headers:
+            Cache-Control:
+              schema: { type: string, example: no-store }
+            X-Chart-Build:
+              schema: { type: string, enum: [gone] }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ChartRefusal" }
+
 components:
   parameters:
+    SessionHeader:
+      name: X-EZPZ-Session
+      in: header
+      required: false
+      description: |
+        `cookie`: the web asks for (on sign-in) or uses (on refresh) a session whose
+        refresh token is an HttpOnly, Secure, SameSite=None, Partitioned cookie under
+        `/api/auth`. A custom header, so a page on another site cannot send it without a
+        CORS preflight, which only `CORS_ORIGINS` pass. Ignored for a native app.
+      schema:
+        type: string
+        enum: [cookie]
     ClientHeader:
       name: X-EZPZ-Client
       in: header
@@ -3004,6 +3427,23 @@ components:
               server:
                 $ref: "#/components/schemas/BriefFull"
 
+    ThreatSetConflict:
+      description: |
+        The set of threats changed on the server since the revision the edit was based on.
+        Nothing was overwritten; `server` is the current copy.
+      headers:
+        ETag: { $ref: "#/components/headers/ETag" }
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [error, code, server]
+            properties:
+              error: { type: string }
+              code: { type: string, enum: [revision_conflict] }
+              server:
+                $ref: "#/components/schemas/ThreatSetFull"
+
     AircraftConflict:
       description: |
         The profile changed on the server since the revision the edit was based on.
@@ -3048,6 +3488,7 @@ components:
         lat: { type: number }
         lon: { type: number }
         radius_m: { type: number, minimum: 50, maximum: 2000 }
+        stream: { type: boolean, description: "This client frames on `frame`: answer a streamed survey where nothing is built." }
 
     LidarResolve:
       type: object
@@ -3066,6 +3507,16 @@ components:
             lat: { type: number }
             lon: { type: number }
             radius_m: { type: number }
+        streamed: { type: boolean, description: "Asked for with `stream` only: the tileset is a whole survey, streamed." }
+        frame:
+          description: "Streamed only: where to open the view. The caller's own place, echoed, with the ground's WGS84 ellipsoidal height in metres (null where nothing says it)."
+          type: object
+          required: [lat, lon, radius_m, height_m]
+          properties:
+            lat: { type: number }
+            lon: { type: number }
+            radius_m: { type: number }
+            height_m: { type: number, nullable: true }
 
     LidarBuild:
       type: object
@@ -3151,7 +3602,7 @@ components:
         error: { type: string }
         code:
           type: string
-          description: "`invalid_client_uuid`, `invalid_if_match`, `invalid_cursor`, `revision_conflict`; for briefs `missing_fields`, `invalid_name`, `invalid_data`; for the weather `invalid_at`"
+          description: "`invalid_client_uuid`, `invalid_if_match`, `invalid_cursor`, `revision_conflict`; for briefs `missing_fields`, `invalid_name`, `invalid_data`; for the weather `invalid_at`; for notifications `invalid_ids`, `invalid_settings`"
 
     Error:
       type: object
@@ -3164,7 +3615,9 @@ components:
           type: string
           description: |
             Stable codes include `invalid_credentials`, `invalid_refresh_token`,
-            `refresh_reuse_detected`, `refresh_expired`, `account_unavailable`,
+            `refresh_reuse_detected`, `refresh_cookie_missing` (the web asked for a cookie
+            session and sent no cookie), `refresh_expired` (no longer sent: an older
+            server's 180-day limit), `account_unavailable`,
             `reauthentication_required`, `confirmation_required`, `session_not_found`,
             `super_admin_protected`, `rate_limited`, `affiliation_required`, `invalid_token`
             (an emailed link that is invalid, spent or expired), `invalid_code` (a `.mil` code).
@@ -3187,7 +3640,7 @@ components:
           type: object
           description: Entitlements. A missing key means enabled.
           additionalProperties: { type: boolean }
-        mil_email: { type: string, nullable: true }
+        mil_email: { type: string, nullable: true, description: "The `.mil` address the account confirmed, else the one waiting for its code." }
         affiliation_verified: { type: boolean }
         access_ok: { type: boolean, description: Whether the `.mil` / approval gate is cleared. }
 
@@ -3217,7 +3670,13 @@ components:
           description: Native clients only. Spent on use; the response to `/refresh` carries the next one.
         refresh_expires_in:
           type: integer
-          description: Seconds a refresh token lives (30 days); each refresh extends it, up to 180 days from sign-in.
+          description: Seconds a refresh token lives (30 days); each refresh extends it, with no other limit.
+        expires_in:
+          type: integer
+          description: Web cookie sessions only. Seconds the access token lives (a day from a sign-in, 15 minutes from a refresh).
+        session:
+          type: string
+          description: "Web cookie sessions only: `cookie`, the refresh token was set as the `ezpz_refresh` cookie."
         user:
           $ref: "#/components/schemas/User"
 
@@ -3340,6 +3799,31 @@ components:
         revision: { type: integer, minimum: 1 }
         data: { type: object, description: "The brief document (docs/MISSION_BRIEF.md §2.2)." }
 
+    ThreatSetSummary:
+      type: object
+      required: [id, name, threat_count, created_at, updated_at, client_uuid, revision]
+      properties:
+        id: { type: integer }
+        name: { type: string }
+        threat_count: { type: integer, minimum: 0 }
+        created_at: { type: string }
+        updated_at: { type: string }
+        client_uuid: { type: string, description: "The record's identity: the device's own if it sent one." }
+        revision: { type: integer, minimum: 1, description: Bumped by every change. }
+
+    ThreatSetFull:
+      type: object
+      required: [id, name, threat_count, created_at, updated_at, client_uuid, revision, data]
+      properties:
+        id: { type: integer }
+        name: { type: string }
+        threat_count: { type: integer, minimum: 0 }
+        created_at: { type: string }
+        updated_at: { type: string }
+        client_uuid: { type: string }
+        revision: { type: integer, minimum: 1 }
+        data: { type: object, description: "`{version: 1, threats: [...]}`. Each threat may carry its terrain mask." }
+
     WeatherReport:
       type: object
       required: [station_id, name, temp_c, dewp_c, wind_spd_kts, wind_dir, wind_gust_kts, vis_sm, pressure, flight_category, raw_metar, distance_miles, notams]
@@ -3455,12 +3939,12 @@ components:
       required: [type, id, client_uuid, revision, deleted, name, seq, data]
       description: |
         One changed record. `type` says which collection: `lz`, `route`, `pointset`,
-        `aircraft` (the caller's own profiles; the master list does not sync) or `brief`.
+        `aircraft` (the caller's own profiles; the master list does not sync), `brief` or `threatset`.
         A device passes over a `type` it does not know, which a newer server may add.
         A tombstone has `deleted: true`, an empty `name` and empty `data`. A route also
         has `kind`, `file_name` and `has_file`; fetch the mission file separately.
       properties:
-        type: { type: string, enum: [lz, route, pointset, aircraft, brief] }
+        type: { type: string, enum: [lz, route, pointset, aircraft, brief, threatset] }
         id: { type: integer }
         client_uuid: { type: string }
         revision: { type: integer, minimum: 1 }
@@ -3561,6 +4045,152 @@ components:
               nullable: true
               pattern: '^pk\.'
               description: A *public* Mapbox token only; a secret one is never served.
+        charts:
+          type: object
+          additionalProperties: false
+          required: [vfr]
+          description: |
+            The server's own VFR chart tiles (docs/VFR_CHARTS.md §4.5). Sent only while a build is
+            live; with none, the clients draw the ArcGIS service everywhere, as before. A switch to a
+            new build reaches this answer within a minute, with no restart.
+          properties:
+            vfr:
+              type: object
+              additionalProperties: false
+              required: [build, cycle, tiles, tileSize, minZoom, maxZoom, effective, expires, coverage, bounds, fallback]
+              properties:
+                build:
+                  type: string
+                  pattern: '^\d{4}-\d{2}-\d{2}\.[1-9][0-9]{0,5}$'
+                  description: The live build, its cycle's effective date and a number never used twice.
+                cycle:
+                  type: string
+                  pattern: '^\d{4}-\d{2}-\d{2}$'
+                tiles:
+                  type: string
+                  pattern: '^/charts/vfr/[0-9.-]+/\{z\}/\{x\}/\{y\}\.webp$'
+                  description: The tile URL template, relative to the API's root (no `/api`).
+                tileSize: { type: integer, enum: [512] }
+                minZoom: { type: integer, minimum: 0, maximum: 22, description: "In 512-px tile levels (MapLibre's zoom)." }
+                maxZoom: { type: integer, minimum: 0, maximum: 22 }
+                effective:
+                  type: string
+                  pattern: '^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$'
+                  description: When the build's cycle took effect, in UTC (0901Z on its date).
+                expires:
+                  type: string
+                  pattern: '^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$'
+                  description: |
+                    When the first of its own cycle's charts expires: the next cycle's effective
+                    instant. From then the clients show the charts as not current.
+                coverage:
+                  type: string
+                  pattern: '^/charts/vfr/[0-9.-]+/coverage\.json$'
+                  description: The build's `coverage.json`, relative to the API's root.
+                bounds:
+                  description: The build's extent, `[west, south, east, north]` in degrees. No chart tile is asked for outside it.
+                  type: array
+                  minItems: 4
+                  maxItems: 4
+                  items: { type: number }
+                fallback:
+                  description: |
+                    Where ArcGIS's VFR service has charts and this build does not (Alaska in two, split
+                    at the antimeridian; Hawaii; the Marianas; American Samoa): each `[west, south, east,
+                    north]`, a layer of that service drawn within it, under the build's.
+                  type: array
+                  items:
+                    type: array
+                    minItems: 4
+                    maxItems: 4
+                    items: { type: number }
+
+    ChartRefusal:
+      type: object
+      additionalProperties: false
+      required: [error]
+      properties:
+        error: { type: string, enum: [build_gone, out_of_range] }
+
+    ChartEdition:
+      type: object
+      additionalProperties: false
+      required: [start, end, effective, expires]
+      properties:
+        start: { type: string, pattern: '^\d{4}-\d{2}-\d{2}$', description: "The edition's printed start date." }
+        end: { type: string, pattern: '^\d{4}-\d{2}-\d{2}$', description: "Its printed end date, which is what people are shown." }
+        effective: { type: string, pattern: '^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}Z$', description: "0901Z on its start date." }
+        expires:
+          type: string
+          pattern: '^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}Z$'
+          description: 0901Z the day after its end date, the next cycle's effective instant.
+
+    ChartCoverage:
+      type: object
+      additionalProperties: false
+      required: [version, build, cycle, effective, expires, tileSize, minLevel, maxLevel, bounds, tiles, charts]
+      description: |
+        A VFR chart build's `coverage.json` (docs/VFR_CHARTS.md §4.5), as the build wrote it. Its
+        instants are to the minute.
+      properties:
+        version: { type: integer, enum: [1] }
+        build: { type: string, pattern: '^\d{4}-\d{2}-\d{2}\.[1-9][0-9]{0,5}$' }
+        cycle: { type: string, pattern: '^\d{4}-\d{2}-\d{2}$' }
+        effective: { type: string, pattern: '^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}Z$' }
+        expires:
+          type: string
+          pattern: '^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}Z$'
+          description: The first of the build's own cycle's charts to expire; a chart kept from an older build has its own.
+        tileSize: { type: integer, enum: [512] }
+        minLevel: { type: integer, minimum: 0, maximum: 22 }
+        maxLevel: { type: integer, minimum: 0, maximum: 22 }
+        bounds:
+          type: array
+          minItems: 4
+          maxItems: 4
+          items: { type: number }
+        tiles:
+          type: object
+          description: The tiles stored at each level, by level.
+          additionalProperties: { type: integer, minimum: 0 }
+        charts:
+          type: array
+          items:
+            type: object
+            additionalProperties: false
+            required: [id, title, tier, scale, edition, kept, shownFrom, storedTo, nativeLevel, outline]
+            properties:
+              id: { type: string, pattern: '^[a-z0-9-]+$' }
+              title: { type: string, description: "As people are shown it: *Atlanta Sectional*." }
+              tier: { type: string, enum: [sectional, tac, helicopter, inset] }
+              scale: { type: integer, minimum: 1, description: "The chart's scale, 1 to this." }
+              edition: { $ref: "#/components/schemas/ChartEdition" }
+              kept:
+                type: boolean
+                description: Held back from an older build (this cycle's would not pass its checks); its `edition` is that build's.
+              shownFrom: { type: integer, minimum: 0, maximum: 22, description: "The lowest level it is drawn at." }
+              storedTo: { type: integer, minimum: 0, maximum: 22, description: "The highest level it is stored at; past it, enlarged." }
+              nativeLevel:
+                type: number
+                description: The level at which a tile pixel is a scan pixel; past it the map shows the chart enlarged.
+              outline:
+                type: object
+                additionalProperties: false
+                required: [type, coordinates]
+                description: Simplified to about 50 m. Says which chart is in view, not where its pixels end.
+                properties:
+                  type: { type: string, enum: [Polygon] }
+                  coordinates:
+                    type: array
+                    minItems: 1
+                    items:
+                      type: array
+                      minItems: 4
+                      items:
+                        type: array
+                        minItems: 2
+                        maxItems: 2
+                        items: { type: number }
 
     FieldAnalysis:
       type: object
@@ -3921,6 +4551,7 @@ components:
         lz: { type: integer, minimum: 0 }
         route: { type: integer, minimum: 0 }
         pointset: { type: integer, minimum: 0 }
+        threatset: { type: integer, minimum: 0 }
 
     PackMember:
       type: object
@@ -3947,7 +4578,7 @@ components:
       required: [uuid, kind, name, revision, seq, created_by, updated_by, created_at, updated_at, source]
       properties:
         uuid: { type: string }
-        kind: { type: string, enum: [lz, route, pointset, brief] }
+        kind: { type: string, enum: [lz, route, pointset, brief, threatset] }
         name: { type: string }
         revision: { type: integer, minimum: 1, description: Bumped by every applied operation. }
         seq: { type: integer, minimum: 0, description: The event that last changed it. }
@@ -3966,7 +4597,7 @@ components:
           description: Where a copy from someone's library came from. Null for an item made in the pack.
           required: [kind, uuid, revision, original, original_updated_at, pack_changes, last_pack_change]
           properties:
-            kind: { type: string, enum: [lz, route, pointset] }
+            kind: { type: string, enum: [lz, route, pointset, threatset] }
             uuid:
               type: string
               nullable: true
@@ -4103,7 +4734,7 @@ components:
       additionalProperties: false
       required: [kind, id, client_uuid, name, revision]
       properties:
-        kind: { type: string, enum: [lz, route, pointset, brief] }
+        kind: { type: string, enum: [lz, route, pointset, brief, threatset] }
         id: { type: integer }
         client_uuid: { type: string }
         name: { type: string }
@@ -4211,6 +4842,84 @@ components:
               email: { type: string }
               role: { type: string, enum: [owner, admin, member] }
               joined_at: { type: string }
+
+    NotificationFeed:
+      type: object
+      additionalProperties: false
+      required: [notifications, settings]
+      properties:
+        notifications:
+          type: array
+          items: { $ref: "#/components/schemas/Notification" }
+        settings: { $ref: "#/components/schemas/NotificationSettings" }
+
+    NotificationSettings:
+      type: object
+      additionalProperties: false
+      required: [invitations, pack_finished, pack_owner]
+      description: Each group on or off for the caller, on every device. On unless the person turned it off.
+      properties:
+        invitations: { type: boolean, description: "`pack_invite`, `pack_added`, `team_invite`." }
+        pack_finished: { type: boolean }
+        pack_owner: { type: boolean }
+
+    Notification:
+      type: object
+      additionalProperties: false
+      required: [id, type, group, key, pack, team, actor, invite_id, role, created_at, updated_at, seen, quiet]
+      description: |
+        One thing that happened to the caller. The client makes the words from `type` and the names here;
+        a `type` (or a `group`) it does not know is passed over, so new ones can be added within the major.
+      properties:
+        id: { type: integer }
+        type:
+          type: string
+          description: |
+            `pack_invite` (invited to a pack: `pack`, `actor`, `invite_id`, `role`), `pack_added` (added to a
+            pack by name: `pack`, `actor`, `role`), `team_invite` (invited to a team:
+            `team`, `actor`, `invite_id`, `role`), `pack_finished` (`pack`, `actor`), `pack_owner` (a pack
+            handed to the caller: `pack`, and `actor` unless it came to them from a deleted account).
+        group: { type: string, description: "Which of `settings` it falls under." }
+        key:
+          type: string
+          description: |
+            One thing, one key (`pack_invite:34`, `pack_finished:<uuid>`): a notification with the key of
+            one shown replaces it.
+        pack:
+          type: object
+          nullable: true
+          additionalProperties: false
+          required: [uuid, name]
+          properties:
+            uuid: { type: string }
+            name: { type: string, description: Its name now. }
+        team:
+          type: object
+          nullable: true
+          additionalProperties: false
+          required: [id, name]
+          properties:
+            id: { type: integer }
+            name: { type: string, description: Its name now. }
+        actor:
+          type: object
+          nullable: true
+          additionalProperties: false
+          required: [name]
+          description: Who did it, by the name they had then.
+          properties:
+            name: { type: string }
+        invite_id:
+          type: integer
+          nullable: true
+          description: An invitation's, to accept or decline it (`/api/invites/{invite_id}/accept`). Never its link's token.
+        role: { type: string, nullable: true, description: "The role the invitation offers, or for `pack_added` the one the caller was given." }
+        created_at: { type: string }
+        updated_at: { type: string, description: "Moves when an invitation is sent again; shown again without an alert." }
+        seen: { type: boolean, description: "Seen on one of the caller's devices: shown on none." }
+        quiet:
+          type: boolean
+          description: Past ten in an hour for the caller, so shown without a sound or a banner.
 
     UserBrief:
       type: object

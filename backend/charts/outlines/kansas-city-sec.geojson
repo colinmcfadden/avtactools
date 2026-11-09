@@ -1,0 +1,40 @@
+{
+ "type": "Feature",
+ "properties": {
+  "id": "kansas-city-sec",
+  "title": "Kansas City Sectional",
+  "tier": "sectional",
+  "file": "Kansas City SEC.tif",
+  "made_from": {
+   "width": 16601,
+   "height": 12345,
+   "transform": [
+    42.335095678,
+    0.0,
+    -385558.562356332,
+    0.0,
+    -42.335357996,
+    235458.114516944
+   ],
+   "ink": 1.0
+  },
+  "edges": {
+   "north": "neighbour:chicago-sec,omaha-sec",
+   "east": "neighbour:st-louis-sec",
+   "south": "neatline",
+   "west": "neatline"
+  }
+ },
+ "geometry": {
+  "type": "Polygon",
+  "coordinates": [
+   [
+    [-97.0,36.0],
+    [-91.0,36.0],
+    [-91.0,40.0],
+    [-97.0,40.0],
+    [-97.0,36.0]
+   ]
+  ]
+ }
+}

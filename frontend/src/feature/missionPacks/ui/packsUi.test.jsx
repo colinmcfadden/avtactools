@@ -35,7 +35,7 @@ describe("the workspace switcher", () => {
   ];
 
   it("lists the Library and the packs, says who is in the open one, and switches", () => {
-    const onPick = jest.fn();
+    const onPick = vi.fn();
     render(
       <Harness
         current="a"
@@ -61,7 +61,7 @@ describe("the workspace switcher", () => {
   });
 
   it("answers an invitation", async () => {
-    const onAccept = jest.fn().mockResolvedValue();
+    const onAccept = vi.fn().mockResolvedValue();
     render(
       <Harness
         packs={[]}
@@ -87,11 +87,11 @@ describe("the pack panel", () => {
     { uuid: "rt-1", kind: "route", name: "INGRESS", seq: 5, data: { routes: [{}, {}] }, updated_by: { id: 2, name: "Sam Bell" }, updated_at: minutesAgo(30) },
   ];
   const actions = Object.fromEntries(
-    ["open", "close", "rename", "saveCopy", "updateFromOriginal", "remove", "invite", "members", "addFromLibrary", "finish", "reopen"].map((k) => [k, jest.fn()]),
+    ["open", "close", "rename", "saveCopy", "updateFromOriginal", "remove", "invite", "members", "addFromLibrary", "finish", "reopen"].map((k) => [k, vi.fn()]),
   );
   // CRA resets mocks before each test, so the history's answer is made fresh for each.
   const events = () => ({
-    getEvents: jest.fn().mockResolvedValue({
+    getEvents: vi.fn().mockResolvedValue({
       events: [
         { seq: 10, type: "set", item: "lz-1", actor: { id: 3, name: "Jess Reyes" }, summary: "Jess R. moved a sector.", status: "skipped", reason: "target_missing", created_at: minutesAgo(20) },
         { seq: 11, type: "set", item: "lz-1", actor: { id: 2, name: "Sam Bell" }, summary: "Sam B. moved Chalk 2 on LZ IBIS.", status: "applied", created_at: minutesAgo(4) },
@@ -180,7 +180,7 @@ describe("the pack panel", () => {
     const colin = { id: 1, name: "Colin McFadden" };
     const sam = { id: 2, name: "Sam Bell" };
     const jess = { id: 3, name: "Jess Reyes" };
-    const api = { getEvents: jest.fn().mockResolvedValue({ events: [
+    const api = { getEvents: vi.fn().mockResolvedValue({ events: [
       event(5, colin, "Colin M. analyzed LZ IBIS."), event(6, colin, "Colin M. analyzed LZ IBIS."), event(7, colin, "Colin M. analyzed LZ IBIS."),
       event(8, sam, "Sam B. turned a doghouse on LZ IBIS."),
       event(9, sam, "Sam B. turned a doghouse on LZ IBIS."), event(10, sam, "Sam B. turned a doghouse on LZ IBIS."),
@@ -197,7 +197,7 @@ describe("the pack panel", () => {
   });
 
   it("shows the newest events of a long history, not the oldest page after where it started", async () => {
-    const api = { getEvents: jest.fn((uuid, since) => Promise.resolve(since === 100
+    const api = { getEvents: vi.fn((uuid, since) => Promise.resolve(since === 100
       ? { events: [{ seq: 101, type: "set", item: "lz-1", actor: { id: 2, name: "Sam Bell" }, summary: "An old change.", status: "applied", created_at: minutesAgo(60) }], has_more: true, head_seq: 1000 }
       : { events: [{ seq: 1000, type: "set", item: "lz-1", actor: { id: 2, name: "Sam Bell" }, summary: "The newest change.", status: "applied", created_at: minutesAgo(1) }], has_more: false, head_seq: 1000 })) };
     renderPanel("history", { api, pack: { ...pack, head_seq: 600 } });
@@ -207,7 +207,7 @@ describe("the pack panel", () => {
   });
 
   it("offers to keep edits the pack would not take", () => {
-    const onKeepDropped = jest.fn();
+    const onKeepDropped = vi.fn();
     renderPanel("items", { dropped: 2, onKeepDropped });
     expect(screen.getByText(/2 of your changes were/)).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: /Save my version to Library/ }));

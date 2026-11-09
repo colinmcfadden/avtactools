@@ -31,6 +31,7 @@ Configuration (environment):
     LIDAR_IMAGERY            GDAL raster for point colour         (bundled Mapbox description)
     LIDAR_BUILD_CONTEXT_M    also build a landscape ring this wide (unset: none)
     LIDAR_BUILDER_TOKEN      shared secret the API must present   (unset: no check)
+    LIDAR_KEY_SECRET         names tilesets (HMAC); the API's own (required with a token)
     LIDAR_BUILDER_PORT       listening port                       (8090)
     LIDAR_BUILDER_QUEUE      maximum queued + running builds      (8)
 """
@@ -510,6 +511,8 @@ def main() -> int:
     port = int(os.environ.get("LIDAR_BUILDER_PORT", DEFAULT_PORT))
     token = os.environ.get("LIDAR_BUILDER_TOKEN") or None
     limit = int(os.environ.get("LIDAR_BUILDER_QUEUE", DEFAULT_QUEUE_LIMIT))
+    # Refuses to start without the secret the API names tilesets with.
+    catalog.key_secret(os.environ)
 
     builder = Builder(root, make_request=request_factory(), queue_limit=limit)
     builder.start()

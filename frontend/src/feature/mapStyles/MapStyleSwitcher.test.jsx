@@ -28,7 +28,7 @@ const gridSwitch = () => screen.getByRole("switch", { name: "MGRS grid" });
 const openLayers = () => fireEvent.click(layersButton());
 
 afterEach(() => {
-  jest.restoreAllMocks();
+  vi.restoreAllMocks();
   window.localStorage.clear();
 });
 
@@ -91,10 +91,10 @@ describe("the Layers control's MGRS grid switch", () => {
   });
 
   it("still works when the browser refuses storage", () => {
-    jest.spyOn(Storage.prototype, "getItem").mockImplementation(() => {
+    vi.spyOn(Storage.prototype, "getItem").mockImplementation(() => {
       throw new Error("SecurityError");
     });
-    jest.spyOn(Storage.prototype, "setItem").mockImplementation(() => {
+    vi.spyOn(Storage.prototype, "setItem").mockImplementation(() => {
       throw new Error("QuotaExceededError");
     });
     render(<Harness />);
@@ -124,5 +124,40 @@ describe("the Layers control's MGRS grid switch", () => {
       const px = value.match(/^(\d+(?:\.\d+)?)px$/);
       expect({ selector, ok: Boolean(px) && Number(px[1]) >= 11 }).toEqual({ selector, ok: true });
     });
+  });
+});
+
+describe("the VFR thumbnail", () => {
+  const LIVE = {
+    tiles: "https://api.test/charts/vfr/2026-10-29.1/{z}/{x}/{y}.webp",
+    minZoom: 5,
+    maxZoom: 14,
+    bounds: [-125, 24, -66, 50],
+  };
+  const vfrImage = () =>
+    screen.getByText("VFR").closest("button").querySelector("img");
+  const opened = (vfrCharts) => {
+    render(<MapStyleSwitcher mapStyle="satellite" setMapStyle={() => {}} vfrCharts={vfrCharts} />);
+    openLayers();
+  };
+
+  it("is a tile of the live build", () => {
+    opened({ known: true, live: LIVE });
+    expect(vfrImage()).toHaveAttribute("src", "https://api.test/charts/vfr/2026-10-29.1/8/53/97.webp");
+  });
+
+  it("is ArcGIS's where there is no live build", () => {
+    opened({ known: true, live: null });
+    expect(vfrImage().getAttribute("src")).toMatch(/tiles\.arcgis\.com.*\/8\/97\/53$/);
+  });
+
+  it("asks nobody until the server has said", () => {
+    opened({ known: false, live: null });
+    expect(vfrImage()).not.toHaveAttribute("src");
+  });
+
+  it("leaves the other maps' thumbnails as they are", () => {
+    opened({ known: true, live: LIVE });
+    expect(screen.getByText("Topo").closest("button").querySelector("img").getAttribute("src")).toMatch(/api\.mapbox\.com/);
   });
 });

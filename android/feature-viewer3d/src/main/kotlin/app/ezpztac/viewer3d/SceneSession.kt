@@ -5,6 +5,7 @@ import app.ezpztac.data.TilesetAddress
 import app.ezpztac.data.TilesetFiles
 import app.ezpztac.model.LatLon
 import app.ezpztac.network.ApiException
+import app.ezpztac.network.LidarFrameDto
 import app.ezpztac.network.NetworkException
 import app.ezpztac.network.RateLimitedException
 import app.ezpztac.scene3d.BoundingSpheres
@@ -116,9 +117,23 @@ class SceneSources(
 /** A step of the camera's that a screen reader's actions take, about the middle of the view: what the fingers do, a set amount at a time. */
 enum class SceneStep { TURN_LEFT, TURN_RIGHT, TILT_UP, TILT_DOWN, ZOOM_IN, ZOOM_OUT }
 
-/** Makes the scene of a point cloud: a [SceneSession] over the server's files in the app; tests give theirs their own dispatchers and clock. */
+/**
+ * Makes the scene of a point cloud: a [SceneSession] over the server's files in the app; tests give theirs their own dispatchers and clock.
+ * [lz] is `resolve`'s `frame`, for a streamed survey; null for a tileset built for the LZ/PZ.
+ */
 fun interface SceneMaker {
-    fun make(target: LatLon, core: TilesetAddress?, ring: TilesetAddress?, parent: CoroutineScope, pointSize: Int): SceneSession
+    fun make(target: LatLon, core: TilesetAddress?, ring: TilesetAddress?, lz: LidarFrameDto?, parent: CoroutineScope, pointSize: Int): SceneSession
+}
+
+/**
+ * The sphere the view opens on, and *LZ* flies back to (the web's `lzSphere`, framing.js): [lz], the server's `frame`, where it gave one with a
+ * ground height (a streamed survey is a whole state's octree, whose own sphere is the state); else the core's own sphere, [root]. A frame whose
+ * ground nobody knows falls back too, rather than open on a height made up.
+ */
+internal fun lzSphere(frame: LocalFrame, lz: LidarFrameDto?, root: Sphere): Sphere {
+    val height = lz?.heightM
+    if (lz == null || height == null || !height.isFinite() || !lz.lat.isFinite() || !lz.lon.isFinite() || !(lz.radiusM > 0.0)) return root
+    return Sphere(frame.fromGeodetic(lz.lat, lz.lon, height), lz.radiusM)
 }
 
 /**
@@ -152,7 +167,7 @@ class SceneWork(
  * so the GL view (and its context) can come and go and find everything in hand. Safe from any thread: frames come from the GL thread, the fingers
  * and the buttons from the main one, the tiles from the fetches'.
  *
- * As the web's: the view opens framing the core's sphere; the ring is asked for once the core is drawing, and one that cannot be had is no ring
+ * As the web's: the view opens framing the core's sphere, or [lzFrame] for a streamed survey ([lzSphere]); the ring is asked for once the core is drawing, and one that cannot be had is no ring
  * (it is optional, and losing it must not lose the LZ). **Not like the web**, a tile that met no connection is asked for again ([PointCloudScene]).
  */
 class SceneSession(
@@ -166,6 +181,7 @@ class SceneSession(
     private val io: CoroutineDispatcher = Dispatchers.IO,
     private val decode: CoroutineDispatcher = Dispatchers.Default,
     private val clock: () -> Long = { System.nanoTime() / 1_000_000 },
+    private val lzFrame: LidarFrameDto? = null,
 ) {
     /** The scene's frame: east, north and up at the LZ, on the ellipsoid. */
     val frame: LocalFrame = LocalFrame(target.lat, target.lon)
@@ -210,6 +226,9 @@ class SceneSession(
 
     @Volatile internal var routeLook: RouteLook = RouteLook()
         private set
+
+    /** Whether this is a streamed survey (it came with `resolve`'s `frame`), whose points' colour is credited to NAIP. */
+    val streamed: Boolean get() = lzFrame != null
 
     /** Whether the ground has Mapbox's imagery laid on it, which the view credits (as the web's Cesium does, and Mapbox's terms ask). */
     val hasImagery: Boolean get() = imageryTiles != null && decoder != null
@@ -507,7 +526,7 @@ class SceneSession(
     private suspend fun loadCore(address: TilesetAddress) {
         try {
             val doc = read(address)
-            val sphere = Sphere(doc.root.volume.center, doc.root.volume.radius)
+            val sphere = lzSphere(frame, lzFrame, Sphere(doc.root.volume.center, doc.root.volume.radius))
             synchronized(lock) {
                 coreRoot = doc.root
                 lz = sphere

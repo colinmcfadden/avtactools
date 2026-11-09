@@ -30,9 +30,17 @@ class User(db.Model):
     # a .mil address (mil_verified_at set), or an admin approves them manually
     # (access_approved). New users default to unapproved; the ALTER grandfathers
     # everyone who existed before the gate was introduced. See entitlements.py.
+    # mil_email is only ever an address a code confirmed, because an emailed
+    # invitation trusts it (pack_support.addresses); one asked for and not yet
+    # confirmed waits in mil_pending_email (routes/auth.py, mil_request/mil_verify).
     mil_email = db.Column(db.String(120), nullable=True)
     mil_verified_at = db.Column(db.DateTime, nullable=True)
+    mil_pending_email = db.Column(db.String(120), nullable=True)
     access_approved = db.Column(db.Boolean, nullable=False, default=False)
+
+    # Which notifications the person wants ({group: bool}; a missing key is on), on every device
+    # (docs/NOTIFICATIONS.md §5). Added to an existing table by schema_sync in app.py.
+    notification_settings = db.Column(db.JSON, nullable=True)
 
     # This creates a relationship so you can easily get all LZs for a user (e.g., user.saved_lzs)
     saved_lzs = db.relationship('SavedLZ', backref='author', lazy=True)
@@ -352,6 +360,23 @@ class SavedPointSet(SyncMixin, db.Model):
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
 
+class SavedThreatSet(SyncMixin, db.Model):
+    """A named set of threats, the Library's and the Threats panel's unit (a .ths file is one whole set).
+
+    ``threat_data`` is ``{"version": 1, "threats": [...]}``, and each threat may carry its terrain mask, so one set can be a few
+    megabytes: it is deferred so that listing the Library does not read every mask, and ``threat_count`` answers the list instead.
+    """
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
+    name = db.Column(db.String(100), nullable=False)
+
+    threat_data = db.deferred(db.Column(db.JSON, nullable=False))
+    threat_count = db.Column(db.Integer, nullable=False, default=0, server_default='0')
+
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
 class SavedLZ(SyncMixin, db.Model):
     id = db.Column(db.Integer, primary_key=True)
     user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
@@ -554,3 +579,243 @@ class MissionPackEvent(db.Model):
         # A retried batch is recognised rather than applied twice.
         db.UniqueConstraint('pack_id', 'client_op_id', name='ux_mission_pack_event_client_op'),
     )
+
+
+# -- Notifications --------------------------------------------------------------
+
+
+class Notification(db.Model):
+    """Something that happened to one person, for their devices to say: the outbox they poll (docs/NOTIFICATIONS.md).
+
+    Written by notify.py in the same transaction as the change that causes it, so a change that rolls back notifies
+    nobody. It keeps ids (``pack_uuid``, ``invite_id``, which a pack deleted or an invitation answered withdraws by)
+    and in ``fields`` who did it and a role, never anything from a pack's items or a pack's or team's name, which the
+    feed reads as they are: a notification shows on a lock screen. Rows go after 30 days (routes/notification_routes).
+    """
+
+    __tablename__ = 'notification'
+
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('user.id', ondelete='CASCADE'), nullable=False, index=True)
+    type = db.Column(db.String(20), nullable=False)  # pack_invite | pack_added | team_invite | pack_finished | pack_owner
+    collapse_key = db.Column(db.String(80), nullable=False)
+    pack_uuid = db.Column(db.String(36), nullable=True, index=True)
+    # No foreign key: a deleted team's invitations go with it (pack_support.delete_team), and the row is withdrawn first.
+    invite_id = db.Column(db.Integer, nullable=True, index=True)
+    fields = db.Column(db.JSON, nullable=False)
+    quiet = db.Column(db.Boolean, nullable=False, default=False)  # past the hour's alerts: listed, not sounded
+    created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False, index=True)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+    deliver_after = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+    withdrawn_at = db.Column(db.DateTime, nullable=True)
+    seen_at = db.Column(db.DateTime, nullable=True)
+
+
+# -- LZ surveys ----------------------------------------------------------------
+#
+# The unit's HLZ survey book (docs/LZ_SURVEYS.md): admins make, measure, sign off and print one page per
+# landing zone. Web only, so nothing here syncs; every table is new and made by db.create_all(). A survey
+# is archived, never deleted (a published revision may be in a printed book). Who made or changed a thing
+# is kept by name as well as by id, so it still reads after an account is gone.
+
+
+class SurveyBook(db.Model):
+    """A book of LZ surveys, a unit's or a team's: its name, the unit line, the cover's text and the page order (docs/LZ_SURVEYS.md
+    §3.1). Who reads and edits it follows from its team (survey/access.py). Archived, never deleted: its pages may be in print."""
+
+    __tablename__ = 'survey_book'
+
+    id = db.Column(db.Integer, primary_key=True)
+    # Null only on a book step L1 made before books had one; the first listing gives it one.
+    uuid = db.Column(db.String(36), unique=True, nullable=True, index=True)
+    name = db.Column(db.String(200), nullable=False)
+    unit_line = db.Column(db.String(200), nullable=False, default='')
+    cover_text = db.Column(db.Text, nullable=False, default='')
+    # The team it is for: its owner and admins edit it, its members with lz_surveys read it. No foreign key on purpose: deleting a team
+    # archives its books (pack_support.delete_team), and a book whose team is gone is no one's but the site admins', never everyone's.
+    team_id = db.Column(db.Integer, nullable=True, index=True)
+    # The surveys' uuids in the book's order; a survey not in it goes after, by HLZ ID.
+    page_order = db.Column(db.JSON, nullable=False, default=list)
+    revision = db.Column(db.Integer, nullable=False, default=1)
+    created_by = db.Column(db.Integer, db.ForeignKey('user.id', ondelete='SET NULL'), nullable=True)
+    created_by_name = db.Column(db.String(120), nullable=False, default='')
+    updated_by_name = db.Column(db.String(120), nullable=False, default='')
+    archived_at = db.Column(db.DateTime, nullable=True)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+
+
+class LzSurvey(db.Model):
+    """One LZ's survey as it is being made: what the field survey recorded, what EZ/PZ measured, and the admin's choices between them.
+
+    ``field`` is the field survey's values as typed (survey/fields.py), ``overrides`` the admin's choice where field and computed
+    disagree, ``diagram`` the web's schema-2 LZ/PZ document (target, boundary, the doghouses for the best approach and exit), and
+    ``snapshot`` the last measurement taken into the survey (survey/measure.py). ``revision`` is bumped by every save, for If-Match.
+    """
+
+    __tablename__ = 'lz_survey'
+
+    id = db.Column(db.Integer, primary_key=True)
+    uuid = db.Column(db.String(36), unique=True, nullable=False, index=True)
+    book_id = db.Column(db.Integer, db.ForeignKey('survey_book.id'), nullable=False, index=True)
+    hlz_id = db.Column(db.String(40), nullable=False, default='')
+    name = db.Column(db.String(100), nullable=False)
+    status = db.Column(db.String(12), nullable=False, default='draft')  # draft | in_review | published
+    revision = db.Column(db.Integer, nullable=False, default=1)
+    field = db.Column(db.JSON, nullable=False, default=dict)
+    overrides = db.Column(db.JSON, nullable=False, default=dict)
+    diagram = db.Column(db.JSON, nullable=True)
+    snapshot = db.Column(db.JSON, nullable=True)
+    created_by = db.Column(db.Integer, db.ForeignKey('user.id', ondelete='SET NULL'), nullable=True)
+    created_by_name = db.Column(db.String(120), nullable=False, default='')
+    updated_by = db.Column(db.Integer, db.ForeignKey('user.id', ondelete='SET NULL'), nullable=True)
+    updated_by_name = db.Column(db.String(120), nullable=False, default='')
+    created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+    archived_at = db.Column(db.DateTime, nullable=True)
+
+    # Every write says which revision it was made from (``WHERE revision = …``), and refuses (StaleDataError) when another write got
+    # there first: If-Match, checked when a request begins, does not cover a request that takes seconds to measure or publish. The
+    # routes set the next revision themselves (``version_id_generator`` False), so a change to its status alone can leave it as it is.
+    __mapper_args__ = {'version_id_col': revision, 'version_id_generator': False}
+
+
+class LzSurveyRevision(db.Model):
+    """A published revision, never changed: the survey as it was signed off, and its page (written by publishing, step L5)."""
+
+    __tablename__ = 'lz_survey_revision'
+
+    id = db.Column(db.Integer, primary_key=True)
+    survey_id = db.Column(db.Integer, db.ForeignKey('lz_survey.id'), nullable=False, index=True)
+    number = db.Column(db.Integer, nullable=False)  # REV n
+    field = db.Column(db.JSON, nullable=False)
+    overrides = db.Column(db.JSON, nullable=False)
+    diagram = db.Column(db.JSON, nullable=True)
+    snapshot = db.Column(db.JSON, nullable=True)
+    asset_ids = db.Column(db.JSON, nullable=False, default=list)
+    # The approver's name, rank, title and date, as the publishing admin entered them (docs/LZ_SURVEYS.md §3.4).
+    signoff = db.Column(db.JSON, nullable=True)
+    changes = db.Column(db.String(500), nullable=False, default='')
+    # What the page said of itself when it was published, so a reprint matches what was signed: its HLZ ID and name, the book's name
+    # and unit line, its page in the book, the date it printed, the EZ/PZ version and the slope map's opacity.
+    page = db.Column(db.JSON, nullable=True)
+    pdf_sha256 = db.Column(db.String(64), nullable=True)
+    published_by = db.Column(db.Integer, db.ForeignKey('user.id', ondelete='SET NULL'), nullable=True)
+    published_by_name = db.Column(db.String(120), nullable=False, default='')
+    published_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+
+    __table_args__ = (db.UniqueConstraint('survey_id', 'number', name='ux_lz_survey_revision_number'),)
+
+
+class LzSurveyAsset(db.Model):
+    """A photo or a 3D capture of one survey. Its bytes are in the asset store (survey/assets.py) under ``sha256``.
+
+    Taken off a survey, an asset is marked ``removed_at`` and kept: a published revision may still show it.
+    """
+
+    __tablename__ = 'lz_survey_asset'
+
+    id = db.Column(db.Integer, primary_key=True)
+    survey_id = db.Column(db.Integer, db.ForeignKey('lz_survey.id'), nullable=False, index=True)
+    kind = db.Column(db.String(20), nullable=False)  # photo_north | photo_approach | photo_other | view_3d
+    caption = db.Column(db.String(200), nullable=False, default='')
+    # The heading the picture looks down, degrees true; none when it was not recorded.
+    heading_deg = db.Column(db.Float, nullable=True)
+    # When it was taken, as the field survey wrote it ("OCT 2023").
+    taken_on = db.Column(db.String(40), nullable=False, default='')
+    # A 3D capture's camera (heading, tilt, range) and its tileset's survey and year (step L3).
+    pose = db.Column(db.JSON, nullable=True)
+    content_type = db.Column(db.String(40), nullable=False)
+    width = db.Column(db.Integer, nullable=False, default=0)
+    height = db.Column(db.Integer, nullable=False, default=0)
+    size_bytes = db.Column(db.Integer, nullable=False)
+    sha256 = db.Column(db.String(64), nullable=False, index=True)
+    created_by = db.Column(db.Integer, db.ForeignKey('user.id', ondelete='SET NULL'), nullable=True)
+    created_by_name = db.Column(db.String(120), nullable=False, default='')
+    created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+    removed_at = db.Column(db.DateTime, nullable=True)
+
+
+class SurveyBookPrint(db.Model):
+    """A book's PDF (docs/LZ_SURVEYS.md §5, step L6), printed in the background when someone asks and kept, in the asset store under
+    its SHA-256, until a page in the book changes: ``fingerprint`` names what it holds (survey/book.py). One row a print; the newest
+    for a fingerprint is the one that counts, and older ones (and their PDFs) are let go once a newer is printed."""
+
+    __tablename__ = 'survey_book_print'
+
+    id = db.Column(db.Integer, primary_key=True)
+    book_id = db.Column(db.Integer, db.ForeignKey('survey_book.id'), nullable=False, index=True)
+    fingerprint = db.Column(db.String(64), nullable=False, index=True)
+    state = db.Column(db.String(10), nullable=False, default='printing')  # printing | ready | failed
+    pages = db.Column(db.Integer, nullable=False, default=0)
+    done_pages = db.Column(db.Integer, nullable=False, default=0)
+    pdf_sha256 = db.Column(db.String(64), nullable=True)
+    size_bytes = db.Column(db.Integer, nullable=True)
+    error = db.Column(db.String(300), nullable=True)
+    requested_by = db.Column(db.Integer, db.ForeignKey('user.id', ondelete='SET NULL'), nullable=True)
+    requested_by_name = db.Column(db.String(120), nullable=False, default='')
+    started_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+    finished_at = db.Column(db.DateTime, nullable=True)
+
+
+class LzSurveyImport(db.Model):
+    """Where a survey the import made came from, and what is left to check on it (docs/LZ_SURVEYS.md §6): the old book's page, what
+    could not be read there, and how its measuring in the background stands. One for each survey the import made, none for the rest.
+
+    Kept apart from the survey: the background measuring writes its ``state`` here while an editor may be saving the survey, and the
+    survey's own revision moves only when its content does (a boundary found, a snapshot taken).
+    """
+
+    __tablename__ = 'lz_survey_import'
+
+    id = db.Column(db.Integer, primary_key=True)
+    survey_id = db.Column(db.Integer, db.ForeignKey('lz_survey.id'), nullable=False, unique=True, index=True)
+    source = db.Column(db.String(200), nullable=False, default='')  # the old book's file name
+    page = db.Column(db.Integer, nullable=True)
+    # {unread: [...], blank: [...], warnings: [...]}: what the page did not say, said with nothing after it, or said in a way to check.
+    notes = db.Column(db.JSON, nullable=False, default=dict)
+    # queued | finding | measuring | done | no_target | no_boundary | failed | changed (survey/importing.py)
+    state = db.Column(db.String(12), nullable=False, default='queued')
+    reason = db.Column(db.String(300), nullable=True)
+    imported_by = db.Column(db.Integer, db.ForeignKey('user.id', ondelete='SET NULL'), nullable=True)
+    imported_by_name = db.Column(db.String(120), nullable=False, default='')
+    imported_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+    checked_by_name = db.Column(db.String(120), nullable=True)
+    checked_at = db.Column(db.DateTime, nullable=True)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+
+
+class DataJob(db.Model):
+    """Work the admin's Data tab asked for, one job at a time (data_admin/jobs.py; docs/DATA_ADMIN_AND_PREBUILT_3D_PLAN.md
+    §10): DEMs downloaded from USGS (``dem_download``), or a cycle of the FAA's VFR charts built into tiles (``chart_build``,
+    charts/job.py; docs/VFR_CHARTS.md §5). ``files`` is each file's name, URL, size and how it stands, so the page can show them
+    and a restart can pick up where the last process left off. Never logged.
+
+    A chart build runs in a process of its own, which owns its progress (``files``, ``stage``, ``work_*``, ``bytes_*``) and its
+    end state, and writes only while the row still carries the ``token`` it was started with (§5.1)."""
+
+    __tablename__ = 'data_job'
+
+    id = db.Column(db.String(32), primary_key=True)  # random hex, never a place
+    kind = db.Column(db.String(20), nullable=False, default='dem_download')  # dem_download | chart_build
+    product = db.Column(db.String(10), nullable=False)  # 13 | 1m | vfr
+    state = db.Column(db.String(10), nullable=False, default='queued')  # queued | running | done | failed | cancelled
+    files = db.Column(db.JSON, nullable=False, default=list)
+    files_total = db.Column(db.Integer, nullable=False, default=0)
+    files_done = db.Column(db.Integer, nullable=False, default=0)
+    bytes_total = db.Column(db.BigInteger, nullable=False, default=0)
+    bytes_done = db.Column(db.BigInteger, nullable=False, default=0)
+    replace = db.Column(db.Boolean, nullable=False, default=False)
+    cancel_requested = db.Column(db.Boolean, nullable=False, default=False)
+    error = db.Column(db.String(300), nullable=True)
+    requested_by = db.Column(db.Integer, db.ForeignKey('user.id', ondelete='SET NULL'), nullable=True)
+    requested_by_name = db.Column(db.String(120), nullable=False, default='')
+    created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+    started_at = db.Column(db.DateTime, nullable=True)
+    finished_at = db.Column(db.DateTime, nullable=True)
+    # A chart build's (docs/VFR_CHARTS.md §5): added by schema_sync on a table made before them.
+    build = db.Column(db.String(20), nullable=True)      # 2026-10-29.1: the build's name, its number taken from state.json
+    stage = db.Column(db.String(20), nullable=True)      # sizes | download | unzip | check | prepare | tile | lower | validate | finish
+    work_done = db.Column(db.Integer, nullable=True)     # tiles made in the stage, as bytes_done counts bytes
+    work_total = db.Column(db.Integer, nullable=True)
+    token = db.Column(db.String(64), nullable=True)      # the build process it was last started as

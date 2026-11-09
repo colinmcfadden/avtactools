@@ -1,4 +1,4 @@
-import { framingRange } from "./framing";
+import { framingRange, lzSphere } from "./framing";
 import { CAMERA_RANGE_FACTOR } from "./sceneSettings";
 
 const FOV = Math.PI / 3;
@@ -35,4 +35,23 @@ describe("framingRange", () => {
     expect(framingRange(150, 0, FOV)).toBe(150 * CAMERA_RANGE_FACTOR);
     expect(framingRange(150, Number.NaN, FOV)).toBe(150 * CAMERA_RANGE_FACTOR);
   });
+});
+
+// Just enough of Cesium for the sphere: a place in degrees and a radius.
+const Cesium = {
+  Cartesian3: { fromDegrees: (lon, lat, height) => ({ lon, lat, height }) },
+  BoundingSphere: function BoundingSphere(center, radius) { this.center = center; this.radius = radius; },
+};
+const tileset = { boundingSphere: { center: "the state", radius: 120000 } };
+
+it("frames the server's frame, not a streamed survey's own sphere", () => {
+  const sphere = lzSphere(Cesium, tileset, { lat: 34.6, lon: -84.13, radius_m: 500, height_m: 371.2 });
+  expect(sphere.center).toEqual({ lon: -84.13, lat: 34.6, height: 371.2 });
+  expect(sphere.radius).toBe(500);
+});
+
+it("keeps the tileset's sphere with no frame, or one whose ground is unknown", () => {
+  expect(lzSphere(Cesium, tileset, null)).toBe(tileset.boundingSphere);
+  expect(lzSphere(Cesium, tileset, { lat: 34.6, lon: -84.13, radius_m: 500, height_m: null }))
+    .toBe(tileset.boundingSphere);
 });

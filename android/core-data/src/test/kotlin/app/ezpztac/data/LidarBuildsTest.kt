@@ -32,8 +32,11 @@ class LidarBuildsTest {
         val calls = mutableListOf<String>()
         var buildFails = false
 
-        override suspend fun resolve(at: LatLon, radiusM: Double?): LidarResolveDto {
-            calls += "resolve"
+        var streams = false
+
+        override suspend fun resolve(at: LatLon, radiusM: Double?, stream: Boolean): LidarResolveDto {
+            calls += if (stream) "resolve stream" else "resolve"
+            if (stream && streams) return LidarResolveDto("fedcba9876543210", available = true, streamed = true, url = "/lidar/tilesets/fedcba9876543210/tileset.json")
             return LidarResolveDto("0123456789abcdef", available = false, canBuild = true, target = LidarTargetDto(at.lat, at.lon, 500.0))
         }
 
@@ -126,7 +129,7 @@ class LidarBuildsTest {
         val calls = mutableListOf<String>()
         val asks = ArrayDeque<CompletableDeferred<LidarBuildDto>>()
 
-        override suspend fun resolve(at: LatLon, radiusM: Double?) = LidarResolveDto("0123456789abcdef", available = false, canBuild = true)
+        override suspend fun resolve(at: LatLon, radiusM: Double?, stream: Boolean) = LidarResolveDto("0123456789abcdef", available = false, canBuild = true)
 
         override suspend fun build(at: LatLon, keep: Boolean, watcher: String?, radiusM: Double?) = LidarBuildDto("0123456789abcdef", "queued")
 
@@ -233,7 +236,18 @@ class LidarBuildsTest {
         builds.requestKept(here)
         builds.requestKept(LatLon(Double.NaN, -84.0))
         runCurrent()
-        assertEquals(listOf("build keep=true watcher=null"), server.calls)
+        // Asked first whether the place streams: a build would only spend minutes where a first view is seconds away.
+        assertEquals(listOf("resolve stream", "build keep=true watcher=null"), server.calls)
+        scope.cancel()
+    }
+
+    @Test
+    fun `a save builds nothing where the place streams, as the web's does`() = runTest {
+        val server = Server().apply { streams = true }
+        val (builds, scope, _) = rig(server = server)
+        builds.requestKept(here)
+        runCurrent()
+        assertEquals(listOf("resolve stream"), server.calls)
         scope.cancel()
     }
 

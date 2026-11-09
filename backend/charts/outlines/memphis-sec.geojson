@@ -1,0 +1,40 @@
+{
+ "type": "Feature",
+ "properties": {
+  "id": "memphis-sec",
+  "title": "Memphis Sectional",
+  "tier": "sectional",
+  "file": "Memphis SEC.tif",
+  "made_from": {
+   "width": 17894,
+   "height": 12346,
+   "transform": [
+    42.33496118,
+    0.0,
+    -423493.613721396,
+    0.0,
+    -42.336422911,
+    254214.312880574
+   ],
+   "ink": 1.0
+  },
+  "edges": {
+   "north": "neighbour:kansas-city-sec,st-louis-sec",
+   "east": "neighbour:atlanta-sec",
+   "south": "neatline",
+   "west": "neatline"
+  }
+ },
+ "geometry": {
+  "type": "Polygon",
+  "coordinates": [
+   [
+    [-95.0,32.0],
+    [-88.0,32.0],
+    [-88.0,36.0],
+    [-95.0,36.0],
+    [-95.0,32.0]
+   ]
+  ]
+ }
+}

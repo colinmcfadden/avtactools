@@ -50,15 +50,16 @@ def public_mapbox_token(environ, default=None):
     return token
 
 
-def build_config(environ, *, server_version, lidar_builds, mapbox_default=None):
+def build_config(environ, *, server_version, lidar_builds, mapbox_default=None, charts=None):
     """The payload for ``GET /api/config``.
 
     ``environ`` is a mapping (``os.environ``). ``lidar_builds`` is whether the
     3D point-cloud build service is configured. ``mapbox_default`` is used when
-    ``MAPBOX_PUBLIC_TOKEN`` is unset.
+    ``MAPBOX_PUBLIC_TOKEN`` is unset. ``charts`` is the live chart build (``charts.serve.config``), or None
+    where nothing is live: the field is then left out, and the clients draw ArcGIS (docs/VFR_CHARTS.md §4.6).
     """
     message = (environ.get("MAINTENANCE_MESSAGE") or "").strip()[:_MAINTENANCE_MAX]
-    return {
+    payload = {
         "configVersion": CONFIG_VERSION,
         "serverVersion": server_version,
         "apiVersion": API_VERSION,
@@ -82,3 +83,6 @@ def build_config(environ, *, server_version, lidar_builds, mapbox_default=None):
             "publicToken": public_mapbox_token(environ, mapbox_default),
         },
     }
+    if charts:
+        payload["charts"] = charts
+    return payload

@@ -110,6 +110,9 @@ class RailWorkspace(
     val menu: (@Composable (onDismiss: () -> Unit) -> Unit)? = null,
     /** The pack is finished: the tile wears a lock (the design's AT Finished). */
     val finished: Boolean = false,
+    /** The switcher asked to open from outside the tile (an invitation's notification tapped): it opens, and [onOpened] lets the ask go. */
+    val openNow: Boolean = false,
+    val onOpened: () -> Unit = {},
 )
 
 /**
@@ -384,6 +387,12 @@ private fun Rail(panels: List<Panel>, current: Panel, counts: PanelCounts, rail:
                     // The switcher goes with packs: when they come back it is not open by itself.
                     val switchable = workspace.menu != null
                     LaunchedEffect(switchable) { if (!switchable) switching = false }
+                    LaunchedEffect(workspace.openNow, switchable) {
+                        if (workspace.openNow && switchable) {
+                            switching = true
+                            workspace.onOpened()
+                        }
+                    }
                     Box {
                         RailTile(
                             if (workspace.pack) EzpzIcons.groupsFill else EzpzIcons.personFill, workspace.label, workspace.description, tonal = false,

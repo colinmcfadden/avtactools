@@ -126,6 +126,8 @@ class LzPanelActions(
     val addUnit: (UnitDraft) -> Unit = {},
     /** Asks which Mission Pack a copy of the open LZ/PZ ([uuid], [name]) goes into; none: not offered (no packs here, or one is open). */
     val addToPack: ((uuid: String, name: String) -> Unit)? = null,
+    /** Sends the open LZ/PZ's grid to someone (docs/GRID_SHARING.md), with its name and the grid it keeps: given where the host can share. */
+    val shareGrid: ((name: String, at: LatLon, grid: String?) -> Unit)? = null,
     /** Asks what to call a copy of the open pack's LZ/PZ ([uuid], the editor's id) saved to this person's Library; none: not offered. */
     val saveCopy: ((uuid: String) -> Unit)? = null,
     /** Shows [uuid] in 3D over the whole screen, opening it first if it is not the one open (the web's window shows the open one). */
@@ -152,6 +154,8 @@ fun LzPanelHost(
     onAddToPack: ((uuid: String, name: String) -> Unit)? = null,
     /** Asks what to call a copy of a pack's LZ/PZ open here, saved to the Library: given while a pack is open. */
     onSaveCopy: ((uuid: String) -> Unit)? = null,
+    /** Sends the open LZ/PZ's grid to someone, with its name and the grid it keeps: the host's share sheet. */
+    onShareGrid: ((name: String, at: LatLon, grid: String?) -> Unit)? = null,
     /** The open LZ/PZs hidden from the map ([LzHomeContent]'s eyes), and the eye's toggle; none: no eyes. */
     hiddenOnMap: Set<String> = emptySet(),
     onToggleOnMap: ((uuid: String) -> Unit)? = null,
@@ -174,6 +178,7 @@ fun LzPanelHost(
         setSlopeOpacity = viewModel::setSlopeOpacity, showOutline = viewModel::showOutline,
         beginTool = { tool -> graphics.beginPlacing(tool) }, drawBoundary = boundary::start, dismissBoundaryError = boundary::dismissError,
         addUnit = { draft -> graphics.addUnit(draft, crosshair) }, addToPack = onAddToPack, saveCopy = onSaveCopy, toggleOnMap = onToggleOnMap, view3d = viewModel::view3d,
+        shareGrid = onShareGrid,
     )
     val graphicsActions = graphicsActionsOf(graphics, crosshair)
     when (pane.shows(state.page)) {
@@ -595,6 +600,15 @@ private fun LzMoreMenu(current: ActiveDiagramUi, actions: LzPanelActions, onRena
                 onClick = { open = false; actions.close(current.uuid) },
                 leadingIcon = { Icon(painterResource(EzpzIcons.close), contentDescription = null) },
             )
+            // Sending its grid changes nothing, so it stays in a pack this person cannot change.
+            val shareGrid = actions.shareGrid
+            val target = current.target
+            if (shareGrid != null && target != null) {
+                DropdownMenuItem(
+                    text = { Text("Share grid…") }, onClick = { open = false; shareGrid(current.name, target, current.grid) },
+                    leadingIcon = { Icon(painterResource(EzpzIcons.share), contentDescription = null) },
+                )
+            }
             val addToPack = actions.addToPack
             if (current.inPack == null && addToPack != null) {
                 DropdownMenuItem(

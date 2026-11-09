@@ -428,7 +428,7 @@ public class FakePackServer(public val liveUrl: String? = null) : PackApi {
     private fun body(pack: Pack, asUser: Int): JsonObject {
         val items = pack.items.values.filter { !it.deleted }
         // pack_support.item_counts counts the library's kinds only: not briefs, yet.
-        val counts = listOf("lz", "route", "pointset").associateWith { kind -> JsonPrimitive(items.count { it.kind == kind }) }
+        val counts = listOf("lz", "route", "pointset", "threatset").associateWith { kind -> JsonPrimitive(items.count { it.kind == kind }) }
         return obj(
             "uuid" to text(pack.uuid),
             "name" to text(pack.name),
@@ -505,7 +505,7 @@ public class FakePackServer(public val liveUrl: String? = null) : PackApi {
         const val MAX_SUMMARY = 300
         val EDIT_ROLES = setOf("owner", "editor")
         val CLIENT_OP_ID = Regex("[\\x21-\\x7e]{1,64}")
-        val KIND_WORDS = mapOf("lz" to "LZ", "route" to "routes", "pointset" to "points", "brief" to "brief")
+        val KIND_WORDS = mapOf("lz" to "LZ", "route" to "routes", "pointset" to "points", "threatset" to "threats", "brief" to "brief")
 
         fun text(value: String): JsonPrimitive = JsonPrimitive(value)
 

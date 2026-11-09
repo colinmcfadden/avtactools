@@ -18,7 +18,7 @@ if str(BACKEND_DIR) not in sys.path:
     sys.path.insert(0, str(BACKEND_DIR))
 
 from aircraft_seed import seed_aircraft_profiles  # noqa: E402
-from models import AccountToken, AircraftProfile, LoginEvent, SavedLZ, SavedPointSet, SavedRoute, db  # noqa: E402
+from models import AccountToken, AircraftProfile, DataJob, LoginEvent, SavedLZ, SavedPointSet, SavedRoute, User, db  # noqa: E402
 from schema_sync import ensure_unique_index, sync_table_columns  # noqa: E402
 
 
@@ -250,6 +250,63 @@ class LoginEventClientColumnTests(unittest.TestCase):
         self.assertEqual([], sync_table_columns(db, LoginEvent))
 
 
+# "user" as production holds it once app.py's ALTERs have run, before notification settings (docs/NOTIFICATIONS.md §5).
+# The user table as production has it: before mil_pending_email and notification_settings.
+LEGACY_USER = """
+CREATE TABLE "user" (
+    id INTEGER NOT NULL PRIMARY KEY,
+    google_id VARCHAR(100) UNIQUE,
+    email VARCHAR(120) NOT NULL UNIQUE,
+    name VARCHAR(120) NOT NULL,
+    picture VARCHAR(500),
+    created_at DATETIME,
+    role VARCHAR(20) NOT NULL DEFAULT 'user',
+    is_active BOOLEAN NOT NULL DEFAULT TRUE,
+    features JSON,
+    mil_email VARCHAR(120),
+    mil_verified_at DATETIME,
+    access_approved BOOLEAN NOT NULL DEFAULT TRUE
+)
+"""
+
+# What sync_table_columns adds to it, one entry per column a release added since.
+# A test of one column asserts all of them: production gains them together.
+USER_COLUMNS_SINCE = ["mil_pending_email", "notification_settings"]
+
+
+class UserNotificationSettingsColumnTests(unittest.TestCase):
+    """The user table predates notification settings: the column is added, and nothing else about anyone changes."""
+
+    def setUp(self):
+        self.app = Flask(__name__)
+        self.app.config.update(SQLALCHEMY_DATABASE_URI="sqlite:///:memory:", SQLALCHEMY_TRACK_MODIFICATIONS=False)
+        db.init_app(self.app)
+        self.ctx = self.app.app_context()
+        self.ctx.push()
+        db.session.execute(text(LEGACY_USER))
+        db.session.execute(text(
+            "INSERT INTO \"user\" (email, name, role, is_active, access_approved) VALUES ('pilot@example.com', 'Pilot', 'user', 1, 1)"
+        ))
+        db.session.commit()
+
+    def tearDown(self):
+        db.session.remove()
+        self.ctx.pop()
+
+    def test_adds_the_settings_and_keeps_everyone_as_they_were(self):
+        self.assertEqual(USER_COLUMNS_SINCE, sync_table_columns(db, User))
+        user = User.query.one()
+        self.assertIsNone(user.notification_settings)
+        self.assertTrue(user.access_approved)
+        user.notification_settings = {"pack_finished": False}
+        db.session.commit()
+        self.assertEqual({"pack_finished": False}, User.query.one().notification_settings)
+
+    def test_is_idempotent(self):
+        sync_table_columns(db, User)
+        self.assertEqual([], sync_table_columns(db, User))
+
+
 # account_token before refresh tokens added family, client and session_version.
 LEGACY_ACCOUNT_TOKEN = """
 CREATE TABLE account_token (
@@ -394,3 +451,100 @@ class SavedRecordSyncColumnsTests(unittest.TestCase):
         db.session.commit()
         self.assertFalse(ensure_unique_index(db, model, ("user_id", "client_uuid"), f"ux_{table}_user_client_uuid"))
         self.assertEqual(model.query.count(), 2)            # still usable afterwards
+
+
+# "user" before mil_pending_email: what every deployment holds, the ALTERs in app.py having added the rest.
+class UserPendingMilColumnTests(unittest.TestCase):
+    """The user table gained mil_pending_email: added to the one production has, nothing else touched."""
+
+    def setUp(self):
+        self.app = Flask(__name__)
+        self.app.config.update(
+            SQLALCHEMY_DATABASE_URI="sqlite:///:memory:",
+            SQLALCHEMY_TRACK_MODIFICATIONS=False,
+        )
+        db.init_app(self.app)
+        self.ctx = self.app.app_context()
+        self.ctx.push()
+        db.session.execute(text(LEGACY_USER))
+        db.session.execute(text(
+            'INSERT INTO "user" (id, email, name, mil_email, mil_verified_at) '
+            "VALUES (7, 'pilot@example.com', 'Pilot', 'pilot@army.mil', '2026-09-01 12:00:00')"
+        ))
+        db.session.commit()
+
+    def tearDown(self):
+        db.session.remove()
+        self.ctx.pop()
+
+    def test_adds_the_pending_column_and_keeps_existing_accounts(self):
+        self.assertEqual(USER_COLUMNS_SINCE, sync_table_columns(db, User))
+        user = db.session.get(User, 7)
+        self.assertEqual(("pilot@army.mil", None, True), (user.mil_email, user.mil_pending_email, user.access_approved))
+
+    def test_is_idempotent(self):
+        sync_table_columns(db, User)
+        self.assertEqual([], sync_table_columns(db, User))
+
+
+# data_job as the Data tab's DEM downloads made it, before a chart build's columns (docs/VFR_CHARTS.md §5).
+LEGACY_DATA_JOB = """
+CREATE TABLE data_job (
+    id VARCHAR(32) NOT NULL PRIMARY KEY,
+    kind VARCHAR(20) NOT NULL,
+    product VARCHAR(10) NOT NULL,
+    state VARCHAR(10) NOT NULL,
+    files JSON NOT NULL,
+    files_total INTEGER NOT NULL,
+    files_done INTEGER NOT NULL,
+    bytes_total BIGINT NOT NULL,
+    bytes_done BIGINT NOT NULL,
+    replace BOOLEAN NOT NULL,
+    cancel_requested BOOLEAN NOT NULL,
+    error VARCHAR(300),
+    requested_by INTEGER,
+    requested_by_name VARCHAR(120) NOT NULL,
+    created_at DATETIME NOT NULL,
+    started_at DATETIME,
+    finished_at DATETIME
+)
+"""
+
+CHART_BUILD_COLUMNS = ["build", "stage", "work_done", "work_total", "token"]
+
+
+class DataJobChartColumnsTests(unittest.TestCase):
+    """data_job gained a chart build's columns: added to the table a DEM download made, its jobs kept as they were."""
+
+    def setUp(self):
+        self.app = Flask(__name__)
+        self.app.config.update(
+            SQLALCHEMY_DATABASE_URI="sqlite:///:memory:",
+            SQLALCHEMY_TRACK_MODIFICATIONS=False,
+        )
+        db.init_app(self.app)
+        self.ctx = self.app.app_context()
+        self.ctx.push()
+        db.session.execute(text(LEGACY_DATA_JOB))
+        db.session.execute(text(
+            "INSERT INTO data_job (id, kind, product, state, files, files_total, files_done, bytes_total, bytes_done, replace, "
+            "cancel_requested, requested_by_name, created_at) VALUES ('ab12', 'dem_download', '13', 'done', '[]', 2, 2, 10, 10, 0, "
+            "0, 'Admin', '2026-11-04 12:00:00')"
+        ))
+        db.session.commit()
+
+    def tearDown(self):
+        db.session.remove()
+        self.ctx.pop()
+
+    def test_adds_the_chart_columns_and_keeps_the_downloads(self):
+        self.assertEqual(CHART_BUILD_COLUMNS, sync_table_columns(db, DataJob))
+        job = db.session.get(DataJob, "ab12")
+        self.assertEqual(("dem_download", "done", 2, None, None, None, None, None),
+                         (job.kind, job.state, job.files_done, job.build, job.stage, job.work_done, job.work_total, job.token))
+        job.build, job.stage, job.work_done, job.token = "2026-10-29.1", "tile", 7, "a" * 32
+        db.session.commit()
+
+    def test_is_idempotent(self):
+        sync_table_columns(db, DataJob)
+        self.assertEqual([], sync_table_columns(db, DataJob))

@@ -12,21 +12,21 @@ import { usePackWorkspace } from "./usePackWorkspace";
 
 // The pack's own ⋯ menu (rename, describe, duplicate, leave, delete), through the workspace that
 // carries it out. The live pack and the editors it feeds are stood in for; every request is a mock.
-jest.mock("../packApi", () => {
-  const actual = jest.requireActual("../packApi");
+vi.mock("../packApi", async (importOriginal) => {
+  const actual = await importOriginal();
   const mocked = {};
   Object.keys(actual).forEach((key) => {
     // The words for a refusal are the real ones.
-    mocked[key] = typeof actual[key] === "function" && !["packErrorMessage", "failureOf"].includes(key) ? jest.fn() : actual[key];
+    mocked[key] = typeof actual[key] === "function" && !["packErrorMessage", "failureOf"].includes(key) ? vi.fn() : actual[key];
   });
   return mocked;
 });
-jest.mock("../useMissionPack", () => ({ useMissionPack: jest.fn() }));
-jest.mock("../usePackLz", () => ({ usePackLz: jest.fn() }));
-jest.mock("../usePackRoutes", () => ({ usePackRoutes: jest.fn() }));
-jest.mock("../usePackPoints", () => ({ usePackPoints: jest.fn() }));
-jest.mock("../useInviteLink", () => ({ useInviteLink: jest.fn() }));
-jest.mock("../usePackSeen", () => ({ ...jest.requireActual("../usePackSeen"), usePackSeen: jest.fn() }));
+vi.mock("../useMissionPack", () => ({ useMissionPack: vi.fn() }));
+vi.mock("../usePackLz", () => ({ usePackLz: vi.fn() }));
+vi.mock("../usePackRoutes", () => ({ usePackRoutes: vi.fn() }));
+vi.mock("../usePackPoints", () => ({ usePackPoints: vi.fn() }));
+vi.mock("../useInviteLink", () => ({ useInviteLink: vi.fn() }));
+vi.mock("../usePackSeen", async (importOriginal) => ({ ...(await importOriginal()), usePackSeen: vi.fn() }));
 
 const settle = () => act(async () => {});
 const bco = { id: 7, name: "B CO", member_count: 18, role: "member" };
@@ -42,14 +42,14 @@ const setup = ({ role = "owner", status = "active", members = [colin, sam], team
     items: [],
     people: [],
     error: null,
-    edit: jest.fn(),
-    setFocus: jest.fn(),
-    refresh: jest.fn(),
+    edit: vi.fn(),
+    setFocus: vi.fn(),
+    refresh: vi.fn(),
   };
   useMissionPack.mockReturnValue(live);
-  usePackLz.mockReturnValue({ flush: jest.fn(), openItem: jest.fn() });
-  usePackRoutes.mockReturnValue({ flush: jest.fn(), open: [], openItem: jest.fn(), closeItem: jest.fn() });
-  usePackPoints.mockReturnValue({ flush: jest.fn(), openItem: jest.fn(), closeItem: jest.fn() });
+  usePackLz.mockReturnValue({ flush: vi.fn(), openItem: vi.fn() });
+  usePackRoutes.mockReturnValue({ flush: vi.fn(), open: [], openItem: vi.fn(), closeItem: vi.fn() });
+  usePackPoints.mockReturnValue({ flush: vi.fn(), openItem: vi.fn(), closeItem: vi.fn() });
   useInviteLink.mockReturnValue({ status: "none" });
   usePackSeen.mockReturnValue({ seenSeq: 0, newSince: 0 });
   packApi.listPacks.mockResolvedValue({ packs: [{ ...pack }] });
@@ -58,18 +58,18 @@ const setup = ({ role = "owner", status = "active", members = [colin, sam], team
   packApi.getPack.mockResolvedValue({ ...pack, members });
   packApi.listPackInvites.mockResolvedValue({ invites: [] });
 
-  const toast = jest.fn();
-  const dock = { show: jest.fn(), panel: "pack", collapsed: false };
+  const toast = vi.fn();
+  const dock = { show: vi.fn(), panel: "pack", collapsed: false };
   const lz = {
     workspace: { diagramOrder: [], diagramsById: {}, activeDiagramId: null },
-    hydrateWorkspace: jest.fn(),
-    importDiagram: jest.fn(),
-    applyRemoteDiagram: jest.fn(),
-    removeDiagram: jest.fn(),
-    setActiveDiagram: jest.fn(),
+    hydrateWorkspace: vi.fn(),
+    importDiagram: vi.fn(),
+    applyRemoteDiagram: vi.fn(),
+    removeDiagram: vi.fn(),
+    setActiveDiagram: vi.fn(),
   };
-  const sketch = { sketchedRoutes: [], loadSketchRoutes: jest.fn(), replaceRouteSet: jest.fn(), removeRouteSet: jest.fn() };
-  const points = { pointSets: [], setPointSets: jest.fn() };
+  const sketch = { sketchedRoutes: [], loadSketchRoutes: vi.fn(), replaceRouteSet: vi.fn(), removeRouteSet: vi.fn() };
+  const points = { pointSets: [], setPointSets: vi.fn() };
   const library = {};
   const user = { id: me, name: "Colin McFadden" };
 

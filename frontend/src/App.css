@@ -32,7 +32,7 @@ body, html, .App {
 
 /* --- Controls Container (The Sidebar) --- */
 .controls-container {
-  /* This class likely wraps the <Controls /> component in your App.js */
+  /* This class likely wraps the <Controls /> component in your App.jsx */
   height: 100vh;
   background-color: var(--ff-bg-dark);
   padding: 0;
@@ -77,15 +77,6 @@ body, html, .App {
   padding: 12px;
   border: 1px solid var(--ff-border);
   border-radius: 8px;
-}
-
-/* Search Header Styling */
-.search-section {
-  background-color: var(--ff-panel-bg);
-  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.3);
-  z-index: 10;
-  margin: 0 5px;
-  margin-top: 1em;
 }
 
 .ff-label {
@@ -920,7 +911,7 @@ body.export-mode-active .leaflet-control-container {
         overflow-y: auto;
     }
 
-    /* Class added by App.js state */
+    /* Class added by App.jsx state */
     .sidebar.mobile-open {
         left: 0;
     }
@@ -1174,7 +1165,7 @@ html,
    selector's higher specificity beats the base .sidebar width/min-width without
    an inline-vs-cascade fight; the explicit min-width also lets the flex item
    shrink past its default 320px content minimum. Keep 76px in sync with
-   SIDEBAR_RAIL in App.js. */
+   SIDEBAR_RAIL in App.jsx. */
 .sidebar.sidebar-compact {
   width: 76px;
   min-width: 76px;
@@ -1236,15 +1227,6 @@ html,
   font-size: 9px;
   font-weight: 800;
   letter-spacing: 0.11em;
-}
-
-.search-section {
-  margin: 8px 12px 0;
-  padding: 10px;
-  border-color: var(--hairline);
-  border-radius: 9px;
-  background: var(--surface-1);
-  box-shadow: none;
 }
 
 .ff-label,
@@ -1518,6 +1500,21 @@ input:checked + .slider:before {
   background: var(--surface-3);
   box-shadow: none;
   transform: translateY(-1px);
+}
+
+/* A tool the LZ/PZ is not ready for (not analysed yet, or a read-only pack) looks off, so what comes first is plain. */
+.ff-tool-btn:disabled,
+.ff-tool-btn:disabled:hover {
+  border-color: var(--ff-border) !important;
+  background: var(--surface-1);
+  opacity: 0.38;
+  cursor: not-allowed;
+  transform: none;
+}
+
+.ff-tool-btn:disabled img,
+.ff-tool-btn:disabled svg {
+  filter: grayscale(1);
 }
 
 .ff-tool-btn .btn-label {
@@ -1876,6 +1873,76 @@ input:checked + .slider:before {
   color: var(--ff-text-main);
 }
 
+/* The grid copies itself when clicked: a button that reads as the menu's title until it is pointed at. */
+.ctx-title--copy {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  margin: 0 0 2px;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: transparent;
+  cursor: pointer;
+  transition: background 120ms ease, border-color 120ms ease;
+}
+
+.ctx-title--copy svg {
+  flex: none;
+  color: var(--ff-text-muted);
+}
+
+.ctx-title--copy:hover,
+.ctx-title--copy:focus-visible {
+  border-color: var(--hairline-strong);
+  background: var(--surface-3);
+  outline: none;
+}
+
+.ctx-title--copy:hover svg,
+.ctx-title--copy:focus-visible svg {
+  color: var(--ff-accent-hover);
+}
+
+/* The grid and, beside it, its share button (docs/GRID_SHARING.md). */
+.ctx-title-row {
+  display: flex;
+  align-items: stretch;
+  gap: 2px;
+  margin: 0 0 2px;
+}
+
+.ctx-title-row .ctx-title--copy {
+  flex: 1 1 auto;
+  min-width: 0;
+  margin: 0;
+  /* A grid is never split between its easting and northing. */
+  white-space: nowrap;
+}
+
+.ctx-title-share {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--ff-text-muted);
+  cursor: pointer;
+}
+
+.ctx-title-share:hover,
+.ctx-title-share:focus-visible {
+  border-color: var(--hairline-strong);
+  background: var(--surface-3);
+  color: var(--ff-accent-hover);
+  outline: none;
+}
+
 .ctx-label {
   padding: 2px 6px;
   font-size: 9px;
@@ -2032,8 +2099,8 @@ select:focus-visible {
 /* =========================================================
    COLLAPSIBLE CONTROL PANEL (desktop)
    A chevron on the sidebar seam toggles between the full panel and a narrow
-   icon rail. In the rail, the MGRS Target input pops out over the map so it
-   stays typeable. Mobile keeps its full-screen overlay (toggle hidden).
+   icon rail. The search is the top bar's. Mobile keeps its full-screen overlay
+   (toggle hidden).
    ========================================================= */
 .sidebar-collapse-toggle {
   position: absolute;
@@ -2074,44 +2141,11 @@ select:focus-visible {
   }
 }
 
-/* MGRS popout: floats over the map (fixed, so the panel's clip can't hide it). */
-.mgrs-popout {
-  position: fixed;
-  z-index: 3000;
-  width: 232px;
-  padding: 10px;
-  border: 1px solid var(--hairline-strong);
-  border-radius: 9px;
-  background: var(--glass);
-  backdrop-filter: blur(14px);
-  box-shadow: var(--deck-shadow);
-}
-
-.mgrs-popout .ff-label {
-  display: block;
-  margin-bottom: 5px;
-}
-
-.mgrs-rail-btn.active {
-  border-color: var(--ff-accent) !important;
-  background: var(--surface-3);
-}
-
 /* ---- Compact icon-rail mode ---- */
 .ff-panel.compact .ff-scroll-content {
   padding: 8px 6px 10px;
 }
 
-/* The collapsed MGRS trigger sits at the top of the rail. */
-.search-section-rail {
-  margin: 8px 6px 0;
-}
-.ff-panel.compact .search-section-rail .ff-tool-btn {
-  width: 100%;
-  min-height: 0;
-  aspect-ratio: 1 / 1;
-  padding: 8px;
-}
 
 /* Detail cards collapse away; the tool + route icon rails remain. */
 .ff-panel.compact .ff-card-analysis,

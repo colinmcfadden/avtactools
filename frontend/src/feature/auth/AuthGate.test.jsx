@@ -3,8 +3,8 @@ import { render, screen } from "@testing-library/react";
 import AuthGate from "./AuthGate";
 import { useAuth } from "./AuthContext";
 
-jest.mock("./AuthContext", () => ({ useAuth: jest.fn() }));
-jest.mock("./AuthScreen", () => ({
+vi.mock("./AuthContext", () => ({ useAuth: vi.fn() }));
+vi.mock("./AuthScreen", () => ({
   __esModule: true,
   default: ({ notice }) => <div data-testid="auth-screen">{notice}</div>,
 }));

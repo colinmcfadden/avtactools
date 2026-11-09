@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import * as packApi from "./packApi";
 import { createPackClient } from "./packClient";
+import { getAccessToken, onAccessToken, sessionKey } from "../auth/session";
 
 const CLOSED = { status: "closed", session: null, items: [], people: [], error: null };
 const nothing = () => () => {};
@@ -31,7 +32,9 @@ export const useMissionPack = (packUuid, me, { openSocket = (url) => new WebSock
       me,
       api,
       openSocket,
-      getToken: () => localStorage.getItem("auth_token"),
+      getToken: getAccessToken,
+      getSession: sessionKey,
+      onToken: onAccessToken,
       onLost: (lost) => lostRef.current?.(lost),
     });
     setClient(next);

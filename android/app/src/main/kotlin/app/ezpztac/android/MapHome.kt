@@ -9,12 +9,17 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.ime
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.safeDrawing
+import androidx.compose.foundation.layout.union
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.DropdownMenu
@@ -36,6 +41,7 @@ import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.graphics.Color
@@ -50,7 +56,10 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.repeatOnLifecycle
 import app.ezpztac.android.export.ShareExport
 import app.ezpztac.android.frame.AccountButton
 import app.ezpztac.android.frame.MapFrame
@@ -63,15 +72,17 @@ import app.ezpztac.android.frame.TabletFrame
 import app.ezpztac.android.frame.TabletRail
 import app.ezpztac.android.frame.WorkspaceChips
 import app.ezpztac.android.frame.WorkspaceLine
-import app.ezpztac.android.frame.rememberFrameState
-import app.ezpztac.android.frame.rememberTouchExploration
 import app.ezpztac.android.frame.lookingAtPack
 import app.ezpztac.android.frame.panelsFor
 import app.ezpztac.android.frame.pick
+import app.ezpztac.android.frame.rememberFrameState
 import app.ezpztac.android.frame.rememberTabletFrameState
+import app.ezpztac.android.frame.rememberTouchExploration
 import app.ezpztac.android.frame.shownPanel
 import app.ezpztac.android.frame.underPage
 import app.ezpztac.android.frame.usesTabletFrame
+import app.ezpztac.android.notifications.NotificationTap
+import app.ezpztac.android.notifications.NotificationToast
 import app.ezpztac.android.packs.InviteNotices
 import app.ezpztac.briefs.BriefSetupHost
 import app.ezpztac.briefs.BriefViewModel
@@ -88,26 +99,31 @@ import app.ezpztac.designsystem.BannerKind
 import app.ezpztac.designsystem.EzpzIcons
 import app.ezpztac.designsystem.PillButton
 import app.ezpztac.designsystem.SheetDetent
+import app.ezpztac.designsystem.ToastHost
 import app.ezpztac.designsystem.Tokens
 import app.ezpztac.designsystem.rememberPanelSheetState
+import app.ezpztac.geo.GridShare
+import app.ezpztac.geo.MgrsConverter
+import app.ezpztac.map.ContourLabelsLayer
 import app.ezpztac.map.DiagramLayer
-import app.ezpztac.map.OtherLzLayer
-import app.ezpztac.map.OtherLzScene
 import app.ezpztac.map.EzpzMap
 import app.ezpztac.map.GpsLayer
 import app.ezpztac.map.GpsState
-import app.ezpztac.map.ContourLabelsLayer
 import app.ezpztac.map.GraphicLabelsLayer
 import app.ezpztac.map.LzScene
 import app.ezpztac.map.MapChromeBoxes
-import app.ezpztac.map.MgrsGridLayer
 import app.ezpztac.map.MapCommand
 import app.ezpztac.map.MapProjection
 import app.ezpztac.map.MapScreen
+import app.ezpztac.map.MapStyles
+import app.ezpztac.map.MapSearchSpotlight
 import app.ezpztac.map.MapViewModel
+import app.ezpztac.map.MgrsGridLayer
+import app.ezpztac.map.OtherLzLayer
+import app.ezpztac.map.OtherLzScene
 import app.ezpztac.map.PinLabelsLayer
-import app.ezpztac.map.PointScene
 import app.ezpztac.map.PointLayer
+import app.ezpztac.map.PointScene
 import app.ezpztac.map.PointersLayer
 import app.ezpztac.map.RouteLayer
 import app.ezpztac.map.RouteScene
@@ -121,30 +137,32 @@ import app.ezpztac.missionpacks.PackStatus
 import app.ezpztac.model.LatLon
 import app.ezpztac.model.UnitDraft
 import app.ezpztac.network.ApiUser
+import app.ezpztac.packs.AddToPackHost
 import app.ezpztac.packs.FinishedBand
 import app.ezpztac.packs.FinishedBanner
-import app.ezpztac.packs.AddToPackHost
 import app.ezpztac.packs.ItemDialogsHost
-import app.ezpztac.packs.PackCopyViewModel
-import app.ezpztac.packs.PackItemCopyViewModel
 import app.ezpztac.packs.MembersHost
 import app.ezpztac.packs.MembersViewModel
 import app.ezpztac.packs.NewPackHost
 import app.ezpztac.packs.NewPackViewModel
-import app.ezpztac.packs.TeamsHost
-import app.ezpztac.packs.TeamsViewModel
+import app.ezpztac.packs.PackCopyViewModel
 import app.ezpztac.packs.PackDialogsHost
 import app.ezpztac.packs.PackHeaderMenu
+import app.ezpztac.packs.PackItemCopyViewModel
 import app.ezpztac.packs.PackPanelFoot
 import app.ezpztac.packs.PackPanelHost
 import app.ezpztac.packs.PackPanelViewModel
 import app.ezpztac.packs.PackWords
 import app.ezpztac.packs.SwitcherContent
+import app.ezpztac.packs.SwitcherNotify
 import app.ezpztac.packs.SwitcherSheet
+import app.ezpztac.packs.TeamsHost
+import app.ezpztac.packs.TeamsViewModel
 import app.ezpztac.packs.WorkspaceViewModel
 import app.ezpztac.packs.actionsOf
-import app.ezpztac.sync.RecordKind
 import app.ezpztac.symbols.LocalSymbolRenderer
+import app.ezpztac.sync.RecordKind
+import app.ezpztac.viewer3d.Viewer3DHost
 import app.ezpztac.workspace.BoundaryToolbarHost
 import app.ezpztac.workspace.DiagramsUiState
 import app.ezpztac.workspace.DiagramsViewModel
@@ -152,7 +170,6 @@ import app.ezpztac.workspace.ExportFile
 import app.ezpztac.workspace.GraphicKind
 import app.ezpztac.workspace.GraphicsViewModel
 import app.ezpztac.workspace.HeldObjectBarHost
-import app.ezpztac.workspace.LzToolRailHost
 import app.ezpztac.workspace.ImportReviewHost
 import app.ezpztac.workspace.ImportSheet
 import app.ezpztac.workspace.ImportSheetContent
@@ -164,10 +181,10 @@ import app.ezpztac.workspace.LibraryTab
 import app.ezpztac.workspace.LzPage
 import app.ezpztac.workspace.LzPane
 import app.ezpztac.workspace.LzPanelHost
+import app.ezpztac.workspace.LzToolRailHost
 import app.ezpztac.workspace.MapPointAction
 import app.ezpztac.workspace.PlacementToolbarHost
 import app.ezpztac.workspace.PointsViewModel
-import app.ezpztac.viewer3d.Viewer3DHost
 import app.ezpztac.workspace.RoutePlanHost
 import app.ezpztac.workspace.RouteToolbarHost
 import app.ezpztac.workspace.RoutesFooterHost
@@ -183,7 +200,9 @@ import app.ezpztac.workspace.rememberFileImport
 import kotlin.math.roundToInt
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.emptyFlow
 import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
@@ -226,11 +245,28 @@ fun MapHome(
     tooOld: Boolean = false,
     /** The server serves only API majors older than this build's: nothing is sent until it is updated ([Gate.Ready.serverBehind]). */
     serverBehind: Boolean = false,
+    /** A notification tapped (or a toast's action pressed) for this account, until it is done (docs/NOTIFICATIONS.md §7). */
+    notificationTap: NotificationTap? = null,
+    onNotificationHandled: () -> Unit = {},
+    /** What a notification says while the frame is in front: a toast, whose action [onNotificationAction] acts on as a tap. */
+    notificationToasts: Flow<NotificationToast> = emptyFlow(),
+    onNotificationAction: (NotificationTap) -> Unit = {},
+    /** The switcher's offer to turn notifications on, while it is made. */
+    switcherNotify: SwitcherNotify? = null,
+    /** A grid link the app was opened with (`#grid=…`, docs/GRID_SHARING.md), until the map has gone there. */
+    gridLink: GridShare.Link? = null,
+    onGridLinkHandled: () -> Unit = {},
     viewModel: MapViewModel = hiltViewModel(),
     home: HomeViewModel = hiltViewModel(),
     display: DisplayViewModel = hiltViewModel(),
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
+    // While the VFR map shows and the app is in front, which build of the FAA's charts draws it is asked again from time to time (docs/VFR_CHARTS.md §8).
+    val showingCharts = state.style.id == MapStyles.VFR_ID
+    val chartsLifecycle = LocalLifecycleOwner.current.lifecycle
+    LaunchedEffect(showingCharts, chartsLifecycle) {
+        if (showingCharts) chartsLifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) { viewModel.watchCharts() }
+    }
     val scene by home.scene.collectAsStateWithLifecycle()
     val routeScene by home.routes.collectAsStateWithLifecycle()
     val pointScene by home.points.collectAsStateWithLifecycle()
@@ -301,9 +337,12 @@ fun MapHome(
     LaunchedEffect(tablet) { if (tablet) frameState.open() }
     // Threats are drawn, held and taken in only while the account has them, which is while their panel is offered.
     val threatsOn = Panel.Threats in panels
+    val threatsSaved = threatsOn && user.hasFeature("cloud_save")          // an account that cannot save them has none to list
     // How tall whatever floats above the readout is now (a drawing toolbar, the held object's bar), in pixels: the toasts go above it.
     var floating by remember { mutableIntStateOf(0) }
     var switcherOpen by rememberSaveable { mutableStateOf(false) }
+    // The tablet's switcher, a popup at the rail's tile, asked to open from outside it (an invitation's notification tapped): once, then let go.
+    var switcherAsked by remember { mutableStateOf(false) }
     // A pack picked in the switcher shows its panel, raised, once it is open (at once if it is the one open); one opened otherwise (at launch, from an
     // invitation link) shows its panel where it was. The bookkeeping is done before the sheet moves: a raise cut short by a finger leaves nothing stale.
     var raiseFor by remember { mutableStateOf<String?>(null) }
@@ -412,13 +451,42 @@ fun MapHome(
         when (CopyRules.libraryAfter(wanted, openPack?.uuid)) {
             CopyRules.LibraryAfter.WAIT -> Unit                                                    // still on its way
             CopyRules.LibraryAfter.OPEN_LIBRARY -> {
-                libraryTab = libraryTabsFor(panels).firstOrNull() ?: LibraryTab.LZ
+                libraryTab = libraryTabsFor(panels, threatsSaved).firstOrNull() ?: LibraryTab.LZ
                 libraryAfter = null
             }
             CopyRules.LibraryAfter.LET_GO -> libraryAfter = null
         }
     }
-    if (switcherOpen && !tablet && packsHere) SwitcherSheet(workspace, onDismiss = { switcherOpen = false }, onPick = pickedPack, onNewPack = newPack::start, onTeams = teams::open)
+    if (switcherOpen && !tablet && packsHere) {
+        SwitcherSheet(workspace, onDismiss = { switcherOpen = false }, onPick = pickedPack, onNewPack = newPack::start, onTeams = teams::open, notify = switcherNotify)
+    }
+    // A notification tapped (docs/NOTIFICATIONS.md §7): an invitation opens the switcher, where it is answered; a pack added, finished or handed over opens, with its
+    // panel. It waits while packs do not run here yet (the device's plans being worked out at launch); one for another account does nothing.
+    LaunchedEffect(notificationTap, packsHere, tablet) {
+        val tapped = notificationTap ?: return@LaunchedEffect
+        // Another account's, or about packs the account no longer has (an administrator turned them off): nothing to open.
+        if (tapped.user != user.id || !user.hasFeature("mission_packs")) return@LaunchedEffect onNotificationHandled()
+        if (!packsHere) return@LaunchedEffect
+        when {
+            tapped.invitation -> if (tablet) switcherAsked = true else switcherOpen = true
+            tapped.opensPack -> tapped.pack?.let { uuid ->
+                pickedPack(uuid)
+                workspace.refresh()
+                workspace.switchTo(uuid)
+            }
+        }
+        onNotificationHandled()
+    }
+    // In front, a notification is the frame's toast, seen as it is said; its action is the tap's.
+    LaunchedEffect(notificationToasts) {
+        notificationToasts.collect { toast ->
+            launch {
+                val action = toast.tap?.let { if (it.invitation) "View" else if (it.opensPack) "Open" else null }
+                val answer = snackbars.showSnackbar(toast.text, actionLabel = action, withDismissAction = true, duration = SnackbarDuration.Long)
+                if (answer == SnackbarResult.ActionPerformed) toast.tap?.let(onNotificationAction)
+            }
+        }
+    }
     var packShownFor by rememberSaveable { mutableStateOf<String?>(null) }
     LaunchedEffect(openPack?.uuid) {
         val uuid = openPack?.uuid
@@ -434,7 +502,17 @@ fun MapHome(
     LaunchedEffect(mapCovered) { home.mapCovered(mapCovered) }
     LaunchedEffect(packPanel) { packPanel.notices.collect { snackbars.showSnackbar(it, withDismissAction = true) } }
     // An item opened from the Pack panel is shown in its own panel (an LZ/PZ in LZ/PZ, a route set in Routes), as the web's dock does.
-    LaunchedEffect(packPanel) { packPanel.opened.collect { kind -> frameState.choose(if (kind == "route") Panel.Routes else Panel.Lz) } }
+    LaunchedEffect(packPanel) {
+        packPanel.opened.collect { kind ->
+            frameState.choose(
+                when (kind) {
+                    "route" -> Panel.Routes
+                    "threatset" -> Panel.Threats
+                    else -> Panel.Lz
+                },
+            )
+        }
+    }
     // The sheet goes with what holds it (packs stopping, the frame turning into a tablet's): when they come back it is not open by itself.
     LaunchedEffect(tablet, packsHere) { if (tablet || !packsHere) switcherOpen = false }
     LaunchedEffect(workspace) { workspace.notices.collect { snackbars.showSnackbar(it, withDismissAction = true) } }
@@ -461,7 +539,7 @@ fun MapHome(
     LaunchedEffect(lz.page) { if (tablet && lz.page == LzPage.AIRCRAFT) tabletState.showList() }
     // A toast from a panel; the Saved one offers its Library tab (the design's Saved: Open Library), if the account has it when the toast is shown: the collectors
     // below outlive a change of features, so they read the tabs as they are now.
-    val libraryTabs by rememberUpdatedState(libraryTabsFor(panels))
+    val libraryTabs by rememberUpdatedState(libraryTabsFor(panels, threatsSaved))
     LaunchedEffect(packPanel) {
         packPanel.kept.collect { notice ->
             val tab = notice.library?.let(CopyRules::libraryTabOf)
@@ -479,6 +557,27 @@ fun MapHome(
         scope.launch { clipboard.setClipEntry(ClipEntry(ClipData.newPlainText("Grid", text))) }
         // Android 13 and later say so themselves; before that the app does.
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) scope.launch { snackbars.showSnackbar("Copied $text") }
+    }
+    // A grid to send (docs/GRID_SHARING.md), shown in its dialog: a place with no grid (past the grid's ends) has nothing to send.
+    var sharing by remember { mutableStateOf<GridSharePlace?>(null) }
+    // The grid an LZ/PZ keeps is the one sent (as the web's `target.mgrs ||`): one typed to 100 m stays at 100 m.
+    val shareAt: (String, LatLon, String?) -> Unit = { label, at, grid ->
+        (grid?.takeIf { it.isNotBlank() } ?: MgrsConverter.toMgrs(at.lat, at.lon)?.format())?.let { sharing = GridSharePlace(it, at.lat, at.lon, label) }
+    }
+    // A grid link: the map goes there (the crosshair on it) and the search holds its grid; nothing is made until the person chooses. It waits
+    // while a brief is presented (the map is the sandtable's), and flies through the map host, which keeps a flight asked before the map is made.
+    LaunchedEffect(gridLink, presenting) {
+        val link = gridLink ?: return@LaunchedEffect
+        if (presenting) return@LaunchedEffect
+        viewModel.clearSearchError()
+        host.flyTo(link.choice.at, MapViewModel.SEARCH_ZOOM)
+        search.settle(link.choice.mgrs)
+        // An open search folds, so the map, the crosshair and the toast are in sight (a link opened from another app while it was open).
+        search.close()
+        val name = link.name.takeIf { it.isNotEmpty() }?.let { "$it, " }.orEmpty()
+        // Put up in a scope of its own: letting go of the link changes this effect's key, which would cancel the toast.
+        scope.launch { snackbars.showSnackbar("$name${link.choice.mgrs}, from a link: the crosshair is on it.", withDismissAction = true) }
+        onGridLinkHandled()
     }
 
     LaunchedEffect(host) {
@@ -509,7 +608,7 @@ fun MapHome(
     // Not over a brief being presented: a file opened with the app meanwhile waits for it to end (**not like the web**, which ignores a file dropped on the map then:
     // here another app handed it over, and it is kept for after).
     if (!presenting) ImportReviewHost(threatsAllowed = threatsOn, large = tablet, viewModel = incoming)
-    if (importMenu) ImportSheet(threatsAllowed = threatsOn, onChoose = importFiles, onDismiss = { importMenu = false })            // the phone's, and a panel's own Import
+    if (importMenu) ImportSheet(threatsAllowed = threatsOn, threatsSaved = threatsSaved, onChoose = importFiles, onDismiss = { importMenu = false })            // the phone's, and a panel's own Import
     LaunchedEffect(incoming) { incoming.notices.collect { snackbars.showSnackbar(it, withDismissAction = true) } }
     LaunchedEffect(importsModel) { importsModel.notices.collect { toast(it, LibraryTab.POINTS) } }
     // An invitation link: said above the sheet, in the frame's own toasts.
@@ -517,7 +616,7 @@ fun MapHome(
     // What the LZ/PZ panel says once it has happened (an LZ/PZ named), in the same toasts.
     LaunchedEffect(diagrams) { diagrams.notices.collect { toast(it, LibraryTab.LZ) } }
     LaunchedEffect(routesModel) { routesModel.notices.collect { toast(it, LibraryTab.ROUTES) } }
-    LaunchedEffect(threatsModel) { threatsModel.notices.collect { snackbars.showSnackbar(it, withDismissAction = true) } }
+    LaunchedEffect(threatsModel) { threatsModel.notices.collect { toast(it, LibraryTab.THREATS) } }
     LaunchedEffect(home) { home.notices.collect { snackbars.showSnackbar(it, withDismissAction = true) } }
     // A page inside the LZ/PZ panel (an LZ/PZ's plan, every LZ/PZ, the aircraft): Back goes back up it, as its arrow does.
     BackHandler(enabled = current == Panel.Lz && (if (tablet) lz.page == LzPage.AIRCRAFT else lz.page != LzPage.HOME)) { diagrams.showPage(lzBack(lz)) }
@@ -582,7 +681,7 @@ fun MapHome(
                         Panel.Pack -> PackPanelHost(
                             packPanel,
                             looking = lookingAtPack(
-                                current, tablet, tabletState.listShown, sheet.settled, covered = overFrame || (!tablet && (routes.planOpen || frameState.hidden || frameState.closed)),
+                                current, tablet, tabletState.listShown, sheet.settled, covered = overFrame || search.expanded || (!tablet && (routes.planOpen || frameState.hidden || frameState.closed)),
                             ),
                             onMembers = { invite -> members.open(openPack?.name.orEmpty(), invite) },
                             onUpdate = itemCopies::askUpdate, onSaveCopy = itemCopies::askSave,
@@ -593,6 +692,7 @@ fun MapHome(
                             crosshair = state.center, crosshairGrid = state.readout?.mgrs, canMakeAircraft = user.hasFeature("aircraft_profiles"),
                             onBrowseLibrary = { libraryTab = LibraryTab.LZ }, pane = if (tablet) LzPane.LIST else LzPane.WHOLE, viewModel = diagrams,
                             onAddToPack = askCopy?.invoke(RecordKind.LZ), onSaveCopy = saveCopy, hiddenOnMap = hiddenOnMap, onToggleOnMap = home::toggleOnMap,
+                            onShareGrid = shareAt,
                         )
                         Panel.Routes -> RoutesHost(
                             crosshair = state.center, threatCount = counts.threats, onBrowseLibrary = { libraryTab = LibraryTab.ROUTES }, viewModel = routesModel,
@@ -600,7 +700,7 @@ fun MapHome(
                         )
                         Panel.Threats -> ThreatsHost(
                             onExport = { ShareExport.share(context, it) }, onImport = importFiles, crosshair = state.center, crosshairGrid = state.readout?.mgrs,
-                            viewModel = threatsModel,
+                            onBrowseLibrary = { libraryTab = LibraryTab.THREATS }, viewModel = threatsModel,
                         )
                         // A mission opens in Routes and a threat file's threats are in Threats: each panel, shown at the height the sheet is.
                         Panel.Imports -> ImportsHost(
@@ -620,7 +720,7 @@ fun MapHome(
                     onSearch = viewModel::search, onClearSearchError = viewModel::clearSearchError, onSelectStyle = { viewModel.selectStyle(it); home.baseMapChosen(it) },
                     onToggleGps = viewModel::toggleGps, onGpsPermissionResult = viewModel::permissionResult, onLocateMe = viewModel::locateMe,
                     onFaceNorth = viewModel::faceNorth,
-                    onToggleGrid = viewModel::toggleGrid, chrome = chrome,
+                    onToggleGrid = viewModel::toggleGrid, chrome = chrome, onChoosePlace = viewModel::goTo,
                     slope = slopeToggle, onToggleSlope = home::toggleSlope,
                     onCopyReadout = copyGrid,
                     padding = frame.padding,
@@ -636,13 +736,15 @@ fun MapHome(
                                 openPack, packsHere, onSwitcher = { switcherOpen = true }, onImport = { importMenu = true },
                                 onLibrary = {
                                     focus.clearFocus()
-                                    libraryTab = libraryTabFor(current)
+                                    libraryTab = libraryTabFor(current, threatsSaved)
                                 },
                             )
                         }
                     },
                     buttonsAtFoot = tablet,
                     search = search,
+                    // Drawn over the whole frame below, the sheet and the rail included.
+                    spotlight = false,
                     hiding = frame.hiding,
                     // The LZ/PZ tools on the map's edge while its panel is the one chosen: no going into the panel's plan to add an object (the owner's, 2026-10-22).
                     tools = if (current == Panel.Lz) {
@@ -668,7 +770,14 @@ fun MapHome(
                                             // A point of a route: its plan, a page of its own, opened at that point; only for an account offered routes, as on the web.
                                             if (Panel.Routes in panels) routesModel.openHeldPlan()
                                         } else if (panel == Panel.Threats) {
-                                            threatsModel.editHeld()                                   // a threat: its form, over everything
+                                            // A threat: its form, over everything; a read-only pack's has none, so its row, with its mask, is what the panel shows.
+                                            if (lz.pack?.off != null) {
+                                                frameState.choose(panel)
+                                                frameState.show()
+                                                frameState.open()
+                                            } else {
+                                                threatsModel.editHeld()
+                                            }
                                         } else {
                                             panel?.let {
                                                 frameState.choose(it)
@@ -754,11 +863,13 @@ fun MapHome(
                             newLz = if (Panel.Lz in panels) ({ diagrams.newAt(open.place.at); frameState.choose(Panel.Lz) }) else null,
                             newLzOff = lz.pack?.off,
                             addThreat = if (threatsOn) ({ threatsModel.beginAdd(open.place.at) }) else null,
+                            addThreatOff = lz.pack?.off,
                             routePoint = if (Panel.Routes in panels) open.routePoint to { routesModel.addPointAt(open.place.at); frameState.choose(Panel.Routes) } else null,
                             addObject = lz.current?.takeIf { Panel.Lz in panels }?.let { current ->
                                 AddObjectChoice(current.name, off = addObjectOff(graphicsState.canEdit, graphicsState.locked)) { kind -> placeObject(graphics, kind, open.place.at) }
                             },
                             copyGrid = { copyGrid(open.place.grid) },
+                            shareGrid = MgrsConverter.toMgrs(open.place.at.lat, open.place.at.lon)?.let { { shareAt("", open.place.at, null) } },
                         ),
                     )
                 }
@@ -825,7 +936,7 @@ fun MapHome(
                         },
                         onLibrary = {
                             focus.clearFocus()
-                            libraryTab = libraryTabFor(current)
+                            libraryTab = libraryTabFor(current, threatsSaved)
                         },
                         account = { account(false) },
                         onBrief = if (briefsHere) ({
@@ -837,6 +948,7 @@ fun MapHome(
                                 // Only a tile that opens the switcher says it changes the workspace.
                                 label = pack?.name ?: "Personal", description = if (packsHere) PackWords.railDescription(pack) else "Workspace: Personal", pack = pack != null,
                                 finished = pack?.finished == true,
+                                openNow = switcherAsked, onOpened = { switcherAsked = false },
                                 menu = if (packsHere) {
                                     { dismiss ->
                                         val switcher by workspace.switcher.collectAsStateWithLifecycle()
@@ -844,7 +956,7 @@ fun MapHome(
                                         DropdownMenu(
                                             expanded = true, onDismissRequest = dismiss, shape = MaterialTheme.shapes.large,
                                             containerColor = MaterialTheme.colorScheme.surfaceContainerLow, modifier = Modifier.width(SWITCHER_WIDTH),
-                                        ) { SwitcherContent(switcher, actionsOf(workspace, dismiss, pickedPack, newPack::start, teams::open)) }
+                                        ) { SwitcherContent(switcher, actionsOf(workspace, dismiss, pickedPack, newPack::start, teams::open, switcherNotify)) }
                                     }
                                 } else {
                                     null
@@ -860,9 +972,10 @@ fun MapHome(
                     supporting = supportingPanes(
                         routes, lz, crosshair = state.center, crosshairGrid = state.readout?.mgrs, canMakeAircraft = user.hasFeature("aircraft_profiles"), diagrams = diagrams,
                         routesModel = routesModel, routePlan = movableRoutePlan, onAddToPack = askCopy?.invoke(RecordKind.LZ), onSaveCopy = saveCopy,
+                        onShareGrid = shareAt,
                     ),
                     // The Library, Members and Teams draw the toasts over themselves, as dialogs: the frame's under their scrim would be a second copy.
-                    toasts = libraryTab == null && !membersOpen && !teamsOpen && !briefOpen,
+                    toasts = libraryTab == null && !membersOpen && !teamsOpen && !briefOpen && !search.expanded,
                     band = openPack?.takeIf { it.finished }?.let { finished ->
                         { FinishedBand(finished, onDuplicate = workspace::askDuplicate, onReopen = workspace::askReopen, onSaveCopy = CopyRules.bannerCopy(lz.current?.uuid, saveCopy)) }
                     },
@@ -874,8 +987,8 @@ fun MapHome(
                             SandtableFlights(host, shown.view, sandtableBoxes, sandtableHandover)
                         }
                     },
-                    modifier = Modifier.underPage(unread = libraryTab != null || lz.viewer3d != null, focusTo = viewer3dFocus.takeIf { lz.viewer3d != null }),
-                    backEnabled = !overFrame,
+                    modifier = Modifier.underPage(unread = libraryTab != null || lz.viewer3d != null || search.expanded, focusTo = viewer3dFocus.takeIf { lz.viewer3d != null }),
+                    backEnabled = !overFrame && !search.expanded,
                     panel = { p -> movablePanels.getValue(p)() },
                     mapScreen = movableMap,
                 )
@@ -897,11 +1010,13 @@ fun MapHome(
                     floatingPx = { floating },
                     footer = footer,
                     // Under the route's plan page the frame is still there (the map, the panels and what they listen for) but neither read nor touched.
-                    modifier = Modifier.underPage(unread = routes.planOpen || libraryTab != null || lz.viewer3d != null, focusTo = viewer3dFocus.takeIf { lz.viewer3d != null }),
+                    modifier = Modifier.underPage(unread = routes.planOpen || libraryTab != null || lz.viewer3d != null || search.expanded, focusTo = viewer3dFocus.takeIf { lz.viewer3d != null }),
                     // A tap on the map hides it; Back shows it again, unless a page over the frame has Back for itself.
                     hidden = frameState.hidden,
                     onShow = frameState::show,
-                    backShows = !routes.planOpen && !overFrame,
+                    backShows = !routes.planOpen && !overFrame && !search.expanded,
+                    // The open search draws them over itself, in sight and read.
+                    toasts = !search.expanded,
                     // Its close button: the sheet goes down behind the bar until a panel is picked again.
                     closed = frameState.closed,
                     onClose = {
@@ -911,6 +1026,21 @@ fun MapHome(
                     panel = { p -> movablePanels.getValue(p)() },
                     mapScreen = movableMap,
                 )
+            }
+            // The search open (the owner's request of 2026-11-05): over the whole frame, its sheet and bar or its rail and panes, which it dims, in the middle of
+            // the screen above the keyboard. Not while a brief is presented: the sandtable takes no edit, and has no search.
+            LaunchedEffect(presenting) { if (presenting) search.close() }
+            if (!presenting) {
+                MapSearchSpotlight(
+                    search = search, state = state, onSearch = viewModel::search, onClearSearchError = viewModel::clearSearchError, onChoosePlace = viewModel::goTo,
+                )
+                // The frame's toasts while it is open (the frames draw none meanwhile): over the scrim, above the keyboard, at full brightness and read.
+                if (search.expanded) {
+                    Box(
+                        Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.safeDrawing.union(WindowInsets.ime)).padding(Tokens.Spacing.lg.dp),
+                        contentAlignment = Alignment.BottomCenter,
+                    ) { ToastHost(snackbars) }
+                }
             }
             // The held route's plan (the design's RoutePlan): a page of its own over the frame, with the frame's toasts.
             if (!tablet) movableRoutePlan(false)
@@ -924,7 +1054,7 @@ fun MapHome(
             // conflict are that panel's own, so an item open now is renamed and closed where its unsaved edits are.
             LibraryHost(
                 tab = libraryTab,
-                tabs = libraryTabsFor(panels),
+                tabs = libraryTabsFor(panels, threatsSaved),
                 actions = LibraryActions(
                     close = { libraryTab = null },
                     open = { row ->
@@ -935,6 +1065,7 @@ fun MapHome(
                             }
                             LibraryTab.ROUTES -> Panel.Routes.also { routesModel.openSet(row.uuid) }
                             LibraryTab.POINTS -> Panel.Imports.also { importsModel.show(row.uuid) }
+                            LibraryTab.THREATS -> Panel.Threats.also { threatsModel.openSaved(row.uuid) }
                         }
                         libraryTab = null
                         if (panel in panels) {
@@ -947,6 +1078,7 @@ fun MapHome(
                             LibraryTab.LZ -> diagrams.rename(row.uuid, name, replacing)
                             LibraryTab.ROUTES -> routesModel.renameSet(row.uuid, name, replacing)
                             LibraryTab.POINTS -> importsModel.rename(row.uuid, name, replacing)
+                            LibraryTab.THREATS -> threatsModel.renameSaved(row.uuid, name, replacing)
                         }
                     },
                     delete = { row ->
@@ -954,6 +1086,7 @@ fun MapHome(
                             LibraryTab.LZ -> diagrams.delete(row.uuid)
                             LibraryTab.ROUTES -> routesModel.deleteSet(row.uuid)
                             LibraryTab.POINTS -> importsModel.delete(row.uuid)
+                            LibraryTab.THREATS -> threatsModel.deleteSaved(row.uuid)
                         }
                     },
                     resolve = { row, how ->
@@ -961,6 +1094,7 @@ fun MapHome(
                             LibraryTab.LZ -> diagrams.resolve(row.uuid, how)
                             LibraryTab.ROUTES -> routesModel.resolve(row.uuid, how)
                             LibraryTab.POINTS -> importsModel.resolve(row.uuid, how)
+                            LibraryTab.THREATS -> threatsModel.resolve(row.uuid, how)
                         }
                     },
                     addToPack = askCopy?.let { ask -> { row -> ask(CopyRules.recordKindOf(row.tab))(row.uuid, row.name) } },
@@ -975,6 +1109,19 @@ fun MapHome(
             // one made later, so it is made again when the Library's window is (it opens, or turns from a page into a tablet's dialog).
             if (packsHere) key(tablet, libraryTab != null) { AddToPackHost(copies, tablet) }
             if (packsHere) ItemDialogsHost(itemCopies, tablet)
+            sharing?.let { place ->
+                GridShareDialog(
+                    place,
+                    night = night,
+                    onShare = { shareGrid(context, place); sharing = null },
+                    onCopy = { what, text ->
+                        scope.launch { clipboard.setClipEntry(copyClip(what, text)) }
+                        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) scope.launch { snackbars.showSnackbar("Copied") }
+                        sharing = null
+                    },
+                    onDismiss = { sharing = null },
+                )
+            }
             // The open LZ/PZ in 3D, over the whole screen and everything on it, phone and tablet alike (the owner, 2026-10-20): the frame under it stays
             // composed and untouched, neither read nor touched while it is up, so closing it shows the map as it was.
             Viewer3DHost(target = lz.viewer3d, night = night, onClose = diagrams::close3d, snackbars = snackbars, focus = viewer3dFocus)
@@ -1035,6 +1182,8 @@ private fun supportingPanes(
     onAddToPack: ((uuid: String, name: String) -> Unit)? = null,
     /** Asks what to call a copy of the pack's LZ/PZ open, saved to the Library, as the phone's plan page does. */
     onSaveCopy: ((uuid: String) -> Unit)? = null,
+    /** Sends the open LZ/PZ's grid to someone, as the phone's plan page does. */
+    onShareGrid: ((name: String, at: LatLon, grid: String?) -> Unit)? = null,
 ): List<SupportingPane> {
     val open = lz.current
     val lzPane = if (lz.page == LzPage.PLAN && open != null) {
@@ -1050,7 +1199,7 @@ private fun supportingPanes(
             ) {
                 LzPanelHost(
                     crosshair = crosshair, crosshairGrid = crosshairGrid, canMakeAircraft = canMakeAircraft, pane = LzPane.PLAN, viewModel = diagrams, onAddToPack = onAddToPack,
-                    onSaveCopy = onSaveCopy,
+                    onSaveCopy = onSaveCopy, onShareGrid = onShareGrid,
                 )
                 Spacer(Modifier.height(Tokens.Spacing.lg.dp))
             }
@@ -1097,17 +1246,19 @@ private fun routesHead(routes: RoutesUiState): PanelHead = when (routes.page) {
 }
 
 /** The Library tab a panel's items are on, which the Library chip opens at: the panel's own, the LZ/PZs otherwise. */
-internal fun libraryTabFor(panel: Panel): LibraryTab = when (panel) {
+internal fun libraryTabFor(panel: Panel, threatsSaved: Boolean = false): LibraryTab = when (panel) {
     Panel.Routes -> LibraryTab.ROUTES
     Panel.Imports -> LibraryTab.POINTS
+    Panel.Threats -> if (threatsSaved) LibraryTab.THREATS else LibraryTab.LZ
     else -> LibraryTab.LZ
 }
 
 /** The Library's tabs an account has: those of the panels it is offered (an administrator can turn routes off, as on the web). */
-internal fun libraryTabsFor(panels: List<Panel>): List<LibraryTab> = listOfNotNull(
+internal fun libraryTabsFor(panels: List<Panel>, threatsSaved: Boolean = false): List<LibraryTab> = listOfNotNull(
     LibraryTab.LZ.takeIf { Panel.Lz in panels },
     LibraryTab.ROUTES.takeIf { Panel.Routes in panels },
     LibraryTab.POINTS.takeIf { Panel.Imports in panels },
+    LibraryTab.THREATS.takeIf { threatsSaved && Panel.Threats in panels },
 )
 
 /** Where Back goes from the LZ/PZ panel's page: the aircraft back to the plan they were opened from, the rest to the open LZ/PZs. */

@@ -5,7 +5,7 @@ import { FALLBACK_PROFILE, normalizeProfile } from "./aircraftProfiles";
 
 /**
  * The picker sits inside the control panel that hosts the whole map workspace,
- * so it must never throw. It shipped once with its props unwired in App.js and
+ * so it must never throw. It shipped once with its props unwired in App.jsx and
  * took the app down with "Cannot read properties of undefined".
  */
 
@@ -56,7 +56,7 @@ describe("AircraftPicker behaviour", () => {
   });
 
   it("reports the chosen slug", () => {
-    const onSelect = jest.fn();
+    const onSelect = vi.fn();
     render(
       <AircraftPicker
         profiles={[normalizeProfile(FALLBACK_PROFILE), CH47]}

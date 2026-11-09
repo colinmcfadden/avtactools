@@ -1,0 +1,3 @@
+﻿feature_id|feature_name|feature_class|state_name|state_numeric|county_name|county_numeric|map_name|date_created|date_edited|bgn_type|bgn_authority|bgn_date|prim_lat_dms|prim_long_dms|prim_lat_dec|prim_long_dec|source_lat_dms|source_long_dms|source_lat_dec|source_long_dec
+632832|Mount Pleasant|Populated Place|Michigan|26|Isabella|073|Mount Pleasant|04/14/1980|06/07/2022||||433552N|0844603W|43.5978075|-84.7675139|||0.0|0.0
+632833|Mount Pleasant|Populated Place|Michigan|26|Allegan|005|Lacota|04/14/1980|06/07/2022||||422726N|0861450W|42.4572514|-86.2472534|||0.0|0.0

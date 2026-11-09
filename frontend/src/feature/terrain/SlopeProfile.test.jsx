@@ -51,8 +51,8 @@ describe("the slope profile tile", () => {
   });
 
   it("still opens and closes where storage is refused", () => {
-    const get = jest.spyOn(Storage.prototype, "getItem").mockImplementation(() => { throw new Error("blocked"); });
-    const set = jest.spyOn(Storage.prototype, "setItem").mockImplementation(() => { throw new Error("blocked"); });
+    const get = vi.spyOn(Storage.prototype, "getItem").mockImplementation(() => { throw new Error("blocked"); });
+    const set = vi.spyOn(Storage.prototype, "setItem").mockImplementation(() => { throw new Error("blocked"); });
     const { container } = render(<SlopeProfile profile={slopeProfileFor(profiles(), 90)} />);
     expect(container.querySelectorAll(".slope-profile__graph")).toHaveLength(2);
     fireEvent.click(screen.getByRole("button", { name: /slope profile/i }));
@@ -101,7 +101,7 @@ describe("the slope profile tile", () => {
     expect(container.querySelectorAll(".slope-profile__heli")).toHaveLength(2);
     // The approach is the line's left end; the LZ, a 200 m square round the middle, is the middle of the line across it.
     expect(side.style.left).toBe("2px");
-    expect(rear.style.left).toBe("calc(50.00% - 16.25px)");             // half of 26 units, drawn a quarter larger
+    expect(rear.style.left).toBe("calc(50% - 16.25px)");                // half of 26 units, drawn a quarter larger (jsdom writes 50.00% as 50%)
     expect(side.getAttribute("width")).toBe("35");
     expect(side.getAttribute("height")).toBe("20");
   });

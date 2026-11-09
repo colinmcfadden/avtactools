@@ -3,7 +3,9 @@ package app.ezpztac.map
 import android.Manifest
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
@@ -13,11 +15,11 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.WindowInsets
-import androidx.compose.foundation.layout.ime
 import androidx.compose.foundation.layout.WindowInsetsSides
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.ime
 import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
@@ -27,7 +29,6 @@ import androidx.compose.foundation.layout.windowInsetsBottomHeight
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.layout.windowInsetsTopHeight
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.DropdownMenu
@@ -48,20 +49,27 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.key.type
 import androidx.compose.ui.layout.SubcomposeLayout
 import androidx.compose.ui.layout.boundsInParent
+import androidx.compose.ui.layout.boundsInWindow
 import androidx.compose.ui.layout.layout
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.semantics
@@ -88,6 +96,9 @@ import app.ezpztac.designsystem.EzpzTheme
 import app.ezpztac.designsystem.PanelSheetDefaults
 import app.ezpztac.designsystem.Tokens
 import app.ezpztac.designsystem.keptAway
+import app.ezpztac.geo.PlaceChoice
+import app.ezpztac.geo.PlaceReading
+import app.ezpztac.geo.PlaceSearch
 import kotlin.math.abs
 import kotlin.math.roundToInt
 
@@ -165,6 +176,8 @@ class FrameHiding(val hidden: Boolean = false, val away: Boolean = false, val fr
  * its bottom: it is read as the sheet moves, so they ride on its edge without the screen being composed again.
  *
  * [onSearch] looks for what was typed and answers whether it found the place (the map then flies there, and the phone's search folds).
+ * As it is typed, the places it could be are listed under the field ([PlaceList], the web's target field), and [onChoosePlace] takes the
+ * map to the one chosen.
  */
 @Composable
 fun MapScreen(
@@ -198,6 +211,10 @@ fun MapScreen(
     onToggleGrid: (() -> Unit)? = null,
     /** Where what floats over the map is told, so the grid's labels keep off it ([MgrsGridLayer]). */
     chrome: MapChromeBoxes? = null,
+    /** A place chosen from the list under the search: the map goes there. */
+    onChoosePlace: (PlaceChoice) -> Unit = {},
+    /** Whether this screen draws the open search ([MapSearchSpotlight]) itself: false where its host draws it over everything, the sheet included. */
+    spotlight: Boolean = true,
     /** The search: folded or open on a phone, and what was typed. Held by the frame, which folds it (a tap on the map). */
     search: MapSearchState = rememberMapSearchState(),
     /** The phone's frame hiding (a tap on the map): the row, what is said under it and the search go with it, up off the screen; the rest stays. */
@@ -215,7 +232,9 @@ fun MapScreen(
     val top = WindowInsets.safeDrawing.only(WindowInsetsSides.Top + WindowInsetsSides.Horizontal)
     // The search goes with the frame (and the keyboard with it).
     LaunchedEffect(hiding.hidden) { if (hiding.hidden) search.close() }
-    Box(modifier.fillMaxSize()) {
+    // How big the map is, for what it says of the charts in view.
+    var mapSize by remember { mutableStateOf(IntSize.Zero) }
+    Box(modifier.fillMaxSize().onSizeChanged { mapSize = it }) {
         map()
         if (!controls) return@Box
 
@@ -296,6 +315,12 @@ fun MapScreen(
             verticalArrangement = Arrangement.spacedBy(MapChrome.PILL_GAP),
         ) {
             Box(Modifier.weight(1f, fill = false).chromeBox(chrome, "overlay")) { overlay() }
+            // The charts under the map are named on the VFR map alone, and give way to the keyboard: what is typed needs the room.
+            if (state.style.id == MapStyles.VFR_ID) {
+                val pixels = LocalDensity.current
+                val lines = rememberChartLines(state.charts, camera, mapSize, pixels.density.toDouble())
+                if (lines != null && keyboard.getBottom(pixels) == 0) Box(Modifier.chromeBox(chrome, "charts")) { ChartWordsLine(lines) }
+            }
             state.readout?.let { Box(Modifier.chromeBox(chrome, "readout")) { ReadoutPill(it, onCopyReadout) } }
         }
 
@@ -313,9 +338,7 @@ fun MapScreen(
                 Modifier.fillMaxWidth().onGloballyPositioned { searchBottom = it.boundsInParent().bottom }.chromeBox(chrome, "search").windowInsetsPadding(top)
                     .padding(top = MapChrome.SEARCH_TOP, start = Tokens.Spacing.lg.dp, end = Tokens.Spacing.lg.dp),
             ) {
-                SearchBar(search, state.searchError, onSearch, onClearSearchError, account)
-                // On its own surface: red text straight on imagery cannot be read.
-                state.searchError?.let { Banner(it, BannerKind.Error, Modifier.padding(top = Tokens.Spacing.sm.dp)) }
+                SearchBar(search, account)
                 Box(Modifier.padding(top = Tokens.Spacing.sm.dp)) { belowChips() }
             }
         } else {
@@ -330,14 +353,13 @@ fun MapScreen(
                     }
                     .windowInsetsPadding(top).padding(top = MapChrome.ROW_TOP, start = Tokens.Spacing.lg.dp, end = Tokens.Spacing.lg.dp),
             ) {
-                MapTopRow(search, state.searchError, onSearch, onClearSearchError, account, chips)
+                MapTopRow(search, account, chips)
                 // What is said under the row stops short of the map's buttons, which stand at the end below it.
-                val clear = Modifier.padding(top = Tokens.Spacing.sm.dp, end = MapChrome.BUTTON + Tokens.Spacing.sm.dp)
-                // On its own surface: red text straight on imagery cannot be read.
-                state.searchError?.let { Banner(it, BannerKind.Error, clear) }
-                Box(clear) { belowChips() }
+                Box(Modifier.padding(top = Tokens.Spacing.sm.dp, end = MapChrome.BUTTON + Tokens.Spacing.sm.dp)) { belowChips() }
             }
         }
+        // The search open: over everything this screen draws, unless whoever draws over the whole frame draws it (the app's MapHome).
+        if (spotlight) MapSearchSpotlight(search, state, onSearch, onClearSearchError, onChoosePlace)
     }
 }
 
@@ -484,43 +506,44 @@ private fun ReadoutPill(readout: Readout, onCopy: (String) -> Unit) {
     }
 }
 
+/** What the search lists as it is typed: the reading, its rows, what is said of them, and whether they are shown. */
+private class Places(val reading: PlaceReading, val rows: List<PlaceRow>, val summary: String, val shown: Boolean)
+
 /**
- * A tablet's search along the top, always open: a grid or a coordinate, flown to when the keyboard's search key or the search button is pressed. What is typed is
- * [search]'s, so it is the same words when the window turns into a phone's. [account] sits at its end (a tablet's is the rail's: none).
+ * A tablet's search along the top: what was typed (or what it takes), which opens the search over everything ([MapSearchSpotlight]) when tapped, the open field
+ * growing out of it. What is typed is [search]'s, so it is the same words when the window turns into a phone's. [account] sits at its end (a tablet's is the
+ * rail's: none).
  */
 @Composable
-private fun SearchBar(search: MapSearchState, error: String?, onSearch: (String) -> Boolean, onClearError: () -> Unit, account: @Composable () -> Unit) {
-    val text = search.text
+private fun SearchBar(search: MapSearchState, account: @Composable () -> Unit) {
+    // In step with the open field: the bar's words go as it leaves and come back once it is back.
+    val progress = animateFloatAsState(if (search.expanded) 1f else 0f, tween(SPOTLIGHT_MILLIS, easing = FastOutSlowInEasing), label = "search bar")
     Surface(
-        modifier = Modifier.fillMaxWidth().height(MapChrome.SEARCH_HEIGHT),
+        onClick = search::open,
+        modifier = Modifier.fillMaxWidth().height(MapChrome.SEARCH_HEIGHT)
+            .onGloballyPositioned { search.origin = it.boundsInWindow() }
+            .semantics { contentDescription = if (search.text.isBlank()) "Search a grid or lat/long" else "Search a grid or lat/long: ${search.text}" },
         shape = RoundedCornerShape(28.dp),
         color = MaterialTheme.colorScheme.surfaceContainerHigh,
         contentColor = MaterialTheme.colorScheme.onSurface,
         shadowElevation = 3.dp,
     ) {
-        Row(Modifier.padding(horizontal = Tokens.Spacing.xs.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(Tokens.Spacing.xs.dp)) {
-            IconButton(onClick = { onSearch(text) }, modifier = Modifier.size(48.dp)) {
-                Icon(painterResource(EzpzIcons.search), contentDescription = "Search a grid or lat/long")
+        Row(
+            Modifier.padding(horizontal = Tokens.Spacing.xs.dp).graphicsLayer { alpha = if (progress.value > 0f) 0f else 1f },
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(Tokens.Spacing.xs.dp),
+        ) {
+            Box(Modifier.size(48.dp), contentAlignment = Alignment.Center) {
+                Icon(painterResource(EzpzIcons.search), contentDescription = null, tint = EzpzTheme.status.accent)
             }
-            val style = MaterialTheme.typography.bodyLarge.copy(
-                fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Medium, letterSpacing = 0.32.sp, color = MaterialTheme.colorScheme.onSurface,
-            )
-            BasicTextField(
-                value = text,
-                onValueChange = { search.text = it; if (error != null) onClearError() },
-                modifier = Modifier.weight(1f),
-                singleLine = true,
-                textStyle = style,
-                cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
-                // Grids are capitals; a coordinate is digits, which the setting leaves alone.
-                keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Characters, autoCorrectEnabled = false, imeAction = ImeAction.Search),
-                keyboardActions = KeyboardActions(onSearch = { onSearch(text) }),
-                decorationBox = { field ->
-                    Box(contentAlignment = Alignment.CenterStart) {
-                        if (text.isEmpty()) Text("MGRS grid or lat/long", style = style.copy(fontFamily = FontFamily.Default, fontWeight = FontWeight.Normal, letterSpacing = 0.sp), color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        field()
-                    }
-                },
+            val style = MaterialTheme.typography.bodyLarge
+            Text(
+                search.text.ifBlank { "Search by grid or lat/long" },
+                style = if (search.text.isBlank()) style else style.copy(fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Medium, letterSpacing = 0.32.sp),
+                color = if (search.text.isBlank()) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.onSurface,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.weight(1f).clearAndSetSemantics {},
             )
             account()
         }

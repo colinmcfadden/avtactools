@@ -4,7 +4,7 @@ import api from "../auth/api";
 import { ToastProvider } from "../ui/Toast";
 import useApiCompat from "./useApiCompat";
 
-jest.mock("../auth/api", () => ({ __esModule: true, default: { get: jest.fn() } }));
+vi.mock("../auth/api", () => ({ __esModule: true, default: { get: vi.fn() } }));
 
 const Probe = () => {
   useApiCompat();
@@ -13,7 +13,7 @@ const Probe = () => {
 
 const mount = () => render(<ToastProvider><Probe /></ToastProvider>);
 
-afterEach(() => jest.clearAllMocks());
+afterEach(() => vi.clearAllMocks());
 
 it("asks the server which API it serves", async () => {
   api.get.mockResolvedValue({ data: { apiVersion: "1.0.0", apiMajors: [1] } });
