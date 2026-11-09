@@ -56,7 +56,10 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.repeatOnLifecycle
 import app.ezpztac.android.export.ShareExport
 import app.ezpztac.android.frame.AccountButton
 import app.ezpztac.android.frame.MapFrame
@@ -112,6 +115,7 @@ import app.ezpztac.map.MapChromeBoxes
 import app.ezpztac.map.MapCommand
 import app.ezpztac.map.MapProjection
 import app.ezpztac.map.MapScreen
+import app.ezpztac.map.MapStyles
 import app.ezpztac.map.MapSearchSpotlight
 import app.ezpztac.map.MapViewModel
 import app.ezpztac.map.MgrsGridLayer
@@ -257,6 +261,12 @@ fun MapHome(
     display: DisplayViewModel = hiltViewModel(),
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
+    // While the VFR map shows and the app is in front, which build of the FAA's charts draws it is asked again from time to time (docs/VFR_CHARTS.md §8).
+    val showingCharts = state.style.id == MapStyles.VFR_ID
+    val chartsLifecycle = LocalLifecycleOwner.current.lifecycle
+    LaunchedEffect(showingCharts, chartsLifecycle) {
+        if (showingCharts) chartsLifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) { viewModel.watchCharts() }
+    }
     val scene by home.scene.collectAsStateWithLifecycle()
     val routeScene by home.routes.collectAsStateWithLifecycle()
     val pointScene by home.points.collectAsStateWithLifecycle()

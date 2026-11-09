@@ -1,7 +1,7 @@
 # VFR charts — plan
 
-Status: **decided; C0 to C3 built** (2026-11-05: the outlines and the build; the build as a Data tab job; the tiles served, switched
-from the tab and built each cycle on production; the web's VFR map and the brief's figures from them. Android still draws the ArcGIS sectional until C4, §9). The owner finds the VFR base map too soft next to SkyVector and ForeFlight. This file
+Status: **decided; C0 to C4 built** (2026-11-05: the outlines and the build; the build as a Data tab job; the tiles served, switched
+from the tab and built each cycle on production; the web's VFR map, the brief's figures and Android's VFR map from them, §9). The owner finds the VFR base map too soft next to SkyVector and ForeFlight. This file
 proposes replacing it with chart tiles EZ/PZ builds itself from the FAA's free digital charts: the sectional everywhere, then the
 Terminal Area Chart (TAC) and the Helicopter Route Chart stacked over it where they exist, on the web and Android.
 
@@ -1096,7 +1096,7 @@ Charts card and by the automatic cycle, and drawn on the tab's map. Where it dif
   back keeps its own, §4.2): the charts drawn, finest first, those wholly under a finer one left out, two named and then `and n more`. Before `coverage.json` has come the build's own edition is
   said. It turns red at the instant a chart expires, whether or not anyone moves the map. Words outside a build's charts are `FAA, via ArcGIS`, which publishes no edition.
 - **"No finer chart here"** is read at the map's middle, from the finest chart whose outline holds it at the level drawn: the enlargement is `2 ** (round(zoom) - 1 - stored level)`, said from 2×.
-- **The words are held** to `contracts/fixtures/charts/words.json` (24 cases over the recorded `coverage.json`, written by `frontend/src/contracts/chartWordsFixtures.test.js`), for Android to follow in C4.
+- **The words are held** to `contracts/fixtures/charts/words.json` (24 cases over the recorded `coverage.json`, written by `frontend/src/contracts/chartWordsFixtures.test.js`), which Android is held to as well (C4).
 - **The switcher's thumbnail** is a tile the build has, over Denver where the build reaches it (the other base maps' thumbnails are the Rockies), else the middle of its bounds; ArcGIS's where there is no build.
 - **The brief** (`brief/figures.py`): as §8. A chart tile can be transparent where the chart ends, so each is laid over the figure's ground colour. The framing's top level at a
   sectional-only post is 11 at 512 px, the same ground per pixel as ArcGIS's 12 at 256 px. **What is printed** is `FAA Atlanta Sectional, 29 Oct – 23 Dec 2026`, `FAA Atlanta TAC +1, …` where
@@ -1109,6 +1109,24 @@ Charts card and by the automatic cycle, and drawn on the tab's map. Where it dif
   `TAC enlarged 16× — …`; Hawaii and Alaska drew ArcGIS and said `FAA, via ArcGIS`. With the page's clock moved past the build's end the line turned red (`Expired 23 Dec 2026 — not current`).
   The real *Export LZ card* on an LZ analysed by SAM captured the chart under the graphics, with no taint of the canvas. At 375 px wide the words fit and the page does not scroll sideways. **Not tried here:** the real FAA tiles in a browser,
   a real switch reaching an open page (held by `useVfrCharts.test.jsx`), Cloudflare in front of the tile route, a PDF from the real Gotenberg (the figures are held by the tests, not looked at in a print).
+
+**C4, as built** (2026-11-08). Android's VFR map draws the live build. Where it differs from §4.5, §4.6 and §8, or says more:
+- **Where it is**: `feature-map`: `VfrCharts.kt` (what the config and `coverage.json` are read as, and `VfrChartSource`, the seam), `ChartWords.kt` (the web's `chartWords`, function by function),
+  `ChartLooks.kt` (when it asks, and `ChartTileWatch`), `ChartWordsLine.kt` (the line) and `MapStyles`. `app`: `ChartConfig`, which remembers the config as `MapPreferences` remembers the token, and keeps what the
+  build holds in `vfr-coverage.json` among the app's files, so a launch with no signal has the chart lines too.
+- **What cannot be drawn is no build** (`VfrLive.of`): the config is remembered as text, and a bad box or zoom range would make MapLibre refuse the whole style, which is no map at all. So every field is checked and anything else
+  draws ArcGIS. A chart in `coverage.json` that cannot be read is left out of it. Its `nativeLevel` is a fraction (10.58): the first reader took it for a whole number and dropped every chart, which the fixture found at once.
+- **The style**: the chart layer is the source `base` within its `bounds`, its `tiles`, `tileSize`, `minzoom` and `maxzoom` the config's; one ArcGIS source `fallback-N` for each rectangle, within its own bounds, under it. `base` stays
+  the top layer because the MGRS grid and every overlay are put above it. With no build, `base` is ArcGIS everywhere and has no bounds. A build changes the VFR style alone: its id, and so what a diagram saves, stay `vfr-sectional`.
+- **Looks** (§4.5) are `ChartLooks`, run only while the VFR map shows and the app is in front: at once if 5 minutes have passed, every 5 minutes, at `expires` plus 61 s, and after a chart tile fails, at most once a minute. `/api/config`
+  is asked with `Cache-Control: no-cache`. A look under way is not cut short by the build it brings. Back on the map within 5 minutes it does not look, unless the build's coverage is missing.
+- **A failed tile is seen in the HTTP client, not MapLibre's tile listener**, which does not reliably report a 404, the very answer a build taken away gives. `HttpRequestUtil.setOkHttpClient` hands MapLibre a client like its default one
+  (20 requests a host) with `ChartTileWatch` in it: 400 and up, or a connection that failed, on `/charts/vfr/` alone. ArcGIS's tiles never count, and neither does a request MapLibre gave up on as the map moved.
+- **The line** is Compose, on a plain ground above the readout, the VFR map alone: worked out 200 ms after the camera settles, over the view MapLibre's padding leaves (the MGRS grid's own `viewOf`), at the web's zoom (MapLibre's plus one), and again
+  at the instant a chart runs out, which turns it red with nothing else having moved. It gives way to the keyboard, and the grid's labels keep off it.
+- **Below MapLibre zoom 5 no chart is drawn**, MapLibre drawing nothing of a raster source below its `minzoom`, so the first launch's camera (zoom 4) shows only the background until the person zooms in. ArcGIS's was blank below 7, so this is no loss.
+- **Tests**: `ChartWordsFixtureTest` holds every case of `words.json` over the recorded `coverage.json`; `ChartWordsTest` what that fixture cannot say (two editions at once, a map panned past the date line); `VfrChartsTest`, `MapLogicTest` and `MapViewModelTest` the reading and the style; `ChartLooksTest` the looks by a virtual clock; `ChartTileWatchTest` real requests through
+  MockWebServer; `ChartConfigTest` the memory; `ChartCallsTest` the two calls; `ChartWordsLineTest` the line, its turning red and three pictures. 62 mutations of the new code were each failed by them (five first survived, and tests were added or corrected to catch them). **Not tried here:** a device. Nothing on the JVM draws MapLibre, so the two layers, `bounds`, MapLibre's real requests going through the watch and a style changed under a map that is showing all want a device run.
 
 The tests of the chart routes and state go in a file CI runs (`backend.yaml`'s list), with their imports added to its install step.
 `test_data_admin.py` itself runs only locally today.

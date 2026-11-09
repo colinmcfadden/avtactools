@@ -21,9 +21,12 @@ dependencies {
     implementation(libs.androidsvg)
 
     implementation(libs.kotlinx.serialization.json)
+    // MapLibre's own HTTP client, given an interceptor that sees a chart tile fail.
+    implementation(libs.okhttp)
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.lifecycle.runtime.compose)
     implementation(libs.androidx.activity.compose)
 
     testImplementation(project(":core-testing"))
+    testImplementation(libs.okhttp.mockwebserver)
 }

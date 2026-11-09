@@ -22,12 +22,12 @@ interface MapTokenSink {
 
 /**
  * What the map remembers between launches: the public Mapbox token (so a start with no signal can still draw satellite imagery) and where
- * the camera last was. Neither is a secret, and both stay on the device: the token is a public `pk.` one, and a camera position is the
- * area the person was looking at, which nothing sends anywhere. Excluded from backup with the rest of the app's data. Besides them, how the
+ * the camera last was, and which build of the FAA's charts the server last named. None is a secret, and all stay on the device: the token is a public
+ * `pk.` one, and a camera position is the area the person was looking at, which nothing sends anywhere. Excluded from backup with the rest of the app's data. Besides them, how the
  * person likes the map to look: the MGRS grid and the slope map's opacity.
  */
 @Singleton
-class MapPreferences @Inject constructor(@ApplicationContext context: Context) : MapTokenSource, MapTokenSink, CameraMemory, GridMemory, SlopeOpacityMemory {
+class MapPreferences @Inject constructor(@ApplicationContext context: Context) : MapTokenSource, MapTokenSink, CameraMemory, GridMemory, SlopeOpacityMemory, ChartMemory {
     private val prefs = context.getSharedPreferences("map", Context.MODE_PRIVATE)
     private val _token = MutableStateFlow(prefs.getString(TOKEN, null)?.takeIf { it.startsWith("pk.") })
 
@@ -40,6 +40,10 @@ class MapPreferences @Inject constructor(@ApplicationContext context: Context) :
         prefs.edit { putString(TOKEN, kept) }
         _token.value = kept
     }
+
+    override fun chartConfig(): String? = prefs.getString(CHARTS, null)
+
+    override fun setChartConfig(text: String?) = prefs.edit { if (text == null) remove(CHARTS) else putString(CHARTS, text) }
 
     /** Where the camera was when the app was last used, or null the first time. */
     override fun last(): CameraState? {
@@ -76,6 +80,7 @@ class MapPreferences @Inject constructor(@ApplicationContext context: Context) :
         private const val GRID = "mgrsGrid"
         private const val SLOPE_OPACITY = "slopeOpacity"
         private const val TOKEN = "mapboxToken"
+        private const val CHARTS = "vfrCharts"
         private const val LAT = "lat"
         private const val LON = "lon"
         private const val ZOOM = "zoom"
