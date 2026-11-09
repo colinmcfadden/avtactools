@@ -5,7 +5,7 @@ import { sameData } from "../feature/missionPacks/packDiff";
 import { composeEdit } from "../feature/missionPacks/packEdit";
 import { describeLzChange, lzDiagramFromItem, lzItemData, sharedLzData } from "../feature/missionPacks/packLz";
 import { packLocalId } from "../feature/missionPacks/packRef";
-import { describeRouteChange, routeSetData, routesFromItem, sharedRouteData } from "../feature/missionPacks/packRoutes";
+import { describeRouteChange, flotsFromItem, routeSetData, routesFromItem, sharedRouteData } from "../feature/missionPacks/packRoutes";
 import { actorName, createSummary, newItemOp, updateFromOriginalSummary } from "../feature/missionPacks/packSentences";
 import { describePointsChange, newPointSetOp, pointsForPack } from "../feature/missionPacks/usePackPoints";
 import { ROUTE_COLORS } from "../feature/msnxImport/colorPalette";
@@ -179,6 +179,12 @@ const SKETCH_BLUE = {
 };
 const { visible: _redVisible, setId: _redSet, ...RED_SHARED } = SKETCH_RED;
 
+// A FLOT as a set of routes holds it: one with its scallops the usual way, and one flipped.
+const FLOTS = [
+  { id: "flot-1", points: [{ lat: 34.7, lon: -84.1 }, { lat: 34.8, lon: -84.05 }, { lat: 34.9, lon: -84.08 }] },
+  { id: "flot-2", flipped: true, points: [{ lat: 35.1, lon: -84.2 }, { lat: 35.2, lon: -84.1 }] },
+];
+
 const ROUTES_SHARED = [
   ["each route loses whether it is hidden and the set it is filed under", { version: 1, routes: [SKETCH_RED, SKETCH_BLUE] }],
   ["a route without them is unchanged", { version: 1, routes: [RED_SHARED] }],
@@ -189,6 +195,7 @@ const ROUTES_SHARED = [
   ["fields this version does not know are kept, on the set and on a route", {
     version: 1, futureSetField: "kept", routes: [{ id: "r-1", visible: true, futureField: { keep: [1, null] } }],
   }],
+  ["a set's FLOTs are kept beside its routes", { version: 1, flots: FLOTS, routes: [{ id: "r-1", visible: true }] }],
   ["a version other than 1 is kept as it is", { version: 2, routes: [{ id: "r-1", setId: "s" }] }],
   ["routes that are not objects are kept as they are", {
     version: 1, routes: [null, 7, "RED 1", true, { id: "r-1", visible: false, setId: "s" }],
@@ -259,6 +266,8 @@ const LIBRARY = [
   ["a point set is saved as it is", "pointset", [{ id: "lps-0", name: "ALPHA", lat: 34.5, lon: -84.1 }, { id: "x", futureField: true }]],
   ["a route set is saved as version 1 with its routes", "route", { version: 1, routes: [{ id: "r-1", name: "RED 1", points: [] }] }],
   ["a route set's other fields are not saved", "route", { version: 1, futureSetField: "dropped", routes: [] }],
+  ["a route set's FLOTs are saved with it", "route", { version: 1, flots: FLOTS, routes: [{ id: "r-1", name: "RED 1", points: [] }] }],
+  ["a route set with no FLOTs has no key for them", "route", { version: 1, flots: [], routes: [] }],
   ["a route set of another version is saved as version 1", "route", { version: 2, routes: [{ id: "r-1" }] }],
   ["routes that are not a list are saved as none", "route", { version: 1, routes: { "r-1": { id: "r-1" } } }],
   ["a route set with no routes is saved with none", "route", { version: 1 }],
@@ -271,7 +280,7 @@ const LIBRARY = [
 // field, or disagrees with its own editor, the case is marked webBug for a port not to copy.
 const PACK_UUID = "6f1c2a9e-3b7d-4c55-9a10-2d8e5f7b4c31";
 const lzShapeOf = (it) => lzItemData(lzDiagramFromItem(PACK_UUID, it));
-const routeShapeOf = (it) => routeSetData(routesFromItem(it, packLocalId(PACK_UUID, it.uuid)));
+const routeShapeOf = (it) => routeSetData(routesFromItem(it, packLocalId(PACK_UUID, it.uuid)), flotsFromItem(it));
 
 // An LZ/PZ as an old library save copied into a pack may hold it: no mapData, no PZ markers or other graphics lists,
 // an analysis without its boundaries. The editor works on today's shape of it.
@@ -450,7 +459,7 @@ const SHAPING_FIRST = [RED_TODAY.points[1], RED_TODAY.points[0], RED_TODAY.point
 // or fails on). Each is a case marked webBug.
 const routeSetQuirks = (data) => {
   if (!isPlainObject(data)) return [];
-  const own = Object.keys(data).filter((key) => key !== "routes" && !(key === "version" && data.version === 1));
+  const own = Object.keys(data).filter((key) => key !== "routes" && key !== "flots" && !(key === "version" && data.version === 1));
   const routes = Array.isArray(data.routes) ? data.routes : [];
   return [...own, ...routes.filter((route) => !isPlainObject(route) || !("id" in route)).map(() => "route without an id")];
 };
@@ -458,6 +467,8 @@ const routeSetQuirks = (data) => {
 // [name, data, webBug]: a route set item's data as the pack has it; undefined is "not given". webBug: see routeSetQuirks.
 const ROUTE_SHAPES = [
   ["a set already in today's shape is its own shape", { version: 1, routes: [RED_TODAY] }],
+  ["a set's FLOTs stay beside its routes", { version: 1, flots: FLOTS, routes: [RED_TODAY] }],
+  ["a set with FLOTs and no routes is its own shape", { version: 1, flots: FLOTS, routes: [] }],
   ["each route loses whether it is hidden and the set it is filed under, and its plan gains the defaults", { version: 1, routes: [SKETCH_RED, SKETCH_BLUE] }],
   ["routes with no id are left out of the shape (the web's editor keeps them)", { version: 1, routes: [{ name: "GHOST", points: [] }, RED_TODAY] }, true],
   ["a route whose id is null is kept, and coloured as the text null", { version: 1, routes: [BARE(null)] }],
@@ -613,7 +624,7 @@ const sharedCases = () => withoutClockOrRandomness(() => ({
     + "Inside mapData, flightData, results, exportBox and each graphic nothing is dropped. Data null, missing or not an object "
     + "(a list, text) is an empty draft. The normaliser stamps a time on a diagram that has none and the shape drops it again: "
     + "these cases are built at two instants and must come out the same. "
-    + "`routeShape`: packRoutes.routeSetData(packRoutes.routesFromItem(item, packRef.packLocalId(pack, item.uuid))) -> `shape`. "
+    + "`routeShape`: packRoutes.routeSetData(packRoutes.routesFromItem(item, packRef.packLocalId(pack, item.uuid)), packRoutes.flotsFromItem(item)) -> `shape`. "
     + "It is exactly {version: 1, routes}: the set's other fields are dropped and any version is 1 (webBug, above, where that "
     + "loses something). Its routes are data.routes when that is a list (else there are none), in their order, less every "
     + "element that is not an object with an `id` (null, numbers, text, booleans, lists and a route with no id are left out: "
@@ -1053,6 +1064,13 @@ const ROUTE_CASES = [
   rt("routes are taken in their order after the change", (d) => { d.routes.reverse(); d.routes[1].plan.tempC = 20; d.routes[0].plan.tempC = 25; }),
   rt("a route added after a changed one is named second", (d) => { red(d).plan.tempC = 20; d.routes.push(WHITE); }),
 
+  rt("a FLOT added", (d) => { d.flots = FLOTS.slice(0, 1); }),
+  rt("a FLOT's point moved", (d) => { d.flots[0].points[1].lat = 34.81; }, { before: { version: 1, flots: FLOTS, routes: [RED, BLUE] } }),
+  rt("a FLOT flipped", (d) => { d.flots[0].flipped = true; }, { before: { version: 1, flots: FLOTS, routes: [RED, BLUE] } }),
+  rt("a FLOT flipped back", (d) => { delete d.flots[1].flipped; }, { before: { version: 1, flots: FLOTS, routes: [RED, BLUE] } }),
+  rt("a FLOT removed", (d) => { d.flots.pop(); }, { before: { version: 1, flots: FLOTS, routes: [RED, BLUE] } }),
+  rt("the last FLOT removed leaves null, as a pack leaves a key that went", (d) => { d.flots = null; }, { before: { version: 1, flots: FLOTS, routes: [RED, BLUE] } }),
+  rt("a route's change is told before a FLOT's", (d) => { red(d).name = "RED 2"; d.flots = FLOTS.slice(0, 1); }),
   rt("a sentence over 300 is cut to 300", () => {}, { itemName: "X".repeat(296) }),
   // A web bug (webBug): the server cannot store the lone surrogate this leaves, so it answers the batch with 500.
   rt("an emoji across the cut leaves its first half", () => {}, { itemName: `${"X".repeat(285)}${HELI}X`, webBug: true }),
@@ -1490,7 +1508,7 @@ describe("mission pack shared-data and history fixtures", () => {
       expect([c.name, keys(c.shape.graphics)]).toEqual([c.name, [...COLLECTIONS.filter((name) => name !== "backstops"), "exportBox"].sort()]);
     });
     routeShape.forEach((c) => {
-      expect([c.name, keys(c.shape)]).toEqual([c.name, ["routes", "version"]]);
+      expect([c.name, keys(c.shape).filter((key) => key !== "flots")]).toEqual([c.name, ["routes", "version"]]);
       expect([c.name, c.shape.version]).toEqual([c.name, 1]);
       c.shape.routes.forEach((route) => {
         expect([c.name, ["id", "color", "elevations", "plan"].filter((key) => !(key in route))]).toEqual([c.name, []]);

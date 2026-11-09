@@ -1,5 +1,6 @@
 import { act, renderHook } from "@testing-library/react";
 import { useState } from "react";
+import { useFlots } from "../flot/useFlots";
 import { restoreSketchRoute, useRouteSketch } from "../msnxImport/useRouteSketch";
 import { useFakePack } from "./fakePack";
 import { routeSetData } from "./packRoutes";
@@ -18,15 +19,16 @@ const SET_ID = "pack:p-1:rt-1";
 
 const useHarness = (initial = [SET], options = {}) => {
   const sketch = useRouteSketch();
+  const flotTools = useFlots();
   const pack = useFakePack(initial, options);
   const [gone, setGone] = useState([]);
   const routes = usePackRoutes({
     packUuid: "p-1", items: pack.items, edit: pack.edit, actor: "Colin M.",
-    sketchedRoutes: sketch.sketchedRoutes, loadSketchRoutes: sketch.loadSketchRoutes,
+    sketchedRoutes: sketch.sketchedRoutes, flots: flotTools.flots, setFlotsOf: flotTools.setFlotsOf, loadSketchRoutes: sketch.loadSketchRoutes,
     replaceRouteSet: sketch.replaceRouteSet, removeRouteSet: sketch.removeRouteSet,
     onGone: (_uuid, name) => setGone((g) => [...g, name]), newId: () => "new",
   });
-  return { sketch, pack, routes, gone };
+  return { sketch, flotTools, pack, routes, gone };
 };
 
 const settleTimers = () => act(() => { vi.advanceTimersByTime(1000); });
@@ -52,6 +54,54 @@ const opened = (...args) => {
 };
 
 describe("usePackRoutes", () => {
+  describe("a set's FLOTs", () => {
+    const FLOT = { id: "flot-1", points: [{ lat: 34.7, lon: -84.1 }, { lat: 34.8, lon: -84.05 }] };
+    const WITH_FLOT = { ...SET, data: { ...SET.data, flots: [FLOT] } };
+    const shown = (result) => result.current.flotTools.flots.filter((flot) => flot.setId === SET_ID);
+
+    it("come to the map with the set, keep their ids and send nothing", () => {
+      const { result } = opened([WITH_FLOT]);
+      expect(shown(result)).toEqual([{ ...FLOT, setId: SET_ID }]);
+      expect(result.current.pack.sent.current).toEqual([]);
+    });
+
+    it("a FLOT drawn into the set goes to the pack as one change, in words", () => {
+      const { result } = opened();
+      act(() => result.current.flotTools.startDrawing());
+      act(() => {
+        result.current.flotTools.addDraftPoint(34.7, -84.1);
+        result.current.flotTools.addDraftPoint(34.8, -84.05);
+      });
+      act(() => result.current.flotTools.finishDrawing(SET_ID));
+      settleTimers();
+      const sent = result.current.pack.sent.current.flat();
+      expect(sent).toHaveLength(1);
+      expect(sent[0].summary).toBe("Colin M. added a FLOT to OP DK INGRESS.");
+      const flots = result.current.pack.items.find((item) => item.uuid === "rt-1").data.flots;
+      expect(flots).toHaveLength(1);
+      expect(flots[0]).not.toHaveProperty("setId");
+    });
+
+    it("a flip goes to the pack and someone else's change reaches the map", () => {
+      const { result } = opened([WITH_FLOT]);
+      act(() => result.current.flotTools.flipFlot("flot-1"));
+      settleTimers();
+      expect(result.current.pack.items.find((item) => item.uuid === "rt-1").data.flots[0].flipped).toBe(true);
+      const sentBefore = result.current.pack.sent.current.length;
+      act(() => result.current.pack.remote([{ type: "patch", item: "rt-1", path: ["flots", { id: "flot-1" }], value: { points: [{ lat: 35, lon: -84 }, { lat: 35.1, lon: -84 }] } }]));
+      settleTimers();
+      expect(shown(result)[0].points[0].lat).toBe(35);
+      expect(result.current.pack.sent.current).toHaveLength(sentBefore);
+    });
+
+    it("go from the map when the set is closed, and stay in the pack", () => {
+      const { result } = opened([WITH_FLOT]);
+      act(() => result.current.routes.closeItem("rt-1"));
+      expect(result.current.flotTools.flots).toEqual([]);
+      expect(result.current.pack.items.find((item) => item.uuid === "rt-1").data.flots).toHaveLength(1);
+    });
+  });
+
   it("opens a set's routes in the sketch, filed under the set, with their ids, and sends nothing", () => {
     const { result } = opened();
     expect(setRoutes(result).map((r) => [r.id, r.name, r.visible])).toEqual([["r-1", "RED 1", true]]);

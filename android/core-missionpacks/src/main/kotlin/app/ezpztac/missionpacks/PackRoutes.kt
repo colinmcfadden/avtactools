@@ -197,6 +197,19 @@ public object PackRoutes {
             val routeName = Js.prop(route, "name")
             phrases += if (Js.truthy(routeName)) "removed the route ${Js.text(routeName)} from $set" else "removed a route from $set"
         }
+        val flotsBefore = byId(Js.prop(before, "flots"), unique)
+        val flotsAfter = byId(Js.prop(after, "flots"), unique)
+        for ((id, flot) in flotsAfter) {
+            val old = flotsBefore[id]
+            when {
+                old == null -> phrases += "added a FLOT to $set"
+                Js.truthy(Js.prop(old, "flipped")) != Js.truthy(Js.prop(flot, "flipped")) -> phrases += "flipped a FLOT on $set"
+                !PackDiff.sameData(Js.prop(old, "points"), Js.prop(flot, "points")) -> phrases += "moved a FLOT on $set"
+            }
+        }
+        for (id in flotsBefore.keys) {
+            if (id !in flotsAfter) phrases += "removed a FLOT from $set"
+        }
         val what = phrases.firstOrNull() ?: "edited $set"
         return Js.cut("${actor?.takeIf { it.isNotEmpty() } ?: "Someone"} $what.", PackLz.MAX_SENTENCE)
     }

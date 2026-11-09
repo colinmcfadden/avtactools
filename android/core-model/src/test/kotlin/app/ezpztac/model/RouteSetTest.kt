@@ -27,6 +27,17 @@ class RouteSetTest {
 
     private fun read(data: JsonObject) = RouteSets.parse("uuid-1", null, "SET", data)
 
+    @Test
+    fun `a set's FLOTs, which this version does not draw yet, come through a read and a write`() {
+        val flot = buildJsonObject {
+            put("id", "flot-1")
+            put("flipped", true)
+            put("points", JsonArray(listOf(buildJsonObject { put("lat", 34.7); put("lon", -84.1) }, buildJsonObject { put("lat", 34.8); put("lon", -84.0) })))
+        }
+        val data = doc(extra = JsonObject(mapOf("flots" to JsonArray(listOf(flot)))))
+        assertEquals(data.getValue("flots"), RouteSets.serialize(read(data)).getValue("flots"))
+    }
+
     /** The fixture's routes all say `sketch-1`; a set needs each its own. */
     private fun named(id: String, route: JsonElement) = JsonObject(route.jsonObject + ("id" to JsonPrimitive(id)))
 

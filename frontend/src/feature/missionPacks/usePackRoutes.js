@@ -1,5 +1,5 @@
 import { useCallback, useMemo, useState } from "react";
-import { describeRouteChange, routeSetData, routesFromItem, sharedRouteData } from "./packRoutes";
+import { describeRouteChange, flotsFromItem, routeSetData, routesFromItem, sharedRouteData } from "./packRoutes";
 import { packLocalId } from "./packRef";
 import { newItemOp, packItemId } from "./packSentences";
 import { usePackItemSync } from "./usePackItemSync";
@@ -24,6 +24,8 @@ export const usePackRoutes = ({
   readOnly = false,
   actor,
   sketchedRoutes,
+  flots = [],
+  setFlotsOf,
   loadSketchRoutes,
   replaceRouteSet,
   removeRouteSet,
@@ -41,30 +43,38 @@ export const usePackRoutes = ({
     const map = new Map();
     open.forEach((uuid) => {
       const setId = setIdOf(uuid);
-      map.set(uuid, { doc: routeSetData((sketchedRoutes ?? []).filter((route) => route.setId === setId)), name: names[uuid] ?? "" });
+      map.set(uuid, {
+        doc: routeSetData(
+          (sketchedRoutes ?? []).filter((route) => route.setId === setId),
+          flots.filter((flot) => flot.setId === setId),
+        ),
+        name: names[uuid] ?? "",
+      });
     });
     return map;
-  }, [open, names, sketchedRoutes, setIdOf]);
+  }, [open, names, sketchedRoutes, flots, setIdOf]);
 
   const forget = (uuid) => {
     setOpen((list) => list.filter((u) => u !== uuid));
     setNames(({ [uuid]: _gone, ...rest }) => rest); // eslint-disable-line no-unused-vars
   };
 
-  const currentShape = useCallback((item) => routeSetData(routesFromItem(item, setIdOf(item.uuid))), [setIdOf]);
+  const currentShape = useCallback((item) => routeSetData(routesFromItem(item, setIdOf(item.uuid)), flotsFromItem(item)), [setIdOf]);
   const applyTheirs = useCallback(
     (uuid, item) => {
       replaceRouteSet(setIdOf(uuid), item.data?.routes ?? []);
+      setFlotsOf?.(setIdOf(uuid), flotsFromItem(item));
       setNames((n) => ({ ...n, [uuid]: item.name }));
     },
-    [replaceRouteSet, setIdOf],
+    [replaceRouteSet, setFlotsOf, setIdOf],
   );
   const removeLocal = useCallback(
     (uuid) => {
       removeRouteSet(setIdOf(uuid));
+      setFlotsOf?.(setIdOf(uuid), []);
       forget(uuid);
     },
-    [removeRouteSet, setIdOf],
+    [removeRouteSet, setFlotsOf, setIdOf],
   );
 
   const sync = usePackItemSync({
@@ -90,11 +100,12 @@ export const usePackRoutes = ({
       const item = sync.items.get(uuid);
       if (!item || open.includes(uuid)) return Boolean(item);
       loadSketchRoutes(item.data?.routes ?? [], { setId: setIdOf(uuid) });
+      setFlotsOf?.(setIdOf(uuid), flotsFromItem(item));
       setNames((n) => ({ ...n, [uuid]: item.name }));
       setOpen((list) => [...list, uuid]);
       return true;
     },
-    [sync.items, open, loadSketchRoutes, setIdOf],
+    [sync.items, open, loadSketchRoutes, setFlotsOf, setIdOf],
   );
 
   /** Takes a route set off the map (it stays in the pack). A change still waiting is sent first. */
@@ -102,9 +113,10 @@ export const usePackRoutes = ({
     (uuid) => {
       if (!open.includes(uuid)) return;
       removeRouteSet(setIdOf(uuid));
+      setFlotsOf?.(setIdOf(uuid), []);
       forget(uuid);
     },
-    [open, removeRouteSet, setIdOf],
+    [open, removeRouteSet, setFlotsOf, setIdOf],
   );
 
   /** A new, empty route set in the pack, opened here. Returns its uuid, or null if refused. */
