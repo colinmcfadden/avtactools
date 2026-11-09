@@ -149,6 +149,22 @@
     white-space: nowrap;
 }
 
+/* A name from a file can be any length, and there can be many of them. */
+.map-layer-switch__label--overlay {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    text-align: left;
+}
+
+.map-layer-overlays {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    max-height: 176px;
+    overflow-y: auto;
+}
+
 .map-layer-switch__state {
     font-size: 11px;
     color: var(--ff-text-muted);

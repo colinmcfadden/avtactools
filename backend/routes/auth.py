@@ -36,6 +36,7 @@ from models import (
     SavedThreatSet,
     SavedLZ,
     SavedPointSet,
+    SavedOverlay,
     SavedRoute,
     SyncCounter,
     User,
@@ -972,6 +973,7 @@ def delete_account():
     SavedRoute.query.filter_by(user_id=uid).delete()
     SavedLZ.query.filter_by(user_id=uid).delete()
     SavedPointSet.query.filter_by(user_id=uid).delete()
+    SavedOverlay.query.filter_by(user_id=uid).delete()
     SavedBrief.query.filter_by(user_id=uid).delete()
     SavedThreatSet.query.filter_by(user_id=uid).delete()
     AircraftProfile.query.filter_by(user_id=uid).delete()

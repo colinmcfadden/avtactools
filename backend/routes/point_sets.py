@@ -1,10 +1,13 @@
-from flask import Blueprint, request, jsonify
+import io
+
+from flask import Blueprint, request, jsonify, send_file
 from flask_jwt_extended import jwt_required, get_jwt_identity
 from sqlalchemy.exc import IntegrityError
 
 import sync_support as sync
 from models import db, SavedPointSet
 from entitlements import require_feature
+from lps_export import LpsExportError, build_lps_bytes
 
 point_sets_bp = Blueprint('point_sets', __name__)
 
@@ -132,3 +135,18 @@ def delete_point_set(set_id):
     sync.stamp(saved, user_id, sync.idempotency_key(request), deleted=True)
     db.session.commit()
     return jsonify({"status": "deleted", "revision": saved.revision})
+
+
+@point_sets_bp.route('/api/points-lps', methods=['POST'])
+@jwt_required()
+@require_feature('exports')
+def points_lps():
+    """Body: { points: [...] }. The points as an AMPS .LPS file. Nothing is kept."""
+    body = request.get_json(silent=True) or {}
+    try:
+        data = build_lps_bytes(body.get('points'))
+    except LpsExportError as error:
+        return jsonify({'error': str(error), 'code': 'invalid_points'}), 400
+    response = send_file(io.BytesIO(data), mimetype='application/octet-stream', as_attachment=True, download_name='local_points.LPS')
+    response.headers['Cache-Control'] = 'private, no-store'
+    return response

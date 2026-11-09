@@ -22,7 +22,7 @@ Type an MGRS grid, or a latitude and longitude in any common form (`34.5457, -84
 You can also **right-click anywhere on the map** → **Set as Target** to move the target without typing a grid.
 
 - Doghouse values (heading, time, distance, airspeed) are editable — click a value and enter a new one.
-- Use **Layers** (bottom left of the map) to switch between **Satellite**, **USGS** (the USGS topographic map), **Topo** and the **VFR** sectional, and to turn on the **MGRS grid** over any of them. The grid draws zone boundaries, 100 km squares, and lines at 10 km, 1 km or 100 m as you zoom in, labelled with the zone, the square and each line's digits, so a grid reference can be read straight off the map. It is for planning on screen only: it never appears on an exported LZ card.
+- Use **Layers** (bottom left of the map) to switch between **Satellite**, **USGS** (the USGS topographic map), **Topo** and the **VFR** sectional, and to turn on the **MGRS grid** over any of them. Each map overlay you have open has its own switch right under the grid's. The grid draws zone boundaries, 100 km squares, and lines at 10 km, 1 km or 100 m as you zoom in, labelled with the zone, the square and each line's digits, so a grid reference can be read straight off the map. It is for planning on screen only: it never appears on an exported LZ card.
 - **Where the map opens.** The first time the map loads, your browser may ask to share your location. Allow it and the map opens around where you are; refuse it (EZ/PZ will not ask again in that browser) and it opens where it always has. Your location only centres the map: it is not sent to the server, saved with a plan or shown to anyone in a Mission Pack. If an LZ/PZ, a grid link or a pack opens first, or you move the map before the browser answers, the map stays where it is. To be asked again, allow location for the site in your browser's settings.
 
 ## 2. Analyze the LZ
@@ -148,15 +148,21 @@ Exported files deliberately contain geometry only — after opening one in AMPS,
 - An LZ/PZ must be analyzed before it can be saved. Saving captures the target, boundary, analysis, everything placed on it and the doghouse edits. Threats and routes are not part of it.
 - **Close** (in an LZ/PZ's **⋯** menu) takes it out of this session; with unsaved changes it asks *Cancel / Don't save / Save*.
 
-**The Library** (top bar) is everything you have saved, in tabs: LZ/PZ, Routes, Local points and Threats. Search, sort, and **Open** one to add it to this session (one already open says *Open in session*). Its **⋯** menu renames, duplicates or deletes it; deleting asks first, because it is gone from every device. The LZ/PZ panel also lists the three most recent LZ/PZs with a quick **Open**.
+**The Library** (top bar) is everything you have saved, in tabs: LZ/PZ, Routes, Local points, Threats and Overlays. Search, sort, and **Open** one to add it to this session (one already open says *Open in session*). Its **⋯** menu renames, duplicates or deletes it; deleting asks first, because it is gone from every device. The LZ/PZ panel also lists the three most recent LZ/PZs with a quick **Open**.
 
 Your account menu (your name, top right) holds **Sign out**, and for admins a link to the admin dashboard.
 
 ### Importing files
 
-**Import** in the top bar takes AMPS mission files (`.msnx`), local points (`.LPS`) and threats (`.ths`). You can also drop files anywhere on the map. EZ-PZ works out what each file is from its content, then shows what it found and asks where each should live: local points and missions can be saved to your Library or kept in this session; a threat file becomes a set of threats in your Library. Anything it cannot read is listed with the reason and left out.
+**Import** in the top bar takes AMPS mission files (`.msnx`), local points (`.LPS`), threats (`.ths`), flight plans (`.fpl` and `.gpx`) and map overlays (`.kmz` and `.kml`). You can also drop files anywhere on the map. EZ-PZ works out what each file is from its content, then shows what it found and asks where each should live: local points and missions can be saved to your Library or kept in this session; a threat file becomes a set of threats in your Library. Anything it cannot read is listed with the reason and left out.
 
 The **Imports** panel lists what you have brought in, with where it lives; mission files and threat files link to the panel where they are edited.
+
+**Flight plans.** A Garmin `.fpl` or a `.gpx` opens as a route set in **Routes**, to save and plan like one you drew. Neither format says what kind of point each one is, so EZ-PZ goes by the name: `TGT`, `LZ` or `PZ` is a target, `SP`, `RP` or `IP` an IP point, and any other name a checkpoint; a point with no name only bends the line. Check them before you export for AMPS. A `.gpx` that holds only waypoints comes in as local points.
+
+**Map overlays.** A `.kmz` or `.kml` is drawn over the map as a layer of your own: points, lines, areas and any picture laid on the ground that is inside the file. Save it to your Library (the **Overlays** tab) or keep it for this session. **Layers** has a switch for each one that is open, and clicking a point or line shows what the file says about it. The review says what was left out: nothing in the file is ever fetched from the internet, so network links and pictures held elsewhere do not come in, nor do rotated pictures or 3D models. Overlays are yours alone and are not shared in a Mission Pack.
+
+**Your own local points.** **New local point** in the Imports panel, or right-click the map and choose **Add Local Point Here**, makes one with a name, a place (an MGRS grid or a lat/long), and if you like an elevation, a group and a description. Add it to a set you have open or start a new one. Under a set, the arrow shows its points by group: add to a group, change a point with the pencil, or use **⋯** to delete it or export it. A set's own **⋯** menu saves it to your Library, once it has at least one point, and exports the whole set as `.LPS` for AMPS or as GPX; a group or a single point exports the same way.
 
 ### Mission Packs
 

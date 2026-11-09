@@ -10,9 +10,9 @@ import "./MapStyleSwitcher.css";
  *
  * Below the tiles, the MGRS grid's switch (when setShowMgrsGrid is given). The
  * grid goes over any base map, and while it is on the collapsed button says so,
- * so lines on the map are never a mystery.
+ * so lines on the map are never a mystery. Under that, a switch for each map overlay open.
  */
-const MapStyleSwitcher = ({ mapStyle, setMapStyle, showMgrsGrid = false, setShowMgrsGrid, vfrCharts }) => {
+const MapStyleSwitcher = ({ mapStyle, setMapStyle, showMgrsGrid = false, setShowMgrsGrid, vfrCharts, overlays = [], onToggleOverlay }) => {
   const [open, setOpen] = useState(false);
   const containerRef = useRef(null);
 
@@ -83,6 +83,27 @@ const MapStyleSwitcher = ({ mapStyle, setMapStyle, showMgrsGrid = false, setShow
               </span>
               <span className="map-layer-switch__track" aria-hidden="true" />
             </button>
+          )}
+          {overlays.length > 0 && (
+            <div className="map-layer-overlays" role="group" aria-label="Map overlays">
+              {overlays.map((overlay) => (
+                <button
+                  key={overlay.id}
+                  type="button"
+                  role="switch"
+                  aria-checked={overlay.visible}
+                  className="map-layer-switch"
+                  title={overlay.name}
+                  onClick={() => onToggleOverlay(overlay.id)}
+                >
+                  <span className="map-layer-switch__label map-layer-switch__label--overlay">{overlay.name}</span>
+                  <span className="map-layer-switch__state" aria-hidden="true">
+                    {overlay.visible ? "On" : "Off"}
+                  </span>
+                  <span className="map-layer-switch__track" aria-hidden="true" />
+                </button>
+              ))}
+            </div>
           )}
         </div>
       )}

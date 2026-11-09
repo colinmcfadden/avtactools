@@ -20,6 +20,7 @@ export const renameRecord = async (kind, id, name) => {
   if (kind === "lz") return (await api.put(`/lz/${id}`, { name })).data;
   if (kind === "points") return (await api.put(`/pointsets/${id}`, { name })).data;
   if (kind === "threats") return (await api.put(`/threatsets/${id}`, { name })).data;
+  if (kind === "overlays") return (await api.put(`/overlays/${id}`, { name })).data;
   return (await api.put(`/routes/${id}`, routeForm({ name }))).data;
 };
 
@@ -36,6 +37,8 @@ export const duplicateRecord = async (kind, entry, name) => {
     const { data } = await api.get(`/threatsets/${entry.id}`);
     return (await api.post("/threatsets", { name, data: data.data })).data;
   }
+  // The server copies the file: an overlay can be tens of megabytes, with no reason to come down and go back.
+  if (kind === "overlays") return (await api.post(`/overlays/${entry.id}/duplicate`, { name })).data;
   const { data } = await api.get(`/routes/${entry.id}`);
   const fields = { name, kind: data.kind, route_data: data.route_data };
   if (data.kind === "mission" && data.has_file) {
