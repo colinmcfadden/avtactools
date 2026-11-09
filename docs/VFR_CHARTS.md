@@ -1,6 +1,6 @@
 # VFR charts — plan
 
-Status: **decided; C0 to C4 built** (2026-11-05: the outlines and the build; the build as a Data tab job; the tiles served, switched
+Status: **decided; C0 to C4 built, and C5 rehearsed and left to the owner's run on production (§9)** (2026-11-05: the outlines and the build; the build as a Data tab job; the tiles served, switched
 from the tab and built each cycle on production; the web's VFR map, the brief's figures and Android's VFR map from them, §9). The owner finds the VFR base map too soft next to SkyVector and ForeFlight. This file
 proposes replacing it with chart tiles EZ/PZ builds itself from the FAA's free digital charts: the sectional everywhere, then the
 Terminal Area Chart (TAC) and the Helicopter Route Chart stacked over it where they exist, on the web and Android.
@@ -1128,6 +1128,40 @@ Charts card and by the automatic cycle, and drawn on the tab's map. Where it dif
 - **Tests**: `ChartWordsFixtureTest` holds every case of `words.json` over the recorded `coverage.json`; `ChartWordsTest` what that fixture cannot say (two editions at once, a map panned past the date line); `VfrChartsTest`, `MapLogicTest` and `MapViewModelTest` the reading and the style; `ChartLooksTest` the looks by a virtual clock; `ChartTileWatchTest` real requests through
   MockWebServer; `ChartConfigTest` the memory; `ChartCallsTest` the two calls; `ChartWordsLineTest` the line, its turning red and three pictures. 62 mutations of the new code were each failed by them (five first survived, and tests were added or corrected to catch them). **Not tried here:** a device. Nothing on the JVM draws MapLibre, so the two layers, `bounds`, MapLibre's real requests going through the watch and a style changed under a map that is showing all want a device run.
 
+**C5, rehearsed** (2026-11-09). C5 itself is the owner's to see on production. What could be tried short of that was, twice, on a developer's machine: the production command (`gunicorn --workers 1 --threads 8 --timeout 180 app:app`), `CHART_AUTO=on`, the FAA itself, and a real build limited to the Atlanta sectional and TAC (`CHART_BUILD_ONLY`), on a clock set back to the morning of the 29 October edition (`charts.state.now_utc` alone, in the API and in its build process) with a build of the 3 September edition live and running out at 0901Z. SQLite, and the emails to the log.
+- **With no one pressing anything.** The first look came 5 minutes after the start, asked the FAA and started the build, which took 72 s and was scheduled for 09:01:00Z *by Automatic*. Its email went as it was listed, not at the next look (6 hours off). From 09:01:00 `/api/config` named the new build, and `state.json` recorded the switch, as scheduled and at 09:01:00, at its next write. A web page open on the VFR map, its clock moved the same, took the new tiles and dates by itself at 09:02:01, its look 61 s after the old build ran out (the config may be 60 s old). Until then, from 09:01:00, it said in red that what it drew had expired, which it had. Nothing else showed the change, and a page in a hidden tab looks when it is shown.
+- **A roll back from the tab** changed `/api/config` at once and reached the open page at its next 5-minute look, the old tiles with the red *Expired* words. Nothing undoes it: a built cycle is not built again, and `auto.registered` runs only when a build is listed. *Roll back* pressed again goes forward.
+- **A redeploy in the middle of a build** (server A; B started while A lived; A stopped; C started). B's look, 23 s into A's build, left it alone: one build process, one try. With A gone the build process stopped within 2 s and its job stayed `running`. C's first look took it up with no try counted, used what was already downloaded and finished in 30 s, scheduled the same switch and sent one email. Its result is the uninterrupted build's, byte for byte: all 1,730 rows of `vfr.mbtiles`, `coverage.json`, `report.json` and the sources. A look that finds a build's lock held looks again only in 6 hours; on a real redeploy the old container is gone by the new one's first look, 5 minutes after it starts.
+- **Found and fixed:** the Charts card went on saying a build "switches at" a time gone by (`auto.describe`).
+- **Not tried, and only a production run can:** the Linux image, two containers on one mount (the rehearsal's were processes on one disk), Postgres, Resend, Cloudflare, a whole CONUS build on the VM, and Android on a device.
+
+**C5, the owner's steps.** The moment itself cannot come before the FAA posts the 24 December edition (not posted on 2026-11-08), and the switch is at 0901Z that day. Everything before it can be done now.
+
+Before the release:
+1. Merge the C0 to C5 pull requests in order (#151, #154, #158, #162, #167, then C5's). Each is based on the one before it.
+2. Build the image, check the two things a build depends on, and boot it against a Postgres container (AGENTS.md §14):
+   ```powershell
+   docker build -t ezpz-api:charts backend
+   docker run --rm ezpz-api:charts python -c "import rasterio, PIL.features, pkg_resources; print(rasterio.__gdal_version__, PIL.features.check('webp'))"
+   ```
+   It prints `3.10.3 True`. (`gunicorn` 20.1.0 imports `pkg_resources`, which a setuptools of 82 or later no longer has; the rehearsal's virtual environment had one, and the check says whether the image does.)
+3. On the production API, in Coolify: mount `/data/charts` read-write; set `CHART_TILES_DIR=/data/charts` and `DATA_ADMIN=write`, and `CHART_NOTIFY_EMAIL` if the emails should not go to `SUPER_ADMIN_EMAIL`; confirm the container's CPU and memory limits (a build shares them for about an hour) and that the mount has 22 GB free beyond its reserve.
+4. Decide about the first build. With `CHART_AUTO` unset, the first look, 5 minutes after the deploy, builds the cycle in effect across CONUS and switches to it when done, nothing being live. To make that one from the tab instead, set `CHART_AUTO=off` first, and **take it off again** before the FAA posts the next edition, or nothing builds it.
+5. Add the Cloudflare Cache Rule for `/charts/*` on the API's hostname (§7), once the plan's terms have been read.
+6. On staging: mount `/data/charts` read-only; set `CHART_TILES_DIR=/data/charts` and `DATA_ADMIN=read`.
+7. Release `develop` through `release/*` to `main`, then put a build of the app on a device (`cd android; .\gradlew.bat installDebug`).
+
+Then, on production:
+8. The Data tab's *VFR charts* card says *Automatic cycle: On*, with its last and next look. Once a build is live, `/api/config` names it, and the VFR map on the web and the device draws it:
+   ```powershell
+   (Invoke-RestMethod https://prod-ezpz-api.mcfadd.in/api/config).charts.vfr.build
+   ```
+9. When the FAA posts 12-24-2026, within 6 hours the card says *Building as 2026-12-24.1*. An hour or so later comes the email *VFR charts 2026-12-24 built as 2026-12-24.1* (the first through Resend), and the card's *Next* names it for 24 Dec 0901Z. Press nothing: an admin's *Build now* leaves that cycle to the admin.
+10. At 24 Dec 0901Z `/api/config` names it within a minute. A web page or the device showing the VFR map says in red that the old build has expired for about a minute (it has), then draws the new one, with no reload.
+11. Press *Roll back* on the card: both clients go back to the old build at their next look, 5 minutes at most, and red, the old build having expired. Press it again to go forward.
+
+C5 is done when the owner has seen those on production.
+
 The tests of the chart routes and state go in a file CI runs (`backend.yaml`'s list), with their imports added to its install step.
 `test_data_admin.py` itself runs only locally today.
 
@@ -1180,10 +1214,10 @@ the path to sharpness at LZ zooms, not planned.
 - The VM's build time sharing the API container's CPU, Coolify's limits, and Cloudflare's caching through the tunnel.
 - That the Linux wheels in the API image do what the macOS ones did here: rasterio 1.4.4's GDAL (3.10.3) reading and warping the FAA's
   GeoTIFFs, and Pillow 12.1.1 encoding WebP. C1 checks them in the image first.
-- The FAA's effective time for charts (0901 UTC is the usual), and that next cycle's folder appears where this one's did. C2 and C5
-  confirm them.
-- The automatic cycle on production: its thread across a real redeploy (two containers at once), the staging lock held across them,
-  and its emails through Resend. C5.
+- The FAA's effective time for charts (0901 UTC is the usual), and that next cycle's folder appears where this one's did. The 09-03-2026
+  and 10-29-2026 editions were where the build looks (checked 2026-11-08); the owner's run of C5 confirms the rest.
+- The automatic cycle on production. *C5, rehearsed* (§9) tried it in real processes on one machine, a redeploy in the middle of a build
+  included; two containers on one mount and its emails through Resend are the owner's run of C5.
 - The ArcGIS fallback's rectangles (§4.6): the islands it serves were probed tile by tile here, and their edges are C2's to measure.
 
 The owner checks each in the step named.
