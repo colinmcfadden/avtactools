@@ -299,7 +299,7 @@ class PackPanelViewModelTest {
         advanceUntilIdle()
         assertEquals("3 members", r.model.state.value.membersLine)                                       // no team: its members, as a member leaves
         assertNull(r.model.state.value.description)
-        assertEquals("Nothing in this pack yet. Set a target or sketch a route while the pack is open, and it goes into the pack.", r.model.state.value.emptyItems)
+        assertEquals("Nothing in this pack yet. Set a target, sketch a route or add a threat while the pack is open, and it goes into the pack.", r.model.state.value.emptyItems)
     }
 
     @Test

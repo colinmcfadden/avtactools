@@ -1,0 +1,3234 @@
+{
+  "sharedThreat": [
+    {
+      "name": "what is each person's own goes",
+      "value": {
+        "id": "a",
+        "name": "T-a",
+        "lat": 34.5,
+        "lon": -84.1,
+        "milstdId": "SHAPMFG--------",
+        "source": "",
+        "information": "",
+        "showThreat": true,
+        "radars": [
+          {
+            "type": 1,
+            "rangeNmi": 25,
+            "antennaHeightFt": 30,
+            "aglNotMsl": true,
+            "showMask": true,
+            "showRangeRings": true,
+            "bands": [
+              {
+                "altFt": 300,
+                "color": 1,
+                "alpha": 128
+              }
+            ]
+          }
+        ],
+        "visible": false,
+        "mask": {
+          "bounds": [
+            [
+              34,
+              -85
+            ],
+            [
+              35,
+              -84
+            ]
+          ],
+          "images": [
+            "data:image/png;base64,AAAA"
+          ],
+          "for": {
+            "lat": 34.5,
+            "lon": -84.1,
+            "radars": [
+              {
+                "type": 1,
+                "rangeNmi": 25,
+                "antennaHeightFt": 30,
+                "aglNotMsl": true,
+                "showMask": true,
+                "showRangeRings": true,
+                "bands": [
+                  {
+                    "altFt": 300,
+                    "color": 1,
+                    "alpha": 128
+                  }
+                ]
+              }
+            ]
+          }
+        },
+        "maskLoading": true,
+        "maskError": "no"
+      },
+      "expected": {
+        "id": "a",
+        "name": "T-a",
+        "lat": 34.5,
+        "lon": -84.1,
+        "milstdId": "SHAPMFG--------",
+        "source": "",
+        "information": "",
+        "showThreat": true,
+        "radars": [
+          {
+            "type": 1,
+            "rangeNmi": 25,
+            "antennaHeightFt": 30,
+            "aglNotMsl": true,
+            "showMask": true,
+            "showRangeRings": true,
+            "bands": [
+              {
+                "altFt": 300,
+                "color": 1,
+                "alpha": 128
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "name": "something that is not a threat stays",
+      "value": 7,
+      "expected": 7
+    },
+    {
+      "name": "null stays",
+      "value": null,
+      "expected": null
+    },
+    {
+      "name": "a list stays",
+      "value": [
+        1
+      ],
+      "expected": [
+        1
+      ]
+    }
+  ],
+  "sharedData": [
+    {
+      "name": "the threats are stripped, the rest stays",
+      "value": {
+        "version": 1,
+        "note": "kept",
+        "threats": [
+          {
+            "id": "a",
+            "name": "T-a",
+            "lat": 34.5,
+            "lon": -84.1,
+            "milstdId": "SHAPMFG--------",
+            "source": "",
+            "information": "",
+            "showThreat": true,
+            "radars": [
+              {
+                "type": 1,
+                "rangeNmi": 25,
+                "antennaHeightFt": 30,
+                "aglNotMsl": true,
+                "showMask": true,
+                "showRangeRings": true,
+                "bands": [
+                  {
+                    "altFt": 300,
+                    "color": 1,
+                    "alpha": 128
+                  }
+                ]
+              }
+            ],
+            "visible": false,
+            "mask": null
+          }
+        ]
+      },
+      "expected": {
+        "version": 1,
+        "note": "kept",
+        "threats": [
+          {
+            "id": "a",
+            "name": "T-a",
+            "lat": 34.5,
+            "lon": -84.1,
+            "milstdId": "SHAPMFG--------",
+            "source": "",
+            "information": "",
+            "showThreat": true,
+            "radars": [
+              {
+                "type": 1,
+                "rangeNmi": 25,
+                "antennaHeightFt": 30,
+                "aglNotMsl": true,
+                "showMask": true,
+                "showRangeRings": true,
+                "bands": [
+                  {
+                    "altFt": 300,
+                    "color": 1,
+                    "alpha": 128
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "name": "no list is not given one",
+      "value": {
+        "version": 1
+      },
+      "expected": {
+        "version": 1
+      }
+    },
+    {
+      "name": "not an object stays",
+      "value": [
+        1
+      ],
+      "expected": [
+        1
+      ]
+    }
+  ],
+  "read": [
+    {
+      "name": "a set as a Library copy brought it",
+      "data": {
+        "version": 1,
+        "threats": [
+          {
+            "id": "a",
+            "name": "T-a",
+            "lat": 34.5,
+            "lon": -84.1,
+            "milstdId": "SHAPMFG--------",
+            "source": "",
+            "information": "",
+            "showThreat": true,
+            "radars": [
+              {
+                "type": 1,
+                "rangeNmi": 25,
+                "antennaHeightFt": 30,
+                "aglNotMsl": true,
+                "showMask": true,
+                "showRangeRings": true,
+                "bands": [
+                  {
+                    "altFt": 300,
+                    "color": 1,
+                    "alpha": 128
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "id": "b",
+            "name": "T-b",
+            "lat": 34.5,
+            "lon": -84.1,
+            "milstdId": "SHAPMFG--------",
+            "source": "",
+            "information": "",
+            "showThreat": true,
+            "radars": [
+              {
+                "type": 1,
+                "rangeNmi": 25,
+                "antennaHeightFt": 30,
+                "aglNotMsl": true,
+                "showMask": true,
+                "showRangeRings": true,
+                "bands": [
+                  {
+                    "altFt": 300,
+                    "color": 1,
+                    "alpha": 128
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      "expected": {
+        "threats": [
+          {
+            "id": "a",
+            "name": "T-a",
+            "lat": 34.5,
+            "lon": -84.1,
+            "milstdId": "SHAPMFG--------",
+            "source": "",
+            "information": "",
+            "showThreat": true,
+            "radars": [
+              {
+                "type": 1,
+                "rangeNmi": 25,
+                "antennaHeightFt": 30,
+                "aglNotMsl": true,
+                "showMask": true,
+                "showRangeRings": true,
+                "bands": [
+                  {
+                    "altFt": 300,
+                    "color": 1,
+                    "alpha": 128
+                  }
+                ]
+              }
+            ],
+            "visible": true,
+            "mask": null,
+            "maskLoading": false,
+            "maskError": null
+          },
+          {
+            "id": "b",
+            "name": "T-b",
+            "lat": 34.5,
+            "lon": -84.1,
+            "milstdId": "SHAPMFG--------",
+            "source": "",
+            "information": "",
+            "showThreat": true,
+            "radars": [
+              {
+                "type": 1,
+                "rangeNmi": 25,
+                "antennaHeightFt": 30,
+                "aglNotMsl": true,
+                "showMask": true,
+                "showRangeRings": true,
+                "bands": [
+                  {
+                    "altFt": 300,
+                    "color": 1,
+                    "alpha": 128
+                  }
+                ]
+              }
+            ],
+            "visible": true,
+            "mask": null,
+            "maskLoading": false,
+            "maskError": null
+          }
+        ],
+        "unreadable": [],
+        "version": 1,
+        "extras": {}
+      },
+      "doc": {
+        "version": 1,
+        "threats": [
+          {
+            "id": "a",
+            "name": "T-a",
+            "lat": 34.5,
+            "lon": -84.1,
+            "milstdId": "SHAPMFG--------",
+            "source": "",
+            "information": "",
+            "showThreat": true,
+            "radars": [
+              {
+                "type": 1,
+                "rangeNmi": 25,
+                "antennaHeightFt": 30,
+                "aglNotMsl": true,
+                "showMask": true,
+                "showRangeRings": true,
+                "bands": [
+                  {
+                    "altFt": 300,
+                    "color": 1,
+                    "alpha": 128
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "id": "b",
+            "name": "T-b",
+            "lat": 34.5,
+            "lon": -84.1,
+            "milstdId": "SHAPMFG--------",
+            "source": "",
+            "information": "",
+            "showThreat": true,
+            "radars": [
+              {
+                "type": 1,
+                "rangeNmi": 25,
+                "antennaHeightFt": 30,
+                "aglNotMsl": true,
+                "showMask": true,
+                "showRangeRings": true,
+                "bands": [
+                  {
+                    "altFt": 300,
+                    "color": 1,
+                    "alpha": 128
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "name": "what this person hid stays hidden",
+      "data": {
+        "version": 1,
+        "threats": [
+          {
+            "id": "a",
+            "name": "T-a",
+            "lat": 34.5,
+            "lon": -84.1,
+            "milstdId": "SHAPMFG--------",
+            "source": "",
+            "information": "",
+            "showThreat": true,
+            "radars": [
+              {
+                "type": 1,
+                "rangeNmi": 25,
+                "antennaHeightFt": 30,
+                "aglNotMsl": true,
+                "showMask": true,
+                "showRangeRings": true,
+                "bands": [
+                  {
+                    "altFt": 300,
+                    "color": 1,
+                    "alpha": 128
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "id": "b",
+            "name": "T-b",
+            "lat": 34.5,
+            "lon": -84.1,
+            "milstdId": "SHAPMFG--------",
+            "source": "",
+            "information": "",
+            "showThreat": true,
+            "radars": [
+              {
+                "type": 1,
+                "rangeNmi": 25,
+                "antennaHeightFt": 30,
+                "aglNotMsl": true,
+                "showMask": true,
+                "showRangeRings": true,
+                "bands": [
+                  {
+                    "altFt": 300,
+                    "color": 1,
+                    "alpha": 128
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      "previous": {
+        "threats": [
+          {
+            "id": "a",
+            "name": "T-a",
+            "lat": 34.5,
+            "lon": -84.1,
+            "milstdId": "SHAPMFG--------",
+            "source": "",
+            "information": "",
+            "showThreat": true,
+            "radars": [
+              {
+                "type": 1,
+                "rangeNmi": 25,
+                "antennaHeightFt": 30,
+                "aglNotMsl": true,
+                "showMask": true,
+                "showRangeRings": true,
+                "bands": [
+                  {
+                    "altFt": 300,
+                    "color": 1,
+                    "alpha": 128
+                  }
+                ]
+              }
+            ],
+            "visible": false,
+            "mask": null,
+            "maskLoading": false,
+            "maskError": null
+          }
+        ]
+      },
+      "expected": {
+        "threats": [
+          {
+            "id": "a",
+            "name": "T-a",
+            "lat": 34.5,
+            "lon": -84.1,
+            "milstdId": "SHAPMFG--------",
+            "source": "",
+            "information": "",
+            "showThreat": true,
+            "radars": [
+              {
+                "type": 1,
+                "rangeNmi": 25,
+                "antennaHeightFt": 30,
+                "aglNotMsl": true,
+                "showMask": true,
+                "showRangeRings": true,
+                "bands": [
+                  {
+                    "altFt": 300,
+                    "color": 1,
+                    "alpha": 128
+                  }
+                ]
+              }
+            ],
+            "visible": false,
+            "mask": null,
+            "maskLoading": false,
+            "maskError": null
+          },
+          {
+            "id": "b",
+            "name": "T-b",
+            "lat": 34.5,
+            "lon": -84.1,
+            "milstdId": "SHAPMFG--------",
+            "source": "",
+            "information": "",
+            "showThreat": true,
+            "radars": [
+              {
+                "type": 1,
+                "rangeNmi": 25,
+                "antennaHeightFt": 30,
+                "aglNotMsl": true,
+                "showMask": true,
+                "showRangeRings": true,
+                "bands": [
+                  {
+                    "altFt": 300,
+                    "color": 1,
+                    "alpha": 128
+                  }
+                ]
+              }
+            ],
+            "visible": true,
+            "mask": null,
+            "maskLoading": false,
+            "maskError": null
+          }
+        ],
+        "unreadable": [],
+        "version": 1,
+        "extras": {}
+      },
+      "doc": {
+        "version": 1,
+        "threats": [
+          {
+            "id": "a",
+            "name": "T-a",
+            "lat": 34.5,
+            "lon": -84.1,
+            "milstdId": "SHAPMFG--------",
+            "source": "",
+            "information": "",
+            "showThreat": true,
+            "radars": [
+              {
+                "type": 1,
+                "rangeNmi": 25,
+                "antennaHeightFt": 30,
+                "aglNotMsl": true,
+                "showMask": true,
+                "showRangeRings": true,
+                "bands": [
+                  {
+                    "altFt": 300,
+                    "color": 1,
+                    "alpha": 128
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "id": "b",
+            "name": "T-b",
+            "lat": 34.5,
+            "lon": -84.1,
+            "milstdId": "SHAPMFG--------",
+            "source": "",
+            "information": "",
+            "showThreat": true,
+            "radars": [
+              {
+                "type": 1,
+                "rangeNmi": 25,
+                "antennaHeightFt": 30,
+                "aglNotMsl": true,
+                "showMask": true,
+                "showRangeRings": true,
+                "bands": [
+                  {
+                    "altFt": 300,
+                    "color": 1,
+                    "alpha": 128
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "name": "an item's own visible is nobody's",
+      "data": {
+        "version": 1,
+        "threats": [
+          {
+            "id": "a",
+            "name": "T-a",
+            "lat": 34.5,
+            "lon": -84.1,
+            "milstdId": "SHAPMFG--------",
+            "source": "",
+            "information": "",
+            "showThreat": true,
+            "radars": [
+              {
+                "type": 1,
+                "rangeNmi": 25,
+                "antennaHeightFt": 30,
+                "aglNotMsl": true,
+                "showMask": true,
+                "showRangeRings": true,
+                "bands": [
+                  {
+                    "altFt": 300,
+                    "color": 1,
+                    "alpha": 128
+                  }
+                ]
+              }
+            ],
+            "visible": false
+          }
+        ]
+      },
+      "expected": {
+        "threats": [
+          {
+            "id": "a",
+            "name": "T-a",
+            "lat": 34.5,
+            "lon": -84.1,
+            "milstdId": "SHAPMFG--------",
+            "source": "",
+            "information": "",
+            "showThreat": true,
+            "radars": [
+              {
+                "type": 1,
+                "rangeNmi": 25,
+                "antennaHeightFt": 30,
+                "aglNotMsl": true,
+                "showMask": true,
+                "showRangeRings": true,
+                "bands": [
+                  {
+                    "altFt": 300,
+                    "color": 1,
+                    "alpha": 128
+                  }
+                ]
+              }
+            ],
+            "visible": true,
+            "mask": null,
+            "maskLoading": false,
+            "maskError": null
+          }
+        ],
+        "unreadable": [],
+        "version": 1,
+        "extras": {}
+      },
+      "doc": {
+        "version": 1,
+        "threats": [
+          {
+            "id": "a",
+            "name": "T-a",
+            "lat": 34.5,
+            "lon": -84.1,
+            "milstdId": "SHAPMFG--------",
+            "source": "",
+            "information": "",
+            "showThreat": true,
+            "radars": [
+              {
+                "type": 1,
+                "rangeNmi": 25,
+                "antennaHeightFt": 30,
+                "aglNotMsl": true,
+                "showMask": true,
+                "showRangeRings": true,
+                "bands": [
+                  {
+                    "altFt": 300,
+                    "color": 1,
+                    "alpha": 128
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "name": "a field a newer version wrote stays",
+      "data": {
+        "version": 2,
+        "note": "kept",
+        "threats": [
+          {
+            "id": "a",
+            "name": "T-a",
+            "lat": 34.5,
+            "lon": -84.1,
+            "milstdId": "SHAPMFG--------",
+            "source": "",
+            "information": "",
+            "showThreat": true,
+            "radars": [
+              {
+                "type": 1,
+                "rangeNmi": 25,
+                "antennaHeightFt": 30,
+                "aglNotMsl": true,
+                "showMask": true,
+                "showRangeRings": true,
+                "bands": [
+                  {
+                    "altFt": 300,
+                    "color": 1,
+                    "alpha": 128
+                  }
+                ]
+              }
+            ],
+            "extra": {
+              "nested": [
+                1,
+                null
+              ]
+            }
+          }
+        ]
+      },
+      "expected": {
+        "threats": [
+          {
+            "id": "a",
+            "name": "T-a",
+            "lat": 34.5,
+            "lon": -84.1,
+            "milstdId": "SHAPMFG--------",
+            "source": "",
+            "information": "",
+            "showThreat": true,
+            "radars": [
+              {
+                "type": 1,
+                "rangeNmi": 25,
+                "antennaHeightFt": 30,
+                "aglNotMsl": true,
+                "showMask": true,
+                "showRangeRings": true,
+                "bands": [
+                  {
+                    "altFt": 300,
+                    "color": 1,
+                    "alpha": 128
+                  }
+                ]
+              }
+            ],
+            "extra": {
+              "nested": [
+                1,
+                null
+              ]
+            },
+            "visible": true,
+            "mask": null,
+            "maskLoading": false,
+            "maskError": null
+          }
+        ],
+        "unreadable": [],
+        "version": 2,
+        "extras": {
+          "note": "kept"
+        }
+      },
+      "doc": {
+        "note": "kept",
+        "version": 2,
+        "threats": [
+          {
+            "id": "a",
+            "name": "T-a",
+            "lat": 34.5,
+            "lon": -84.1,
+            "milstdId": "SHAPMFG--------",
+            "source": "",
+            "information": "",
+            "showThreat": true,
+            "radars": [
+              {
+                "type": 1,
+                "rangeNmi": 25,
+                "antennaHeightFt": 30,
+                "aglNotMsl": true,
+                "showMask": true,
+                "showRangeRings": true,
+                "bands": [
+                  {
+                    "altFt": 300,
+                    "color": 1,
+                    "alpha": 128
+                  }
+                ]
+              }
+            ],
+            "extra": {
+              "nested": [
+                1,
+                null
+              ]
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "no version is the first",
+      "data": {
+        "threats": [
+          {
+            "id": "a",
+            "name": "T-a",
+            "lat": 34.5,
+            "lon": -84.1,
+            "milstdId": "SHAPMFG--------",
+            "source": "",
+            "information": "",
+            "showThreat": true,
+            "radars": [
+              {
+                "type": 1,
+                "rangeNmi": 25,
+                "antennaHeightFt": 30,
+                "aglNotMsl": true,
+                "showMask": true,
+                "showRangeRings": true,
+                "bands": [
+                  {
+                    "altFt": 300,
+                    "color": 1,
+                    "alpha": 128
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      "expected": {
+        "threats": [
+          {
+            "id": "a",
+            "name": "T-a",
+            "lat": 34.5,
+            "lon": -84.1,
+            "milstdId": "SHAPMFG--------",
+            "source": "",
+            "information": "",
+            "showThreat": true,
+            "radars": [
+              {
+                "type": 1,
+                "rangeNmi": 25,
+                "antennaHeightFt": 30,
+                "aglNotMsl": true,
+                "showMask": true,
+                "showRangeRings": true,
+                "bands": [
+                  {
+                    "altFt": 300,
+                    "color": 1,
+                    "alpha": 128
+                  }
+                ]
+              }
+            ],
+            "visible": true,
+            "mask": null,
+            "maskLoading": false,
+            "maskError": null
+          }
+        ],
+        "unreadable": [],
+        "version": 1,
+        "extras": {}
+      },
+      "doc": {
+        "version": 1,
+        "threats": [
+          {
+            "id": "a",
+            "name": "T-a",
+            "lat": 34.5,
+            "lon": -84.1,
+            "milstdId": "SHAPMFG--------",
+            "source": "",
+            "information": "",
+            "showThreat": true,
+            "radars": [
+              {
+                "type": 1,
+                "rangeNmi": 25,
+                "antennaHeightFt": 30,
+                "aglNotMsl": true,
+                "showMask": true,
+                "showRangeRings": true,
+                "bands": [
+                  {
+                    "altFt": 300,
+                    "color": 1,
+                    "alpha": 128
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "name": "no list of threats reads as none",
+      "data": {
+        "version": 1
+      },
+      "expected": {
+        "threats": [],
+        "unreadable": [],
+        "version": 1,
+        "extras": {}
+      },
+      "doc": {
+        "version": 1,
+        "threats": []
+      }
+    },
+    {
+      "name": "data that is not an object reads as none",
+      "data": [
+        1,
+        2
+      ],
+      "expected": {
+        "threats": [],
+        "unreadable": [],
+        "version": 1,
+        "extras": {}
+      },
+      "doc": {
+        "version": 1,
+        "threats": []
+      }
+    },
+    {
+      "name": "a threat with no position is kept and not drawn",
+      "data": {
+        "version": 1,
+        "threats": [
+          {
+            "id": "a",
+            "name": "T-a",
+            "lat": 34.5,
+            "lon": -84.1,
+            "milstdId": "SHAPMFG--------",
+            "source": "",
+            "information": "",
+            "showThreat": true,
+            "radars": [
+              {
+                "type": 1,
+                "rangeNmi": 25,
+                "antennaHeightFt": 30,
+                "aglNotMsl": true,
+                "showMask": true,
+                "showRangeRings": true,
+                "bands": [
+                  {
+                    "altFt": 300,
+                    "color": 1,
+                    "alpha": 128
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "id": "b",
+            "name": "ODD",
+            "radars": []
+          }
+        ]
+      },
+      "expected": {
+        "threats": [
+          {
+            "id": "a",
+            "name": "T-a",
+            "lat": 34.5,
+            "lon": -84.1,
+            "milstdId": "SHAPMFG--------",
+            "source": "",
+            "information": "",
+            "showThreat": true,
+            "radars": [
+              {
+                "type": 1,
+                "rangeNmi": 25,
+                "antennaHeightFt": 30,
+                "aglNotMsl": true,
+                "showMask": true,
+                "showRangeRings": true,
+                "bands": [
+                  {
+                    "altFt": 300,
+                    "color": 1,
+                    "alpha": 128
+                  }
+                ]
+              }
+            ],
+            "visible": true,
+            "mask": null,
+            "maskLoading": false,
+            "maskError": null
+          }
+        ],
+        "unreadable": [
+          {
+            "id": "b",
+            "name": "ODD",
+            "radars": []
+          }
+        ],
+        "version": 1,
+        "extras": {}
+      },
+      "doc": {
+        "version": 1,
+        "threats": [
+          {
+            "id": "a",
+            "name": "T-a",
+            "lat": 34.5,
+            "lon": -84.1,
+            "milstdId": "SHAPMFG--------",
+            "source": "",
+            "information": "",
+            "showThreat": true,
+            "radars": [
+              {
+                "type": 1,
+                "rangeNmi": 25,
+                "antennaHeightFt": 30,
+                "aglNotMsl": true,
+                "showMask": true,
+                "showRangeRings": true,
+                "bands": [
+                  {
+                    "altFt": 300,
+                    "color": 1,
+                    "alpha": 128
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "id": "b",
+            "name": "ODD",
+            "radars": []
+          }
+        ]
+      }
+    },
+    {
+      "name": "a threat with no id is kept and not drawn",
+      "data": {
+        "version": 1,
+        "threats": [
+          {
+            "name": "T-x",
+            "lat": 34.5,
+            "lon": -84.1,
+            "milstdId": "SHAPMFG--------",
+            "source": "",
+            "information": "",
+            "showThreat": true,
+            "radars": [
+              {
+                "type": 1,
+                "rangeNmi": 25,
+                "antennaHeightFt": 30,
+                "aglNotMsl": true,
+                "showMask": true,
+                "showRangeRings": true,
+                "bands": [
+                  {
+                    "altFt": 300,
+                    "color": 1,
+                    "alpha": 128
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      "expected": {
+        "threats": [],
+        "unreadable": [
+          {
+            "name": "T-x",
+            "lat": 34.5,
+            "lon": -84.1,
+            "milstdId": "SHAPMFG--------",
+            "source": "",
+            "information": "",
+            "showThreat": true,
+            "radars": [
+              {
+                "type": 1,
+                "rangeNmi": 25,
+                "antennaHeightFt": 30,
+                "aglNotMsl": true,
+                "showMask": true,
+                "showRangeRings": true,
+                "bands": [
+                  {
+                    "altFt": 300,
+                    "color": 1,
+                    "alpha": 128
+                  }
+                ]
+              }
+            ]
+          }
+        ],
+        "version": 1,
+        "extras": {}
+      },
+      "doc": {
+        "version": 1,
+        "threats": [
+          {
+            "name": "T-x",
+            "lat": 34.5,
+            "lon": -84.1,
+            "milstdId": "SHAPMFG--------",
+            "source": "",
+            "information": "",
+            "showThreat": true,
+            "radars": [
+              {
+                "type": 1,
+                "rangeNmi": 25,
+                "antennaHeightFt": 30,
+                "aglNotMsl": true,
+                "showMask": true,
+                "showRangeRings": true,
+                "bands": [
+                  {
+                    "altFt": 300,
+                    "color": 1,
+                    "alpha": 128
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "name": "a threat whose id is true is kept and not drawn",
+      "data": {
+        "version": 1,
+        "threats": [
+          {
+            "id": true,
+            "name": "T-true",
+            "lat": 34.5,
+            "lon": -84.1,
+            "milstdId": "SHAPMFG--------",
+            "source": "",
+            "information": "",
+            "showThreat": true,
+            "radars": [
+              {
+                "type": 1,
+                "rangeNmi": 25,
+                "antennaHeightFt": 30,
+                "aglNotMsl": true,
+                "showMask": true,
+                "showRangeRings": true,
+                "bands": [
+                  {
+                    "altFt": 300,
+                    "color": 1,
+                    "alpha": 128
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      "expected": {
+        "threats": [],
+        "unreadable": [
+          {
+            "id": true,
+            "name": "T-true",
+            "lat": 34.5,
+            "lon": -84.1,
+            "milstdId": "SHAPMFG--------",
+            "source": "",
+            "information": "",
+            "showThreat": true,
+            "radars": [
+              {
+                "type": 1,
+                "rangeNmi": 25,
+                "antennaHeightFt": 30,
+                "aglNotMsl": true,
+                "showMask": true,
+                "showRangeRings": true,
+                "bands": [
+                  {
+                    "altFt": 300,
+                    "color": 1,
+                    "alpha": 128
+                  }
+                ]
+              }
+            ]
+          }
+        ],
+        "version": 1,
+        "extras": {}
+      },
+      "doc": {
+        "version": 1,
+        "threats": [
+          {
+            "id": true,
+            "name": "T-true",
+            "lat": 34.5,
+            "lon": -84.1,
+            "milstdId": "SHAPMFG--------",
+            "source": "",
+            "information": "",
+            "showThreat": true,
+            "radars": [
+              {
+                "type": 1,
+                "rangeNmi": 25,
+                "antennaHeightFt": 30,
+                "aglNotMsl": true,
+                "showMask": true,
+                "showRangeRings": true,
+                "bands": [
+                  {
+                    "altFt": 300,
+                    "color": 1,
+                    "alpha": 128
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "name": "an id the set has already is kept and not drawn",
+      "data": {
+        "version": 1,
+        "threats": [
+          {
+            "id": "a",
+            "name": "T-a",
+            "lat": 34.5,
+            "lon": -84.1,
+            "milstdId": "SHAPMFG--------",
+            "source": "",
+            "information": "",
+            "showThreat": true,
+            "radars": [
+              {
+                "type": 1,
+                "rangeNmi": 25,
+                "antennaHeightFt": 30,
+                "aglNotMsl": true,
+                "showMask": true,
+                "showRangeRings": true,
+                "bands": [
+                  {
+                    "altFt": 300,
+                    "color": 1,
+                    "alpha": 128
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "id": "a",
+            "name": "SECOND",
+            "lat": 34.5,
+            "lon": -84.1,
+            "milstdId": "SHAPMFG--------",
+            "source": "",
+            "information": "",
+            "showThreat": true,
+            "radars": [
+              {
+                "type": 1,
+                "rangeNmi": 25,
+                "antennaHeightFt": 30,
+                "aglNotMsl": true,
+                "showMask": true,
+                "showRangeRings": true,
+                "bands": [
+                  {
+                    "altFt": 300,
+                    "color": 1,
+                    "alpha": 128
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      "expected": {
+        "threats": [
+          {
+            "id": "a",
+            "name": "T-a",
+            "lat": 34.5,
+            "lon": -84.1,
+            "milstdId": "SHAPMFG--------",
+            "source": "",
+            "information": "",
+            "showThreat": true,
+            "radars": [
+              {
+                "type": 1,
+                "rangeNmi": 25,
+                "antennaHeightFt": 30,
+                "aglNotMsl": true,
+                "showMask": true,
+                "showRangeRings": true,
+                "bands": [
+                  {
+                    "altFt": 300,
+                    "color": 1,
+                    "alpha": 128
+                  }
+                ]
+              }
+            ],
+            "visible": true,
+            "mask": null,
+            "maskLoading": false,
+            "maskError": null
+          }
+        ],
+        "unreadable": [
+          {
+            "id": "a",
+            "name": "SECOND",
+            "lat": 34.5,
+            "lon": -84.1,
+            "milstdId": "SHAPMFG--------",
+            "source": "",
+            "information": "",
+            "showThreat": true,
+            "radars": [
+              {
+                "type": 1,
+                "rangeNmi": 25,
+                "antennaHeightFt": 30,
+                "aglNotMsl": true,
+                "showMask": true,
+                "showRangeRings": true,
+                "bands": [
+                  {
+                    "altFt": 300,
+                    "color": 1,
+                    "alpha": 128
+                  }
+                ]
+              }
+            ]
+          }
+        ],
+        "version": 1,
+        "extras": {}
+      },
+      "doc": {
+        "version": 1,
+        "threats": [
+          {
+            "id": "a",
+            "name": "T-a",
+            "lat": 34.5,
+            "lon": -84.1,
+            "milstdId": "SHAPMFG--------",
+            "source": "",
+            "information": "",
+            "showThreat": true,
+            "radars": [
+              {
+                "type": 1,
+                "rangeNmi": 25,
+                "antennaHeightFt": 30,
+                "aglNotMsl": true,
+                "showMask": true,
+                "showRangeRings": true,
+                "bands": [
+                  {
+                    "altFt": 300,
+                    "color": 1,
+                    "alpha": 128
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "id": "a",
+            "name": "SECOND",
+            "lat": 34.5,
+            "lon": -84.1,
+            "milstdId": "SHAPMFG--------",
+            "source": "",
+            "information": "",
+            "showThreat": true,
+            "radars": [
+              {
+                "type": 1,
+                "rangeNmi": 25,
+                "antennaHeightFt": 30,
+                "aglNotMsl": true,
+                "showMask": true,
+                "showRangeRings": true,
+                "bands": [
+                  {
+                    "altFt": 300,
+                    "color": 1,
+                    "alpha": 128
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "name": "a number is an id",
+      "data": {
+        "version": 1,
+        "threats": [
+          {
+            "id": 7,
+            "name": "T-7",
+            "lat": 34.5,
+            "lon": -84.1,
+            "milstdId": "SHAPMFG--------",
+            "source": "",
+            "information": "",
+            "showThreat": true,
+            "radars": [
+              {
+                "type": 1,
+                "rangeNmi": 25,
+                "antennaHeightFt": 30,
+                "aglNotMsl": true,
+                "showMask": true,
+                "showRangeRings": true,
+                "bands": [
+                  {
+                    "altFt": 300,
+                    "color": 1,
+                    "alpha": 128
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      "expected": {
+        "threats": [
+          {
+            "id": 7,
+            "name": "T-7",
+            "lat": 34.5,
+            "lon": -84.1,
+            "milstdId": "SHAPMFG--------",
+            "source": "",
+            "information": "",
+            "showThreat": true,
+            "radars": [
+              {
+                "type": 1,
+                "rangeNmi": 25,
+                "antennaHeightFt": 30,
+                "aglNotMsl": true,
+                "showMask": true,
+                "showRangeRings": true,
+                "bands": [
+                  {
+                    "altFt": 300,
+                    "color": 1,
+                    "alpha": 128
+                  }
+                ]
+              }
+            ],
+            "visible": true,
+            "mask": null,
+            "maskLoading": false,
+            "maskError": null
+          }
+        ],
+        "unreadable": [],
+        "version": 1,
+        "extras": {}
+      },
+      "doc": {
+        "version": 1,
+        "threats": [
+          {
+            "id": 7,
+            "name": "T-7",
+            "lat": 34.5,
+            "lon": -84.1,
+            "milstdId": "SHAPMFG--------",
+            "source": "",
+            "information": "",
+            "showThreat": true,
+            "radars": [
+              {
+                "type": 1,
+                "rangeNmi": 25,
+                "antennaHeightFt": 30,
+                "aglNotMsl": true,
+                "showMask": true,
+                "showRangeRings": true,
+                "bands": [
+                  {
+                    "altFt": 300,
+                    "color": 1,
+                    "alpha": 128
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "name": "something that is not a threat is kept as it is",
+      "data": {
+        "version": 1,
+        "threats": [
+          {
+            "id": "a",
+            "name": "T-a",
+            "lat": 34.5,
+            "lon": -84.1,
+            "milstdId": "SHAPMFG--------",
+            "source": "",
+            "information": "",
+            "showThreat": true,
+            "radars": [
+              {
+                "type": 1,
+                "rangeNmi": 25,
+                "antennaHeightFt": 30,
+                "aglNotMsl": true,
+                "showMask": true,
+                "showRangeRings": true,
+                "bands": [
+                  {
+                    "altFt": 300,
+                    "color": 1,
+                    "alpha": 128
+                  }
+                ]
+              }
+            ]
+          },
+          7,
+          null
+        ]
+      },
+      "expected": {
+        "threats": [
+          {
+            "id": "a",
+            "name": "T-a",
+            "lat": 34.5,
+            "lon": -84.1,
+            "milstdId": "SHAPMFG--------",
+            "source": "",
+            "information": "",
+            "showThreat": true,
+            "radars": [
+              {
+                "type": 1,
+                "rangeNmi": 25,
+                "antennaHeightFt": 30,
+                "aglNotMsl": true,
+                "showMask": true,
+                "showRangeRings": true,
+                "bands": [
+                  {
+                    "altFt": 300,
+                    "color": 1,
+                    "alpha": 128
+                  }
+                ]
+              }
+            ],
+            "visible": true,
+            "mask": null,
+            "maskLoading": false,
+            "maskError": null
+          }
+        ],
+        "unreadable": [
+          7,
+          null
+        ],
+        "version": 1,
+        "extras": {}
+      },
+      "doc": {
+        "version": 1,
+        "threats": [
+          {
+            "id": "a",
+            "name": "T-a",
+            "lat": 34.5,
+            "lon": -84.1,
+            "milstdId": "SHAPMFG--------",
+            "source": "",
+            "information": "",
+            "showThreat": true,
+            "radars": [
+              {
+                "type": 1,
+                "rangeNmi": 25,
+                "antennaHeightFt": 30,
+                "aglNotMsl": true,
+                "showMask": true,
+                "showRangeRings": true,
+                "bands": [
+                  {
+                    "altFt": 300,
+                    "color": 1,
+                    "alpha": 128
+                  }
+                ]
+              }
+            ]
+          },
+          7,
+          null
+        ]
+      }
+    }
+  ],
+  "masks": [
+    {
+      "name": "a mask that came with a copy is drawn while it fits",
+      "threat": {
+        "id": "a",
+        "name": "T-a",
+        "lat": 34.5,
+        "lon": -84.1,
+        "milstdId": "SHAPMFG--------",
+        "source": "",
+        "information": "",
+        "showThreat": true,
+        "radars": [
+          {
+            "type": 1,
+            "rangeNmi": 25,
+            "antennaHeightFt": 30,
+            "aglNotMsl": true,
+            "showMask": true,
+            "showRangeRings": true,
+            "bands": [
+              {
+                "altFt": 300,
+                "color": 1,
+                "alpha": 128
+              }
+            ]
+          }
+        ],
+        "mask": {
+          "bounds": [
+            [
+              34,
+              -85
+            ],
+            [
+              35,
+              -84
+            ]
+          ],
+          "images": [
+            "data:image/png;base64,AAAA"
+          ],
+          "for": {
+            "lat": 34.5,
+            "lon": -84.1,
+            "radars": [
+              {
+                "type": 1,
+                "rangeNmi": 25,
+                "antennaHeightFt": 30,
+                "aglNotMsl": true,
+                "showMask": true,
+                "showRangeRings": true,
+                "bands": [
+                  {
+                    "altFt": 300,
+                    "color": 1,
+                    "alpha": 128
+                  }
+                ]
+              }
+            ]
+          }
+        }
+      },
+      "previous": null,
+      "drawn": "item",
+      "expected": {
+        "mask": {
+          "bounds": [
+            [
+              34,
+              -85
+            ],
+            [
+              35,
+              -84
+            ]
+          ],
+          "images": [
+            "data:image/png;base64,AAAA"
+          ],
+          "for": {
+            "lat": 34.5,
+            "lon": -84.1,
+            "radars": [
+              {
+                "type": 1,
+                "rangeNmi": 25,
+                "antennaHeightFt": 30,
+                "aglNotMsl": true,
+                "showMask": true,
+                "showRangeRings": true,
+                "bands": [
+                  {
+                    "altFt": 300,
+                    "color": 1,
+                    "alpha": 128
+                  }
+                ]
+              }
+            ]
+          }
+        },
+        "maskLoading": false,
+        "maskError": null
+      }
+    },
+    {
+      "name": "one that does not fit is not",
+      "threat": {
+        "id": "a",
+        "name": "T-a",
+        "lat": 35,
+        "lon": -84.1,
+        "milstdId": "SHAPMFG--------",
+        "source": "",
+        "information": "",
+        "showThreat": true,
+        "radars": [
+          {
+            "type": 1,
+            "rangeNmi": 25,
+            "antennaHeightFt": 30,
+            "aglNotMsl": true,
+            "showMask": true,
+            "showRangeRings": true,
+            "bands": [
+              {
+                "altFt": 300,
+                "color": 1,
+                "alpha": 128
+              }
+            ]
+          }
+        ],
+        "mask": {
+          "bounds": [
+            [
+              34,
+              -85
+            ],
+            [
+              35,
+              -84
+            ]
+          ],
+          "images": [
+            "data:image/png;base64,AAAA"
+          ],
+          "for": {
+            "lat": 34.5,
+            "lon": -84.1,
+            "radars": [
+              {
+                "type": 1,
+                "rangeNmi": 25,
+                "antennaHeightFt": 30,
+                "aglNotMsl": true,
+                "showMask": true,
+                "showRangeRings": true,
+                "bands": [
+                  {
+                    "altFt": 300,
+                    "color": 1,
+                    "alpha": 128
+                  }
+                ]
+              }
+            ]
+          }
+        }
+      },
+      "previous": null,
+      "drawn": null,
+      "expected": {
+        "mask": null,
+        "maskLoading": false,
+        "maskError": null
+      }
+    },
+    {
+      "name": "the person's own is kept while it fits",
+      "threat": {
+        "id": "a",
+        "name": "T-a",
+        "lat": 34.5,
+        "lon": -84.1,
+        "milstdId": "SHAPMFG--------",
+        "source": "",
+        "information": "",
+        "showThreat": true,
+        "radars": [
+          {
+            "type": 1,
+            "rangeNmi": 25,
+            "antennaHeightFt": 30,
+            "aglNotMsl": true,
+            "showMask": true,
+            "showRangeRings": true,
+            "bands": [
+              {
+                "altFt": 300,
+                "color": 1,
+                "alpha": 128
+              }
+            ]
+          }
+        ]
+      },
+      "previous": {
+        "id": "a",
+        "name": "T-a",
+        "lat": 34.5,
+        "lon": -84.1,
+        "milstdId": "SHAPMFG--------",
+        "source": "",
+        "information": "",
+        "showThreat": true,
+        "radars": [
+          {
+            "type": 1,
+            "rangeNmi": 25,
+            "antennaHeightFt": 30,
+            "aglNotMsl": true,
+            "showMask": true,
+            "showRangeRings": true,
+            "bands": [
+              {
+                "altFt": 300,
+                "color": 1,
+                "alpha": 128
+              }
+            ]
+          }
+        ],
+        "mask": {
+          "bounds": [
+            [
+              34,
+              -85
+            ],
+            [
+              35,
+              -84
+            ]
+          ],
+          "images": [
+            "data:mine"
+          ],
+          "for": {
+            "lat": 34.5,
+            "lon": -84.1,
+            "radars": [
+              {
+                "type": 1,
+                "rangeNmi": 25,
+                "antennaHeightFt": 30,
+                "aglNotMsl": true,
+                "showMask": true,
+                "showRangeRings": true,
+                "bands": [
+                  {
+                    "altFt": 300,
+                    "color": 1,
+                    "alpha": 128
+                  }
+                ]
+              }
+            ]
+          }
+        }
+      },
+      "drawn": "previous",
+      "expected": {
+        "mask": {
+          "bounds": [
+            [
+              34,
+              -85
+            ],
+            [
+              35,
+              -84
+            ]
+          ],
+          "images": [
+            "data:mine"
+          ],
+          "for": {
+            "lat": 34.5,
+            "lon": -84.1,
+            "radars": [
+              {
+                "type": 1,
+                "rangeNmi": 25,
+                "antennaHeightFt": 30,
+                "aglNotMsl": true,
+                "showMask": true,
+                "showRangeRings": true,
+                "bands": [
+                  {
+                    "altFt": 300,
+                    "color": 1,
+                    "alpha": 128
+                  }
+                ]
+              }
+            ]
+          }
+        },
+        "maskLoading": false,
+        "maskError": null
+      }
+    },
+    {
+      "name": "the item's comes first",
+      "threat": {
+        "id": "a",
+        "name": "T-a",
+        "lat": 34.5,
+        "lon": -84.1,
+        "milstdId": "SHAPMFG--------",
+        "source": "",
+        "information": "",
+        "showThreat": true,
+        "radars": [
+          {
+            "type": 1,
+            "rangeNmi": 25,
+            "antennaHeightFt": 30,
+            "aglNotMsl": true,
+            "showMask": true,
+            "showRangeRings": true,
+            "bands": [
+              {
+                "altFt": 300,
+                "color": 1,
+                "alpha": 128
+              }
+            ]
+          }
+        ],
+        "mask": {
+          "bounds": [
+            [
+              34,
+              -85
+            ],
+            [
+              35,
+              -84
+            ]
+          ],
+          "images": [
+            "data:image/png;base64,AAAA"
+          ],
+          "for": {
+            "lat": 34.5,
+            "lon": -84.1,
+            "radars": [
+              {
+                "type": 1,
+                "rangeNmi": 25,
+                "antennaHeightFt": 30,
+                "aglNotMsl": true,
+                "showMask": true,
+                "showRangeRings": true,
+                "bands": [
+                  {
+                    "altFt": 300,
+                    "color": 1,
+                    "alpha": 128
+                  }
+                ]
+              }
+            ]
+          }
+        }
+      },
+      "previous": {
+        "id": "a",
+        "name": "T-a",
+        "lat": 34.5,
+        "lon": -84.1,
+        "milstdId": "SHAPMFG--------",
+        "source": "",
+        "information": "",
+        "showThreat": true,
+        "radars": [
+          {
+            "type": 1,
+            "rangeNmi": 25,
+            "antennaHeightFt": 30,
+            "aglNotMsl": true,
+            "showMask": true,
+            "showRangeRings": true,
+            "bands": [
+              {
+                "altFt": 300,
+                "color": 1,
+                "alpha": 128
+              }
+            ]
+          }
+        ],
+        "mask": {
+          "bounds": [
+            [
+              34,
+              -85
+            ],
+            [
+              35,
+              -84
+            ]
+          ],
+          "images": [
+            "data:mine"
+          ],
+          "for": {
+            "lat": 34.5,
+            "lon": -84.1,
+            "radars": [
+              {
+                "type": 1,
+                "rangeNmi": 25,
+                "antennaHeightFt": 30,
+                "aglNotMsl": true,
+                "showMask": true,
+                "showRangeRings": true,
+                "bands": [
+                  {
+                    "altFt": 300,
+                    "color": 1,
+                    "alpha": 128
+                  }
+                ]
+              }
+            ]
+          }
+        }
+      },
+      "drawn": "item",
+      "expected": {
+        "mask": {
+          "bounds": [
+            [
+              34,
+              -85
+            ],
+            [
+              35,
+              -84
+            ]
+          ],
+          "images": [
+            "data:image/png;base64,AAAA"
+          ],
+          "for": {
+            "lat": 34.5,
+            "lon": -84.1,
+            "radars": [
+              {
+                "type": 1,
+                "rangeNmi": 25,
+                "antennaHeightFt": 30,
+                "aglNotMsl": true,
+                "showMask": true,
+                "showRangeRings": true,
+                "bands": [
+                  {
+                    "altFt": 300,
+                    "color": 1,
+                    "alpha": 128
+                  }
+                ]
+              }
+            ]
+          }
+        },
+        "maskLoading": false,
+        "maskError": null
+      }
+    },
+    {
+      "name": "the person's own is dropped once the threat has moved",
+      "threat": {
+        "id": "a",
+        "name": "T-a",
+        "lat": 35,
+        "lon": -84.1,
+        "milstdId": "SHAPMFG--------",
+        "source": "",
+        "information": "",
+        "showThreat": true,
+        "radars": [
+          {
+            "type": 1,
+            "rangeNmi": 25,
+            "antennaHeightFt": 30,
+            "aglNotMsl": true,
+            "showMask": true,
+            "showRangeRings": true,
+            "bands": [
+              {
+                "altFt": 300,
+                "color": 1,
+                "alpha": 128
+              }
+            ]
+          }
+        ]
+      },
+      "previous": {
+        "id": "a",
+        "name": "T-a",
+        "lat": 34.5,
+        "lon": -84.1,
+        "milstdId": "SHAPMFG--------",
+        "source": "",
+        "information": "",
+        "showThreat": true,
+        "radars": [
+          {
+            "type": 1,
+            "rangeNmi": 25,
+            "antennaHeightFt": 30,
+            "aglNotMsl": true,
+            "showMask": true,
+            "showRangeRings": true,
+            "bands": [
+              {
+                "altFt": 300,
+                "color": 1,
+                "alpha": 128
+              }
+            ]
+          }
+        ],
+        "mask": {
+          "bounds": [
+            [
+              34,
+              -85
+            ],
+            [
+              35,
+              -84
+            ]
+          ],
+          "images": [
+            "data:mine"
+          ],
+          "for": {
+            "lat": 34.5,
+            "lon": -84.1,
+            "radars": [
+              {
+                "type": 1,
+                "rangeNmi": 25,
+                "antennaHeightFt": 30,
+                "aglNotMsl": true,
+                "showMask": true,
+                "showRangeRings": true,
+                "bands": [
+                  {
+                    "altFt": 300,
+                    "color": 1,
+                    "alpha": 128
+                  }
+                ]
+              }
+            ]
+          }
+        }
+      },
+      "drawn": null,
+      "expected": {
+        "mask": null,
+        "maskLoading": false,
+        "maskError": null
+      }
+    },
+    {
+      "name": "a mask being worked out goes on for the same place",
+      "threat": {
+        "id": "a",
+        "name": "T-a",
+        "lat": 34.5,
+        "lon": -84.1,
+        "milstdId": "SHAPMFG--------",
+        "source": "",
+        "information": "",
+        "showThreat": true,
+        "radars": [
+          {
+            "type": 1,
+            "rangeNmi": 25,
+            "antennaHeightFt": 30,
+            "aglNotMsl": true,
+            "showMask": true,
+            "showRangeRings": true,
+            "bands": [
+              {
+                "altFt": 300,
+                "color": 1,
+                "alpha": 128
+              }
+            ]
+          }
+        ]
+      },
+      "previous": {
+        "id": "a",
+        "name": "T-a",
+        "lat": 34.5,
+        "lon": -84.1,
+        "milstdId": "SHAPMFG--------",
+        "source": "",
+        "information": "",
+        "showThreat": true,
+        "radars": [
+          {
+            "type": 1,
+            "rangeNmi": 25,
+            "antennaHeightFt": 30,
+            "aglNotMsl": true,
+            "showMask": true,
+            "showRangeRings": true,
+            "bands": [
+              {
+                "altFt": 300,
+                "color": 1,
+                "alpha": 128
+              }
+            ]
+          }
+        ],
+        "maskLoading": true,
+        "maskError": "no"
+      },
+      "drawn": null,
+      "loading": true,
+      "error": "no",
+      "expected": {
+        "mask": null,
+        "maskLoading": true,
+        "maskError": "no"
+      }
+    },
+    {
+      "name": "and stops for another",
+      "threat": {
+        "id": "a",
+        "name": "T-a",
+        "lat": 34.5,
+        "lon": -85,
+        "milstdId": "SHAPMFG--------",
+        "source": "",
+        "information": "",
+        "showThreat": true,
+        "radars": [
+          {
+            "type": 1,
+            "rangeNmi": 25,
+            "antennaHeightFt": 30,
+            "aglNotMsl": true,
+            "showMask": true,
+            "showRangeRings": true,
+            "bands": [
+              {
+                "altFt": 300,
+                "color": 1,
+                "alpha": 128
+              }
+            ]
+          }
+        ]
+      },
+      "previous": {
+        "id": "a",
+        "name": "T-a",
+        "lat": 34.5,
+        "lon": -84.1,
+        "milstdId": "SHAPMFG--------",
+        "source": "",
+        "information": "",
+        "showThreat": true,
+        "radars": [
+          {
+            "type": 1,
+            "rangeNmi": 25,
+            "antennaHeightFt": 30,
+            "aglNotMsl": true,
+            "showMask": true,
+            "showRangeRings": true,
+            "bands": [
+              {
+                "altFt": 300,
+                "color": 1,
+                "alpha": 128
+              }
+            ]
+          }
+        ],
+        "maskLoading": true,
+        "maskError": "no"
+      },
+      "drawn": null,
+      "loading": false,
+      "error": null,
+      "expected": {
+        "mask": null,
+        "maskLoading": false,
+        "maskError": null
+      }
+    }
+  ],
+  "describe": [
+    {
+      "name": "a threat added",
+      "before": {
+        "threats": [
+          {
+            "id": "a",
+            "name": "T-a",
+            "lat": 34.5,
+            "lon": -84.1,
+            "milstdId": "SHAPMFG--------",
+            "source": "",
+            "information": "",
+            "showThreat": true,
+            "radars": [
+              {
+                "type": 1,
+                "rangeNmi": 25,
+                "antennaHeightFt": 30,
+                "aglNotMsl": true,
+                "showMask": true,
+                "showRangeRings": true,
+                "bands": [
+                  {
+                    "altFt": 300,
+                    "color": 1,
+                    "alpha": 128
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      "after": {
+        "threats": [
+          {
+            "id": "a",
+            "name": "T-a",
+            "lat": 34.5,
+            "lon": -84.1,
+            "milstdId": "SHAPMFG--------",
+            "source": "",
+            "information": "",
+            "showThreat": true,
+            "radars": [
+              {
+                "type": 1,
+                "rangeNmi": 25,
+                "antennaHeightFt": 30,
+                "aglNotMsl": true,
+                "showMask": true,
+                "showRangeRings": true,
+                "bands": [
+                  {
+                    "altFt": 300,
+                    "color": 1,
+                    "alpha": 128
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "id": "b",
+            "name": "T-b",
+            "lat": 34.5,
+            "lon": -84.1,
+            "milstdId": "SHAPMFG--------",
+            "source": "",
+            "information": "",
+            "showThreat": true,
+            "radars": [
+              {
+                "type": 1,
+                "rangeNmi": 25,
+                "antennaHeightFt": 30,
+                "aglNotMsl": true,
+                "showMask": true,
+                "showRangeRings": true,
+                "bands": [
+                  {
+                    "altFt": 300,
+                    "color": 1,
+                    "alpha": 128
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      "expected": "Colin M. added the threat T-b to AIR DEFENCE."
+    },
+    {
+      "name": "a threat with no name added",
+      "before": {
+        "threats": []
+      },
+      "after": {
+        "threats": [
+          {
+            "id": "a",
+            "name": "",
+            "lat": 34.5,
+            "lon": -84.1,
+            "milstdId": "SHAPMFG--------",
+            "source": "",
+            "information": "",
+            "showThreat": true,
+            "radars": [
+              {
+                "type": 1,
+                "rangeNmi": 25,
+                "antennaHeightFt": 30,
+                "aglNotMsl": true,
+                "showMask": true,
+                "showRangeRings": true,
+                "bands": [
+                  {
+                    "altFt": 300,
+                    "color": 1,
+                    "alpha": 128
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      "expected": "Colin M. added a threat to AIR DEFENCE."
+    },
+    {
+      "name": "a threat moved north alone",
+      "before": {
+        "threats": [
+          {
+            "id": "a",
+            "name": "T-a",
+            "lat": 34.5,
+            "lon": -84.1,
+            "milstdId": "SHAPMFG--------",
+            "source": "",
+            "information": "",
+            "showThreat": true,
+            "radars": [
+              {
+                "type": 1,
+                "rangeNmi": 25,
+                "antennaHeightFt": 30,
+                "aglNotMsl": true,
+                "showMask": true,
+                "showRangeRings": true,
+                "bands": [
+                  {
+                    "altFt": 300,
+                    "color": 1,
+                    "alpha": 128
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      "after": {
+        "threats": [
+          {
+            "id": "a",
+            "name": "T-a",
+            "lat": 35,
+            "lon": -84.1,
+            "milstdId": "SHAPMFG--------",
+            "source": "",
+            "information": "",
+            "showThreat": true,
+            "radars": [
+              {
+                "type": 1,
+                "rangeNmi": 25,
+                "antennaHeightFt": 30,
+                "aglNotMsl": true,
+                "showMask": true,
+                "showRangeRings": true,
+                "bands": [
+                  {
+                    "altFt": 300,
+                    "color": 1,
+                    "alpha": 128
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      "expected": "Colin M. moved the threat T-a."
+    },
+    {
+      "name": "a threat moved east alone",
+      "before": {
+        "threats": [
+          {
+            "id": "a",
+            "name": "T-a",
+            "lat": 34.5,
+            "lon": -84.1,
+            "milstdId": "SHAPMFG--------",
+            "source": "",
+            "information": "",
+            "showThreat": true,
+            "radars": [
+              {
+                "type": 1,
+                "rangeNmi": 25,
+                "antennaHeightFt": 30,
+                "aglNotMsl": true,
+                "showMask": true,
+                "showRangeRings": true,
+                "bands": [
+                  {
+                    "altFt": 300,
+                    "color": 1,
+                    "alpha": 128
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      "after": {
+        "threats": [
+          {
+            "id": "a",
+            "name": "T-a",
+            "lat": 34.5,
+            "lon": -85,
+            "milstdId": "SHAPMFG--------",
+            "source": "",
+            "information": "",
+            "showThreat": true,
+            "radars": [
+              {
+                "type": 1,
+                "rangeNmi": 25,
+                "antennaHeightFt": 30,
+                "aglNotMsl": true,
+                "showMask": true,
+                "showRangeRings": true,
+                "bands": [
+                  {
+                    "altFt": 300,
+                    "color": 1,
+                    "alpha": 128
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      "expected": "Colin M. moved the threat T-a."
+    },
+    {
+      "name": "a threat changed",
+      "before": {
+        "threats": [
+          {
+            "id": "a",
+            "name": "T-a",
+            "lat": 34.5,
+            "lon": -84.1,
+            "milstdId": "SHAPMFG--------",
+            "source": "",
+            "information": "",
+            "showThreat": true,
+            "radars": [
+              {
+                "type": 1,
+                "rangeNmi": 25,
+                "antennaHeightFt": 30,
+                "aglNotMsl": true,
+                "showMask": true,
+                "showRangeRings": true,
+                "bands": [
+                  {
+                    "altFt": 300,
+                    "color": 1,
+                    "alpha": 128
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      "after": {
+        "threats": [
+          {
+            "id": "a",
+            "name": "T-a",
+            "lat": 34.5,
+            "lon": -84.1,
+            "milstdId": "SHAPMFG--------",
+            "source": "",
+            "information": "NEW",
+            "showThreat": true,
+            "radars": [
+              {
+                "type": 1,
+                "rangeNmi": 25,
+                "antennaHeightFt": 30,
+                "aglNotMsl": true,
+                "showMask": true,
+                "showRangeRings": true,
+                "bands": [
+                  {
+                    "altFt": 300,
+                    "color": 1,
+                    "alpha": 128
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      "expected": "Colin M. changed the threat T-a."
+    },
+    {
+      "name": "a threat removed",
+      "before": {
+        "threats": [
+          {
+            "id": "a",
+            "name": "T-a",
+            "lat": 34.5,
+            "lon": -84.1,
+            "milstdId": "SHAPMFG--------",
+            "source": "",
+            "information": "",
+            "showThreat": true,
+            "radars": [
+              {
+                "type": 1,
+                "rangeNmi": 25,
+                "antennaHeightFt": 30,
+                "aglNotMsl": true,
+                "showMask": true,
+                "showRangeRings": true,
+                "bands": [
+                  {
+                    "altFt": 300,
+                    "color": 1,
+                    "alpha": 128
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      "after": {
+        "threats": []
+      },
+      "expected": "Colin M. removed the threat T-a from AIR DEFENCE."
+    },
+    {
+      "name": "the first of several says it",
+      "before": {
+        "threats": [
+          {
+            "id": "a",
+            "name": "T-a",
+            "lat": 34.5,
+            "lon": -84.1,
+            "milstdId": "SHAPMFG--------",
+            "source": "",
+            "information": "",
+            "showThreat": true,
+            "radars": [
+              {
+                "type": 1,
+                "rangeNmi": 25,
+                "antennaHeightFt": 30,
+                "aglNotMsl": true,
+                "showMask": true,
+                "showRangeRings": true,
+                "bands": [
+                  {
+                    "altFt": 300,
+                    "color": 1,
+                    "alpha": 128
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "id": "b",
+            "name": "T-b",
+            "lat": 34.5,
+            "lon": -84.1,
+            "milstdId": "SHAPMFG--------",
+            "source": "",
+            "information": "",
+            "showThreat": true,
+            "radars": [
+              {
+                "type": 1,
+                "rangeNmi": 25,
+                "antennaHeightFt": 30,
+                "aglNotMsl": true,
+                "showMask": true,
+                "showRangeRings": true,
+                "bands": [
+                  {
+                    "altFt": 300,
+                    "color": 1,
+                    "alpha": 128
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      "after": {
+        "threats": [
+          {
+            "id": "c",
+            "name": "T-c",
+            "lat": 34.5,
+            "lon": -84.1,
+            "milstdId": "SHAPMFG--------",
+            "source": "",
+            "information": "",
+            "showThreat": true,
+            "radars": [
+              {
+                "type": 1,
+                "rangeNmi": 25,
+                "antennaHeightFt": 30,
+                "aglNotMsl": true,
+                "showMask": true,
+                "showRangeRings": true,
+                "bands": [
+                  {
+                    "altFt": 300,
+                    "color": 1,
+                    "alpha": 128
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "id": "a",
+            "name": "T-a",
+            "lat": 35,
+            "lon": -84.1,
+            "milstdId": "SHAPMFG--------",
+            "source": "",
+            "information": "",
+            "showThreat": true,
+            "radars": [
+              {
+                "type": 1,
+                "rangeNmi": 25,
+                "antennaHeightFt": 30,
+                "aglNotMsl": true,
+                "showMask": true,
+                "showRangeRings": true,
+                "bands": [
+                  {
+                    "altFt": 300,
+                    "color": 1,
+                    "alpha": 128
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      "expected": "Colin M. added the threat T-c to AIR DEFENCE."
+    },
+    {
+      "name": "no change that can be named",
+      "before": {
+        "threats": [
+          {
+            "id": "a",
+            "name": "T-a",
+            "lat": 34.5,
+            "lon": -84.1,
+            "milstdId": "SHAPMFG--------",
+            "source": "",
+            "information": "",
+            "showThreat": true,
+            "radars": [
+              {
+                "type": 1,
+                "rangeNmi": 25,
+                "antennaHeightFt": 30,
+                "aglNotMsl": true,
+                "showMask": true,
+                "showRangeRings": true,
+                "bands": [
+                  {
+                    "altFt": 300,
+                    "color": 1,
+                    "alpha": 128
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      "after": {
+        "threats": [
+          {
+            "id": "a",
+            "name": "T-a",
+            "lat": 34.5,
+            "lon": -84.1,
+            "milstdId": "SHAPMFG--------",
+            "source": "",
+            "information": "",
+            "showThreat": true,
+            "radars": [
+              {
+                "type": 1,
+                "rangeNmi": 25,
+                "antennaHeightFt": 30,
+                "aglNotMsl": true,
+                "showMask": true,
+                "showRangeRings": true,
+                "bands": [
+                  {
+                    "altFt": 300,
+                    "color": 1,
+                    "alpha": 128
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      "expected": "Colin M. edited AIR DEFENCE."
+    },
+    {
+      "name": "no threats on either side",
+      "before": null,
+      "after": null,
+      "expected": "Colin M. edited AIR DEFENCE."
+    },
+    {
+      "name": "a set with no name",
+      "before": {
+        "threats": [
+          {
+            "id": "a",
+            "name": "T-a",
+            "lat": 34.5,
+            "lon": -84.1,
+            "milstdId": "SHAPMFG--------",
+            "source": "",
+            "information": "",
+            "showThreat": true,
+            "radars": [
+              {
+                "type": 1,
+                "rangeNmi": 25,
+                "antennaHeightFt": 30,
+                "aglNotMsl": true,
+                "showMask": true,
+                "showRangeRings": true,
+                "bands": [
+                  {
+                    "altFt": 300,
+                    "color": 1,
+                    "alpha": 128
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      "after": {
+        "threats": []
+      },
+      "setName": "",
+      "expected": "Colin M. removed the threat T-a from the threats."
+    },
+    {
+      "name": "nobody's name",
+      "before": {
+        "threats": [
+          {
+            "id": "a",
+            "name": "T-a",
+            "lat": 34.5,
+            "lon": -84.1,
+            "milstdId": "SHAPMFG--------",
+            "source": "",
+            "information": "",
+            "showThreat": true,
+            "radars": [
+              {
+                "type": 1,
+                "rangeNmi": 25,
+                "antennaHeightFt": 30,
+                "aglNotMsl": true,
+                "showMask": true,
+                "showRangeRings": true,
+                "bands": [
+                  {
+                    "altFt": 300,
+                    "color": 1,
+                    "alpha": 128
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      "after": {
+        "threats": []
+      },
+      "actor": "",
+      "expected": "Someone removed the threat T-a from AIR DEFENCE."
+    }
+  ],
+  "newItemName": [
+    {
+      "name": "",
+      "count": 0,
+      "expected": "THREATS"
+    },
+    {
+      "name": "",
+      "count": 2,
+      "expected": "THREATS 3"
+    },
+    {
+      "name": "  north ga  ",
+      "count": 2,
+      "expected": "north ga"
+    }
+  ],
+  "createSummary": [
+    {
+      "actor": "Colin M.",
+      "name": "AIR DEFENCE",
+      "count": 1,
+      "expected": "Colin M. added the threat set \"AIR DEFENCE\" (1 threat)."
+    },
+    {
+      "actor": "Colin M.",
+      "name": "AIR DEFENCE",
+      "count": 1234,
+      "expected": "Colin M. added the threat set \"AIR DEFENCE\" (1,234 threats)."
+    },
+    {
+      "actor": "",
+      "name": "THREATS",
+      "count": 0,
+      "expected": "Someone added the threat set \"THREATS\" (0 threats)."
+    }
+  ],
+  "newOp": [
+    {
+      "name": "a new set is named, and carries what everyone shares",
+      "input": {
+        "name": "",
+        "count": 1,
+        "threats": [
+          {
+            "id": "a",
+            "name": "T-a",
+            "lat": 34.5,
+            "lon": -84.1,
+            "milstdId": "SHAPMFG--------",
+            "source": "",
+            "information": "",
+            "showThreat": true,
+            "radars": [
+              {
+                "type": 1,
+                "rangeNmi": 25,
+                "antennaHeightFt": 30,
+                "aglNotMsl": true,
+                "showMask": true,
+                "showRangeRings": true,
+                "bands": [
+                  {
+                    "altFt": 300,
+                    "color": 1,
+                    "alpha": 128
+                  }
+                ]
+              }
+            ],
+            "visible": false,
+            "mask": {
+              "bounds": [
+                [
+                  34,
+                  -85
+                ],
+                [
+                  35,
+                  -84
+                ]
+              ],
+              "images": [
+                "data:image/png;base64,AAAA"
+              ],
+              "for": {
+                "lat": 34.5,
+                "lon": -84.1,
+                "radars": [
+                  {
+                    "type": 1,
+                    "rangeNmi": 25,
+                    "antennaHeightFt": 30,
+                    "aglNotMsl": true,
+                    "showMask": true,
+                    "showRangeRings": true,
+                    "bands": [
+                      {
+                        "altFt": 300,
+                        "color": 1,
+                        "alpha": 128
+                      }
+                    ]
+                  }
+                ]
+              }
+            },
+            "maskLoading": false,
+            "maskError": null
+          }
+        ],
+        "actor": "Colin M."
+      },
+      "expected": {
+        "type": "item.create",
+        "item": "ts-fixed",
+        "kind": "threatset",
+        "name": "THREATS 2",
+        "data": {
+          "version": 1,
+          "threats": [
+            {
+              "id": "a",
+              "name": "T-a",
+              "lat": 34.5,
+              "lon": -84.1,
+              "milstdId": "SHAPMFG--------",
+              "source": "",
+              "information": "",
+              "showThreat": true,
+              "radars": [
+                {
+                  "type": 1,
+                  "rangeNmi": 25,
+                  "antennaHeightFt": 30,
+                  "aglNotMsl": true,
+                  "showMask": true,
+                  "showRangeRings": true,
+                  "bands": [
+                    {
+                      "altFt": 300,
+                      "color": 1,
+                      "alpha": 128
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        },
+        "summary": "Colin M. added the threat set \"THREATS 2\" (1 threat)."
+      }
+    }
+  ]
+}

@@ -97,6 +97,7 @@ public object DiagramNormalizer {
             goArounds = cloneArray(JsValue.firstPresent(graphics["goArounds"], graphics["goAround"])),
             units = cloneArray(graphics["units"]),
             measurements = cloneArray(graphics["measurements"]),
+            backstops = (graphics["backstops"] as? JsonArray)?.toList(),
             exportBox = JsValue.present(graphics["exportBox"]) ?: JsonNull,
         )
     }

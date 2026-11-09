@@ -235,7 +235,7 @@ describe("whether a route set is saved", () => {
     render(<ToastProvider>{result.current.dialogs}</ToastProvider>);
     fireEvent.change(screen.getByLabelText("Name"), { target: { value: "RED" } });
     fireEvent.click(screen.getByRole("button", { name: /^Save$/ }));
-    await waitFor(() => expect(library.saveSketch).toHaveBeenCalledWith("RED", routes));
+    await waitFor(() => expect(library.saveSketch).toHaveBeenCalledWith("RED", routes, []));
     await waitFor(() => expect(result.current.stateOf("sketches")).toMatchObject({ link: { id: 31, name: "RED" }, dirty: false }));
 
     routes = [route("a", { plan: { tempC: 21 } })];
@@ -245,7 +245,7 @@ describe("whether a route set is saved", () => {
     await act(async () => {
       await result.current.save("sketches");
     });
-    expect(library.updateSketch).toHaveBeenCalledWith(31, routes, "RED");
+    expect(library.updateSketch).toHaveBeenCalledWith(31, routes, "RED", []);
     expect(result.current.stateOf("sketches").dirty).toBe(false);
   });
 });

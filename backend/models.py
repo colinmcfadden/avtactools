@@ -360,6 +360,23 @@ class SavedPointSet(SyncMixin, db.Model):
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
 
+class SavedThreatSet(SyncMixin, db.Model):
+    """A named set of threats, the Library's and the Threats panel's unit (a .ths file is one whole set).
+
+    ``threat_data`` is ``{"version": 1, "threats": [...]}``, and each threat may carry its terrain mask, so one set can be a few
+    megabytes: it is deferred so that listing the Library does not read every mask, and ``threat_count`` answers the list instead.
+    """
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
+    name = db.Column(db.String(100), nullable=False)
+
+    threat_data = db.deferred(db.Column(db.JSON, nullable=False))
+    threat_count = db.Column(db.Integer, nullable=False, default=0, server_default='0')
+
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
 class SavedLZ(SyncMixin, db.Model):
     id = db.Column(db.Integer, primary_key=True)
     user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)

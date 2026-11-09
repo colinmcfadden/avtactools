@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useReducer, useRef } from "react";
-import { sameData } from "./packDiff";
+import { diffData, sameData } from "./packDiff";
 import { composeEdit } from "./packEdit";
 
 /*
@@ -62,8 +62,24 @@ export const usePackItemSync = ({
     baselines.current.set(uuid, { data: item.data, name: item.name, doc: latest.current.currentShape(item) });
   };
 
+  // Someone else's change: what it did since this item was last in step (`ops`) is also laid over each
+  // version in the editor's undo history, so undo takes back only this person's own steps. A change that
+  // cannot be stated as operations leaves the history nothing to stand on.
   const takeTheirs = (uuid, item) => {
-    latest.current.applyTheirs(uuid, item);
+    const base = baselines.current.get(uuid);
+    let ops = [];
+    try {
+      ops = base ? diffData(base.doc, latest.current.currentShape(item)) : [];
+    } catch {
+      ops = null;
+    }
+    latest.current.applyTheirs(uuid, item, ops ? { ops } : { dropHistory: true });
+    settle(uuid, item);
+  };
+
+  // A change the pack will not take, put back: every step that led to it goes with it.
+  const putBack = (uuid, item) => {
+    latest.current.applyTheirs(uuid, item, { dropHistory: true });
     settle(uuid, item);
   };
 
@@ -76,7 +92,7 @@ export const usePackItemSync = ({
     const base = baselines.current.get(uuid);
     if (!mine || !item || !base) return;
     if (now.readOnly) {
-      takeTheirs(uuid, item);
+      putBack(uuid, item);
       return;
     }
     const sent = composeEdit({
@@ -85,7 +101,7 @@ export const usePackItemSync = ({
     if (!sent) return;
     const refused = now.edit(sent.ops);
     if (refused) {
-      takeTheirs(uuid, item);
+      putBack(uuid, item);
       now.onRefused?.(refused, uuid);
       return;
     }
@@ -141,7 +157,7 @@ export const usePackItemSync = ({
         return;
       }
       if (changedHere) {
-        if (readOnly) takeTheirs(uuid, item);
+        if (readOnly) putBack(uuid, item);
         else schedule(uuid);
       }
     });

@@ -1,6 +1,6 @@
 /**
  * Threat data model + defaults, derived from the AMPS .ths schema
- * (THREATS + THREATRADAR tables). Threats are export-only — never persisted.
+ * (THREATS + THREATRADAR tables). Saved in sets: threatSets.js says what is kept.
  *
  * A threat has a position, MIL-STD symbol id, and up to two "radars":
  *   type 0 = Detection, type 1 = Engagement.
@@ -13,7 +13,7 @@ export const RADAR_TYPES = { detection: 0, engagement: 1 };
 export const NMI_TO_M = 1852;
 
 let seq = 0;
-const genId = () => `threat-${Date.now()}-${seq++}`;
+export const newThreatId = () => `threat-${Date.now()}-${seq++}`;
 
 const detectionBands = () => [
   { altFt: 50, color: "#fbbf24", alpha: 0.32, colorIndex: 1, viewable: true },
@@ -39,7 +39,7 @@ export const defaultRadar = (type) => ({
 
 /** Builds a new threat at a location with sensible defaults. */
 export const makeThreat = (lat, lon, overrides = {}) => ({
-  id: genId(),
+  id: newThreatId(),
   name: overrides.name || "Threat",
   milstdId: overrides.milstdId || "SHGPEWMAI------",
   lat,

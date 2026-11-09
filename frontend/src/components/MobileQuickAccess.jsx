@@ -2,12 +2,16 @@ import React, { useState, useRef, useEffect } from 'react';
 import { UNIT_TYPES } from '../feature/unit/UnitIcons';
 import { symbolDataUri } from '../feature/symbols/milsym';
 import Icon from '../feature/ui/Icon';
+import BackstopGlyph from '../feature/backstops/BackstopGlyph';
 import './MobileQuickAccess.css';
 
 const MobileQuickAccess = ({
+  undo,
     addHelo,
     addPZMarker,
     addSector,
+    isDrawingBackstop = false,
+    onToggleBackstop,
     addUnit,
     addGoAround,
     enableExportMode,
@@ -147,6 +151,16 @@ const MobileQuickAccess = ({
   return (
     <>
     <div className="mobile-quick-access-container">
+      {undo && (
+        <>
+          <button type="button" className="qa-btn" onClick={undo.undo} disabled={!undo.canUndo} title={undo.undoTitle} aria-label={undo.undoTitle}>
+            <Icon name="undo" size={22} />
+          </button>
+          <button type="button" className="qa-btn" onClick={undo.redo} disabled={!undo.canRedo} title={undo.redoTitle} aria-label={undo.redoTitle}>
+            <Icon name="redo" size={22} />
+          </button>
+        </>
+      )}
       {/* The readiness hint ("Set a target…") is intentionally NOT rendered here.
           On mobile it pushed this vertical icon rail toward mid-screen; the same
           message still shows inside the control panel once it's opened. The text
@@ -239,6 +253,17 @@ const MobileQuickAccess = ({
         </svg>
       </button>
     
+      {/* Backstop Button */}
+      <button
+        onClick={() => canUseDiagramTools && onToggleBackstop?.()}
+        disabled={!canUseDiagramTools}
+        className={`qa-btn ${isDrawingBackstop ? 'active-qa-btn' : ''}`}
+        aria-pressed={isDrawingBackstop}
+        title={canUseDiagramTools ? "Draw a backstop" : readinessMessage}
+      >
+        <BackstopGlyph />
+      </button>
+
       {/* Unit Button with Pop-out Menu */}
       <div className="unit-menu-wrapper" ref={menuRef}>
         <button 

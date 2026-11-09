@@ -229,6 +229,31 @@ public data class BriefFull(
     val data: JsonObject,
 )
 
+/** A saved set of threats without its document: the Library's record of a named set (`/api/threatsets`). */
+@Serializable
+public data class ThreatSetSummary(
+    val id: Int,
+    val name: String,
+    @SerialName("threat_count") val threatCount: Int,
+    @SerialName("created_at") val createdAt: String,
+    @SerialName("updated_at") val updatedAt: String,
+    @SerialName("client_uuid") val clientUuid: String,
+    val revision: Int,
+)
+
+@Serializable
+public data class ThreatSetFull(
+    val id: Int,
+    val name: String,
+    @SerialName("threat_count") val threatCount: Int,
+    @SerialName("created_at") val createdAt: String,
+    @SerialName("updated_at") val updatedAt: String,
+    @SerialName("client_uuid") val clientUuid: String,
+    val revision: Int,
+    /** The set's document, `{version, threats}`, as the web saves it. Opaque here. */
+    val data: JsonObject,
+)
+
 /** An airframe profile: the admin's master list, or one of the caller's own. */
 @Serializable
 public data class AircraftProfileDto(

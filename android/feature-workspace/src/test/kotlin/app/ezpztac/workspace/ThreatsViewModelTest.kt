@@ -74,13 +74,13 @@ class ThreatsViewModelTest {
         }
     }
 
-    private class Rig(scope: TestScope) {
+    private class Rig(scope: TestScope, val pack: FakeOpenPack = FakeOpenPack()) {
         val selection = ThreatSelection()
         val store = ThreatStore(Memory(), scope.backgroundScope, StandardTestDispatcher(scope.testScheduler)) { 1_000L }
         val maskApi = FakeMaskApi()
         val masks = ThreatMasks(maskApi, store, scope.backgroundScope)
         private val template = File("../../backend/threat_template.ths").readBytes()
-        val model = ThreatsViewModel(store, selection, ThreatTransfer(ThsWriter { template }), masks).also {
+        val model = ThreatsViewModel(store, selection, ThreatTransfer(ThsWriter { template }), masks, { _, _, _ -> }, pack).also {
             it.worker = StandardTestDispatcher(scope.testScheduler)
         }
         val notices = mutableListOf<String>()
@@ -90,6 +90,67 @@ class ThreatsViewModelTest {
 
     private fun TestScope.rig() = Rig(this).also { advanceUntilIdle() }
     private fun threat(name: String = "SA-8") = Threat(name, "SHGPEWRR------", 34.75, -84.05, "", "SOF", radars = Radars.defaultPair())
+
+    @Test
+    fun `in a pack the panel knows whose the threats are`() = runTest(dispatcher) {
+        val r = rig()
+        val seen = launch(UnconfinedTestDispatcher(testScheduler)) { r.model.state.collect() }
+        assertNull(r.state.pack)
+        r.pack.state.value = FakeOpenPack.open(emptyList())
+        advanceUntilIdle()
+        assertEquals(ThreatsPackUi("OP DK"), r.state.pack)
+        r.pack.state.value = FakeOpenPack.open(emptyList(), session = FakeOpenPack.viewing())
+        advanceUntilIdle()
+        assertEquals("OP DK", r.state.pack?.name)
+        assertNotNull(r.state.pack?.locked)
+        seen.cancel()
+    }
+
+    @Test
+    fun `nothing about a read-only pack's threats can be changed, and hiding one and its mask still can`() = runTest(dispatcher) {
+        val r = rig()
+        val seen = launch(UnconfinedTestDispatcher(testScheduler)) { r.model.state.collect() }
+        val id = r.store.add(threat()); advanceUntilIdle()
+        r.pack.state.value = FakeOpenPack.open(emptyList(), session = FakeOpenPack.finished())
+        advanceUntilIdle()
+
+        r.model.beginAdd(LatLon(34.75, -84.05)); advanceUntilIdle()
+        assertNull("no form to add one", r.state.editing)
+        assertEquals(listOf("This pack is read-only, so nothing new can be added to it."), r.notices)
+        r.notices.clear()
+
+        r.model.beginEdit(id); advanceUntilIdle()
+        assertNull("no form to change one", r.state.editing)
+        assertEquals(1, r.notices.size)
+
+        r.model.remove(id); advanceUntilIdle()
+        r.model.removeAll(); advanceUntilIdle()
+        r.model.moveToCrosshair(id, LatLon(35.0, -85.0)); advanceUntilIdle()
+        assertEquals("not removed, not moved", 34.75, r.store.entries.value.single().threat.lat, 0.0)
+        assertNotNull("said at the panel", r.state.error)
+
+        r.model.toggleVisible(id); advanceUntilIdle()
+        assertFalse("hiding one is this person's own", r.store.entries.value.single().visible)
+        seen.cancel()
+    }
+
+    @Test
+    fun `a form open when the pack turns read-only goes, and says so`() = runTest(dispatcher) {
+        val r = rig()
+        val seen = launch(UnconfinedTestDispatcher(testScheduler)) { r.model.state.collect() }
+        val id = r.store.add(threat()); advanceUntilIdle()
+        r.pack.state.value = FakeOpenPack.open(emptyList())
+        advanceUntilIdle()
+        r.model.beginEdit(id); advanceUntilIdle()
+        assertNotNull(r.state.editing)
+
+        r.pack.state.value = FakeOpenPack.open(emptyList(), session = FakeOpenPack.finished())
+        advanceUntilIdle()
+
+        assertNull(r.state.editing)
+        assertEquals(listOf("OP DK was finished: the threat was not changed."), r.notices)
+        seen.cancel()
+    }
 
     @Test
     fun `a new threat needs a map position and valid form before it is added and held`() = runTest(dispatcher) {

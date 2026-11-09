@@ -21,6 +21,7 @@ import app.ezpztac.android.MinimumVersionPreferences
 import app.ezpztac.android.HiddenDiagramPreferences
 import app.ezpztac.android.OpenDiagramPreferences
 import app.ezpztac.android.OpenRouteSetPreferences
+import app.ezpztac.android.OpenThreatSetPreferences
 import app.ezpztac.android.PointSetViewPreferences
 import app.ezpztac.android.WeatherFileCache
 import app.ezpztac.android.export.AssetMissionTemplate
@@ -69,6 +70,9 @@ import app.ezpztac.data.MissionTemplate
 import app.ezpztac.data.HiddenDiagramStore
 import app.ezpztac.data.OpenDiagramStore
 import app.ezpztac.data.OpenRouteSetStore
+import app.ezpztac.data.OpenThreatSetStore
+import app.ezpztac.data.OpenThreatSets
+import app.ezpztac.data.ThreatSetRepository
 import app.ezpztac.data.PlanningApi
 import app.ezpztac.data.PointSetViewStore
 import app.ezpztac.data.SlopeOpacityMemory
@@ -227,8 +231,8 @@ object AppModule {
     /** Threats outlive any screen (a write finishes with the sheet closed), so they run in a scope of their own that is never cancelled with one. */
     @Provides
     @Singleton
-    fun threatStore(vault: ThreatVault): ThreatStore =
-        ThreatStore(vault, kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.SupervisorJob() + kotlinx.coroutines.Dispatchers.Default))
+    fun threatStore(vault: ThreatVault, library: ThreatSetRepository, open: OpenThreatSets): ThreatStore =
+        ThreatStore(vault, kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.SupervisorJob() + kotlinx.coroutines.Dispatchers.Default), library = library, openSets = open)
 
     @Provides
     @Singleton
@@ -329,6 +333,10 @@ interface AppBindings {
 
     @Binds
     fun openRouteSets(impl: OpenRouteSetPreferences): OpenRouteSetStore
+
+    @Binds
+    @Singleton
+    fun openThreatSets(impl: OpenThreatSetPreferences): OpenThreatSetStore
 
     @Binds
     fun conflictResolver(impl: SyncEngine): ConflictResolver

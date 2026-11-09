@@ -27,7 +27,7 @@ import kotlin.math.abs
 public object DiagramOps {
     /** The graphic collections an operation may name (the web's `LZ_GRAPHIC_COLLECTIONS`). `exportBox` is a single value, not a collection. */
     public val GRAPHIC_COLLECTIONS: List<String> =
-        listOf("doghouses", "helicopters", "pzMarkers", "sectorsOfFire", "goArounds", "units", "measurements")
+        listOf("doghouses", "helicopters", "pzMarkers", "sectorsOfFire", "goArounds", "units", "measurements", "backstops")
 
     private val NO_OBJECT = JsonObject(emptyMap())
 
@@ -96,6 +96,7 @@ public object DiagramOps {
         "goArounds" -> graphics.goArounds
         "units" -> graphics.units
         "measurements" -> graphics.measurements
+        "backstops" -> graphics.backstops.orEmpty()
         else -> null
     }
 
@@ -107,6 +108,7 @@ public object DiagramOps {
         "goArounds" -> graphics.copy(goArounds = items)
         "units" -> graphics.copy(units = items)
         "measurements" -> graphics.copy(measurements = items)
+        "backstops" -> graphics.copy(backstops = items)
         else -> graphics
     }
 

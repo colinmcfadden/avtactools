@@ -11,7 +11,7 @@ import { duplicateRecord, renameRecord } from "./libraryApi";
 import "./library.css";
 
 /*
- * The Library (docs/MENU_REDESIGN.md §5, screen Library): everything the person has saved, in three
+ * The Library (docs/MENU_REDESIGN.md §5, screen Library): everything the person has saved, in
  * tabs. Opening one adds it to this session and never replaces unsaved work; one already open says
  * so. Each row's ⋯ renames, duplicates, adds to a Mission Pack or deletes (asked first: it is gone
  * from every device). Saving happens on the things themselves, never here.
@@ -21,6 +21,7 @@ const TABS = [
   { key: "lz", label: "LZ/PZ", icon: "hexagon", noun: ["saved LZ/PZ", "saved LZ/PZs"], search: "Search LZ/PZs by name" },
   { key: "routes", label: "Routes", icon: "route", noun: ["saved route set", "saved route sets"], search: "Search routes by name" },
   { key: "points", label: "Local points", icon: "mapPin", noun: ["saved point set", "saved point sets"], search: "Search point sets by name" },
+  { key: "threats", label: "Threats", icon: "diamond", noun: ["saved set of threats", "saved sets of threats"], search: "Search threats by name" },
 ];
 
 const SORTS = [
@@ -32,6 +33,7 @@ const metaFor = (kind, entry) => {
   const updated = `Updated ${dateAndTime(entry.updated_at)}`;
   if (kind === "routes") return `${entry.kind === "mission" ? `Mission file${entry.file_name ? ` · ${entry.file_name}` : ""}` : "Sketched routes"} · ${updated}`;
   if (kind === "points") return `${entry.point_count ?? 0} points · ${updated}`;
+  if (kind === "threats") return `${entry.threat_count ?? 0} ${entry.threat_count === 1 ? "threat" : "threats"} · ${updated}`;
   return updated;
 };
 
@@ -52,6 +54,8 @@ const LibraryDialog = ({ initialTab = "lz", sources, onClose, onAddToPack, onOpe
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // An account without a feature has no tab for it (the threats need a source only it gets).
+  const tabs = TABS.filter((t) => sources[t.key]);
   const source = sources[tab];
   const meta = TABS.find((t) => t.key === tab);
   const rows = useMemo(() => {
@@ -89,11 +93,11 @@ const LibraryDialog = ({ initialTab = "lz", sources, onClose, onAddToPack, onOpe
   };
 
   const onTabKey = (event) => {
-    const index = TABS.findIndex((t) => t.key === tab);
+    const index = tabs.findIndex((t) => t.key === tab);
     const step = event.key === "ArrowRight" ? 1 : event.key === "ArrowLeft" ? -1 : 0;
     if (!step) return;
     event.preventDefault();
-    const next = TABS[(index + step + TABS.length) % TABS.length].key;
+    const next = tabs[(index + step + tabs.length) % tabs.length].key;
     setTab(next);
     tabRefs.current[next]?.focus();
   };
@@ -136,7 +140,7 @@ const LibraryDialog = ({ initialTab = "lz", sources, onClose, onAddToPack, onOpe
         }
       >
         <div className="library__tabs" role="tablist" aria-label="What to show" onKeyDown={onTabKey}>
-          {TABS.map((t) => (
+          {tabs.map((t) => (
             <button
               key={t.key}
               ref={(el) => {
@@ -205,7 +209,9 @@ const LibraryDialog = ({ initialTab = "lz", sources, onClose, onAddToPack, onOpe
                   ? "Nothing saved yet. Save an LZ/PZ from its card in the LZ/PZ panel."
                   : tab === "routes"
                     ? "No saved routes yet. Save a set from the Routes panel."
-                    : "No saved point sets yet. Import an .LPS file and save it from the Imports panel."}
+                    : tab === "threats"
+                      ? "No saved threats yet. Add one from the Threats panel and it is saved here."
+                      : "No saved point sets yet. Import an .LPS file and save it from the Imports panel."}
             </div>
           ) : (
             rows.map((entry) => {
