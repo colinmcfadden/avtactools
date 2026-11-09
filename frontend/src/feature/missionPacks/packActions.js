@@ -1,3 +1,4 @@
+import { flotsFromData } from "../flot/flots";
 import api from "../auth/api";
 import * as packApi from "./packApi";
 import { copySummary, packItemId } from "./packSentences";
@@ -37,7 +38,8 @@ export const copyFromLibrary = (packUuid, { kind, record, actor, newId = randomI
  */
 export const libraryData = (kind, data) => {
   if (kind === "lz" || kind === "pointset") return data;
-  return { version: 1, routes: Array.isArray(data?.routes) ? data.routes : [] };
+  const flots = flotsFromData(data);
+  return { version: 1, ...(flots.length > 0 ? { flots } : {}), routes: Array.isArray(data?.routes) ? data.routes : [] };
 };
 
 /**

@@ -57,6 +57,7 @@ The **LZ/PZ Tools** grid places draggable markers on the map:
 | **Sector** | Sector-of-fire triangle — drag its corner points to shape it. |
 | **Unit** | Opens a menu of unit symbols to place. |
 | **L-GA / R-GA** | Left/right go-around arrows. |
+| **Backstop** | A dashed line beyond the LZ/PZ for a crew that overflies it. Click along the terrain or landmark you want, then Finish; an arrow from the line back to the LZ/PZ is labelled with the true azimuth and the distance in km. Hover or tap the line for its handles: drag the middle to move it, the end to turn it. Right-click it to delete it. |
 
 Everything is draggable; most markers can be deleted from their own controls or right-click.
 
@@ -114,6 +115,15 @@ Use **Import → Mission file** in the top bar, **Import .msnx** at the foot of 
 ![Imported mission alongside a sketch](images/10-import.png)
 
 Imported routes are fully editable: drag points (serpentine geometry updates too) and insert points on legs.
+
+### The FLOT
+
+**Draw FLOT** at the foot of the Routes panel marks the forward line of troops. Click along the line in order, then **Finish**. It draws as a scalloped blue line labelled FLOT.
+
+- **Flip** beside it in the Routes panel, or **Flip the scallops** on its right-click menu, chooses which side the scallops face.
+- Hover the line and drag a point to move it. **Delete FLOT** is on the right-click menu, and the panel has a remove button beside it.
+
+It is saved with the sketched routes, and shared with them in a Mission Pack. It never goes into an exported `.msnx`, and it can't be added to an imported mission: it goes with your sketched routes instead.
 
 ### The Routes panel
 

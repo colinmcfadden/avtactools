@@ -46,7 +46,7 @@ internal object PackFixtures {
 
     private val LZ_ANALYSIS_NAMES = listOf("customLZ", "detectedLZ", "terrainData", "results", "analysisResults", "gridElevation", "latLong")
     private val LZ_GRAPHICS_NAMES = listOf(
-        "doghouses", "helicopters", "pzMarkers", "pzMarker", "sectorsOfFire", "goArounds", "goAround", "units", "measurements", "exportBox",
+        "doghouses", "helicopters", "pzMarkers", "pzMarker", "sectorsOfFire", "goArounds", "goAround", "units", "measurements", "backstops", "exportBox",
     )
 
     /**

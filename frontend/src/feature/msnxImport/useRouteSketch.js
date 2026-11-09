@@ -195,10 +195,11 @@ export const useRouteSketch = ({ aircraftProfile = null } = {}) => {
    * they become them, so new sketches join the set just opened. Otherwise they come in as a set of
    * their own: merged in, the sketches already here would be written into the record just opened, or
    * cut loose from the one they came from (docs/MENU_REDESIGN.md §5: opening never replaces unsaved
-   * work). Returns the set's id, null for this session's own sketches.
+   * work). Returns the set's id, null for this session's own sketches. `beside`: this session already
+   * has something of its own that is not a route (a FLOT), so the set goes beside it too.
    */
-  const openSavedRoutes = (routes) => {
-    const setId = routesRef.current.some((route) => !route.setId) ? generateId(OPENED) : null;
+  const openSavedRoutes = (routes, { beside = false } = {}) => {
+    const setId = beside || routesRef.current.some((route) => !route.setId) ? generateId(OPENED) : null;
     // New route ids either way: a record and its copy (Save as…) can be open side by side. Where a
     // route is filed is this session's business, never the record's.
     const restored = routes.map(({ setId: _filed, ...route }) => ({ ...restoreSketchRoute(route), ...(setId ? { setId } : {}) }));

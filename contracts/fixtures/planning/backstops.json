@@ -1,0 +1,20 @@
+{
+  "generatedBy": "frontend/src/contracts/backstopFixtures.test.js (UPDATE_CONTRACTS=1)",
+  "description": "A backstop keeps only its line ({id, points: [{lat, lon}, ...]}). Its arrow starts at the line's middle by distance (anchor) and points at the LZ/PZ's target [lat, lon]; azimuth is that initial great-circle bearing in whole degrees true, 360 written as 0; text is the label: three digits, \"°T · \", the distance in km to one decimal, \" km\". move adds to every point; rotate turns clockwise about a point on a local flat plane (east is scaled by the cosine of its latitude).",
+  "target": [34.7838,-84.0822],
+  "readings": [
+    {"name":"twoPoints","points":[{"lat":34.8,"lon":-84.09},{"lat":34.8,"lon":-84.07}],"anchor":{"lat":34.8,"lon":-84.08},"azimuth":186,"distanceKm":1.812526,"text":"186°T · 1.8 km"},
+    {"name":"uneven","points":[{"lat":34.8,"lon":-84.09},{"lat":34.801,"lon":-84.089},{"lat":34.81,"lon":-84.06}],"anchor":{"lat":34.805271262,"lon":-84.075237046},"azimuth":195,"distanceKm":2.470707,"text":"195°T · 2.5 km"},
+    {"name":"southOfTheLz","points":[{"lat":34.75,"lon":-84.0822},{"lat":34.75,"lon":-84.0822}],"anchor":{"lat":34.75,"lon":-84.0822},"azimuth":0,"distanceKm":3.758388,"text":"000°T · 3.8 km"},
+    {"name":"noLength","points":[{"lat":34.8,"lon":-84.09},{"lat":34.8,"lon":-84.09}],"anchor":{"lat":34.8,"lon":-84.09},"azimuth":158,"distanceKm":1.937064,"text":"158°T · 1.9 km"}
+  ],
+  "moves": [
+    {"points":[{"lat":34.8,"lon":-84.09},{"lat":34.801,"lon":-84.089},{"lat":34.81,"lon":-84.06}],"dLat":0.01,"dLon":-0.02,"result":[{"lat":34.81,"lon":-84.11},{"lat":34.811,"lon":-84.109},{"lat":34.82,"lon":-84.08}]}
+  ],
+  "rotations": [
+    {"points":[{"lat":34.8,"lon":-84.09},{"lat":34.801,"lon":-84.089},{"lat":34.81,"lon":-84.06}],"about":{"lat":34.805271262,"lon":-84.075237046},"degrees":15,"result":[{"lat":34.80331697,"lon":-84.091158526},{"lat":34.80407038,"lon":-84.089877389},{"lat":34.806600764,"lon":-84.059028637}]},
+    {"points":[{"lat":34.8,"lon":-84.09},{"lat":34.801,"lon":-84.089},{"lat":34.81,"lon":-84.06}],"about":{"lat":34.805271262,"lon":-84.075237046},"degrees":90,"result":[{"lat":34.817393074,"lon":-84.081656828},{"lat":34.816571978,"lon":-84.080438944},{"lat":34.792760173,"lon":-84.069477994}]},
+    {"points":[{"lat":34.8,"lon":-84.09},{"lat":34.801,"lon":-84.089},{"lat":34.81,"lon":-84.06}],"about":{"lat":34.805271262,"lon":-84.075237046},"degrees":-37,"result":[{"lat":34.793766356,"lon":-84.083163744},{"lat":34.79505914,"lon":-84.083098049},{"lat":34.816577161,"lon":-84.066534084}]},
+    {"points":[{"lat":34.8,"lon":-84.09},{"lat":34.801,"lon":-84.089},{"lat":34.81,"lon":-84.06}],"about":{"lat":34.805271262,"lon":-84.075237046},"degrees":180,"result":[{"lat":34.810542523,"lon":-84.060474092},{"lat":34.809542523,"lon":-84.061474092},{"lat":34.800542523,"lon":-84.090474092}]}
+  ]
+}
