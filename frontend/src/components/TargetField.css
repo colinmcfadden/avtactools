@@ -49,8 +49,8 @@
 
 .target-field__option {
   display: flex;
-  flex-direction: column;
-  gap: 2px;
+  align-items: center;
+  gap: 8px;
   min-height: 44px; /* a finger's, and a glove's, reach */
   justify-content: center;
   padding: 6px 10px;
@@ -64,6 +64,57 @@
 .target-field__option--active,
 .target-field__option:hover {
   background: rgba(90, 167, 212, 0.16);
+}
+
+.target-field__text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+/* The row's share button, at its end; and the field's own, between the text and GO. */
+.target-field__row-share,
+.target-field__share {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--ff-text-muted, #9ca3af);
+  cursor: pointer;
+}
+
+.target-field__row-share:hover,
+.target-field__share:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--ff-text-main, #f3f4f6);
+}
+
+@media (max-width: 850px) {
+  /* A finger's, and a glove's, reach, as the rows' (a near miss on a row would choose it). */
+  .target-field__row-share,
+  .target-field__share {
+    width: 44px;
+    height: 44px;
+  }
+}
+
+.target-field__share:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+
+.target-field__share:focus-visible,
+.target-field__row-share:focus-visible {
+  outline: 2px solid var(--ff-accent, #5aa7d4);
+  outline-offset: -2px;
 }
 
 .target-field__main {
@@ -92,4 +143,38 @@
   clip: rect(0 0 0 0);
   white-space: nowrap;
   border: 0;
+}
+
+/* The places (docs/PLACE_SEARCH.md §6): the list scrolls once "Show n more" has grown it past the window's room. */
+.target-field__list {
+  max-height: min(60vh, 520px);
+  overflow-y: auto;
+}
+
+.target-field__option--place .target-field__main {
+  font-family: inherit;
+}
+
+/* How far the place is from the map, at the row's end. */
+.target-field__end {
+  flex: none;
+  color: var(--ff-text-muted, #9ca3af);
+  font-family: var(--mono, "SFMono-Regular", Consolas, "Liberation Mono", monospace);
+  font-size: 0.72rem;
+  white-space: nowrap;
+}
+
+.target-field__option--more .target-field__main {
+  color: var(--ff-accent, #5aa7d4);
+  font-family: inherit;
+  font-weight: 600;
+}
+
+/* Where the places come from, under them: small, out of the way, and never a row to pick. */
+.target-field__credit {
+  margin: 0;
+  padding: 4px 10px 6px;
+  border-top: 1px solid var(--hairline, rgba(255, 255, 255, 0.08));
+  color: var(--ff-text-muted, #9ca3af);
+  font-size: 0.65rem;
 }

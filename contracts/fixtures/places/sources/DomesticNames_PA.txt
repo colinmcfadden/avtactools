@@ -1,0 +1,21 @@
+﻿feature_id|feature_name|feature_class|state_name|state_numeric|county_name|county_numeric|map_name|date_created|date_edited|bgn_type|bgn_authority|bgn_date|prim_lat_dms|prim_long_dms|prim_lat_dec|prim_long_dec|source_lat_dms|source_long_dms|source_lat_dec|source_long_dec
+1181793|Mount Pleasant|Populated Place|Pennsylvania|42|Northampton|095|Bangor|08/02/1979|06/07/2022||||404823N|0750919W|40.8064862|-75.1551765|||0.0|0.0
+1181794|Mount Pleasant|Populated Place|Pennsylvania|42|Adams|001|Littlestown|08/02/1979|06/07/2022||||394401N|0770432W|39.7337109|-77.0755382|||0.0|0.0
+1181795|Mount Pleasant|Populated Place|Pennsylvania|42|Adams|001|McSherrystown|08/02/1979|06/07/2022||||394646N|0770023W|39.7795444|-77.0063702|||0.0|0.0
+1181796|Mount Pleasant|Populated Place|Pennsylvania|42|York|133|Lemoyne|08/02/1979|06/07/2022||||400813N|0765747W|40.1370366|-76.9630312|||0.0|0.0
+1181797|Mount Pleasant|Populated Place|Pennsylvania|42|Westmoreland|129|Mount Pleasant|08/02/1979|06/07/2022||||400856N|0793228W|40.1489607|-79.5411497|||0.0|0.0
+1181798|Mount Pleasant|Populated Place|Pennsylvania|42|Berks|011|Bernville|08/02/1979|06/07/2022||||402417N|0760354W|40.404815|-76.0649402|||0.0|0.0
+1181799|Mount Pleasant|Populated Place|Pennsylvania|42|Mifflin|087|Burnham|08/02/1979|06/07/2022||||404335N|0773632W|40.7264558|-77.608885|||0.0|0.0
+1181800|Mount Pleasant|Populated Place|Pennsylvania|42|Tioga|117|Morris|08/02/1979|06/07/2022||||413329N|0771706W|41.5581272|-77.2849769|||0.0|0.0
+1192969|Mount Pleasant|Populated Place|Pennsylvania|42|Juniata|067|Mifflintown|08/02/1979|06/07/2022||||403319N|0772251W|40.555356|-77.3808222|||0.0|0.0
+1197529|Mount Pleasant|Populated Place|Pennsylvania|42|Philadelphia|101|Germantown|08/30/1990|06/07/2022||||400336N|0751059W|40.0601113|-75.1829549|||0.0|0.0
+1201672|Mount Pleasant|Populated Place|Pennsylvania|42|Washington|125|Washington East|11/01/1989|06/07/2022||||400840N|0800924W|40.1445159|-80.156724|||0.0|0.0
+1202559|Mount Pleasant|Populated Place|Pennsylvania|42|Montgomery|091|Ambler|02/01/1990|06/07/2022||||400924N|0751405W|40.1567758|-75.234621|||0.0|0.0
+1204226|Mount Pleasant|Populated Place|Pennsylvania|42|Lancaster|071|Gap|08/02/1979|06/07/2022||||395553N|0760611W|39.9314917|-76.1030086|||0.0|0.0
+1204227|Mount Pleasant|Populated Place|Pennsylvania|42|Lebanon|075|Palmyra|08/02/1979|06/07/2022||||401657N|0763146W|40.282592|-76.529412|||0.0|0.0
+1204228|Mount Pleasant|Populated Place|Pennsylvania|42|Perry|099|Blain|08/02/1979|06/07/2022||||401908N|0773242W|40.3189719|-77.5449885|||0.0|0.0
+1204229|Mount Pleasant|Populated Place|Pennsylvania|42|Bucks|017|Doylestown|08/02/1979|06/07/2022||||401949N|0751416W|40.3303831|-75.2376746|||0.0|0.0
+1204230|Mount Pleasant|Populated Place|Pennsylvania|42|Schuylkill|107|Minersville|08/02/1979|06/07/2022||||404238N|0762012W|40.7106439|-76.3366173|||0.0|0.0
+1212744|Mount Pleasant|Populated Place|Pennsylvania|42|Clearfield|033|Penfield|11/01/1989|06/07/2022||||411412N|0783420W|41.2367268|-78.5722453|||0.0|0.0
+1212809|Mount Pleasant|Populated Place|Pennsylvania|42|Venango|121|Polk|12/01/1989|06/07/2022||||411916N|0795844W|41.3211684|-79.9789466|||0.0|0.0
+1213992|Mount Pleasant|Populated Place|Pennsylvania|42|Northumberland|097|Riverside|08/02/1979|06/07/2022||||405334N|0764435W|40.8928634|-76.7430187|||0.0|0.0

@@ -1,0 +1,2 @@
+﻿feature_id|feature_name|feature_class|state_name|state_numeric|county_name|county_numeric|map_name|date_created|date_edited|bgn_type|bgn_authority|bgn_date|prim_lat_dms|prim_long_dms|prim_lat_dec|prim_long_dec|source_lat_dms|source_long_dms|source_lat_dec|source_long_dec
+459328|Mount Pleasant|Populated Place|Iowa|19|Henry|087|Mount Pleasant|04/30/1979|06/07/2022||||405749N|0913329W|40.9636403|-91.5579383|||0.0|0.0
