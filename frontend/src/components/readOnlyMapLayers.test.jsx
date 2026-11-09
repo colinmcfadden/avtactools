@@ -217,14 +217,14 @@ describe("a route's points", () => {
     render(<MsnxRouteLayer routes={routes} />);
     screen.getAllByTestId("marker").forEach((marker) => expect(marker).toHaveAttribute("data-draggable", "false"));
     // Without a handler the right-click is left to the map's own menu (before, this threw).
-    fireEvent.contextMenu(screen.getByTestId("polyline"));
+    fireEvent.contextMenu(screen.getAllByTestId("polyline").at(-1)); // the line the mouse finds
   });
 
   it("can be dragged, and the line offers a point to insert, otherwise", () => {
     const onInsertPoint = vi.fn();
     render(<MsnxRouteLayer routes={routes} onUpdatePosition={() => {}} onInsertPoint={onInsertPoint} />);
     screen.getAllByTestId("marker").forEach((marker) => expect(marker).toHaveAttribute("data-draggable", "true"));
-    fireEvent.contextMenu(screen.getByTestId("polyline"));
+    fireEvent.contextMenu(screen.getAllByTestId("polyline").at(-1)); // the line the mouse finds
     expect(onInsertPoint).toHaveBeenCalledWith("sketch-1", 34, -84, 1, 1);
   });
 });

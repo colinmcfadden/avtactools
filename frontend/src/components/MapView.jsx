@@ -357,6 +357,7 @@ const MapView = ({
           onUpdatePosition={onUpdateMsnxPointPosition}
           onInsertPoint={onInsertMsnxPoint}
           snapPoints={localSnapPoints}
+          drawing={isDrawingLZ || isSketchingRoute}
         />
 
         <MsnxRouteLayer
@@ -365,6 +366,7 @@ const MapView = ({
           onInsertPoint={onInsertMsnxPoint}
           onPointContextMenu={onSketchPointContextMenu}
           snapPoints={localSnapPoints}
+          drawing={isDrawingLZ || isSketchingRoute}
         />
 
         <LocalPointsLayer pointSets={localPointSets} onAddToRoute={onAddLocalPointToRoute} />

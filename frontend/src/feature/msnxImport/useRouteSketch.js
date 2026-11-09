@@ -5,11 +5,12 @@ import { defaultRoutePlan, ensureRoutePlan, fetchPointElevationsFt } from "./rou
 import { fetchForecastWinds, mergeWindsIntoPlan } from "./routeWinds";
 import {
   appendAmpsPoint,
-  buildSketchRoute,
   designatePoint,
   insertShapingPoint,
   movePoint,
+  removePoint,
   renamePoint,
+  sketchRouteVersions,
   withPlanPatch,
   withPointClock,
   withPointOverride,
@@ -121,20 +122,23 @@ export const useRouteSketch = ({ aircraftProfile = null } = {}) => {
     // between them. Points designated during drawing keep their type/name;
     // otherwise the standard attack profile is applied automatically (see
     // sketchOps.autoDesignation).
-    const route = buildSketchRoute(draftPoints, {
+    const versions = sketchRouteVersions(draftPoints, {
       name,
       id: generateId("sketch"),
       color: nextRouteColor(),
       plan: defaultRoutePlan(aircraftProfile),
       newPointId: () => crypto.randomUUID(),
-    });
+    }).map((route) => (setId ? { ...route, setId } : route));
 
-    const filed = setId ? { ...route, setId } : route;
-    dispatch({
-      type: "edit",
-      setKey: setKeyOf(filed),
-      update: (routes) => [...routes, filed],
-      step: { seq: nextStepSeq(), label: "Draw route" },
+    // A step for each point, so undo takes the route back as it was drawn. Two points are the least
+    // that is a route: the first step is both of them.
+    versions.forEach((route, index) => {
+      dispatch({
+        type: "edit",
+        setKey: setKeyOf(route),
+        update: (routes) => (index === 0 ? [...routes, route] : routes.map((r) => (r.id === route.id ? route : r))),
+        step: { seq: nextStepSeq(), label: index === 0 ? "Draw route" : "Add point" },
+      });
     });
     setDraftPoints([]);
     return true;
@@ -155,9 +159,17 @@ export const useRouteSketch = ({ aircraftProfile = null } = {}) => {
     editRoute(routeId, "Move point", (route) => movePoint(route, pointId, lat, lon, chartElevationFt));
   }, [editRoute]);
 
-  const insertSketchPoint = (routeId, lat, lon) => {
+  /** A point on the line. With a `designation` it is a named point; without, one that only bends the line. */
+  const insertSketchPoint = (routeId, lat, lon, designation = null) => {
     const pointId = crypto.randomUUID();
-    editRoute(routeId, "Add point", (route) => insertShapingPoint(route, lat, lon, () => pointId));
+    editRoute(routeId, "Add point", (route) => {
+      const added = insertShapingPoint(route, lat, lon, () => pointId);
+      return designation ? designatePoint(added, pointId, { kind: "amps", ...designation }) : added;
+    });
+  };
+
+  const removeSketchPoint = (routeId, pointId) => {
+    editRoute(routeId, "Delete point", (route) => removePoint(route, pointId));
   };
 
   /** Appends a designated AMPS point to the end of a route (used to snap the
@@ -312,6 +324,7 @@ export const useRouteSketch = ({ aircraftProfile = null } = {}) => {
     designateSketchPoint,
     updateSketchPointPosition,
     insertSketchPoint,
+    removeSketchPoint,
     appendSketchPoint,
     loadSketchRoutes,
     openSavedRoutes,
