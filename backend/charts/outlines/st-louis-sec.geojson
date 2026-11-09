@@ -1,0 +1,39 @@
+{
+ "type": "Feature",
+ "properties": {
+  "id": "st-louis-sec",
+  "title": "St Louis Sectional",
+  "tier": "sectional",
+  "file": "St Louis SEC.tif",
+  "made_from": {
+   "width": 17935,
+   "height": 12326,
+   "transform": [
+    42.334795411,
+    0.0,
+    -438932.632077822,
+    0.0,
+    -42.336748162,
+    255456.732200593
+   ]
+  },
+  "edges": {
+   "north": "neighbour:chicago-sec,detroit-sec",
+   "east": "neighbour:cincinnati-sec",
+   "south": "neatline",
+   "west": "neatline"
+  }
+ },
+ "geometry": {
+  "type": "Polygon",
+  "coordinates": [
+   [
+    [-91.0,36.0],
+    [-85.0,36.0],
+    [-85.0,40.0],
+    [-91.0,40.0],
+    [-91.0,36.0]
+   ]
+  ]
+ }
+}

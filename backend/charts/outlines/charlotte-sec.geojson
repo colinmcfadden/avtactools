@@ -1,0 +1,39 @@
+{
+ "type": "Feature",
+ "properties": {
+  "id": "charlotte-sec",
+  "title": "Charlotte Sectional",
+  "tier": "sectional",
+  "file": "Charlotte SEC.tif",
+  "made_from": {
+   "width": 16867,
+   "height": 12358,
+   "transform": [
+    42.334586069,
+    0.0,
+    -365041.822331818,
+    0.0,
+    -42.334898969,
+    240536.419747153
+   ]
+  },
+  "edges": {
+   "north": "neighbour:cincinnati-sec,washington-sec",
+   "east": "content",
+   "south": "neatline",
+   "west": "neatline"
+  }
+ },
+ "geometry": {
+  "type": "Polygon",
+  "coordinates": [
+   [
+    [-82.0,32.0],
+    [-75.25,32.0],
+    [-75.25,36.0],
+    [-82.0,36.0],
+    [-82.0,32.0]
+   ]
+  ]
+ }
+}

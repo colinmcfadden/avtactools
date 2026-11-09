@@ -30,6 +30,7 @@ contracts/
 │  │                strip-grid.json (reference: the web, feature/brief/stripGrid.js over mgrsGrid.js, the strips' MGRS grid)
 │  ├─ packs/        ops.json, ops-brief.json, ops-threatset.json, threats.json, diff.json, edit.json, shared.json, describe.json, session.json, session-brief.json, settings.json, history.json
 │  │                reference: the web app (feature/missionPacks/)
+│  ├─ charts/       coverage.json   reference: the VFR chart build (backend/charts/build.py's coverage, over the committed outlines)
 │  ├─ viewer3d/     routeScene.json, compass.json, terrain.json, lidarFlow.json, lidarFlowStream.json, scene.json   reference: the web app (feature/viewer3d/)
 │  │                geodesy.json   geodetic to geocentric points               reference: PROJ (scripts/geodesy_fixtures.py)
 │  │                tileset/   a LiDAR tileset as the server serves it        reference: py3dtiles 12.1.1 (scripts/tileset_fixture.py)
@@ -93,6 +94,7 @@ reference is.
 | `packs/settings.json` | `frontend/src/contracts/packSettingsFixtures.test.js` | — | `core-missionpacks` (`LzPackKind`, `RoutePackKind`, `PackDiff`: each setting's item read and written back unchanged, the web's operations for it strictly and in order, and what the port sends instead, kept whole, rebuilding the same item; `PackSettingsFixtureTest`) |
 | `packs/history.json` | `frontend/src/contracts/packHistoryFixtures.test.js` | — | `core-missionpacks` (`PackHistory`: a pack's log read as the history's lines, every case, its events read strictly as the server's; `PackHistoryFixtureTest`) |
 | `packs/session.json` | `frontend/src/contracts/packSessionFixtures.test.js` | `backend/tests/test_openapi_contract.py` (`PackSessionFixtureTests`: every input is what `openapi.yaml` says the server sends) | `core-missionpacks` (`PackSessions`: every scenario step by step, with the whole session, what is visible, each answer and the `dropped_versions`, strictly: null kept apart from absent, keys in JavaScript's order; `PackSessionFixtureTest`) |
+| `charts/coverage.json` | — (the web reads it from C3, `docs/VFR_CHARTS.md`) | `backend/tests/test_charts.py` (`CoverageFixtureTests`: its outlines are what the build makes of the committed ones, its charts what the catalog says; `UPDATE_CONTRACTS=1` regenerates) | — (Android reads it from C4) |
 | `viewer3d/*.json` | `frontend/src/contracts/viewer3dFixtures.test.js` | — | `core-scene3d` (the route scene, the compass, the terrain tiles), `core-data` (the build flow) |
 | `viewer3d/tileset/` | — (py3dtiles's own output, by `contracts/scripts/tileset_fixture.py`) | `backend/tests/test_network_fixtures.py` (served as the recorded tileset) | `core-scene3d` (`TilesetReader`, `PntsReader`) |
 | `viewer3d/geodesy.json` | — (PROJ's own transform, by `contracts/scripts/geodesy_fixtures.py`) | — | `core-scene3d` (`geodeticToEcef`, `ecefToGeodetic`, `LocalFrame`) |
@@ -132,6 +134,19 @@ differs there and nowhere else.
 `geodesy.json` is the earth's frame the 3D view puts everything in: latitude, longitude and height above the ellipsoid to geocentric metres,
 from PROJ (pyproj, as the backend pins it; EPSG:4979 to EPSG:4978) at the LZ, the poles, the antimeridian, below the ellipsoid and far above
 it. `python contracts/scripts/geodesy_fixtures.py` writes it with the backend's Python, and `... check` fails if the committed file differs.
+
+### The `charts/` fixture
+
+`coverage.json` is what the VFR chart build writes beside its tiles (`docs/VFR_CHARTS.md` §4.5), from C0's prototype: seven charts of the
+10-29-2026 edition, every tier (the Atlanta and Washington sectionals, the Atlanta and Baltimore-Washington TACs, the Washington and
+Baltimore helicopter charts and the Washington inset), levels 5 to 14. The web and Android are held to it when they read it (C3, C4): which
+charts are in view, their editions and expiry, and how far past a chart's own scale the map is. The FAA's files are not here (hundreds of
+megabytes), so the backend's test rebuilds it from its own editions and counts over the committed outlines: an outline changed, or the
+way they are simplified, fails it until it is written again.
+
+```powershell
+cd backend; $env:UPDATE_CONTRACTS="1"; python -m pytest tests/test_charts.py -k fixture
+```
 
 ### The `packs/` fixtures
 

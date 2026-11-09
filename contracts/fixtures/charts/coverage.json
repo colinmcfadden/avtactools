@@ -1,0 +1,21 @@
+{
+ "version": 1,
+ "build": "2026-10-29.1",
+ "cycle": "2026-10-29",
+ "effective": "2026-10-29T09:01Z",
+ "expires": "2026-12-24T09:01Z",
+ "tileSize": 512,
+ "minLevel": 5,
+ "maxLevel": 14,
+ "bounds": [-88.0,32.0,-71.99977,40.00004],
+ "tiles": {"5":2,"6":7,"7":18,"8":50,"9":168,"10":579,"11":2174,"12":1155,"13":694,"14":99},
+ "charts": [
+  {"id":"atlanta-sec","title":"Atlanta Sectional","tier":"sectional","scale":500000,"edition":{"start":"2026-10-29","end":"2026-12-23","effective":"2026-10-29T09:01Z","expires":"2026-12-24T09:01Z"},"kept":false,"shownFrom":5,"storedTo":11,"nativeLevel":10.58,"outline":{"type":"Polygon","coordinates":[[[-88.0,32.0],[-82.0,32.0],[-82.0,36.0],[-88.0,36.0],[-88.0,32.0]]]}},
+  {"id":"atlanta-tac","title":"Atlanta TAC","tier":"tac","scale":250000,"edition":{"start":"2026-10-29","end":"2026-12-23","effective":"2026-10-29T09:01Z","expires":"2026-12-24T09:01Z"},"kept":false,"shownFrom":11,"storedTo":12,"nativeLevel":11.59,"outline":{"type":"Polygon","coordinates":[[[-85.30529,34.3077],[-85.29705,33.66326],[-85.25387,33.66344],[-85.25272,33.56793],[-85.29561,33.56737],[-85.2882,32.97723],[-84.85371,32.9803],[-84.44817,32.98159],[-84.04263,32.98135],[-83.60812,32.9794],[-83.59486,34.30953],[-84.03721,34.31162],[-84.45009,34.31196],[-84.89245,34.31059],[-85.30529,34.3077]]]}},
+  {"id":"washington-sec","title":"Washington Sectional","tier":"sectional","scale":500000,"edition":{"start":"2026-10-29","end":"2026-12-23","effective":"2026-10-29T09:01Z","expires":"2026-12-24T09:01Z"},"kept":false,"shownFrom":5,"storedTo":11,"nativeLevel":10.51,"outline":{"type":"Polygon","coordinates":[[[-79.00009,40.00003],[-78.99983,36.00001],[-71.99991,36.0],[-71.99998,36.76425],[-72.45398,36.77538],[-73.08371,36.78805],[-73.05808,37.77767],[-73.01672,37.77761],[-72.61055,37.77063],[-71.99977,37.7574],[-72.00013,40.00004],[-79.00009,40.00003]]]}},
+  {"id":"baltimore-washington-tac","title":"Baltimore-Washington TAC","tier":"tac","scale":250000,"edition":{"start":"2026-10-29","end":"2026-12-23","effective":"2026-10-29T09:01Z","expires":"2026-12-24T09:01Z"},"kept":false,"shownFrom":11,"storedTo":12,"nativeLevel":11.49,"outline":{"type":"Polygon","coordinates":[[[-78.34293,39.79626],[-78.31683,38.37928],[-78.26373,38.37965],[-78.26162,38.25505],[-78.31462,38.25428],[-78.31336,38.18297],[-77.69657,38.18809],[-77.04888,38.1899],[-76.43203,38.18824],[-75.78439,38.18295],[-75.75527,39.79625],[-76.41793,39.80166],[-77.0491,39.80336],[-77.68027,39.80167],[-78.34293,39.79626]]]}},
+  {"id":"washington-hel","title":"Washington Helicopter","tier":"helicopter","scale":125000,"edition":{"start":"2026-10-29","end":"2026-12-23","effective":"2026-10-29T09:01Z","expires":"2026-12-24T09:01Z"},"kept":false,"shownFrom":12,"storedTo":13,"nativeLevel":12.49,"outline":{"type":"Polygon","coordinates":[[[-77.69229,39.11919],[-77.68735,38.58274],[-77.05279,38.58378],[-76.41825,38.58133],[-76.41165,39.11637],[-77.05196,39.11954],[-77.69229,39.11919]]]}},
+  {"id":"baltimore-hel","title":"Baltimore Helicopter","tier":"helicopter","scale":125000,"edition":{"start":"2026-10-29","end":"2026-12-23","effective":"2026-10-29T09:01Z","expires":"2026-12-24T09:01Z"},"kept":false,"shownFrom":12,"storedTo":13,"nativeLevel":12.48,"outline":{"type":"Polygon","coordinates":[[[-77.05715,39.50248],[-77.05458,38.97072],[-76.69802,38.97122],[-76.32595,38.97057],[-76.32302,39.50198],[-76.69789,39.50281],[-77.05715,39.50248]]]}},
+  {"id":"washington-inset-hel","title":"Washington Inset","tier":"inset","scale":62500,"edition":{"start":"2026-10-29","end":"2026-12-23","effective":"2026-10-29T09:01Z","expires":"2026-12-24T09:01Z"},"kept":false,"shownFrom":13,"storedTo":14,"nativeLevel":13.49,"outline":{"type":"Polygon","coordinates":[[[-77.11858,38.95379],[-77.11816,38.78128],[-76.94222,38.78141],[-76.94199,38.95383],[-77.11858,38.95379]]]}}
+ ]
+}
