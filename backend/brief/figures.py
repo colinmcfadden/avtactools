@@ -6,10 +6,11 @@ only projects and draws (docs/MISSION_BRIEF.md §2.6). Lines and labels stay vec
 under them is a JPEG.
 
 A tile that cannot be fetched leaves its square plain grey and the figure says so; a figure is never left out. Tiles are
-kept in memory between figures and briefs (``_cache``), by source and address only: a tile says nothing about a plan.
+kept in memory between figures and briefs (``_cache``), by source, chart build and address only: a tile says nothing about a plan.
 """
 
 import io
+import json
 import math
 import re
 import threading
@@ -21,6 +22,7 @@ from xml.sax.saxutils import escape
 import requests
 from PIL import Image
 
+from charts import serve as chart_serve, state as chart_state
 from export_service import MAPBOX_ACCESS_TOKEN
 
 # The base maps a figure can be drawn on, as the web's mapStyles.js draws them: an image's pixels per tile, the most
@@ -47,6 +49,7 @@ HEIGHT_PX = 700
 MIN_ZOOM = 3
 TILE_TIMEOUT_S = 12
 _CACHE_TILES = 600
+GROUND = (205, 202, 192)         # under a tile that did not come, or a chart tile where nothing is drawn
 
 _cache = OrderedDict()
 _cache_lock = threading.Lock()
@@ -80,7 +83,7 @@ class Frame:
     """The image a figure is drawn on: the bounds' middle at the image's middle, at a zoom where they fit."""
 
     def __init__(self, bounds, source, width_px=WIDTH_PX, height_px=HEIGHT_PX):
-        self.source = SOURCES.get(source) or SOURCES['satellite']
+        self.source = source if isinstance(source, dict) else SOURCES.get(source) or SOURCES['satellite']
         self.tile_px = self.source['tile_px']
         self.width = width_px
         self.height = height_px
@@ -102,19 +105,17 @@ class Frame:
 
 # -- Tiles ----------------------------------------------------------------------------------------------------------
 
-def _fetch_tile(source_id, url, z, x, y):
-    """A tile as RGB, or None. The cache keeps the tile as it came (a few hundred KB), not decoded (3 MB at 1024 px), so a
-    brief of strip charts cannot leave gigabytes of tiles beside the analysis model."""
-    key = (source_id, z, x, y)
+def _tile_image(key, read):
+    """A tile as RGB, or None. ``key`` is ``(source_id, build, z, x, y)`` and ``read`` gets its bytes: a brief made across a switch of chart
+    build never takes one build's tile for another's. The cache keeps the tile as it came (a few hundred KB), not decoded (3 MB at 1024
+    px), so a brief of strip charts cannot leave gigabytes of tiles beside the analysis model."""
     with _cache_lock:
         data = _cache.get(key)
         if data is not None:
             _cache.move_to_end(key)
     if data is None:
         try:
-            response = _session.get(url.format(z=z, x=x, y=y), timeout=TILE_TIMEOUT_S)
-            response.raise_for_status()
-            data = response.content
+            data = read()
             Image.open(io.BytesIO(data)).verify()
         except Exception:  # noqa: BLE001 - a tile that will not come is a grey square, said on the figure
             return None
@@ -123,9 +124,29 @@ def _fetch_tile(source_id, url, z, x, y):
             while len(_cache) > _CACHE_TILES:
                 _cache.popitem(last=False)
     try:
-        return Image.open(io.BytesIO(data)).convert('RGB')
+        image = Image.open(io.BytesIO(data))
+        if image.mode != 'RGBA':
+            return image.convert('RGB')
+        # Where a chart tile has nothing drawn it is transparent, and the figure's ground shows there rather than black.
+        ground = Image.new('RGB', image.size, GROUND)
+        ground.paste(image, mask=image.getchannel('A'))
+        return ground
     except Exception:  # noqa: BLE001
         return None
+
+
+def _fetch_tile(source_id, url, z, x, y):
+    """A tile of a source on the web, as RGB, or None."""
+    def read():
+        response = _session.get(url.format(z=z, x=x, y=y), timeout=TILE_TIMEOUT_S)
+        response.raise_for_status()
+        return response.content
+    return _tile_image((source_id, None, z, x, y), read)
+
+
+def _chart_tile(source_id, source, z, x, y):
+    """A tile of the chart build, as RGB, or None."""
+    return _tile_image((source_id, source['build'], z, x, y), lambda: source['read'](z, x, y))
 
 
 def base_image(frame, source_id):
@@ -136,9 +157,13 @@ def base_image(frame, source_id):
     first_x, first_y = math.floor(frame.left / tile_px), math.floor(frame.top / tile_px)
     last_x, last_y = math.floor((frame.left + frame.width - 1) / tile_px), math.floor((frame.top + frame.height - 1) / tile_px)
     wanted = [(tx, ty) for ty in range(first_y, last_y + 1) for tx in range(first_x, last_x + 1) if 0 <= ty < count]
+    if 'read' in source:
+        fetch = lambda t: _chart_tile(source_id, source, frame.zoom, t[0] % count, t[1])  # noqa: E731
+    else:
+        fetch = lambda t: _fetch_tile(source_id, source['url'], frame.zoom, t[0] % count, t[1])  # noqa: E731
     with ThreadPoolExecutor(max_workers=8) as pool:
-        images = list(pool.map(lambda t: _fetch_tile(source_id, source['url'], frame.zoom, t[0] % count, t[1]), wanted))
-    canvas = Image.new('RGB', (frame.width, frame.height), (205, 202, 192))
+        images = list(pool.map(fetch, wanted))
+    canvas = Image.new('RGB', (frame.width, frame.height), GROUND)
     missing = 0
     for (tx, ty), image in zip(wanted, images):
         if image is None:
@@ -148,6 +173,125 @@ def base_image(frame, source_id):
             image = image.resize((tile_px, tile_px))
         canvas.paste(image, (round(tx * tile_px - frame.left), round(ty * tile_px - frame.top)))
     return canvas, missing
+
+
+# -- The FAA's own charts -------------------------------------------------------------------------------------------
+#
+# Where this server has the VFR charts (docs/VFR_CHARTS.md §8), a figure on the sectional is drawn from them, each tile through the tile
+# route's own function, with no HTTP. One source draws the whole figure, never one per tile, so an image never mixes tile sizes or
+# editions: a figure that reaches past the charts (Alaska, Hawaii, the Pacific) is drawn from ArcGIS's service, as is every figure on a
+# server with no charts. The framing's top level is the highest stored for the charts under the area: the sectionals' 11 at 512 px is
+# ArcGIS's 12 at 256 px, so a figure at a post with only a sectional is framed just as it was.
+
+_MONTHS = ('Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec')
+_RING_SAMPLES = 5                # points a side of the area tried against a chart's outline
+
+
+def _day(text, with_year=True):
+    year, month, day = text.split('-')
+    return f'{int(day)} {_MONTHS[int(month) - 1]}' + (f' {year}' if with_year else '')
+
+
+def _in_ring(ring, lon, lat):
+    inside = False
+    for (x0, y0), (x1, y1) in zip(ring, ring[1:] + ring[:1]):
+        if (y0 > lat) != (y1 > lat) and lon < (x1 - x0) * (lat - y0) / (y1 - y0) + x0:
+            inside = not inside
+    return inside
+
+
+def _under_area(chart, box):
+    """Whether a chart's outline reaches the area ``[west, south, east, north]``."""
+    west, south, east, north = box
+    ring = chart['outline']['coordinates'][0]
+    if any(west <= lon <= east and south <= lat <= north for lon, lat in ring):
+        return True
+    steps = [i / (_RING_SAMPLES - 1) for i in range(_RING_SAMPLES)]
+    return any(_in_ring(ring, west + (east - west) * a, south + (north - south) * b) for a in steps for b in steps)
+
+
+def _edition_words(group, now):
+    """A chart of an edition, and how many more of it: the finest first, as the map names them."""
+    edition = group[0]['edition']
+    name = group[0]['title'] + (f' +{len(group) - 1}' if len(group) > 1 else '')
+    if now >= chart_state.instant(edition['expires']):
+        return f'{name}, expired {_day(edition["end"])}'
+    with_year = edition['start'][:4] != edition['end'][:4]
+    return f'{name}, {_day(edition["start"], with_year)} – {_day(edition["end"])}'
+
+
+def _chart_attribution(charts, zoom, now):
+    """The source named on a figure: the charts under it that are shown at its zoom, by edition."""
+    shown = sorted((c for c in charts if c['shownFrom'] <= zoom), key=lambda c: c['scale'])
+    editions = {}
+    for chart in shown:
+        editions.setdefault((chart['edition']['start'], chart['edition']['expires']), []).append(chart)
+    return 'FAA ' + '; '.join(_edition_words(group, now) for group in editions.values())
+
+
+def _chart_source(box):
+    """The live chart build as the source of a figure over ``box`` (``[west, south, east, north]``), or None where it may not be one:
+    no live build, no charts here, the area not wholly inside the build's bounds or touching a place ArcGIS draws (§4.6)."""
+    west, south, east, north = box
+    shift = ((west + east) / 2 + 180) % 360 - 180 - (west + east) / 2
+    box = [west + shift, south, east + shift, north]
+    where = chart_state.root()
+    vfr = (chart_serve.config(where) or {}).get('vfr')
+    if vfr is None:
+        return None
+    bounds = vfr['bounds']
+    if not (bounds[0] <= box[0] and bounds[1] <= box[1] and box[2] <= bounds[2] and box[3] <= bounds[3]):
+        return None
+    if any(box[0] < f[2] and f[0] < box[2] and box[1] < f[3] and f[1] < box[3] for f in vfr['fallback']):
+        return None
+    build = vfr['build']
+    try:
+        charts = [c for c in json.loads(chart_serve.REGISTRY.coverage(where, build))['charts'] if _under_area(c, box)]
+    except (chart_serve.Gone, ValueError, KeyError):
+        return None
+    if not charts:
+        return None
+
+    def read(z, x, y):
+        try:
+            return chart_serve.REGISTRY.tile(where, build, z, x, y)
+        except chart_serve.OutOfRange:          # a frame is wider than its area, and may run off the build's edge
+            return chart_serve.TRANSPARENT
+
+    now = chart_state.now_utc()
+    return {'tile_px': chart_serve.TILE, 'max_zoom': max(c['storedTo'] for c in charts), 'min_zoom': vfr['minZoom'], 'build': build,
+            'read': read, 'attribution': lambda zoom: _chart_attribution(charts, zoom, now)}
+
+
+def _figure_source(source_id, bounds):
+    """What a figure over ``bounds`` is drawn from: the charts where it can be, on the sectional, else the source as named. A figure too
+    wide for the build's coarsest level is left to ArcGIS's, which has coarser."""
+    if source_id != 'sectional':
+        return source_id
+    (south, west), (north, east) = bounds
+    found = _chart_source([west, south, east, north])
+    if found is None or choose_zoom(bounds, WIDTH_PX, HEIGHT_PX, found['tile_px'], found['max_zoom']) < found['min_zoom']:
+        return source_id
+    return found
+
+
+def _strip_source(source_id, strip):
+    """What a strip is drawn from, by the ground its turned rectangle reaches (a strip is a few tens of kilometres, so degrees at its
+    middle will do for saying which charts it is on)."""
+    if source_id != 'sectional':
+        return source_id
+    lat, lon = strip['centre']
+    theta = math.radians(strip['course'] % 360)
+    across, along = strip['width'] / 2, strip['length'] / 2
+    metres_per_degree = 2 * math.pi * 6378137 / 360
+    half_lat = (across * abs(math.sin(theta)) + along * abs(math.cos(theta))) / metres_per_degree
+    half_lon = (across * abs(math.cos(theta)) + along * abs(math.sin(theta))) / (metres_per_degree * math.cos(math.radians(lat)))
+    return _chart_source([lon - half_lon, lat - half_lat, lon + half_lon, lat + half_lat]) or source_id
+
+
+def _attribution(frame):
+    words = frame.source['attribution']
+    return words(frame.zoom) if callable(words) else words
 
 
 def jpeg(image):
@@ -299,7 +443,7 @@ def overlay_svg(frame, spec, geometry, missing_tiles=0):
         parts.append(f'<rect x="40" y="{y}" width="{bar:.1f}" height="10" fill="#ffffff" stroke="#101317" stroke-width="2"/>')
         parts.append(f'<text x="40" y="{y - 10}" font-size="20" fill="#ffffff" stroke="#101317" stroke-width="4" '
                      f'paint-order="stroke" font-weight="700">{escape(words)}</text>')
-    note = frame.source['attribution']
+    note = _attribution(frame)
     if missing_tiles:
         note = f'{missing_tiles} map tile{"s" if missing_tiles != 1 else ""} could not be fetched · {note}'
     parts.append(f'<text x="{frame.width - 16}" y="{frame.height - 14}" font-size="16" text-anchor="end" fill="#ffffff" '
@@ -332,7 +476,7 @@ def draw(spec, geometry, source_id):
     bounds = spec.get('bounds')
     if not valid_bounds(bounds):
         return None
-    frame = Frame(bounds, source_id)
+    frame = Frame(bounds, _figure_source(source_id, bounds))
     image, missing = base_image(frame, source_id)
     return {'jpeg': jpeg(image), 'svg': overlay_svg(frame, spec, geometry, missing), 'zoom': frame.zoom}
 
@@ -421,7 +565,7 @@ class StripFrame:
     """A strip's own pixels: (0, 0) its top left, the course up, ``metres_per_px`` the same everywhere along it."""
 
     def __init__(self, strip, source_id):
-        self.source = SOURCES.get(source_id) or SOURCES['topo']
+        self.source = source_id if isinstance(source_id, dict) else SOURCES.get(source_id) or SOURCES['topo']
         self.tile_px = self.source['tile_px']
         self.width = round(STRIP_CM[0] * STRIP_PX_PER_CM)
         self.height = round(STRIP_CM[1] * STRIP_PX_PER_CM)
@@ -469,7 +613,7 @@ def strip_image(frame, source_id):
     w, h, c, n = frame.width, frame.height, frame.cos, frame.sin
     data = (s * c, -s * n, cx - s * c * w / 2 + s * n * h / 2,
             s * n, s * c, cy - s * n * w / 2 - s * c * h / 2)
-    image = mosaic.transform((w, h), Image.Transform.AFFINE, data, resample=Image.Resampling.BICUBIC, fillcolor=(205, 202, 192))
+    image = mosaic.transform((w, h), Image.Transform.AFFINE, data, resample=Image.Resampling.BICUBIC, fillcolor=GROUND)
     return image, missing
 
 
@@ -566,7 +710,7 @@ def strip_overlay_svg(frame, strip, source_id, missing_tiles=0):
     label_colour = '#ffffff'
     grid = strip.get('grid') if isinstance(strip.get('grid'), dict) else {}
     nx, ny = width + STRIP_NORTH_AT[0], STRIP_NORTH_AT[1]
-    note = frame.source['attribution']
+    note = _attribution(frame)
     if missing_tiles:
         note = f'{missing_tiles} map tile{"s" if missing_tiles != 1 else ""} not fetched · {note}'
     note_size = NOTE_PT * PT
@@ -668,7 +812,7 @@ def draw_strip(strip, source_id):
     module cannot draw."""
     if not valid_strip(strip):
         return None
-    frame = StripFrame(strip, source_id)
+    frame = StripFrame(strip, _strip_source(source_id, strip))
     image, missing = strip_image(frame, source_id)
     return {'jpeg': jpeg(image), 'svg': strip_overlay_svg(frame, strip, source_id, missing),
             'width': frame.width, 'height': frame.height}

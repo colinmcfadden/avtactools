@@ -1,6 +1,7 @@
 import React, { useMemo, useState } from "react";
 import RoutePlanSection from "../msnxImport/RoutePlanSection";
 import { formatDuration } from "../msnxImport/routeCalc";
+import { flotLengthKm } from "../flot/flots";
 import { defaultSetName, routeTotals, setSummary } from "../saveDialog/useRouteSaves";
 import Avatar, { shortName } from "../ui/Avatar";
 import Chip from "../ui/Chip";
@@ -63,6 +64,27 @@ const RouteRow = ({ route, expanded, onToggle, onShare, onToggleVisibility, onRe
     </div>
   );
 };
+
+const FlotRow = ({ flot, readOnly, onFlip, onRemove }) => (
+  <div className="shell-route">
+    <span className="shell-route__swatch" style={{ background: "#2f8fff" }} />
+    <div className="shell-route__main">
+      <div className="shell-route__name">FLOT</div>
+      <div className="shell-route__meta">{flotLengthKm(flot).toFixed(1)} km</div>
+    </div>
+    {!readOnly && (
+      <>
+        <button type="button" className="ui-btn ui-btn--ghost ui-btn--28" aria-label="Flip the scallops of this FLOT to the other side" onClick={() => onFlip(flot.id)}>
+          <Icon name="refresh" size={15} />
+          <span>Flip</span>
+        </button>
+        <button type="button" className="ui-btn ui-btn--ghost ui-btn--28 ui-btn--square" aria-label="Remove this FLOT" onClick={() => onRemove(flot.id)}>
+          <Icon name="trash" size={15} />
+        </button>
+      </>
+    )}
+  </div>
+);
 
 const stateChip = (set, state) => {
   if (set.pack) {
@@ -144,7 +166,7 @@ const SetCard = ({ set, state, threatCount, expanded, onToggleRoute, actions, pl
       <div className="shell-card__chips" style={{ marginTop: 7 }}>
         {set.kind === "mission" && !set.pack && <Chip tone="info" icon="download">Imported</Chip>}
         {stateChip(set, state)}
-        <span className="shell-card__meta">{setSummary(set.routes)}</span>
+        <span className="shell-card__meta">{setSummary(set.routes, set.flots)}</span>
       </div>
       {set.pack?.target && !readOnly && (
         <div className="shell-card__people">
@@ -170,12 +192,15 @@ const SetCard = ({ set, state, threatCount, expanded, onToggleRoute, actions, pl
             <span>{state.saving ? "Saving" : clean ? "Saved" : "Save"}</span>
           </button>
         )}
-        <button type="button" className={`ui-btn${set.pack ? " ui-btn--grow" : ""}`} onClick={() => actions.export(set, { withThreats: withThreats && threatCount > 0 })}>
-          <Icon name="upload" size={15} />
-          <span>Export .msnx</span>
-        </button>
+        {/* A FLOT is not written to AMPS: with no routes there is nothing to export. */}
+        {set.routes.length > 0 && (
+          <button type="button" className={`ui-btn${set.pack ? " ui-btn--grow" : ""}`} onClick={() => actions.export(set, { withThreats: withThreats && threatCount > 0 })}>
+            <Icon name="upload" size={15} />
+            <span>Export .msnx</span>
+          </button>
+        )}
       </div>
-      {threatCount > 0 && (
+      {threatCount > 0 && set.routes.length > 0 && (
         <label className="shell-set__check">
           <input type="checkbox" checked={withThreats} onChange={(event) => setWithThreats(event.target.checked)} />
           Include threats ({threatCount}) as a .ths file
@@ -198,14 +223,17 @@ const SetCard = ({ set, state, threatCount, expanded, onToggleRoute, actions, pl
           )}
         </React.Fragment>
       ))}
+      {(set.flots ?? []).map((flot) => (
+        <FlotRow key={flot.id} flot={flot} readOnly={readOnly} onFlip={actions.flipFlot} onRemove={actions.removeFlot} />
+      ))}
     </section>
   );
 };
 
 /**
- * `sets`: [{ key, kind, fileName, routes, pack? }]; `stateOf(key)` from useRouteSaves (in a pack: a
+ * `sets`: [{ key, kind, fileName, routes, flots?, pack? }]; `stateOf(key)` from useRouteSaves (in a pack: a
  * stand-in with the name). `actions`: save, saveAs, rename, close, export, share, toggleVisibility,
- * removeRoute, addToPack. `plan(set)`: the plan-editing calls for that set's routes.
+ * removeRoute, addToPack, flipFlot, removeFlot. `plan(set)`: the plan-editing calls for that set's routes.
  */
 const RoutesDockPanel = ({
   sets,
@@ -215,6 +243,7 @@ const RoutesDockPanel = ({
   plan,
   localPointNames,
   sketch,
+  flot = null,
   pack = null,
   onImportMsnx,
   canImportMsnx = true,
@@ -277,7 +306,7 @@ const RoutesDockPanel = ({
         )}
       </div>
       {!readOnly && (
-        <div className="shell-dock__foot">
+        <div className="shell-dock__foot" style={{ flexWrap: "wrap" }}>
           {sketch.active ? (
             <>
               <button type="button" className="ui-btn ui-btn--ghost ui-btn--38" onClick={sketch.onCancel}>Cancel</button>
@@ -296,6 +325,19 @@ const RoutesDockPanel = ({
                 <button type="button" className="ui-btn ui-btn--38 ui-btn--grow" onClick={onImportMsnx} disabled={!canImportMsnx}>
                   <Icon name="download" size={15} />
                   <span>Import .msnx</span>
+                </button>
+              )}
+              {flot && (
+                <button
+                  type="button"
+                  className="ui-btn ui-btn--38 ui-btn--grow"
+                  style={{ flexBasis: "100%" }}
+                  aria-pressed={flot.active}
+                  onClick={flot.active ? flot.onCancel : flot.onStart}
+                  disabled={!flot.enabled}
+                >
+                  <Icon name={flot.active ? "x" : "flag"} size={15} />
+                  <span>{flot.active ? "Cancel FLOT" : "Draw FLOT"}</span>
                 </button>
               )}
             </>

@@ -100,6 +100,7 @@
       <a href="{{ url_for('admin.aircraft') }}" class="{{ 'on' if nav_section == 'aircraft' }}">Aircraft</a>
       <a href="{{ url_for('admin.packs') }}" class="{{ 'on' if nav_section == 'packs' }}">Packs</a>
       <a href="{{ url_for('admin.teams') }}" class="{{ 'on' if nav_section == 'teams' }}">Teams</a>
+      {% if data_admin_on %}<a href="{{ url_for('admin.data') }}" class="{{ 'on' if nav_section == 'data' }}">Data</a>{% endif %}
     </nav>
     {% endif %}
     <div class="spacer"></div>

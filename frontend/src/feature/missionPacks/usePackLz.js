@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo } from "react";
 import { createLzDiagramFromTarget } from "../lzWorkspace/useLzWorkspace";
 import { describeLzChange, lzDiagramFromItem, lzItemData, packDiagramId, packDiagramRef, sharedLzData } from "./packLz";
 import { newItemOp, packItemId } from "./packSentences";
+import { applyOpsTo } from "./packRebase";
 import { usePackItemSync } from "./usePackItemSync";
 
 /*
@@ -62,7 +63,11 @@ export const usePackLz = ({
 
   const currentShape = useCallback((item) => lzItemData(lzDiagramFromItem(packUuid, item)), [packUuid]);
   const applyTheirs = useCallback(
-    (uuid, item) => applyRemoteDiagram(lzDiagramFromItem(packUuid, item), packDiagramId(packUuid, uuid)),
+    (uuid, item, { ops, dropHistory } = {}) =>
+      applyRemoteDiagram(lzDiagramFromItem(packUuid, item), packDiagramId(packUuid, uuid), {
+        dropHistory,
+        rebase: ops?.length ? (version) => applyOpsTo(version, ops) : undefined,
+      }),
     [applyRemoteDiagram, packUuid],
   );
   const removeLocal = useCallback((uuid) => removeDiagram(packDiagramId(packUuid, uuid)), [removeDiagram, packUuid]);

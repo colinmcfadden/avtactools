@@ -223,6 +223,7 @@ object PackWords {
         counts?.lz?.takeIf { it > 0 }?.let { "$it LZ/PZ" },
         counts?.route?.takeIf { it > 0 }?.let { plural(it, "route set") },
         counts?.pointset?.takeIf { it > 0 }?.let { plural(it, "point set") },
+        counts?.threatset?.takeIf { it > 0 }?.let { plural(it, "threat set") },
     ).joinToString(" · ")
 
     /** The Library's row: "Personal · 12 LZ/PZs, 4 route sets, 3 point sets". */

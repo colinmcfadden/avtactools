@@ -97,11 +97,36 @@ public data class AppConfig(
     val apiVersion: String? = null,
     /** Every API major the server still answers; absent from a server older than the field. */
     val apiMajors: List<Int>? = null,
+    /**
+     * The server's own VFR chart tiles (docs/VFR_CHARTS.md §4.5), sent only while a build is live. Absent: the ArcGIS
+     * service is drawn everywhere, as before (§4.6).
+     */
+    val charts: Charts? = null,
 ) {
     @Serializable public data class MinAppVersion(val android: String? = null, val ios: String? = null)
     @Serializable public data class Maintenance(val active: Boolean, val message: String? = null)
     @Serializable public data class Services(val lidarBuilds: Boolean, val packs: Boolean)
     @Serializable public data class MapboxConfig(val publicToken: String? = null)
+    @Serializable public data class Charts(val vfr: Vfr) {
+        /**
+         * The live build: [tiles] and [coverage] are relative to the API's root (no `/api`), [tileSize] 512 with [minZoom] and
+         * [maxZoom] in MapLibre's levels, [effective] and [expires] instants in UTC, [bounds] `[west, south, east, north]` outside
+         * which no chart tile is asked for, and [fallback] the rectangles where the ArcGIS service is drawn instead (§4.6).
+         */
+        @Serializable public data class Vfr(
+            val build: String,
+            val cycle: String,
+            val tiles: String,
+            val tileSize: Int,
+            val minZoom: Int,
+            val maxZoom: Int,
+            val effective: String,
+            val expires: String,
+            val coverage: String,
+            val bounds: List<Double>,
+            val fallback: List<List<Double>>,
+        )
+    }
 }
 
 /** A saved LZ without its diagram. */
@@ -226,6 +251,31 @@ public data class BriefFull(
     @SerialName("client_uuid") val clientUuid: String,
     val revision: Int,
     /** The brief document (docs/MISSION_BRIEF.md §2.2). Opaque here; `core-brief` reads it. */
+    val data: JsonObject,
+)
+
+/** A saved set of threats without its document: the Library's record of a named set (`/api/threatsets`). */
+@Serializable
+public data class ThreatSetSummary(
+    val id: Int,
+    val name: String,
+    @SerialName("threat_count") val threatCount: Int,
+    @SerialName("created_at") val createdAt: String,
+    @SerialName("updated_at") val updatedAt: String,
+    @SerialName("client_uuid") val clientUuid: String,
+    val revision: Int,
+)
+
+@Serializable
+public data class ThreatSetFull(
+    val id: Int,
+    val name: String,
+    @SerialName("threat_count") val threatCount: Int,
+    @SerialName("created_at") val createdAt: String,
+    @SerialName("updated_at") val updatedAt: String,
+    @SerialName("client_uuid") val clientUuid: String,
+    val revision: Int,
+    /** The set's document, `{version, threats}`, as the web saves it. Opaque here. */
     val data: JsonObject,
 )
 

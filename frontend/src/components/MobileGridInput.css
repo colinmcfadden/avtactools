@@ -24,6 +24,27 @@
         min-width: 0;
     }
 
+    .mobile-top-search-container .target-field {
+        min-width: 0;
+    }
+
+    /* Over the map's tool rail (MobileQuickAccess, also z-index 1000, later in the page) while it is in use,
+       so the list under it is neither covered nor its taps taken. */
+    .mobile-top-search-container:focus-within {
+        z-index: 1001;
+    }
+
+    /* The field sits between the zoom buttons and the menu, about 19 px right of the screen's middle
+       ((112 - 75) / 2 here, (108 - 70) / 2 below 430 px): the list is centred on the screen instead, as
+       wide as it allows. */
+    .mobile-top-search-container .target-field__drop {
+        left: 50%;
+        right: auto;
+        width: min(320px, calc(100vw - 16px));
+        transform: translateX(calc(-50% - 19px));
+        top: calc(100% + 10px);
+    }
+
     .mobile-search-row {
         display: flex;
         align-items: center;

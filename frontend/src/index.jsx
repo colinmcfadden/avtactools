@@ -7,6 +7,7 @@ import { AuthProvider } from './feature/auth/AuthContext';
 import AuthGate from './feature/auth/AuthGate';
 import { ToastProvider } from './feature/ui/Toast';
 import { captureInviteLink } from './feature/missionPacks/inviteLink';
+import { captureGridLink } from './feature/gridShare/gridLinkCapture';
 import Viewer3DDemo from './feature/viewer3d/Viewer3DDemo';
 
 // Development-only route for the 3D point cloud view, reached with `?view3d`.
@@ -20,6 +21,8 @@ const showViewer3DDemo =
 // A pack or team invitation (?invite=<token>) is taken out of the address before anything renders,
 // so it is not left in the history; it is accepted once the person has signed in (useInviteLink).
 captureInviteLink();
+// A grid link (#grid=…) likewise, so the place is not left in the history; the app opens the map there once signed in.
+captureGridLink();
 
 const root = ReactDOM.createRoot(document.getElementById('root'));
 root.render(

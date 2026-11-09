@@ -6,7 +6,8 @@ import "./shell.css";
 
 /*
  * The bar along the top of the map (docs/MENU_REDESIGN.md §3): which workspace edits go to (the
- * Library, or a Mission Pack, always in view), then Import, Library and the account. In a pack it also
+ * Library, or a Mission Pack, always in view), the search (a grid or a lat/long, and its share
+ * button: `searchSlot`), then Import, Library and the account. In a pack it also
  * shows who has it open and whether everything has reached everyone.
  */
 
@@ -23,11 +24,12 @@ const STATUS = {
 export const IMPORT_KINDS = [
   { kind: "msnx", icon: "route", title: "Mission file", text: ".msnx · AMPS routes and points" },
   { kind: "lps", icon: "mapPin", title: "Local points", text: ".LPS · AMPS point sets" },
-  { kind: "ths", icon: "diamond", title: "Threats", text: ".ths · stays in this session" },
+  { kind: "ths", icon: "diamond", title: "Threats", text: ".ths · AMPS threats, saved to your Library" },
   { kind: "overlay", icon: "image", title: "Map or overlay", text: "KMZ, GeoTIFF, image with world file · not available yet", disabled: true },
 ];
 
 const TopBar = ({
+  undo,
   pack = null,
   packStatus = "live",
   people = [],
@@ -39,6 +41,8 @@ const TopBar = ({
   onOpenLibrary,
   // What goes before Import: the mission brief's button, for an account that has it.
   briefSlot = null,
+  // Between the workspace and the buttons: the search (TargetField). A phone has its own over the map.
+  searchSlot = null,
   user,
   isAdmin = false,
   // The LZ survey book: admins only (docs/LZ_SURVEYS.md).
@@ -101,7 +105,19 @@ const TopBar = ({
         <span className="shell-topbar__context">Personal workspace</span>
       )}
 
+      {searchSlot && <div className="shell-topbar__search">{searchSlot}</div>}
+
       <div className="shell-topbar__end">
+        {undo && (
+          <div className="shell-topbar__undo">
+            <button type="button" className="shell-topbar__button" onClick={undo.undo} disabled={!undo.canUndo} title={undo.undoTitle} aria-label={undo.undoTitle}>
+              <Icon name="undo" size={15} />
+            </button>
+            <button type="button" className="shell-topbar__button" onClick={undo.redo} disabled={!undo.canRedo} title={undo.redoTitle} aria-label={undo.redoTitle}>
+              <Icon name="redo" size={15} />
+            </button>
+          </div>
+        )}
         {briefSlot}
         <button type="button" className="shell-topbar__button" {...imports.buttonProps}>
           <Icon name="download" size={15} />

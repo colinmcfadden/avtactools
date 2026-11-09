@@ -60,6 +60,22 @@ export const MAP_STYLES = [
     options: MAPBOX_TILE_OPTIONS,
   },
   {
+    // USGS The National Map's topo base map, the one the admin's Data tab
+    // draws over: contours, hydrography, roads and names from USGS's own
+    // data, keyless and CORS-open. ArcGIS orders a tile's path z/y/x.
+    id: "usgs-topo",
+    label: "USGS",
+    url: "https://basemap.nationalmap.gov/arcgis/rest/services/USGSTopo/MapServer/tile/{z}/{y}/{x}",
+    options: {
+      attribution:
+        '<a href="https://www.usgs.gov/programs/national-geospatial-program/national-map">USGS The National Map</a>',
+      // The service has tiles to level 16 (17 and beyond answer 404);
+      // Leaflet stretches 16 past that rather than going blank.
+      maxNativeZoom: 16,
+      maxZoom: 20,
+    },
+  },
+  {
     id: "topo",
     label: "Topo",
     url: mapboxTiles("outdoors-v12"),
@@ -69,8 +85,9 @@ export const MAP_STYLES = [
     id: "vfr-sectional",
     label: "VFR",
     url: "https://tiles.arcgis.com/tiles/ssFJjBXIUyZDrSYZ/arcgis/rest/services/VFR_Sectional/MapServer/tile/{z}/{y}/{x}",
+    // ArcGIS's service, which draws this map where the server has no charts of the FAA's own: feature/vfrCharts decides that from
+    // /api/config, and says whose charts are in view.
     options: {
-      attribution: "FAA Aeronautical Information Services",
       // FAA only publishes levels 8-12; Leaflet stretches those tiles when
       // the map is zoomed outside that range instead of going blank.
       minNativeZoom: 8,

@@ -50,6 +50,7 @@ from models import LocalCredential, MissionPackInvite, Notification, User, db  #
 from openapi_check import check_response, load_spec  # noqa: E402
 from routes.aircraft_routes import aircraft_bp  # noqa: E402
 from routes.brief_routes import brief_bp  # noqa: E402
+from routes.chart_routes import chart_bp  # noqa: E402
 from routes.config_routes import config_bp  # noqa: E402
 from routes.lidar_routes import lidar_bp  # noqa: E402
 from routes.lz_routes import lz_bp  # noqa: E402
@@ -59,6 +60,7 @@ from routes.point_sets import point_sets_bp  # noqa: E402
 from routes.saved_routes import saved_routes_bp  # noqa: E402
 from routes.sync_routes import sync_bp  # noqa: E402
 from routes.team_routes import team_bp  # noqa: E402
+from routes.threat_set_routes import threat_set_bp  # noqa: E402
 from routes.weather_routes import weather_bp  # noqa: E402
 from terrain_provider import LocalRasterCatalog, RasterEntry  # noqa: E402
 
@@ -68,6 +70,8 @@ if "routes.terrain_routes" not in sys.modules:
     sys.modules.setdefault("ultralytics", MagicMock())
 from routes.terrain_routes import terrain_bp  # noqa: E402
 from routes.threat_routes import threat_bp  # noqa: E402
+from charts import serve as chart_serve, state as chart_state  # noqa: E402
+from test_chart_serve import NOW as CHART_NOW, listed as list_chart_build, make_build as make_chart_build  # noqa: E402
 
 FIXTURE = BACKEND_DIR.parent / "contracts" / "fixtures" / "network" / "responses.json"
 # A real tileset py3dtiles made (contracts/scripts/tileset_fixture.py), which the 3D view's recordings serve.
@@ -139,7 +143,7 @@ def documented(method, path, status):
 
 class NetworkFixtureTests(NativeAuthCase):
     extra_blueprints = (config_bp, lz_bp, saved_routes_bp, point_sets_bp, aircraft_bp, sync_bp, terrain_bp, threat_bp, weather_bp,
-                        pack_bp, team_bp, brief_bp, lidar_bp, notification_bp)
+                        pack_bp, team_bp, brief_bp, threat_set_bp, lidar_bp, notification_bp, chart_bp)
 
     def setUp(self):
         super().setUp()
@@ -182,6 +186,22 @@ class NetworkFixtureTests(NativeAuthCase):
             self.assertEqual(problems, [], f"{name}: {template} {response.status_code} does not match the contract")
         return response
 
+    def charts(self):
+        """The config once a VFR chart build is live (docs/VFR_CHARTS.md §4.5), and a build that is gone: a small build of the
+        recorded coverage in a chart folder of its own, the server's own routes reading it."""
+        where = Path(tempfile.mkdtemp())
+        try:
+            make_chart_build(where, "2026-10-29.1", {(11, 540, 816): b""})
+            list_chart_build(where, "2026-10-29.1")
+            chart_state.switch(where, "2026-10-29.1", "Ann", CHART_NOW)
+            with patch.dict(os.environ, {"CHART_TILES_DIR": str(where)}):
+                self.rec("config: a chart build live", self.client.get("/api/config", headers=ANDROID), "Cache-Control")
+                self.rec("chart tile: a build that is gone", self.client.get("/charts/vfr/2026-10-29.9/11/540/816.webp"),
+                         "Cache-Control", "X-Chart-Build", "Access-Control-Allow-Origin")
+        finally:
+            chart_serve.REGISTRY.close_all()
+            shutil.rmtree(where, ignore_errors=True)
+
     @staticmethod
     def cross_cutting(response):
         """Answers any route behind a token can give, described once in the spec's introduction, not per route."""
@@ -203,6 +223,7 @@ class NetworkFixtureTests(NativeAuthCase):
         KEPT_UUIDS.add(mine)
 
         self.rec("config", self.client.get("/api/config", headers=ANDROID), "Cache-Control")
+        self.charts()
 
         self.make_account()
         creds = {"email": "pilot@example.com", "password": PASSWORD}
@@ -1107,6 +1128,33 @@ class NetworkFixtureTests(NativeAuthCase):
         self.rec("ops: a brief and an LZ together in a finished pack", ask(ray, "post", ops, json={"ops": [
             {"type": "item.rename", "item": "brief-1", "name": "OP DK AMB", "client_op_id": "op-4"},
             {"type": "item.rename", "item": "lz-1", "name": "LZ CROW", "client_op_id": "op-5"}]}))
+        return ray
+
+    def threat_sets(self, who):
+        """Threats kept in the Library, synced like an LZ. For an account the packs and briefs have finished with, so nothing above moves."""
+        set_uuid = "7c1e4a90-2d6b-4f85-a3c7-9e0b5d2f1a64"
+        KEPT_UUIDS.add(set_uuid)
+        mask = {"bounds": [[34.0, -84.6], [35.0, -83.6]], "radars": [{"type": 0, "png": "data:image/png;base64,AAAA"}], "for": {"lat": 34.5, "lon": -84.1, "radars": []}}
+        document = {"version": 1, "threats": [{"id": "threat-1", "name": "SA-11", "milstdId": "SHGPEWMAI------", "lat": 34.5, "lon": -84.1, "information": "", "source": "SOF",
+                                               "showThreat": True, "visible": True, "radars": [], "mask": mask}]}
+
+        def ask(method, path, if_match=None, **kwargs):
+            headers = {**who["head"], "If-Match": if_match} if if_match else who["head"]
+            return getattr(self.client, method)(path, headers=headers, **kwargs)
+
+        created = self.rec("threatset: create", ask("post", "/api/threatsets", json={"name": "OP DK THREATS", "data": document, "client_uuid": set_uuid}),
+                           "ETag").get_json()
+        self.rec("threatset: create again with the same identity", ask("post", "/api/threatsets", json={"name": "OP DK THREATS", "data": document, "client_uuid": set_uuid}), "ETag")
+        self.rec("threatset: no data", ask("post", "/api/threatsets", json={"name": "OP DK THREATS"}))
+        self.rec("threatset: a name too long", ask("post", "/api/threatsets", json={"name": "T" * 101, "data": document}))
+        here = f"/api/threatsets/{created['id']}"
+        self.rec("threatset: list", ask("get", "/api/threatsets"))
+        self.rec("threatset: get", ask("get", here), "ETag")
+        self.rec("threatset: update", ask("put", here, if_match='"1"', json={"name": "OP DK SAMS"}), "ETag")
+        self.rec("threatset: update on a stale revision", ask("put", here, if_match='"1"', json={"name": "mine"}), "ETag")
+        self.rec("threatset: not found", ask("get", "/api/threatsets/9999"))
+        self.rec("sync: changes, with a set of threats", ask("get", "/api/sync/changes?since=0"))
+        self.rec("threatset: delete", ask("delete", here, if_match='"2"'))
 
     def test_the_recorded_responses_are_what_the_server_says(self):
         self.scenario()
@@ -1116,7 +1164,7 @@ class NetworkFixtureTests(NativeAuthCase):
         self.planning()
         self.weather_summary()
         self.packs()
-        self.briefs()
+        self.threat_sets(self.briefs())
         self.viewer3d()                                     # last: its account would move every user id the packs' and the briefs' responses hold
         document = {
             "description": "Real responses from the Flask API (tests/test_network_fixtures.py), with tokens, timestamps, "

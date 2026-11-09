@@ -47,9 +47,13 @@ class SpecTests(unittest.TestCase):
                 self.assertIn(part, node, f"{ref} does not resolve")
                 node = node[part]
 
-    def test_every_documented_path_is_under_api(self):
+    def test_every_documented_path_is_under_api_or_the_public_charts(self):
+        # /charts/ is outside /api on purpose (docs/VFR_CHARTS.md §7): public FAA tiles, past the affiliation gate and
+        # the API's CORS rules. Nothing else may be: a route the apps call belongs behind both.
         for path in SPEC["paths"]:
-            self.assertTrue(path.startswith("/api/"), path)
+            self.assertTrue(path.startswith("/api/") or path.startswith("/charts/vfr/"), path)
+        self.assertEqual(sorted(p for p in SPEC["paths"] if not p.startswith("/api/")),
+                         ["/charts/vfr/{build}/coverage.json", "/charts/vfr/{build}/{z}/{x}/{y}.webp"])
 
 
 class ConfigConformsTests(unittest.TestCase):

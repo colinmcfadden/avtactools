@@ -1,0 +1,40 @@
+{
+ "type": "Feature",
+ "properties": {
+  "id": "houston-sec",
+  "title": "Houston Sectional",
+  "tier": "sectional",
+  "file": "Houston SEC.tif",
+  "made_from": {
+   "width": 16572,
+   "height": 12218,
+   "transform": [
+    42.33611193,
+    0.0,
+    -365612.252391661,
+    0.0,
+    -42.334605218,
+    238469.588144893
+   ],
+   "ink": 0.999
+  },
+  "edges": {
+   "north": "neighbour:dallas-ft-worth-sec,memphis-sec",
+   "east": "neighbour:new-orleans-sec",
+   "south": "neatline",
+   "west": "neatline"
+  }
+ },
+ "geometry": {
+  "type": "Polygon",
+  "coordinates": [
+   [
+    [-97.0,28.0],
+    [-91.0,28.0],
+    [-91.0,32.0],
+    [-97.0,32.0],
+    [-97.0,28.0]
+   ]
+  ]
+ }
+}

@@ -8,7 +8,7 @@ import javax.inject.Inject
 import javax.inject.Singleton
 
 /** A threat file that was brought into the picture: its name, and how many threats it held then. */
-data class ThreatFileImport(val name: String, val count: Int)
+data class ThreatFileImport(val name: String, val count: Int, val saved: Boolean = false, val pack: String? = null)
 
 /**
  * The threat files brought in (the Imports panel's *Threat files*, docs/native-design: Imports): in memory, as the threats they came with are on the device
@@ -23,8 +23,8 @@ class ThreatFileLog @Inject constructor(private val store: ThreatStore) {
     val files: Flow<List<ThreatFileImport>> = combine(entries, store.wipes) { list, wipes -> list.filter { it.first == wipes }.map { it.second } }
 
     /** [name] brought [count] threats into the picture. */
-    fun record(name: String, count: Int) {
+    fun record(name: String, count: Int, saved: Boolean = false, pack: String? = null) {
         val now = store.wipes.value
-        entries.update { list -> list.filter { it.first == now } + (now to ThreatFileImport(name, count)) }
+        entries.update { list -> list.filter { it.first == now } + (now to ThreatFileImport(name, count, saved, pack)) }
     }
 }

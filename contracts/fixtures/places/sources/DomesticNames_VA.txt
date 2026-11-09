@@ -1,0 +1,2 @@
+﻿feature_id|feature_name|feature_class|state_name|state_numeric|county_name|county_numeric|map_name|date_created|date_edited|bgn_type|bgn_authority|bgn_date|prim_lat_dms|prim_long_dms|prim_lat_dec|prim_long_dec|source_lat_dms|source_long_dms|source_lat_dec|source_long_dec
+1500187|Suffolk|Populated Place|Virginia|51|Suffolk (city)|800|Suffolk|09/28/1979|06/07/2022||||364342N|0763501W|36.7282054|-76.5835621|||0.0|0.0

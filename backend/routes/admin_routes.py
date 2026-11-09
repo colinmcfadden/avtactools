@@ -23,9 +23,10 @@ from google.oauth2 import id_token
 from google.auth.transport import requests as google_requests
 
 from models import (
-    db, User, SavedRoute, SavedLZ, SavedPointSet, SavedBrief, LoginEvent, AircraftProfile, SyncCounter,
+    db, User, SavedRoute, SavedLZ, SavedPointSet, SavedBrief, SavedThreatSet, LoginEvent, AircraftProfile, SyncCounter,
     MissionPack, MissionPackItem, MissionPackMember, Team, TeamMember,
 )
+import data_admin
 import pack_support
 import sync_support as sync
 from entitlements import (
@@ -100,6 +101,7 @@ def _inject():
         'affiliation_ok': affiliation_ok,
         'current_admin': _current_admin(),
         'ICON_CHOICES': ICON_CHOICES,
+        'data_admin_on': data_admin.can_read(),
     }
 
 
@@ -389,6 +391,7 @@ def delete_user(uid):
     SavedLZ.query.filter_by(user_id=uid).delete()
     SavedPointSet.query.filter_by(user_id=uid).delete()
     SavedBrief.query.filter_by(user_id=uid).delete()
+    SavedThreatSet.query.filter_by(user_id=uid).delete()
     LoginEvent.query.filter_by(user_id=uid).delete()
     SyncCounter.query.filter_by(user_id=uid).delete()
     db.session.delete(user)  # cascades local_credential + account_tokens
@@ -769,3 +772,7 @@ def aircraft_promote(pid):
         'ok',
     )
     return redirect(url_for('admin.aircraft_detail', pid=copy.id))
+
+
+# The Data tab's routes live on this blueprint too (they need its session, CSRF and context).
+from routes import admin_data  # noqa: E402,F401

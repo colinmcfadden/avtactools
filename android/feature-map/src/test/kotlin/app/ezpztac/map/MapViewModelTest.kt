@@ -1,5 +1,6 @@
 package app.ezpztac.map
 
+import app.ezpztac.geo.PlaceSearch
 import app.ezpztac.model.LatLon
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -40,6 +41,12 @@ class MapViewModelTest {
         override val token = MutableStateFlow(initial)
     }
 
+    private class Charts(initial: VfrCharts = VfrCharts()) : VfrChartSource {
+        override val charts = MutableStateFlow(initial)
+        override val tileFailures: Flow<Unit> = flow { }
+        override suspend fun look() = Unit
+    }
+
     private class FakeLocation(var allowed: Boolean = true) : LocationSource {
         var fixes = Channel<UserLocation>(Channel.UNLIMITED)
         var starts = 0
@@ -65,18 +72,18 @@ class MapViewModelTest {
     @Test
     fun `the MGRS grid is off until turned on, then remembered on the device both ways`() = runTest(dispatcher) {
         val grid = Grid()
-        val vm = MapViewModel(Tokens(null), FakeLocation(), Memory(), grid)
+        val vm = MapViewModel(Tokens(null), FakeLocation(), Memory(), grid, Charts())
         assertFalse(vm.state.value.grid)
         vm.toggleGrid()
         assertTrue(vm.state.value.grid)
         vm.toggleGrid()
         assertFalse(vm.state.value.grid)
         assertEquals(listOf(true, false), grid.writes)
-        assertTrue(MapViewModel(Tokens(null), FakeLocation(), Memory(), Grid(shown = true)).state.value.grid)   // as it was left
+        assertTrue(MapViewModel(Tokens(null), FakeLocation(), Memory(), Grid(shown = true), Charts()).state.value.grid)   // as it was left
     }
 
     private fun TestScope.model(token: String? = "pk.t", location: FakeLocation = FakeLocation(), memory: Memory = Memory()) =
-        MapViewModel(Tokens(token), location, memory, Grid()).also { advanceUntilIdle() } to location
+        MapViewModel(Tokens(token), location, memory, Grid(), Charts()).also { advanceUntilIdle() } to location
 
     private fun TestScope.commandsOf(vm: MapViewModel): MutableList<MapCommand> {
         val seen = mutableListOf<MapCommand>()
@@ -130,10 +137,57 @@ class MapViewModelTest {
         assertEquals("topo", vm.state.value.style.id)
     }
 
+    private val build = VfrLive(
+        build = "b", tiles = "https://api.test/charts/vfr/b/{z}/{x}/{y}.webp", coverage = "/charts/vfr/b/coverage.json", tileSize = 512, minZoom = 5, maxZoom = 14,
+        effective = "2026-10-29T09:01Z", expires = "2026-12-24T09:01Z", bounds = ChartBox(-125.0, 24.0, -66.0, 50.0), fallback = emptyList(),
+    )
+
+    @Test
+    fun `a build that goes live is drawn on the VFR map with nothing else moved, and one taken away goes back to ArcGIS`() = runTest(dispatcher) {
+        val charts = Charts()
+        val vm = MapViewModel(Tokens(null), FakeLocation(), Memory(), Grid(), charts)
+        advanceUntilIdle()
+        assertEquals("vfr-sectional", vm.state.value.style.id)
+        assertTrue(vm.state.value.style.tiles.startsWith("https://tiles.arcgis.com/"))
+
+        charts.charts.value = VfrCharts(build)
+        advanceUntilIdle()
+        assertEquals("vfr-sectional", vm.state.value.style.id)
+        assertEquals(build.tiles, vm.state.value.style.tiles)
+        assertEquals(build.bounds, vm.state.value.style.bounds)
+        assertEquals(VfrCharts(build), vm.state.value.charts)
+
+        charts.charts.value = VfrCharts()
+        advanceUntilIdle()
+        assertTrue(vm.state.value.style.tiles.startsWith("https://tiles.arcgis.com/"))
+        assertNull(vm.state.value.style.bounds)
+    }
+
+    @Test
+    fun `choosing the VFR map from another draws the live build`() = runTest(dispatcher) {
+        val vm = MapViewModel(Tokens("pk.t"), FakeLocation(), Memory(), Grid(), Charts(VfrCharts(build)))
+        advanceUntilIdle()
+        vm.selectStyle("satellite")
+        vm.selectStyle(MapStyles.VFR_ID)
+        assertEquals(build.tiles, vm.state.value.style.tiles)
+    }
+
+    @Test
+    fun `the coverage coming changes what is said, and is no new style for the map`() = runTest(dispatcher) {
+        val charts = Charts(VfrCharts(build))
+        val vm = MapViewModel(Tokens(null), FakeLocation(), Memory(), Grid(), charts)
+        advanceUntilIdle()
+        val style = vm.state.value.style
+        charts.charts.value = VfrCharts(build, ChartCoverage("b", 5, emptyList()))
+        advanceUntilIdle()
+        assertTrue("MapHost keys its restyle on this", style === vm.state.value.style || style == vm.state.value.style)
+        assertEquals("b", vm.state.value.charts.coverage?.build)
+    }
+
     @Test
     fun `a token that arrives later brings satellite back without the person doing anything`() = runTest(dispatcher) {
         val tokens = Tokens(null)
-        val vm = MapViewModel(tokens, FakeLocation(), Memory(), Grid())
+        val vm = MapViewModel(tokens, FakeLocation(), Memory(), Grid(), Charts())
         advanceUntilIdle()
         assertEquals("vfr-sectional", vm.state.value.style.id)
         tokens.token.value = "pk.arrived"
@@ -214,7 +268,7 @@ class MapViewModelTest {
         vm.search("somewhere nice")
         advanceUntilIdle()
         assertTrue(seen.isEmpty())
-        assertEquals("Could not read that as a grid or a coordinate.", vm.state.value.searchError)
+        assertEquals(PlaceSearch.Messages.UNREADABLE, vm.state.value.searchError)
         vm.clearSearchError()
         assertNull(vm.state.value.searchError)
         vm.search("34.5, -84.1")

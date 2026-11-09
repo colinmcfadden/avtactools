@@ -25,21 +25,21 @@ export const movePointsToPack = (set, { createItem, removePointSet }) => {
   removePointSet(set.id);
 };
 
-export const useImports = ({ pack, importers, destinations, onDone }) => {
+export const useImports = ({ pack, threatsSaved = false, importers, destinations, onDone }) => {
   const { show } = useToast();
   const [review, setReview] = useState(null);
   const [threatFiles, setThreatFiles] = useState([]);
   const [dragging, setDragging] = useState(false);
   const depth = useRef(0);
-  const deps = useRef({ importers, destinations, onDone, pack });
-  deps.current = { importers, destinations, onDone, pack };
+  const deps = useRef({ importers, destinations, onDone, pack, threatsSaved });
+  deps.current = { importers, destinations, onDone, pack, threatsSaved };
 
   const begin = useCallback(
     async (files) => {
       const list = [...files];
       if (list.length === 0) return;
       const detected = await Promise.all(list.map((file) => detectImport(file)));
-      setReview(detected.map((item) => ({ ...item, destination: item.kind ? defaultDestination(item.kind, deps.current.pack) : null })));
+      setReview(detected.map((item) => ({ ...item, destination: item.kind ? defaultDestination(item.kind, deps.current.pack, deps.current.threatsSaved) : null })));
     },
     [],
   );
@@ -60,7 +60,8 @@ export const useImports = ({ pack, importers, destinations, onDone }) => {
             if (item.destination === "library") await dest.library.lps(set);
             if (item.destination === "pack") await dest.pack.lps(set);
           } else if (item.kind === "ths") {
-            const count = await imp.ths(item.file);
+            const options = { name: item.name?.trim() || undefined };
+            const count = item.destination === "pack" ? await dest.pack.ths(item.file, options) : await imp.ths(item.file, options);
             setThreatFiles((prev) => [...prev, { id: `${Date.now()}-${prev.length}`, fileName: item.file.name, count }]);
           }
           kinds.add(item.kind);
@@ -116,7 +117,7 @@ export const useImports = ({ pack, importers, destinations, onDone }) => {
   ) : null;
 
   const dialog = review ? (
-    <ImportReviewDialog items={review} pack={pack} onCancel={() => setReview(null)} onImport={run} />
+    <ImportReviewDialog items={review} pack={pack} threatsSaved={threatsSaved} onCancel={() => setReview(null)} onImport={run} />
   ) : null;
 
   return { begin, dialog, overlay, dragProps, threatFiles };

@@ -19,13 +19,14 @@ import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.TestFactory
 
 /**
- * Every case of `contracts/fixtures/packs/ops.json` and `packs/ops-brief.json` (the brief item kind, docs/MISSION_BRIEF.md §3), which the
+ * Every case of `contracts/fixtures/packs/ops.json`, `packs/ops-brief.json` (the brief item kind, docs/MISSION_BRIEF.md §3) and `packs/ops-threatset.json`, which the
  * web's `packOps.js` wrote, held strictly: the status, the reason, and the items afterwards with null and absent kept apart, numbers as
  * written, and every object's keys in the order JavaScript would enumerate them (a key edited keeps its place, a new one goes last).
  */
 class PackOpsFixtureTest {
     private val briefCases = Fixtures.load("packs/ops-brief.json").getValue("cases").jsonArray.map { it.jsonObject }
-    private val cases = Fixtures.load("packs/ops.json").getValue("cases").jsonArray.map { it.jsonObject } + briefCases
+    private val threatSetCases = Fixtures.load("packs/ops-threatset.json").getValue("cases").jsonArray.map { it.jsonObject }
+    private val cases = Fixtures.load("packs/ops.json").getValue("cases").jsonArray.map { it.jsonObject } + briefCases + threatSetCases
 
     private fun items(json: JsonElement): Map<String, PackItemState> = json.jsonObject.mapValues { (_, item) ->
         val fields = item.jsonObject
@@ -137,6 +138,12 @@ class PackOpsFixtureTest {
         assertEquals("bad_data", text(briefCases.single { name(it) == "a brief whose content is a list is malformed" }, "reason"))
         assertEquals("not_an_object", text(briefCases.single { name(it) == "a brief's content cannot be replaced by a list" }, "reason"))
         assertTrue("brief" in PackOps.ITEM_KINDS)
+    }
+
+    @Test
+    fun `a set of threats is a kind of its own, and every case of it is held`() {
+        assertTrue("threatset" in PackOps.ITEM_KINDS)
+        assertTrue(threatSetCases.count { text(it, "status") == "applied" } >= 3)
     }
 
     @Test

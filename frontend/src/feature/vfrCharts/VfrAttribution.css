@@ -1,0 +1,24 @@
+/* As Leaflet's own attribution reads, directly above it. */
+.leaflet-container .vfr-attribution {
+  margin: 0;
+  padding: 0 5px;
+  background: rgba(255, 255, 255, 0.8);
+  color: #333;
+  font-size: 11px;
+  line-height: 1.4;
+  text-align: right;
+  pointer-events: none;
+}
+
+.leaflet-container .vfr-attribution:empty {
+  display: none;
+}
+
+.vfr-attribution__enlarged {
+  font-style: italic;
+}
+
+.vfr-attribution__expired {
+  color: #c1121f;
+  font-weight: 600;
+}

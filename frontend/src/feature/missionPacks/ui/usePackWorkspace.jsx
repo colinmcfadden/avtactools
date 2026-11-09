@@ -14,6 +14,7 @@ import { useMissionPack } from "../useMissionPack";
 import { usePackLz } from "../usePackLz";
 import { usePackPoints } from "../usePackPoints";
 import { usePackRoutes } from "../usePackRoutes";
+import { usePackThreats } from "../usePackThreats";
 import { changedSince, usePackSeen } from "../usePackSeen";
 import MembersDialog from "./MembersDialog";
 import NewPackDialog from "./NewPackDialog";
@@ -29,8 +30,9 @@ import { usePacksHome } from "./usePacksHome";
  *  - Opening a pack parks the Library's open LZ/PZs (with their unsaved changes) and puts them back
  *    on the way out: switching never discards anything. The Library's routes, points and missions
  *    stay loaded but are not shown while a pack is open.
- *  - In a pack, the pack's route sets and point sets are all on the map, and its first LZ/PZ is
- *    opened; anything created while it is open goes into it.
+ *  - In a pack, the pack's route sets, point sets and sets of threats are all on the map, and its
+ *    first LZ/PZ is opened; anything created while it is open goes into it. The person's own threats
+ *    stay as they are and come back on the way out.
  *  - "Who is here" is only the people who have this pack open (the live service's presence), never
  *    whether someone is signed in somewhere. Each person's pointer is shared as they move it over the
  *    map, so the others see where they are looking.
@@ -173,6 +175,8 @@ export const UpdateFromOriginalDialog = ({ packUuid, item, me, getItem = packApi
   );
 };
 
+const NO_THREATS = { on: false, packSets: null, setPackSets: () => {}, fetchMasks: () => {} };
+
 export const usePackWorkspace = ({
   enabled,
   user,
@@ -181,10 +185,14 @@ export const usePackWorkspace = ({
   lz,
   sketch,
   points,
+  threats = NO_THREATS,
   library,
   onOpenLibrary,
   // A brief presented on the live sandtable puts the dock away, the Pack panel with it.
   presenting = false,
+  // A ref that is true while the map is showing a place a grid link asked for: the pack's first LZ/PZ is not
+  // opened over it (the map would fly away from the grid the person followed).
+  keepMap = null,
 }) => {
   const me = user?.id ?? null;
   const actor = actorName(user);
@@ -247,6 +255,8 @@ export const usePackWorkspace = ({
     readOnly,
     actor,
     sketchedRoutes: sketch.sketchedRoutes,
+    flots: sketch.flots,
+    setFlotsOf: sketch.setFlotsOf,
     loadSketchRoutes: sketch.loadSketchRoutes,
     replaceRouteSet: sketch.replaceRouteSet,
     removeRouteSet: sketch.removeRouteSet,
@@ -261,6 +271,20 @@ export const usePackWorkspace = ({
     actor,
     pointSets: points.pointSets,
     setPointSets: points.setPointSets,
+    onGone: reportGone,
+    onRefused: reportRefused,
+  });
+
+  // An account without threats neither opens nor is shown a pack's sets of them.
+  const packThreats = usePackThreats({
+    packUuid: threats.on ? open : null,
+    items,
+    edit: live.edit,
+    readOnly,
+    actor,
+    packSets: threats.packSets,
+    setPackSets: threats.setPackSets,
+    fetchMasks: threats.fetchMasks,
     onGone: reportGone,
     onRefused: reportRefused,
   });
@@ -289,10 +313,11 @@ export const usePackWorkspace = ({
       packLz.flush();
       packRoutes.flush();
       packPoints.flush();
+      packThreats.flush();
       packRoutes.open.forEach((itemUuid) => packRoutes.closeItem(itemUuid));
       points.setPointSets((sets) => sets.filter((set) => packLocalRef(set.id)?.pack !== uuid));
     },
-    [packLz, packRoutes, packPoints, points],
+    [packLz, packRoutes, packPoints, packThreats, points],
   );
 
   const openPack = useCallback(
@@ -332,7 +357,7 @@ export const usePackWorkspace = ({
     openPack(null);
   }, [liveStatus, open, meta?.name, toast, home, openPack]);
 
-  // Once a pack has loaded, its route sets and point sets go on the map (and new ones as they are
+  // Once a pack has loaded, its route sets, point sets and threats go on the map (and new ones as they are
   // added), and its first LZ/PZ is opened.
   const firstOpened = useRef(null);
   useEffect(() => {
@@ -341,13 +366,14 @@ export const usePackWorkspace = ({
       if (closedHere.current.has(item.uuid)) return;
       if (item.kind === "route" && !packRoutes.open.includes(item.uuid)) packRoutes.openItem(item.uuid);
       if (item.kind === "pointset" && !points.pointSets.some((set) => set.id === `pack:${open}:${item.uuid}`)) packPoints.openItem(item.uuid);
+      if (item.kind === "threatset" && threats.on && !threats.packSets?.some((set) => set.id === `pack:${open}:${item.uuid}`)) packThreats.openItem(item.uuid);
     });
     if (firstOpened.current !== open) {
       firstOpened.current = open;
       const first = items.find((item) => item.kind === "lz");
-      if (first && !Object.keys(workspaceRef.current?.diagramsById ?? {}).length) packLz.openItem(first.uuid);
+      if (first && !keepMap?.current && !Object.keys(workspaceRef.current?.diagramsById ?? {}).length) packLz.openItem(first.uuid);
     }
-  }, [open, session, items, packRoutes, packPoints, packLz, points.pointSets]);
+  }, [open, session, items, packRoutes, packPoints, packThreats, packLz, points.pointSets, threats.on, threats.packSets]);
 
   // -- Presence and how far this person has looked ---------------------------------------------
 
@@ -433,9 +459,13 @@ export const usePackWorkspace = ({
         const ref = packLocalRef(set.id);
         if (ref?.pack === open) ids.add(ref.item);
       });
+      (threats.packSets ?? []).forEach((set) => {
+        const ref = packLocalRef(set.id);
+        if (ref?.pack === open) ids.add(ref.item);
+      });
     }
     return ids;
-  }, [open, packRoutes.open, lz.workspace, points.pointSets]);
+  }, [open, packRoutes.open, lz.workspace, points.pointSets, threats.packSets]);
 
   const openItem = useCallback(
     (item) => {
@@ -446,12 +476,15 @@ export const usePackWorkspace = ({
       } else if (item.kind === "route") {
         packRoutes.openItem(item.uuid);
         dock.show("routes");
+      } else if (item.kind === "threatset") {
+        packThreats.openItem(item.uuid);
+        dock.show("threats");
       } else {
         packPoints.openItem(item.uuid);
         dock.show("imports");
       }
     },
-    [packLz, packRoutes, packPoints, dock],
+    [packLz, packRoutes, packPoints, packThreats, dock],
   );
 
   const closeItem = useCallback(
@@ -459,9 +492,10 @@ export const usePackWorkspace = ({
       closedHere.current.add(item.uuid);
       if (item.kind === "lz") lz.removeDiagram(packDiagramId(open, item.uuid));
       else if (item.kind === "route") packRoutes.closeItem(item.uuid);
+      else if (item.kind === "threatset") packThreats.closeItem(item.uuid);
       else packPoints.closeItem(item.uuid);
     },
-    [lz, open, packRoutes, packPoints],
+    [lz, open, packRoutes, packPoints, packThreats],
   );
 
   const refreshAll = useCallback(() => {
@@ -631,7 +665,7 @@ export const usePackWorkspace = ({
     dialogs = (
       <AddFromLibraryDialog
         packName={meta.name}
-        library={{ lz: library.history ?? [], route: library.savedRoutes ?? [], pointset: library.savedPointSets ?? [] }}
+        library={{ lz: library.history ?? [], route: library.savedRoutes ?? [], pointset: library.savedPointSets ?? [], threatset: library.savedThreatSets }}
         onCancel={close}
         onAdd={async (chosen) => {
           let added = 0;
@@ -1009,6 +1043,7 @@ export const usePackWorkspace = ({
     packLz,
     packRoutes,
     packPoints,
+    packThreats,
     pointAt,
     itemInfo,
     presenceOn,

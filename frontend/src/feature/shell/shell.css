@@ -1,9 +1,13 @@
 /*
- * The redesign's frame around the map (docs/MENU_REDESIGN.md §3): a 48 px top bar right of the
- * sidebar, and a dock on the right (a 344 px panel and a 56 px rail of icons). Below 1100 px wide the
+ * The redesign's frame around the map (docs/MENU_REDESIGN.md §3): a 48 px top bar across the whole
+ * window, the control panel under it on the left, and a dock on the right (a 344 px panel and a 56 px rail of icons). Below 1100 px wide the
  * dock becomes a bottom sheet, as the Android app's is: the rail turns into a row of tabs along the
  * sheet's top, and the sheet rests at a peek, half way or full height.
  */
+
+/* The bar's room at the top of the window: the control panel and the map area are laid out under it.
+   A presented sandtable has a bar of its own (brief.css). */
+.app-container:not(.app-container--presenting) { box-sizing: border-box; padding-top: 48px; }
 
 .shell-topbar {
   position: absolute;
@@ -53,6 +57,141 @@
 .shell-topbar__status--offline { color: #b9c1cb; }
 .shell-topbar__status--offline .shell-topbar__status-dot { background: #6f7885; }
 .shell-topbar__status--finished { color: #b9c1cb; }
+/* The search: as wide as the bar spares, between the workspace and the buttons. */
+.shell-topbar__search { flex: 1 1 560px; min-width: 150px; max-width: 680px; margin: 0 6px 0 auto; }
+/* Room for it beside the rest at middling widths: the pack's status gives way first (its dot stays), then the
+   buttons' words and the account's name, as a phone's do. */
+.shell-topbar__status { min-width: 0; flex: 0 1 auto; overflow: hidden; text-overflow: ellipsis; }
+@media (max-width: 1360px) {
+  .shell-topbar__button-label,
+  .shell-topbar__account-name { display: none; }
+}
+.shell-topbar__search .target-field__drop { right: auto; width: 100%; min-width: 320px; }
+/* The search keeps its room in the bar; the field itself (.topbar-spotlight) lies over that room, and grows out of it
+   into the map when it opens (TopBarSearch.jsx). */
+.shell-topbar__search { position: relative; height: 36px; }
+.topbar-search-slot { position: relative; height: 100%; }
+.topbar-spotlight {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  z-index: 2;
+  transition: left 0.24s cubic-bezier(0.2, 0.8, 0.2, 1), width 0.24s cubic-bezier(0.2, 0.8, 0.2, 1), top 0.24s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+.topbar-search {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  height: 36px;
+  padding: 0 3px 0 10px;
+  box-sizing: border-box;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 9px;
+  /* A faint light from above, so the field reads as something to press rather than a hole in the bar. */
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.06), rgba(255, 255, 255, 0.015) 70%), var(--surface-2);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06), 0 1px 2px rgba(0, 0, 0, 0.35);
+  transition: height 0.24s cubic-bezier(0.2, 0.8, 0.2, 1), padding 0.24s ease, border-radius 0.24s ease, box-shadow 0.24s ease,
+    border-color 0.24s ease, background 0.24s ease;
+}
+.topbar-search:hover { border-color: rgba(255, 255, 255, 0.22); }
+.topbar-search:focus-within { border-color: var(--ff-accent); }
+.topbar-search__lead { color: #8a94a1; transition: width 0.24s ease, height 0.24s ease, color 0.24s ease; }
+.topbar-search__input {
+  flex: 1 1 auto;
+  min-width: 0;
+  height: 100%;
+  padding: 0 0 0 4px;
+  border: none;
+  outline: none;
+  background: transparent;
+  color: var(--ff-text-main);
+  font-family: var(--mono, "SFMono-Regular", Consolas, monospace);
+  font-size: 13px;
+  transition: font-size 0.24s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+.topbar-search__input::placeholder { color: #8a94a1; font-family: var(--ff-font-stack); }
+/* The field's border says it has the focus; a ring round the text inside it would say it twice. */
+.topbar-search .topbar-search__input:focus,
+.topbar-search .topbar-search__input:focus-visible { outline: none; box-shadow: none; }
+.topbar-search .target-field__share { width: 28px; height: 28px; transition: width 0.24s ease, height 0.24s ease; }
+.topbar-search__go {
+  flex: none;
+  height: 28px;
+  padding: 0 12px;
+  border: none;
+  border-radius: 6px;
+  background: var(--primary-fill, #3d84b3);
+  color: #fff;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  cursor: pointer;
+  transition: height 0.24s cubic-bezier(0.2, 0.8, 0.2, 1), padding 0.24s ease, border-radius 0.24s ease, font-size 0.24s ease;
+}
+.topbar-search__go:hover { background: #4a7db3; }
+
+/* Open: a larger field over the map, lit from above inside and lifted by its shadow, with its list under it in the same
+   glass. */
+.topbar-spotlight--open { top: 6px; }
+.topbar-spotlight--open .topbar-search {
+  height: 58px;
+  padding: 0 9px 0 18px;
+  gap: 8px;
+  border-radius: 15px;
+  border-color: rgba(90, 167, 212, 0.55);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.09) 0%, rgba(255, 255, 255, 0.02) 48%, rgba(0, 0, 0, 0.12) 100%),
+    rgba(26, 31, 38, 0.94);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.1),
+    inset 0 -1px 0 rgba(0, 0, 0, 0.4),
+    0 0 0 3px rgba(90, 167, 212, 0.16),
+    0 24px 64px rgba(0, 0, 0, 0.62),
+    0 6px 18px rgba(0, 0, 0, 0.45);
+  backdrop-filter: blur(18px) saturate(1.2);
+  -webkit-backdrop-filter: blur(18px) saturate(1.2);
+}
+.topbar-spotlight--open .topbar-search__lead { width: 22px; height: 22px; color: var(--ff-accent); }
+.topbar-spotlight--open .topbar-search__input { font-size: 18px; }
+/* Smaller than what is typed, so the example fits beside it. */
+.topbar-spotlight--open .topbar-search__input::placeholder { font-size: 15px; }
+.topbar-spotlight--open .topbar-search .target-field__share { width: 40px; height: 40px; }
+.topbar-spotlight--open .topbar-search__go { height: 40px; padding: 0 18px; border-radius: 10px; font-size: 13px; }
+.topbar-spotlight--open .target-field__drop {
+  top: calc(100% + 8px);
+  border-radius: 14px;
+  border-color: rgba(255, 255, 255, 0.14);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.05), rgba(255, 255, 255, 0) 40%),
+    rgba(26, 31, 38, 0.96);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.07), 0 24px 64px rgba(0, 0, 0, 0.62), 0 6px 18px rgba(0, 0, 0, 0.45);
+  backdrop-filter: blur(18px) saturate(1.2);
+  -webkit-backdrop-filter: blur(18px) saturate(1.2);
+}
+.topbar-spotlight--open .target-field__message { padding: 12px 18px; font-size: 13px; }
+.topbar-spotlight--open .target-field__option { min-height: 54px; padding: 8px 12px 8px 18px; }
+.topbar-spotlight--open .target-field__main { font-size: 16px; }
+.topbar-spotlight--open .target-field__note { font-size: 12px; }
+/* Open, the bar is over what floats over the map (the unit badge, the proximity alerts), which its field and list now lie on, and still under
+   the floating windows (2500) and the dialogs. */
+.shell-topbar:has(.topbar-spotlight--open) { z-index: 2450; }
+/* The map, the panel and the dock dim a little behind the open field; a click there still reaches them (and folds it). */
+.topbar-spotlight-scrim {
+  position: fixed;
+  inset: 48px 0 0 0;
+  z-index: 1;
+  background: rgba(5, 8, 13, 0.32);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.24s ease;
+}
+.topbar-spotlight-scrim--shown { opacity: 1; }
+@media (prefers-reduced-motion: reduce) {
+  .topbar-spotlight,
+  .topbar-spotlight *,
+  .topbar-spotlight-scrim { transition: none; }
+}
 .shell-topbar__end { margin-left: auto; display: flex; align-items: center; gap: 8px; flex: none; }
 .shell-topbar__button {
   box-sizing: border-box;
@@ -72,6 +211,8 @@
   cursor: pointer;
 }
 .shell-topbar__button:hover { background: var(--surface-3); }
+.shell-topbar__button:disabled { opacity: 0.45; cursor: default; background: var(--surface-2); }
+.shell-topbar__undo { display: flex; gap: 4px; }
 .shell-topbar__divider { width: 1px; height: 22px; background: rgba(255, 255, 255, 0.1); margin: 0 2px; }
 .shell-topbar__account {
   box-sizing: border-box;
@@ -92,9 +233,9 @@
 }
 .shell-topbar__account:hover { background: rgba(255, 255, 255, 0.05); }
 
-/* The map sits between the top bar and the dock, so a target set in the middle of it is in the middle
+/* The map sits under the top bar and between the panel and the dock, so a target set in the middle of it is in the middle
    of what can be seen. */
-.shell-map { position: absolute; top: 48px; left: 0; right: 400px; bottom: 0; }
+.shell-map { position: absolute; top: 0; left: 0; right: 400px; bottom: 0; }
 .shell-map--dock-collapsed { right: 56px; }
 
 /* -- The dock ------------------------------------------------------------------------------- */
@@ -102,7 +243,7 @@
 .shell-dock {
   position: absolute;
   right: 0;
-  top: 48px;
+  top: 0;
   bottom: 0;
   z-index: 1050;
   display: flex;
@@ -467,9 +608,13 @@
   /* The menu button lives in the top bar now. */
   .mobile-hamburger-btn { display: none !important; }
   .shell-topbar__context { display: none; }
+  /* A phone's are on the map's tool rail (MobileQuickAccess). */
+  .shell-topbar__undo { display: none; }
   .shell-topbar__button-label,
   .shell-topbar__account-name { display: none; }
   .shell-topbar__switcher { max-width: 46vw; }
+  /* A phone's search is its own, over the map (MobileGridInput). */
+  .shell-topbar__search { display: none; }
 }
 
 @media (prefers-reduced-motion: reduce) {
