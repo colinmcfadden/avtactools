@@ -48,11 +48,16 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.distinctUntilChangedBy
+import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+
+/** The entitlements that let an account save threats: `/api/threatsets` needs both, and a write it refused would wait in the outbox for good. */
+private const val THREATS = "threats"
+private const val CLOUD_SAVE = "cloud_save"
 
 /**
  * The shell: reads the session, asks the server what it will allow, works out whose plans are on this device, and says which [Gate]
@@ -170,6 +175,13 @@ class AppViewModel @Inject constructor(
             }
         }
         viewModelScope.launch {
+            // Threats are saved sets once the plans here are this account's and it may save them (`threats` and `cloud_save`, which an admin can change at any time). A
+            // null passes through, so the same account coming back after a sign-out asks again.
+            combine(backend.state, ownership) { auth, owner ->
+                (auth as? AuthState.SignedIn)?.user?.takeIf { it.accessOk && owner == Ownership.Yours }?.let { it.id.toString() to (it.hasFeature(THREATS) && it.hasFeature(CLOUD_SAVE)) }
+            }.distinctUntilChanged().filterNotNull().collect { (account, saves) -> quietly { threats.attach(account, saves) } }
+        }
+        viewModelScope.launch {
             // An invitation is accepted once the person is in (signed in, past the gate, the plans here theirs) and the app may send (accepting
             // joins a shared pack), and asked about again when Mission Packs are turned on or off for them, or another link comes.
             combine(gate, inviteToken, mayGoOut) { gate, token, may -> (gate as? Gate.Ready)?.user?.takeIf { may } to token }
@@ -225,6 +237,7 @@ class AppViewModel @Inject constructor(
             withContext(NonCancellable) {
                 quietly { session.flush() }
                 quietly { routeSession.flush() }
+                quietly { threats.flush() }
                 quietly { briefs.flush() }
                 quietly { if (packs.unsentCount() > 0) sync.requestSync() }
             }
@@ -260,7 +273,7 @@ class AppViewModel @Inject constructor(
                 // follows from being cleared.
                 quietly { packs.disable() }
                 weather.clear()                                                  // where this account's landing zones are does not stay for the next person
-                threats.wipe()                                                   // nor does the threat picture: it is the most sensitive thing on the device
+                quietly { threats.signOut() }                                    // what was changed is saved first; then none of it stays in memory, and a device-only picture goes
                 exports.clear()                                                  // nor a .ths or mission that was shared: they are in the clear in the cache
                 tiles.clear()                                                    // nor the point clouds the 3D view kept: each is a place
             }

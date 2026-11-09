@@ -71,6 +71,7 @@ internal data class MapMenuChoices(
     /** Why *New LZ/PZ here* is off: a read-only pack is open, which nothing new goes into ("Off in a finished pack"). */
     val newLzOff: String? = null,
     val addThreat: (() -> Unit)? = null,
+    val addThreatOff: String? = null,
     /** What *Add route point here* would do now, and doing it. */
     val routePoint: Pair<MapPointAction, () -> Unit>? = null,
     /** *Add object*: a planning graphic of the open LZ/PZ put at the press. Null while no LZ/PZ is open. */
@@ -217,7 +218,7 @@ internal fun ColumnScope.MapMenuItems(place: MapMenuPlace, choices: MapMenuChoic
             onClick = { objects = true }, accent = add.off == null, enabled = add.off == null,
         )
     }
-    choices.addThreat?.let { MenuChoice(EzpzIcons.crisisAlert, "Add threat here", null, choose(it)) }
+    choices.addThreat?.let { MenuChoice(EzpzIcons.crisisAlert, "Add threat here", choices.addThreatOff, choose(it), enabled = choices.addThreatOff == null) }
     choices.routePoint?.let { (action, add) ->
         val (supporting, enabled) = when (action) {
             is MapPointAction.AddTo -> "Adds a turn point to the end of ${action.routeName}" to true

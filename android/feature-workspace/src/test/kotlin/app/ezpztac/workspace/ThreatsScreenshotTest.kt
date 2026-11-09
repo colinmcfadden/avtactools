@@ -12,6 +12,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.test.junit4.v2.createComposeRule
 import androidx.compose.ui.test.onRoot
 import androidx.compose.ui.unit.dp
+import app.ezpztac.data.ThreatSetStanding
 import app.ezpztac.designsystem.EzpzTheme
 import app.ezpztac.designsystem.ThemeMode
 import app.ezpztac.model.LatLon
@@ -48,6 +49,10 @@ class ThreatsScreenshotTest {
 
     @Test fun panel() = shot("panel") { ThreatsContent(ThreatsUiState(threats = listOf(one, two)), ThreatsActions(), crosshairGrid = "16S GD 66993 52949") }
     @Test fun panelNight() = shot("panel-night", ThemeMode.Night) { ThreatsContent(ThreatsUiState(threats = listOf(one, two)), ThreatsActions(), crosshairGrid = "16S GD 66993 52949") }
+    @Test fun saved() = shot("saved") {
+        val sets = listOf(ThreatSetUi("s1", "NORTH GA", ThreatSetStanding.SAVED, listOf(one), active = true), ThreatSetUi("s2", "OP DK THREATS", ThreatSetStanding.NOT_SAVED, listOf(two), active = false))
+        ThreatsContent(ThreatsUiState(threats = listOf(one, two), sets = sets, saves = true), ThreatsActions(), crosshairGrid = "16S GD 66993 52949")
+    }
     @Test fun empty() = shot("empty") { ThreatsContent(ThreatsUiState(), ThreatsActions(), crosshairGrid = "16S GD 66993 52949") }
 
     private fun editing(id: String?, error: String? = null) = ThreatEditUi(

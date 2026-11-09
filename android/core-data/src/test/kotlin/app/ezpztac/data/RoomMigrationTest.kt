@@ -29,7 +29,7 @@ import java.io.File
 
 /**
  * A database made by an earlier version of the app opens in this one with everything in it, and can then carry files (version 2) and mission
- * packs (version 3).
+ * packs (version 3). Version 5 changes no table: it forgets the sync cursor, once, so a device past the feed's first threat sets is sent them.
  *
  * The earlier database is built from the schema Room exported for it (`schemas/.../1.json` or `2.json`, committed): the same tables, indexes and identity hash an installed
  * app has. That is what a person's phone holds when the app updates, so this is the upgrade they get, tried against SQLite.
@@ -110,7 +110,7 @@ class RoomMigrationTest {
     }
 
     @Test
-    fun `an installed version 1 database opens with its records, its unsent changes and its cursor`() = runBlocking<Unit> {
+    fun `an installed version 1 database opens with its records and its unsent changes`() = runBlocking<Unit> {
         makeVersionOne()
         val database = EzpzDatabase.open(context)
         try {
@@ -126,7 +126,7 @@ class RoomMigrationTest {
             assertEquals(Operation.UPDATE, entry.operation)
             assertEquals("key-1", entry.sent!!.key)                           // a send in doubt is still repeated as it was
             assertNull(entry.sent!!.file)
-            assertEquals(42, store.transaction { cursor() })
+            assertEquals(0, store.transaction { cursor() })                  // forgotten by version 5
             assertNoPacks(database)                                           // through version 2 to 3
         } finally {
             database.close()
@@ -134,7 +134,7 @@ class RoomMigrationTest {
     }
 
     @Test
-    fun `an installed version 2 database opens with its missions, their files, a send in doubt and its cursor, and empty pack tables`() = runBlocking<Unit> {
+    fun `an installed version 2 database opens with its missions, their files, a send in doubt, and empty pack tables`() = runBlocking<Unit> {
         makeVersionTwo()
         val database = EzpzDatabase.open(context)
         try {
@@ -147,7 +147,7 @@ class RoomMigrationTest {
             val entry = store.transaction { outbox() }.single()
             assertEquals("key-2", entry.sent!!.key)
             assertEquals(mission.file, entry.sent!!.file)
-            assertEquals(77, store.transaction { cursor() })
+            assertEquals(0, store.transaction { cursor() })                  // forgotten by version 5
             assertNoPacks(database)
         } finally {
             database.close()
@@ -219,6 +219,43 @@ class RoomMigrationTest {
         assertEquals(tables(3).keys, tables(4).keys)
         tables(3).filterKeys { it != "record" }.forEach { (table, entity) -> assertEquals(table, entity, tables(4).getValue(table)) }
         assertEquals(4, schema(4).getValue("version").jsonPrimitive.content.toInt())
+
+        // 5 changes no table: its migration only forgets the cursor.
+        assertEquals(tables(4), tables(5))
+        assertEquals(5, schema(5).getValue("version").jsonPrimitive.content.toInt())
+    }
+
+    @Test
+    fun `an installed version 4 database forgets its cursor once, and keeps its records and what it had not sent`() = runBlocking<Unit> {
+        makeVersion(4) { db ->
+            db.execSQL(
+                "INSERT INTO record (kind, uuid, serverId, baseRevision, name, data, dirty, deleted, localVersion, conflictOf, fileId, fileName, updatedAt) " +
+                    "VALUES ('LZ', 'lz-1', 7, 3, 'HAWK', '{\"schema\":2}', 1, 0, 4, NULL, NULL, NULL, '2026-10-12T10:00:00Z')",
+            )
+            db.execSQL(
+                "INSERT INTO outbox (seq, kind, uuid, operation, sentKey, sentVersion, sentBaseRevision, sentName, sentData, attempts, lastError, blocked) " +
+                    "VALUES (5, 'LZ', 'lz-1', 'UPDATE', 'key-1', 4, 3, 'HAWK', '{\"schema\":2}', 1, NULL, 0)",
+            )
+            db.execSQL("INSERT INTO sync_state (`key`, value) VALUES ('cursor', 512)")
+        }
+        var database = EzpzDatabase.open(context)
+        try {
+            val store = RoomSyncStore(database)
+            assertEquals(0, store.transaction { cursor() })                                   // the whole feed again: applying what is there already is harmless
+            val record = store.transaction { record(RecordKind.LZ, "lz-1") }!!
+            assertEquals("HAWK", record.name)
+            assertEquals("2026-10-12T10:00:00Z", record.updatedAt)
+            assertEquals("key-1", store.transaction { outbox() }.single().sent!!.key)
+            store.transaction { setCursor(9) }
+        } finally {
+            database.close()
+        }
+        database = EzpzDatabase.open(context)
+        try {
+            assertEquals(9, RoomSyncStore(database).transaction { cursor() })                 // once: a later launch does not start over
+        } finally {
+            database.close()
+        }
     }
 
     @Test

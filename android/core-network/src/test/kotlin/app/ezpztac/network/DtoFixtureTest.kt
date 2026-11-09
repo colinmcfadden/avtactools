@@ -61,6 +61,11 @@ class DtoFixtureTest {
         "brief: list" to ListSerializer(BriefSummary.serializer()),
         "brief: get" to BriefFull.serializer(),
         "brief: update" to BriefSummary.serializer(),
+        "threatset: create" to ThreatSetSummary.serializer(),
+        "threatset: create again with the same identity" to ThreatSetSummary.serializer(),
+        "threatset: list" to ListSerializer(ThreatSetSummary.serializer()),
+        "threatset: get" to ThreatSetFull.serializer(),
+        "threatset: update" to ThreatSetSummary.serializer(),
         "aircraft: list with no profiles of my own" to ListSerializer(AircraftProfileDto.serializer()),
         "aircraft: create" to AircraftProfileDto.serializer(),
         "aircraft: list" to ListSerializer(AircraftProfileDto.serializer()),
@@ -91,6 +96,7 @@ class DtoFixtureTest {
         "sync: changes" to ChangeFeed.serializer(),
         "sync: nothing new" to ChangeFeed.serializer(),
         "sync: changes, with a brief" to ChangeFeed.serializer(),
+        "sync: changes, with a set of threats" to ChangeFeed.serializer(),
         // Mission packs, teams, invitations and finding people
         "packs" to PacksBody.serializer(),
         "pack: create" to Pack.serializer(),
@@ -192,7 +198,7 @@ class DtoFixtureTest {
             .filter { it.status in 200..202 && it.body != null && it.body !is JsonNull && it.name !in decoders }
             .map { it.name }
             // Bodies that are a status word only, not a record.
-            .filterNot { it in setOf("logout", "lz: delete", "route: delete", "pointset: delete", "brief: delete", "aircraft: delete", "account deletion") }
+            .filterNot { it in setOf("logout", "lz: delete", "route: delete", "pointset: delete", "brief: delete", "threatset: delete", "aircraft: delete", "account deletion") }
             .filterNot { it in documents }
         assertTrue(uncovered.isEmpty(), "recorded responses with no type decoding them: $uncovered")
     }
@@ -216,6 +222,7 @@ class DtoFixtureTest {
     fun `a pack's item counts take briefs, and a server that does not count them says none`() {
         assertEquals(PackItemCounts(1, 2, 0, 0), strict.decodeFromString(PackItemCounts.serializer(), """{"lz": 1, "route": 2, "pointset": 0}"""))
         assertEquals(3, strict.decodeFromString(PackItemCounts.serializer(), """{"lz": 1, "route": 2, "pointset": 0, "brief": 3}""").brief)
+        assertEquals(4, strict.decodeFromString(PackItemCounts.serializer(), """{"lz": 1, "route": 2, "pointset": 0, "threatset": 4}""").threatset)
     }
 
     @Test

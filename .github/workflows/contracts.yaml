@@ -19,6 +19,7 @@ on:
       - "frontend/src/utils/**"
       - "frontend/src/feature/aircraft/**"
       - "frontend/src/feature/vfrCharts/**"
+      - "android/feature-map/src/main/assets/aircraft/**"
       # Every web file a fixture pins, and what it imports: the mission packs' rules, sentences and session
       # (packs/*.json), the LZ normaliser and the sketch's routes they read through, the doghouses and the
       # flight data they give (workspace/doghouses.json, packs/settings.json, packs/history.json), and the route code.
@@ -49,6 +50,7 @@ on:
       - "frontend/src/utils/**"
       - "frontend/src/feature/aircraft/**"
       - "frontend/src/feature/vfrCharts/**"
+      - "android/feature-map/src/main/assets/aircraft/**"
       # Every web file a fixture pins, and what it imports: the mission packs' rules, sentences and session
       # (packs/*.json), the LZ normaliser and the sketch's routes they read through, the doghouses and the
       # flight data they give (workspace/doghouses.json, packs/settings.json, packs/history.json), and the route code.

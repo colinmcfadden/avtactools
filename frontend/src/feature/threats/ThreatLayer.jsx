@@ -73,7 +73,7 @@ const ThreatLayer = ({ threats, onMove, onEdit }) => {
             <Marker
               position={[threat.lat, threat.lon]}
               icon={threatIcon(threat)}
-              draggable
+              draggable={Boolean(onMove)}
               eventHandlers={{
                 dragend: (e) => {
                   const { lat, lng } = e.target.getLatLng();
@@ -100,7 +100,7 @@ const ThreatLayer = ({ threats, onMove, onEdit }) => {
                   <span style={{ color: "#b91c1c" }}>Mask error: {threat.maskError}</span>
                 )}
                 <br />
-                <button onClick={() => onEdit(threat.id)}>Edit threat</button>
+                {onEdit && <button onClick={() => onEdit(threat.id)}>Edit threat</button>}
               </Popup>
             </Marker>
           </React.Fragment>

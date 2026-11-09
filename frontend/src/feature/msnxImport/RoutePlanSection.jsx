@@ -8,6 +8,7 @@ import {
 import { AIRSPEED_TYPES, FALLBACK_PROFILE } from "../aircraft/aircraftProfiles";
 import { indexLocalPointsByName, matchLocalPointName } from "../localPoints/localPointMatch";
 import Icon from "../ui/Icon";
+import { beginFieldVisit } from "../undo/fieldVisit";
 import "../shell/shell.css";
 
 const num = (value, fallback = 0) => {
@@ -141,7 +142,14 @@ const RoutePlanSection = ({
   };
 
   return (
-    <div className="plan">
+    <div
+      className="plan"
+      onFocusCapture={beginFieldVisit}
+      onChangeCapture={(event) => {
+        // A choice is its own step, even with the focus still on it.
+        if (event.target.tagName === "SELECT") beginFieldVisit();
+      }}
+    >
       <datalist id={datalistId}>
         {localPointNames.map((lp, i) => (
           <option key={`${lp.name}-${i}`} value={lp.name} />

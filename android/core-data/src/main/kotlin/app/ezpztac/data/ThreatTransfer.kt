@@ -8,8 +8,7 @@ import java.time.Instant
 import javax.inject.Inject
 
 /**
- * Threats in and out of AMPS `.ths` files, the only way they leave the device (`docs/NATIVE_APPS_PLAN.md`, "Threats on the device": never except by an explicit
- * export). Reading is [ThsReader], which takes a file it does not trust; writing is [ThsWriter].
+ * Threats in and out of AMPS `.ths` files. Reading is [ThsReader], which takes a file it does not trust; writing is [ThsWriter].
  */
 public class ThreatTransfer @Inject constructor(private val writer: ThsWriter) {
     /** What reading a `.ths` came to. */
@@ -41,7 +40,7 @@ public class ThreatTransfer @Inject constructor(private val writer: ThsWriter) {
     }
 
     public companion object {
-        /** More than this in one file is not a threat picture, and would be held in memory and in the sealed file. */
+        /** More than this in one file is not a threat picture, and would be held in memory and written whole at every change. */
         public const val MAX_IMPORT: Int = 1_000
 
         /** `NAME.ths`, with the `.msnx` or `.ths` the name came with taken off, as the web does (`threats` with no name). */

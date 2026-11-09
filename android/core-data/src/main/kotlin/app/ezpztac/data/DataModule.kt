@@ -6,7 +6,9 @@ import app.ezpztac.missionpacks.PackApi
 import app.ezpztac.missionpacks.PackEngine
 import app.ezpztac.missionpacks.PackKeeper
 import app.ezpztac.missionpacks.PackStore
+import app.ezpztac.missionpacks.PackThreatSet
 import app.ezpztac.missionpacks.RoutePackKind
+import app.ezpztac.missionpacks.ThreatPackKind
 import app.ezpztac.model.Diagram
 import app.ezpztac.model.RouteSet
 import app.ezpztac.network.ApiClient
@@ -92,6 +94,18 @@ internal object DataModule {
     fun routeItems(engine: PackEngine, store: PackStore): PackItemStore<RouteSet> =
         PackItemStore(engine, RoutePackKind, store, { it.id }, Dispatchers.Main.immediate)
 
+    /** The same for a mission pack's sets of threats, every one of them on the map at once. */
+    @Provides
+    @Singleton
+    fun threatItems(engine: PackEngine, store: PackStore): PackItemStore<PackThreatSet> =
+        PackItemStore(engine, ThreatPackKind, store, { it.id }, Dispatchers.Main.immediate)
+
+    /** Keeps the sets of threats of whichever pack is open on the map and in step with it; an account without Threats is shown none of them. */
+    @Provides
+    @Singleton
+    fun packThreatSync(store: ThreatStore, items: PackItemStore<PackThreatSet>, engine: PackEngine, keeper: PackKeeper, api: ApiClient): PackThreatSync =
+        PackThreatSync(store, items, engine, keeper, threatsOn = { signedInHas(api, "threats") })
+
     /** A threat's mask is asked for by a press and answered later, and is held in memory with the threats: it is not tied to a screen. */
     @Provides
     @Singleton
@@ -107,7 +121,11 @@ internal object DataModule {
     @Provides
     @Singleton
     fun packKeeper(store: SyncStore, api: ApiClient): PackKeeper =
-        LibraryPackKeeper(store, keepsBriefs = { (api.state.value as? AuthState.SignedIn)?.user?.hasFeature("mission_brief") == true })
+        LibraryPackKeeper(
+            store,
+            keepsBriefs = { (api.state.value as? AuthState.SignedIn)?.user?.hasFeature("mission_brief") == true },
+            keepsThreats = { signedInHas(api, "threats") && signedInHas(api, "cloud_save") },
+        )
 
     /**
      * Mission packs outlive any screen (a pack closed with edits still going out sends them), so the engine runs in a scope of its own.
@@ -124,8 +142,8 @@ internal object DataModule {
      */
     @Provides
     @Singleton
-    fun libraryCopier(repository: SyncRepository, diagrams: DiagramSession, routes: RouteSession, upload: LibraryUpload, api: ApiClient): LibraryCopier =
-        LibraryToPack(repository, SessionWrites(diagrams, routes), upload, copyCall(api))
+    fun libraryCopier(repository: SyncRepository, diagrams: DiagramSession, routes: RouteSession, threats: ThreatStore, upload: LibraryUpload, api: ApiClient): LibraryCopier =
+        LibraryToPack(repository, SessionWrites(diagrams, routes, threats), upload, copyCall(api))
 
     /**
      * The brief being set up (docs/MISSION_BRIEF.md §3) outlives the setup: a change still waiting is written once the person has been still, and a pack's edit is sent,
