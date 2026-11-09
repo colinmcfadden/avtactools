@@ -73,6 +73,7 @@ class AppViewModel @Inject constructor(
     private val incoming: IncomingFiles,
     private val sessionPoints: SessionPointSets,
     private val mapTokens: MapTokenSink,
+    private val mapCharts: MapChartsSink,
     private val packs: PackRuntime,
     private val briefs: BriefFlush,
     invites: PackInvites,
@@ -327,6 +328,7 @@ class AppViewModel @Inject constructor(
             minimumVersion.remember(fetched.minAppVersion.android, fetched.servedApiMajors)   // first: packs, invitations and the sync all go by it
             config.value = fetched
             mapTokens.update(fetched.mapbox.publicToken)                  // remembered, so the next start with no signal can draw imagery
+            mapCharts.update(fetched.charts?.vfr)                         // and the FAA's charts, which no build at all takes back to ArcGIS
         } catch (_: ApiException) {
             // Offline: nothing is blocked for want of a config, and the minimum last heard stands.
         }

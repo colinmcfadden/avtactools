@@ -5,6 +5,9 @@ rules that bit once, what cannot be verified without a device); this file is the
 Read both, then `docs/NATIVE_APPS_PLAN.md` for the plan and its phases. Refresh this file in the same commit as any change
 that moves the "where things stand" or "next" sections.
 
+**The VFR map from the FAA's own charts (2026-11-08, `docs/VFR_CHARTS.md`, C4).** Android draws the server's chart tiles where `/api/config` names a build, ArcGIS elsewhere, with the charts named above the readout (AGENTS.md §17, *The VFR charts*).
+**To try first on a device:** against a server with a live build, open the VFR map over CONUS and then Hawaii; take the build away (roll back on the Data tab) and see the map follow within a minute of a tile failing. No device has run it.
+
 **3D streamed from USGS (2026-10-26, `docs/DATA_ADMIN_AND_PREBUILT_3D_PLAN.md`).** Phase 0 is built: new tileset keys are an HMAC under
 `LIDAR_KEY_SECRET` (the same value on the API, staging's API and the build service, or they refuse to start), the tileset list is admins' only and a
 tileset's `area.json` is never served. Android's calls are unchanged (one test's recorded key moved). Phase 1 (streaming) is built for the backend and the web

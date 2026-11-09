@@ -66,6 +66,8 @@ data class MapUiState(
     val center: LatLon? = null,
     /** The MGRS grid is over the map (Layers, *MGRS grid*). */
     val grid: Boolean = false,
+    /** Which build of the FAA's charts draws the VFR map, and what it holds. */
+    val charts: VfrCharts = VfrCharts(),
 )
 
 /** Things the map has to do that are not state: look somewhere, turn north. */
@@ -84,6 +86,7 @@ class MapViewModel @Inject constructor(
     private val location: LocationSource,
     private val memory: CameraMemory,
     private val gridMemory: GridMemory,
+    private val charts: VfrChartSource,
 ) : ViewModel() {
     private val _state = MutableStateFlow(stylesState(tokens.token.value, null).copy(grid = gridMemory.gridShown()))
     val state: StateFlow<MapUiState> = _state.asStateFlow()
@@ -91,6 +94,7 @@ class MapViewModel @Inject constructor(
     private val _commands = MutableSharedFlow<MapCommand>(extraBufferCapacity = 8, onBufferOverflow = BufferOverflow.DROP_OLDEST)
     val commands: SharedFlow<MapCommand> = _commands.asSharedFlow()
 
+    private val looks = ChartLooks(charts)
     private var chosenStyleId: String? = null
     private var lastCamera: CameraState? = null
     private var tracking: Job? = null
@@ -102,16 +106,22 @@ class MapViewModel @Inject constructor(
     init {
         // The token arrives after the screen does (the config is fetched at launch): the styles are worked out again when it does.
         viewModelScope.launch { tokens.token.collect { restyle() } }
+        // So may a build of the FAA's charts, or a new one while the VFR map is showing.
+        viewModelScope.launch { charts.charts.collect { restyle() } }
     }
 
+    /** Asks which build of the charts is live, for as long as it is called: while the VFR map shows and the app is in front. */
+    suspend fun watchCharts() = looks.run()
+
     private fun stylesState(token: String?, wanted: String?): MapUiState {
-        val styles = MapStyles.available(token)
-        return MapUiState(styles = styles, style = MapStyles.byId(wanted, token))
+        val known = charts.charts.value
+        return MapUiState(styles = MapStyles.available(token, known.live), style = MapStyles.byId(wanted, token, known.live), charts = known)
     }
 
     private fun restyle() = _state.update { current ->
         val token = tokens.token.value
-        current.copy(styles = MapStyles.available(token), style = MapStyles.byId(chosenStyleId ?: MapStyles.DEFAULT_ID, token))
+        val known = charts.charts.value
+        current.copy(styles = MapStyles.available(token, known.live), style = MapStyles.byId(chosenStyleId ?: MapStyles.DEFAULT_ID, token, known.live), charts = known)
     }
 
     // -- The crosshair ---------------------------------------------------------------------------------
@@ -181,7 +191,7 @@ class MapViewModel @Inject constructor(
 
     fun selectStyle(id: String) {
         chosenStyleId = id
-        _state.update { it.copy(style = MapStyles.byId(id, tokens.token.value)) }
+        _state.update { it.copy(style = MapStyles.byId(id, tokens.token.value, charts.charts.value.live)) }
     }
 
     /** The id to save with a diagram: what the person chose, not what a missing token fell back to. */

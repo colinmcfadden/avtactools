@@ -26,9 +26,26 @@ private fun newKey(): String = UUID.randomUUID().toString()
 private fun revisionHeader(revision: Int?): Map<String, String> =
     if (revision == null) emptyMap() else mapOf("If-Match" to "\"$revision\"")
 
-/** What the app needs before anyone signs in. */
-public suspend fun ApiClient.config(): AppConfig =
-    decode(execute(ApiClient.Call("GET", "/api/config", auth = false)))
+/**
+ * What the app needs before anyone signs in. [fresh] asks past every cache, or the answer's own 60-second max-age would hand back the charts
+ * of a build that has just changed (docs/VFR_CHARTS.md §4.5).
+ */
+public suspend fun ApiClient.config(fresh: Boolean = false): AppConfig =
+    decode(execute(ApiClient.Call("GET", "/api/config", auth = false, headers = if (fresh) mapOf("Cache-Control" to "no-cache") else emptyMap())))
+
+/** The most a build's `coverage.json` may hold: a few hundred bytes a chart, of about fifty. */
+public const val CHART_COVERAGE_MAX_BYTES: Long = 4L * 1024 * 1024
+
+private val CHART_COVERAGE_PATH = Regex("/charts/vfr/[0-9A-Za-z][0-9A-Za-z.-]*/coverage\\.json")
+
+/**
+ * What a build of the FAA's charts holds, as the text of its `coverage.json`, at most [CHART_COVERAGE_MAX_BYTES]. [path] is the config's,
+ * so it is checked before anything is sent: [IllegalArgumentException] for one that is not a build's coverage.
+ */
+public suspend fun ApiClient.chartCoverage(path: String): String {
+    require(CHART_COVERAGE_PATH.matches(path)) { "Not a chart build's coverage: \"$path\"" }
+    return execute(ApiClient.Call("GET", path, binary = true, auth = false, maxBytes = CHART_COVERAGE_MAX_BYTES)).bytes.toString(Charsets.UTF_8)
+}
 
 // -- Account and sessions ---------------------------------------------------------
 

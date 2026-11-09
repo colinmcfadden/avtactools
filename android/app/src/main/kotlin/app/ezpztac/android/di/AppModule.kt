@@ -13,6 +13,13 @@ import app.ezpztac.android.LastDiagram
 import app.ezpztac.android.LastDiagramPreferences
 import app.ezpztac.android.LastRouteSet
 import app.ezpztac.android.LastRouteSetPreferences
+import app.ezpztac.android.ApiChartCalls
+import app.ezpztac.android.ChartCalls
+import app.ezpztac.android.ChartConfig
+import app.ezpztac.android.ChartMemory
+import app.ezpztac.android.CoverageFile
+import app.ezpztac.android.CoverageFileStore
+import app.ezpztac.android.MapChartsSink
 import app.ezpztac.android.MapPreferences
 import app.ezpztac.android.MapTokenSink
 import app.ezpztac.android.LidarWaitingPreferences
@@ -87,6 +94,7 @@ import app.ezpztac.map.GridMemory
 import app.ezpztac.map.LocationSource
 import app.ezpztac.map.MapTokenSource
 import app.ezpztac.map.PlatformLocationSource
+import app.ezpztac.map.VfrChartSource
 import app.ezpztac.missionpacks.ApiPackApi
 import app.ezpztac.missionpacks.PackApi
 import app.ezpztac.network.ApiClient
@@ -338,6 +346,21 @@ interface AppBindings {
 
     @Binds
     fun mapTokenSink(impl: MapPreferences): MapTokenSink
+
+    @Binds
+    fun vfrCharts(impl: ChartConfig): VfrChartSource
+
+    @Binds
+    fun mapCharts(impl: ChartConfig): MapChartsSink
+
+    @Binds
+    fun chartCalls(impl: ApiChartCalls): ChartCalls
+
+    @Binds
+    fun chartMemory(impl: MapPreferences): ChartMemory
+
+    @Binds
+    fun coverageFile(impl: CoverageFileStore): CoverageFile
 
     @Binds
     fun cameraMemory(impl: MapPreferences): CameraMemory
