@@ -1,5 +1,7 @@
 package app.ezpztac.data
 
+import app.ezpztac.missionpacks.PackRef
+import app.ezpztac.missionpacks.PackThreatSet
 import app.ezpztac.model.StoredThreat
 import app.ezpztac.model.Threat
 import app.ezpztac.model.ThreatEntry
@@ -31,6 +33,29 @@ import java.util.UUID
 import java.util.concurrent.locks.ReentrantLock
 import kotlin.concurrent.withLock
 import kotlin.coroutines.CoroutineContext
+
+/**
+ * What the threat store asks of the open mission pack while its sets are the ones on the map ([PackThreatSync], which keeps them in step the other way).
+ */
+internal interface PackThreatLink {
+    /** The identity and name a new set of the open pack gets ([name], or the kind's own for none); null with no pack to make it in. */
+    fun newSet(name: String?): PackThreatSet?
+
+    /** Puts [set] in the pack as a new item. Null once it is on its way; else why not. */
+    suspend fun create(set: PackThreatSet): String?
+
+    /** Sends the pack what changed in [set] (or holds it back, or has it put back: [PackItemStore.save] says which). */
+    suspend fun save(set: PackThreatSet)
+
+    /** [id] is off the map here, and stays in the pack. */
+    fun closed(id: String)
+
+    /** The set made here that the pack would not take, by [reason]: it has gone from the map, and the person is to hear why. */
+    fun refused(set: PackThreatSet, reason: String)
+}
+
+/** A set of the pack left, as it stood; [unmade] when the pack was never given it. */
+internal class LeftPackSet(val set: PackThreatSet, val unmade: Boolean)
 
 /** The threats a device is holding, and when they were last changed: what an account that saves nothing keeps between launches. */
 @Serializable
@@ -82,6 +107,10 @@ public data class ThreatSetView(
  * **For an account that cannot**, there are no sets and no records: the picture lives in one sealed file on the device, as it always did, and is wiped at sign-out. An installed app's
  * picture from before threats were saved becomes a set of that account's at the first [attach].
  *
+ * **While a mission pack is open** ([enterPack]) the sets on the map are the pack's, in place of the person's own, which are set aside until it is left ([leavePack]), as the web's `packSets` replace
+ * them: a change goes to the pack through a [PackThreatLink] after the same pause, each person's hidden threats and terrain masks stay here, and every set of the pack is drawn unless it was taken off
+ * the map here. Nothing of a pack's threats reaches the Library, the sealed file or the list of open sets.
+ *
  * Things that are easy to get wrong:
  * - **A write that is still queued must not bring back what was wiped.** A queued write saves what the picture is *when it runs*, under the lock a wipe takes, so a sign-out cannot
  *   be undone by a save that was already on its way; and an empty picture is removed, not saved.
@@ -112,13 +141,20 @@ public class ThreatStore(
         val failed: Boolean = false,
         /** Counts the changes made, so a save can tell one made while it wrote. */
         val changes: Long = 0,
+        /** A set made here, in the open pack, that the pack has not been given yet. */
+        val unmade: Boolean = false,
     ) {
         fun changed(how: (Held) -> Held): Held = how(this).copy(owed = true, changes = changes + 1)
 
         val hasContent: Boolean get() = threats.isNotEmpty() || unreadable.isNotEmpty()
 
         val document: JsonObject get() = ThreatSets.write(ThreatSetDocument(threats, unreadable, version, extras))
+
+        val packSet: PackThreatSet get() = PackThreatSet(id, name, ThreatSetDocument(threats, unreadable, version, extras))
     }
+
+    /** The person's own sets while a pack's are on the map. */
+    private class Parked(var held: List<Held>, var active: String?)
 
     private val lock = ReentrantLock()
 
@@ -128,6 +164,13 @@ public class ThreatStore(
     /** Whose sets [held] is, or null while the picture is the device's alone. */
     private var account: String? = null
     private var active: String? = null
+
+    /** The open pack whose sets [held] is, with the person's own set aside in [parked]; null outside one. */
+    private var pack: PackThreatLink? = null
+    private var parked: Parked? = null
+
+    /** The pack's sets taken off the map here: a look at the pack does not put them back. */
+    private val closedHere = HashSet<String>()
     private var lastChangeAt: Long = 0
     private val saveJobs = HashMap<String, Job>()
 
@@ -182,10 +225,26 @@ public class ThreatStore(
         }
     }
 
+    /** The sets in [held] and whose sets those are: the device's alone only with no account and no pack. */
+    private val deviceOnly: Boolean get() = account == null && pack == null
+
+    /** The person's own sets, on the map or set aside for a pack. */
+    private var mine: List<Held>
+        get() = parked?.held ?: held
+        set(value) {
+            val aside = parked
+            if (aside != null) aside.held = value else held = value
+        }
+
+    private fun forgetActive() {
+        val aside = parked
+        if (aside != null) aside.active = null else active = null
+    }
+
     private fun publish() {
         val now = held
         _entries.value = now.flatMap { set -> set.threats.map { it.entry } }
-        _sets.value = if (account == null) {
+        _sets.value = if (deviceOnly) {
             emptyList()
         } else {
             now.map { set ->
@@ -199,8 +258,9 @@ public class ThreatStore(
         }
         _masks.value = now.asSequence().flatMap { it.threats.asSequence() }.mapNotNull { t -> t.mask?.let { t.entry.id to it } }.toMap()
         _activeSet.value = active?.takeIf { id -> now.any { it.id == id } } ?: now.lastOrNull()?.id
-        openIds.value = now.mapTo(HashSet()) { it.id }
-        _saves.value = account != null
+        // A pack's sets are no records of the Library, so there is nothing of them to follow; and the person's own, set aside, are read again on the way back.
+        openIds.value = if (pack != null) emptySet() else now.mapTo(HashSet()) { it.id }
+        _saves.value = account != null || pack != null
     }
 
     private fun takenIds(): HashSet<String> = held.flatMapTo(HashSet()) { set -> set.threats.map { it.entry.id } }
@@ -219,7 +279,13 @@ public class ThreatStore(
             val taken = takenIds()
             val made = threats.map { t -> StoredThreat(ThreatEntry(ThreatIds.next(taken, now).also { id -> taken.add(id); ids.add(id) }, t)) }
             val target = _activeSet.value?.takeIf { id -> held.any { it.id == id } } ?: held.lastOrNull()?.id
-            if (target == null) {
+            if (target == null && pack != null) {
+                val fresh = pack?.newSet(null) ?: return emptyList()
+                held = held + Held(fresh.id, fresh.name, made, owed = true, changes = 1, unmade = true)
+                lastChangeAt = now
+                publish()
+                fresh.id
+            } else if (target == null) {
                 val id = if (account == null) DEVICE else UUID.randomUUID().toString()
                 held = held + Held(id, ThreatSets.FIRST_SET_NAME, made, owed = true, changes = 1)
                 if (account != null) openSets?.add(id)
@@ -243,12 +309,20 @@ public class ThreatStore(
         val now = clock()
         val ids = ArrayList<String>(threats.size)
         val id = lock.withLock {
-            if (account == null) return addAll(threats)
+            if (deviceOnly) return addAll(threats)
             val taken = takenIds()
             val made = threats.map { t -> StoredThreat(ThreatEntry(ThreatIds.next(taken, now).also { id -> taken.add(id); ids.add(id) }, t)) }
-            val fresh = UUID.randomUUID().toString()
-            held = held + Held(fresh, ThreatSets.cleanName(name).ifEmpty { ThreatSets.FIRST_SET_NAME }, made, owed = true, changes = 1)
-            openSets?.add(fresh)
+            val link = pack
+            val fresh = if (link != null) {
+                val named = link.newSet(ThreatSets.cleanName(name)) ?: return emptyList()
+                held = held + Held(named.id, named.name, made, owed = true, changes = 1, unmade = true)
+                named.id
+            } else {
+                val uuid = UUID.randomUUID().toString()
+                held = held + Held(uuid, ThreatSets.cleanName(name).ifEmpty { ThreatSets.FIRST_SET_NAME }, made, owed = true, changes = 1)
+                openSets?.add(uuid)
+                uuid
+            }
             lastChangeAt = now
             publish()
             fresh
@@ -275,9 +349,9 @@ public class ThreatStore(
     public fun settle() {
         val sets = lock.withLock {
             lastChangeAt = clock()
-            if (account == null) listOf(DEVICE) else held.filter { it.owed }.map { it.id }
+            if (deviceOnly) listOf(DEVICE) else held.filter { it.owed }.map { it.id }
         }
-        sets.forEach(::written)
+        sets.forEach { written(it) }
     }
 
     /** Shows or hides a threat on the map. False if there is no such threat. */
@@ -314,14 +388,14 @@ public class ThreatStore(
             publish()
             set.id
         }
-        if (writes && (device || lock.withLock { account != null })) written(owner)
+        if (writes && (device || lock.withLock { !deviceOnly })) written(owner)
         return true
     }
 
     /** Empties every open set (the panel's *Remove all*): the sets stay, with nothing in them. For an account that saves nothing, the same as [wipe]. */
     public fun removeAll() {
         val ids = lock.withLock {
-            if (account == null) {
+            if (deviceOnly) {
                 null
             } else {
                 held = held.map { set -> set.changed { it.copy(threats = emptyList()) } }
@@ -330,7 +404,7 @@ public class ThreatStore(
                 held.map { it.id }
             }
         }
-        if (ids == null) wipe() else ids.forEach(::written)
+        if (ids == null) wipe() else ids.forEach { written(it) }
     }
 
     /** Forgets every threat in memory and in the sealed file. What is in the Library stays. Never throws. */
@@ -338,6 +412,9 @@ public class ThreatStore(
         lock.withLock {
             held = emptyList()
             active = null
+            parked = null
+            pack = null
+            closedHere.clear()
             lastChangeAt = 0
             saveJobs.values.forEach { it.cancel() }
             saveJobs.clear()
@@ -392,7 +469,7 @@ public class ThreatStore(
     public suspend fun open(uuid: String): Boolean {
         val repo = library ?: return false
         return saving.withLock {
-            if (lock.withLock { account == null }) return@withLock false
+            if (lock.withLock { account == null || pack != null }) return@withLock false
             if (lock.withLock { held.any { it.id == uuid } }) return@withLock true
             val record = repo.record(uuid) ?: return@withLock false
             take(record)
@@ -420,6 +497,15 @@ public class ThreatStore(
         save(id)
         lock.withLock {
             val set = held.firstOrNull { it.id == id } ?: return true
+            pack?.takeIf { PackRef.parse(id) != null }?.let { link ->
+                // It stays in the pack; only this map lets it go. A change that could not go now is the join's to keep once it sees the set has left.
+                saveJobs.remove(id)?.cancel()
+                closedHere += id
+                held = held.filterNot { it.id == id }
+                publish()
+                link.closed(id)
+                return true
+            }
             if (set.owed && (set.hasContent || set.savedDoc != null)) return false
             saveJobs.remove(id)?.cancel()
             held = held.filterNot { it.id == id }
@@ -441,7 +527,7 @@ public class ThreatStore(
     private fun forget(id: String) {
         lock.withLock {
             saveJobs.remove(id)?.cancel()
-            held = held.filterNot { it.id == id }
+            mine = mine.filterNot { it.id == id }
             publish()
         }
         openSets?.remove(id)
@@ -478,9 +564,9 @@ public class ThreatStore(
                     }
                 }
                 lock.withLock {
-                    held = opened
+                    mine = opened
                     this.account = account
-                    active = null
+                    forgetActive()
                     publish()
                 }
                 if (carried) repo.requestSync()
@@ -491,14 +577,14 @@ public class ThreatStore(
 
     /** Makes the device's picture a set of [account]'s. Named by what is in it, so a crash before the file is wiped cannot make a second. */
     private suspend fun carryOver(repo: ThreatSetRepository, open: OpenThreatSets, account: String): Boolean {
-        val threats = lock.withLock { held.flatMap { it.threats } }
+        val threats = lock.withLock { mine.flatMap { it.threats } }
         if (threats.isEmpty()) return false
         val document = ThreatSets.write(ThreatSetDocument(threats))
         val uuid = UUID.nameUUIDFromBytes("threats:carry:$account:$document".toByteArray()).toString()
         if (repo.record(uuid) == null) repo.create(uuid, repo.freeName(ThreatSets.FIRST_SET_NAME), document)
         open.add(uuid)
         lock.withLock {
-            held = emptyList()
+            mine = emptyList()
             try {
                 vault.wipe()
             } catch (_: Exception) {
@@ -515,8 +601,8 @@ public class ThreatStore(
         follower = null
         lock.withLock {
             account = null
-            held = emptyList()
-            active = null
+            mine = emptyList()
+            forgetActive()
             publish()
             _wipes.value += 1
         }
@@ -536,15 +622,15 @@ public class ThreatStore(
 
     // -- Writing, and following what others write -------------------------------------------------------------------
 
-    private fun written(id: String) {
-        if (lock.withLock { account == null }) {
+    private fun written(id: String, pauseMs: Long = SAVE_PAUSE_MS) {
+        if (lock.withLock { deviceOnly }) {
             scope.launch(io) { writeVault() }
             return
         }
         lock.withLock {
             saveJobs.remove(id)?.cancel()
             saveJobs[id] = scope.launch(io) {
-                delay(SAVE_PAUSE_MS)
+                delay(pauseMs)
                 withContext(NonCancellable) { save(id) }
             }
         }
@@ -552,7 +638,7 @@ public class ThreatStore(
 
     private fun writeVault() {
         lock.withLock {
-            if (account != null) return
+            if (!deviceOnly) return
             val now = _entries.value
             try {
                 if (now.isEmpty()) vault.wipe() else vault.save(ThreatPicture(lastChangeAt, now))
@@ -565,7 +651,7 @@ public class ThreatStore(
     /** Writes every change waiting, now: the app is going to the back, or the person is signing out. */
     public suspend fun flush() {
         val owed = lock.withLock {
-            if (account == null) return
+            if (deviceOnly) return
             saveJobs.values.forEach { it.cancel() }
             saveJobs.clear()
             held.filter { it.owed }.map { it.id }
@@ -576,6 +662,10 @@ public class ThreatStore(
     private fun current(id: String): Held? = lock.withLock { held.firstOrNull { it.id == id } }
 
     private suspend fun save(id: String) {
+        lock.withLock { pack }?.takeIf { PackRef.parse(id) != null }?.let { link ->
+            saveToPack(link, id)
+            return
+        }
         val repo = library ?: return
         saving.withLock {
             val first = current(id) ?: return
@@ -592,6 +682,150 @@ public class ThreatStore(
                 note(id) { it.copy(failed = true) }
             }
         }
+    }
+
+    /** A pack's set goes to the pack: a set made here first as a new item, and after that what changed in it. */
+    private suspend fun saveToPack(link: PackThreatLink, id: String) {
+        saving.withLock {
+            val set = current(id)?.takeIf { it.owed } ?: return
+            val changes = set.changes
+            try {
+                if (set.unmade) {
+                    val refused = link.create(set.packSet)
+                    when {
+                        refused == null -> note(id) { it.copy(unmade = false) }
+                        refused in PACK_LATER -> {
+                            note(id) { it.copy(failed = true) }
+                            return
+                        }
+                        else -> {
+                            drop(id)
+                            link.refused(set.packSet, refused)
+                            return
+                        }
+                    }
+                } else {
+                    link.save(set.packSet)
+                }
+                note(id) { now -> now.copy(owed = now.changes != changes, failed = false) }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (_: Exception) {
+                note(id) { it.copy(failed = true) }
+            }
+            if (current(id)?.owed == true) written(id)
+        }
+    }
+
+    private fun drop(id: String) {
+        lock.withLock {
+            saveJobs.remove(id)?.cancel()
+            if (active == id) active = null
+            held = held.filterNot { it.id == id }
+            publish()
+        }
+    }
+
+    // -- A mission pack's sets ------------------------------------------------------------------------------------------
+
+    /** The sets on the map are now [link]'s pack's, none of them yet; the person's own are written and set aside until [leavePack]. */
+    internal suspend fun enterPack(link: PackThreatLink) {
+        flush()
+        lock.withLock {
+            if (pack != null) return
+            parked = Parked(held, active)
+            held = emptyList()
+            active = null
+            pack = link
+            closedHere.clear()
+            saveJobs.values.forEach { it.cancel() }
+            saveJobs.clear()
+            publish()
+            _wipes.value += 1
+        }
+    }
+
+    /** Sends what waits, takes the pack's sets off the map and brings the person's own back. What the pack's sets were, for what could not be delivered. */
+    internal suspend fun leavePack(): List<LeftPackSet> {
+        flush()
+        val (left, owed) = lock.withLock {
+            val aside = parked ?: return emptyList()
+            val pack = held
+            saveJobs.values.forEach { it.cancel() }
+            saveJobs.clear()
+            held = aside.held
+            active = aside.active
+            parked = null
+            this.pack = null
+            closedHere.clear()
+            publish()
+            _wipes.value += 1
+            pack to held.filter { it.owed }.map { it.id }
+        }
+        owed.forEach { written(it) }
+        return left.map { LeftPackSet(it.packSet, it.unmade) }
+    }
+
+    /** The pack's sets on the map, as they are now. */
+    internal fun packSets(): List<PackThreatSet> = lock.withLock { if (pack == null) emptyList() else held.map { it.packSet } }
+
+    internal fun packSet(id: String): PackThreatSet? = lock.withLock { held.firstOrNull { it.id == id }?.takeIf { pack != null }?.packSet }
+
+    /** Whether [id] was made here and has not gone to the pack yet. */
+    internal fun unmade(id: String): Boolean = lock.withLock { held.firstOrNull { it.id == id }?.unmade == true }
+
+    internal fun isClosedHere(id: String): Boolean = lock.withLock { id in closedHere }
+
+    /** [set] of the open pack goes on the map, after those there. */
+    internal fun takePackSet(set: PackThreatSet) {
+        lock.withLock {
+            if (pack == null || held.any { it.id == set.id }) return
+            closedHere -= set.id
+            held = held + Held(set.id, set.name, set.document.threats, set.document.unreadable, set.document.version, set.document.extras)
+            publish()
+        }
+    }
+
+    /** Lets [id] come back on the map at the next look at the pack. */
+    internal fun reopenPackSet(id: String) {
+        lock.withLock { closedHere -= id }
+    }
+
+    /** Someone else's change to [id], or one put back: laid over what is on the map, and nothing is owed for it. */
+    internal fun layOverPackSet(id: String, how: (PackThreatSet) -> PackThreatSet) {
+        lock.withLock {
+            val set = held.firstOrNull { it.id == id } ?: return
+            val after = how(set.packSet)
+            saveJobs.remove(id)?.cancel()
+            held = held.map {
+                if (it.id == id) {
+                    it.copy(name = after.name, threats = after.document.threats, unreadable = after.document.unreadable, version = after.document.version, extras = after.document.extras, owed = false, failed = false)
+                } else {
+                    it
+                }
+            }
+            publish()
+        }
+    }
+
+    /** What is in [id] differs from what the pack was last given, with nothing to say a change is on its way: it is owed, after the pause or, [now], at once. */
+    internal fun owePackSet(id: String, now: Boolean) {
+        lock.withLock {
+            if (held.none { it.id == id }) return
+            if (!now && saveJobs[id]?.isActive == true) return
+            held = held.map { if (it.id == id) it.copy(owed = true) else it }
+        }
+        written(id, if (now) 0 else SAVE_PAUSE_MS)
+    }
+
+    /** [id] has left the pack (removed, or the pack gone): off the map, and what it was. */
+    internal fun forgetPackSet(id: String): PackThreatSet? = lock.withLock {
+        val set = held.firstOrNull { it.id == id } ?: return null
+        saveJobs.remove(id)?.cancel()
+        if (active == id) active = null
+        held = held.filterNot { it.id == id }
+        publish()
+        set.packSet
     }
 
     private suspend fun write(repo: ThreatSetRepository, id: String) {
@@ -724,5 +958,8 @@ public class ThreatStore(
         public const val SAVE_PAUSE_MS: Long = 600
 
         private const val DEVICE = "device"
+
+        // Why a new set may not go to the pack yet, not that it never can: it stays, to be tried again.
+        private val PACK_LATER = setOf(PackItemStore.PAUSED, PackItemStore.LOADING)
     }
 }

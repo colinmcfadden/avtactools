@@ -9,6 +9,9 @@ import app.ezpztac.data.IncomingFile
 import app.ezpztac.data.IncomingFiles
 import app.ezpztac.data.MissionImportOutcome
 import app.ezpztac.data.MissionImporter
+import app.ezpztac.data.OpenPack
+import app.ezpztac.data.PackFacts
+import app.ezpztac.data.PackLock
 import app.ezpztac.data.PointSetRepository
 import app.ezpztac.data.SessionPointSets
 import app.ezpztac.data.ThreatFileLog
@@ -50,7 +53,7 @@ sealed interface ImportItemUi {
     data class Points(override val id: Long, override val fileName: String, val size: String, val count: Int, val name: String, val place: ImportPlace) : ImportItemUi
 
     /** Threats: [count] threats, a set of their own called [name] in the Library ([saved]), or into the picture on this device. */
-    data class Threats(override val id: Long, override val fileName: String, val size: String, val count: Int, val name: String = "", val saved: Boolean = false) : ImportItemUi
+    data class Threats(override val id: Long, override val fileName: String, val size: String, val count: Int, val name: String = "", val saved: Boolean = false, val pack: String? = null) : ImportItemUi
 
     /** An AMPS mission: [routes] routes and [namedPoints] named points, kept with its file in the Library. [aircraft] is what AMPS planned it for, if it says. */
     data class Mission(override val id: Long, override val fileName: String, val size: String, val routes: Int, val namedPoints: Int, val aircraft: String?) : ImportItemUi
@@ -76,11 +79,13 @@ data class IncomingUiState(
     /** Where the files go, in a line under them (the design's): `1 to Library · 1 stays in this session · 2 stay on this device`. */
     val summary: String get() {
         if (reading) return "Looking at what is in the files…"
-        val library = items.count { (it is ImportItemUi.Points && it.place == ImportPlace.LIBRARY) || it is ImportItemUi.Mission || (it is ImportItemUi.Threats && it.saved) }
+        val library = items.count { (it is ImportItemUi.Points && it.place == ImportPlace.LIBRARY) || it is ImportItemUi.Mission || (it is ImportItemUi.Threats && it.saved && it.pack == null) }
+        val toPack = items.count { it is ImportItemUi.Threats && it.pack != null }
         val session = items.count { it is ImportItemUi.Points && it.place == ImportPlace.SESSION }
-        val device = items.count { it is ImportItemUi.Threats && !it.saved }
+        val device = items.count { it is ImportItemUi.Threats && !it.saved && it.pack == null }
         val parts = listOfNotNull(
             "$library to Library".takeIf { library > 0 },
+            "$toPack to the pack".takeIf { toPack > 0 },
             (if (session == 1) "1 stays in this session" else "$session stay in this session").takeIf { session > 0 },
             (if (device == 1) "1 stays on this device" else "$device stay on this device").takeIf { device > 0 },
         )
@@ -104,6 +109,7 @@ class IncomingViewModel @Inject constructor(
     private val missions: MissionImporter,
     private val sessionPoints: SessionPointSets,
     private val threatFiles: ThreatFileLog,
+    private val pack: OpenPack = OpenPack.None,
 ) : ViewModel() {
     internal var worker: CoroutineDispatcher = Dispatchers.IO
 
@@ -182,7 +188,13 @@ class IncomingViewModel @Inject constructor(
                 null -> ImportItemUi.Reading(file.id, file.name)
                 is FilePreview.Threats ->
                     if (threatsOn) {
-                        ImportItemUi.Threats(file.id, file.name, size, seen.threats.size, name ?: ThreatSets.nameFromFile(file.name), threats.saves.value)
+                        val open = pack.state.value
+                        val lock = open?.let(PackLock::of)
+                        if (lock != null) {
+                            ImportItemUi.Problem(file.id, file.name, lock.reason)                     // the pack's threats are the ones on the map, and this one takes none
+                        } else {
+                            ImportItemUi.Threats(file.id, file.name, size, seen.threats.size, name ?: ThreatSets.nameFromFile(file.name), threats.saves.value || open != null, open?.let(PackFacts::name))
+                        }
                     } else {
                         ImportItemUi.Problem(file.id, file.name, NO_THREATS)
                     }
@@ -249,12 +261,15 @@ class IncomingViewModel @Inject constructor(
         when (item) {
             is ImportItemUi.Threats -> {
                 val seen = looked.value[item.id] as? FilePreview.Threats
+                val lock = pack.lockNow()
                 if (seen == null || !threatsAllowed.value) {
                     null
+                } else if (lock != null) {
+                    lock.reason                                                                       // it turned read-only with the review open
                 } else {
                     val ids = threats.addAsSet(seen.threats, item.name.ifBlank { ThreatSets.nameFromFile(file.name) })
                     ids.lastOrNull()?.let(threatSelection::select)
-                    threatFiles.record(file.name, seen.threats.size, item.saved)
+                    threatFiles.record(file.name, seen.threats.size, item.saved, item.pack)
                     "Added ${count(seen.threats.size, "threat")} from ${file.name}."
                 }
             }

@@ -35,6 +35,7 @@ internal object CopyRules {
         "lz" -> LibraryTab.LZ
         "route" -> LibraryTab.ROUTES
         "pointset" -> LibraryTab.POINTS
+        "threatset" -> LibraryTab.THREATS
         else -> null
     }
 

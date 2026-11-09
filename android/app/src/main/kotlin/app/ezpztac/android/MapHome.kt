@@ -492,7 +492,17 @@ fun MapHome(
     LaunchedEffect(mapCovered) { home.mapCovered(mapCovered) }
     LaunchedEffect(packPanel) { packPanel.notices.collect { snackbars.showSnackbar(it, withDismissAction = true) } }
     // An item opened from the Pack panel is shown in its own panel (an LZ/PZ in LZ/PZ, a route set in Routes), as the web's dock does.
-    LaunchedEffect(packPanel) { packPanel.opened.collect { kind -> frameState.choose(if (kind == "route") Panel.Routes else Panel.Lz) } }
+    LaunchedEffect(packPanel) {
+        packPanel.opened.collect { kind ->
+            frameState.choose(
+                when (kind) {
+                    "route" -> Panel.Routes
+                    "threatset" -> Panel.Threats
+                    else -> Panel.Lz
+                },
+            )
+        }
+    }
     // The sheet goes with what holds it (packs stopping, the frame turning into a tablet's): when they come back it is not open by itself.
     LaunchedEffect(tablet, packsHere) { if (tablet || !packsHere) switcherOpen = false }
     LaunchedEffect(workspace) { workspace.notices.collect { snackbars.showSnackbar(it, withDismissAction = true) } }
@@ -750,7 +760,14 @@ fun MapHome(
                                             // A point of a route: its plan, a page of its own, opened at that point; only for an account offered routes, as on the web.
                                             if (Panel.Routes in panels) routesModel.openHeldPlan()
                                         } else if (panel == Panel.Threats) {
-                                            threatsModel.editHeld()                                   // a threat: its form, over everything
+                                            // A threat: its form, over everything; a read-only pack's has none, so its row, with its mask, is what the panel shows.
+                                            if (lz.pack?.off != null) {
+                                                frameState.choose(panel)
+                                                frameState.show()
+                                                frameState.open()
+                                            } else {
+                                                threatsModel.editHeld()
+                                            }
                                         } else {
                                             panel?.let {
                                                 frameState.choose(it)
@@ -836,6 +853,7 @@ fun MapHome(
                             newLz = if (Panel.Lz in panels) ({ diagrams.newAt(open.place.at); frameState.choose(Panel.Lz) }) else null,
                             newLzOff = lz.pack?.off,
                             addThreat = if (threatsOn) ({ threatsModel.beginAdd(open.place.at) }) else null,
+                            addThreatOff = lz.pack?.off,
                             routePoint = if (Panel.Routes in panels) open.routePoint to { routesModel.addPointAt(open.place.at); frameState.choose(Panel.Routes) } else null,
                             addObject = lz.current?.takeIf { Panel.Lz in panels }?.let { current ->
                                 AddObjectChoice(current.name, off = addObjectOff(graphicsState.canEdit, graphicsState.locked)) { kind -> placeObject(graphics, kind, open.place.at) }

@@ -198,6 +198,9 @@ class HomeViewModel @Inject constructor(
 
     private fun routesLocked(): String? = packs.open.value?.let(PackLock::of)?.reasonFor(routeSession.active.value?.id)
 
+    // While a pack is open the threats on the map are its: a read-only pack's cannot be picked up.
+    private fun threatsLocked(): Boolean = packs.open.value?.let(PackLock::of) != null
+
     /**
      * What the map draws for the open diagram: its target, boundary, planning graphics (the one being held with a halo) and, once measured,
      * the slope raster. The raster is shown only while the boundary is still the one it was measured for. Each aircraft is drawn as the
@@ -463,6 +466,14 @@ class HomeViewModel @Inject constructor(
                     if (stopped.isNotEmpty()) _notices.tryEmit("${lock.stopped}: ${stopped.joinToString(", ")}.")
                 }
         }
+        // And a threat being moved: the pack's threats are the ones on the map.
+        viewModelScope.launch {
+            packLock.collect { lock ->
+                if (lock == null || mapDrag.active.value !is DragTarget.Threat) return@collect
+                mapDrag.abandon()
+                _notices.tryEmit("${lock.stopped}: moving stopped.")
+            }
+        }
         // What was held on a set of routes, and a route half drawn, belonged to the set before: another set, or none, starts clean.
         viewModelScope.launch {
             routeSession.active.distinctUntilChangedBy { it?.id }.collect { set ->
@@ -595,10 +606,11 @@ class HomeViewModel @Inject constructor(
     fun dragStarted(at: LatLon, view: MapProjection, touchRadiusPx: Double): Boolean {
         if (drawing.draft.value != null || sketching.draft.value != null || placement.placing.value != null) return false
         press = null
-        // What can be moved comes first: a read-only pack's LZ/PZ or set of routes is left out, so the person's own threat under one of its graphics is still picked up.
+        // What can be moved comes first: a read-only pack's LZ/PZ, set of routes and threats are left out.
         val graphics = if (lzLocked() != null) GraphicsScene.EMPTY else scene.value.graphics
         val routeScene = if (routesLocked() != null) RouteScene.EMPTY else routes.value
-        DragHitTest.pick(graphics, threatScene.value, routeScene, view, at, touchRadiusPx, unitFootprints)?.let { target ->
+        val threats = if (threatsLocked()) ThreatScene.EMPTY else threatScene.value
+        DragHitTest.pick(graphics, threats, routeScene, view, at, touchRadiusPx, unitFootprints)?.let { target ->
             hold(target)
             if (mapDrag.start(target, at)) press = Press(at, view, touchRadiusPx * PRESS_SLOP)
             return true

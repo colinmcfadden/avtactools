@@ -155,9 +155,9 @@ public object ThreatSets {
         return (value as? JsonPrimitive)?.takeIf { it.isString }?.content
     }
 
-    /** The document saved for a set: every threat, and each mask while the document stays within [MASK_BUDGET]. */
-    public fun write(document: ThreatSetDocument): JsonObject {
-        var room = MASK_BUDGET
+    /** The document saved for a set: every threat, and each mask while the document stays within [maskBudget]. */
+    public fun write(document: ThreatSetDocument, maskBudget: Int = MASK_BUDGET): JsonObject {
+        var room = maskBudget
         val written = document.threats.map { stored ->
             val mask = stored.mask?.takeIf { maskFits(stored.entry.threat, it) }
             val size = mask?.toString()?.length ?: 0

@@ -71,7 +71,7 @@ class IncomingViewModelTest {
         override fun wipe() { picture = null }
     }
 
-    private class Rig(scope: TestScope) {
+    private class Rig(scope: TestScope, val pack: FakeOpenPack = FakeOpenPack()) {
         val incoming = IncomingFiles()
         val selection = ThreatSelection()
         val threats = ThreatStore(Memory(), scope.backgroundScope, StandardTestDispatcher(scope.testScheduler)) { 1_000L }
@@ -84,7 +84,7 @@ class IncomingViewModelTest {
         val threatFiles = ThreatFileLog(threats)
         val model = IncomingViewModel(
             incoming, FileInspector(ThreatTransfer(ThsWriter { ByteArray(0) })), threats, selection, sets, MissionImporter(routes, routeSession, MapFocus()),
-            session, threatFiles,
+            session, threatFiles, pack,
         )
             .also { it.worker = StandardTestDispatcher(scope.testScheduler) }
             .also { it.allowThreats(true) }                                                      // the account has threats; one without them says so
@@ -277,6 +277,30 @@ class IncomingViewModelTest {
         assertEquals(0, r.savedMissions())
         assertTrue(r.said.isEmpty())
         assertTrue(r.loggedThreatFiles().isEmpty())
+    }
+
+    @Test
+    fun `threats brought in while a pack is open go to the pack, and it says so`() = runTest(dispatcher) {
+        val r = rig()
+        r.pack.state.value = FakeOpenPack.open(emptyList())
+        r.incoming.offer("SA-6 site.ths", threatFile)
+        advanceUntilIdle()
+        assertEquals("OP DK", (r.state.items.single() as ImportItemUi.Threats).pack)
+        assertEquals("1 to the pack", r.state.summary)
+        r.model.importAll(); advanceUntilIdle()
+        assertEquals("OP DK", r.loggedThreatFiles().single().pack)
+    }
+
+    @Test
+    fun `a read-only pack takes no threats, and says why`() = runTest(dispatcher) {
+        val r = rig()
+        r.pack.state.value = FakeOpenPack.open(emptyList(), session = FakeOpenPack.finished())
+        r.incoming.offer("SA-6 site.ths", threatFile)
+        advanceUntilIdle()
+        val problem = r.state.items.single() as ImportItemUi.Problem
+        assertTrue(problem.message, problem.message.contains("OP DK"))
+        assertEquals(0, r.state.importable)
+        assertTrue(r.threats.entries.value.isEmpty())
     }
 
     @Test
