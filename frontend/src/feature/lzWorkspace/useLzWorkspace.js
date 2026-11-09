@@ -21,6 +21,7 @@ export const LZ_GRAPHIC_COLLECTIONS = Object.freeze([
   "goArounds",
   "units",
   "measurements",
+  "backstops",
 ]);
 
 export const LZ_WORKSPACE_ACTIONS = Object.freeze({
@@ -166,6 +167,8 @@ const normalizeGraphics = (source = {}) => {
     goArounds: cloneArray(graphics.goArounds ?? graphics.goAround),
     units: cloneArray(graphics.units),
     measurements: cloneArray(graphics.measurements),
+    // Only where the document has them: a diagram with none keeps the shape it was saved in, so nothing is reshaped by being opened.
+    ...(Array.isArray(graphics.backstops) ? { backstops: cloneArray(graphics.backstops) } : {}),
     exportBox: graphics.exportBox ?? null,
   };
 };

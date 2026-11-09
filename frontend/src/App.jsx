@@ -20,6 +20,8 @@ import {
 import { useHelicopters } from "./feature/helicopters/useHelicopters";
 import { useSectorsOfFire } from "./feature/sectorsOfFire/useSectorsOfFire";
 import { useGoAround } from "./feature/goAround/useGoAround";
+import { useBackstops } from "./feature/backstops/useBackstops";
+import BackstopDrawBar from "./feature/backstops/BackstopDrawBar";
 import { useWeather } from "./feature/weather/useWeather";
 import { useUnit } from "./feature/unit/useUnit";
 import { usePzMarker } from "./feature/pzMarker/usePzMarker";
@@ -105,6 +107,8 @@ const IGNORE_DROPS = {
   },
   onDrop: (event) => event.preventDefault(),
 };
+
+const DRAWING_ALREADY = "Finish or cancel what you are drawing on the map first.";
 
 const EMPTY_LZ_GRAPHICS = Object.freeze({
   doghouses: Object.freeze([]),
@@ -277,6 +281,10 @@ function App() {
     (nextValue) => setActiveGraphicCollection("units", nextValue),
     [setActiveGraphicCollection],
   );
+  const setBackstops = useCallback(
+    (nextValue) => setActiveGraphicCollection("backstops", nextValue),
+    [setActiveGraphicCollection],
+  );
   const setExportBox = useCallback(
     (nextValue) => {
       const diagram = workspaceRef.current?.diagramsById?.[
@@ -343,6 +351,7 @@ function App() {
       goAround: activeGraphics.goArounds ?? [],
       setGoAround,
     });
+  const backstopTools = useBackstops({ backstops: activeGraphics.backstops, setBackstops });
   const {
     sectorsOfFire,
     addSectorOfFire,
@@ -755,9 +764,17 @@ function App() {
     routeSaves.recordChanged(id, { deleted: true });
   };
 
+  const beginRouteSketch = () => {
+    if (backstopTools.isDrawing) {
+      toast({ tone: "warn", message: DRAWING_ALREADY });
+      return;
+    }
+    startSketch();
+  };
+
   const toggleRouteSketch = () => {
     if (!isSketching) {
-      startSketch();
+      beginRouteSketch();
       return;
     }
     if (draftPoints.length < 2) {
@@ -1015,6 +1032,10 @@ function App() {
       toast({ tone: "warn", message: "Set a target on the map before drawing an LZ/PZ boundary." });
       return;
     }
+    if (backstopTools.isDrawing) {
+      toast({ tone: "warn", message: DRAWING_ALREADY });
+      return;
+    }
 
     if (isDrawingLZ) {
       // Finish drawing
@@ -1035,6 +1056,26 @@ function App() {
       setIsDrawingLZ(true);
     }
   };
+
+  // A backstop is drawn with clicks on the map, as a boundary and a route are, so only one of them is under way at a time.
+  const toggleBackstopDrawing = () => {
+    if (backstopTools.isDrawing) {
+      if (backstopTools.draftPoints.length >= 2) backstopTools.finishDrawing();
+      else backstopTools.cancelDrawing();
+      return;
+    }
+    if (isDrawingLZ || isSketching) {
+      toast({ tone: "warn", message: DRAWING_ALREADY });
+      return;
+    }
+    if (canEditGraphics && editable) backstopTools.startDrawing();
+  };
+  // A draft belongs to the LZ/PZ it was begun on, and one that can no longer be edited (a pack finished meanwhile) has none.
+  const canDrawBackstop = canEditGraphics && editable;
+  useEffect(() => {
+    backstopTools.cancelDrawing();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeDiagramId, canDrawBackstop]);
 
   // A place chosen in the target field (TargetField: a grid or a lat/long in any notation, read in the
   // browser with no call to the API) starts a new LZ/PZ there; startDiagramAtTarget writes its grid into
@@ -1495,6 +1536,8 @@ function App() {
           showLZOutline={showLZOutline}
           setShowLZOutline={setShowLZOutline}
           addSector={addSectorOfFire}
+          isDrawingBackstop={backstopTools.isDrawing}
+          onToggleBackstop={toggleBackstopDrawing}
           exportBox={exportBox}
           enableExportMode={enableExportMode}
           setIsExporting={setIsExporting}
@@ -1572,6 +1615,8 @@ function App() {
           addHelo={addHelo}
           addPZMarker={addPZMarker}
           addSector={addSectorOfFire}
+          isDrawingBackstop={backstopTools.isDrawing}
+          onToggleBackstop={toggleBackstopDrawing}
           addUnit={addUnit}
           onOpenUnitBuilder={() => setShowUnitBuilder(true)}
           addGoAround={addGoAround}
@@ -1593,7 +1638,21 @@ function App() {
           diagramStatus={diagramStatus}
           diagramReadinessText={diagramReadinessText}
         />
+        {backstopTools.isDrawing && (
+          <BackstopDrawBar
+            points={backstopTools.draftPoints.length}
+            onUndo={backstopTools.undoDraftPoint}
+            onCancel={backstopTools.cancelDrawing}
+            onFinish={backstopTools.finishDrawing}
+          />
+        )}
         <MapView
+          backstops={backstopTools.backstops}
+          updateBackstop={mapEdit(backstopTools.updateBackstop)}
+          onBackstopContextMenu={(id, x, y) => setContextMenu({ type: "backstop", id, x, y })}
+          isDrawingBackstop={backstopTools.isDrawing}
+          backstopDraftPoints={backstopTools.draftPoints}
+          addBackstopDraftPoint={backstopTools.addDraftPoint}
           flyTo={flyTo}
           importedRoutes={shownImported}
           onUpdateMsnxPointPosition={mapEdit(updatePointPosition)}
@@ -1759,7 +1818,7 @@ function App() {
                 sketchInto: inPack
                   ? (set) => {
                       setPackRouteTarget(set.key);
-                      if (!isSketching) startSketch();
+                      if (!isSketching) beginRouteSketch();
                     }
                   : undefined,
                 addToPack:
@@ -1776,7 +1835,7 @@ function App() {
                 name: `ROUTE ${sketchedRoutes.length + 1}`,
                 points: draftPoints.length,
                 enabled: feat.routes && editable,
-                onStart: startSketch,
+                onStart: beginRouteSketch,
                 onCancel: cancelSketch,
                 onFinish: toggleRouteSketch,
               }}
@@ -1882,6 +1941,16 @@ function App() {
                 Add Threat Here
               </button>
             </>
+          ) : contextMenu.type === "backstop" ? (
+            <button
+              className="ctx-btn ctx-btn--danger"
+              onClick={() => {
+                backstopTools.deleteBackstop(contextMenu.id);
+                setContextMenu(null);
+              }}
+            >
+              Delete backstop
+            </button>
           ) : contextMenu.type === "lz" ? (
             // --- THE LZ CONTEXT MENU ---
             <>

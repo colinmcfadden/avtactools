@@ -7,6 +7,7 @@ import {
   Polygon,
   useMap,
   Tooltip,
+  CircleMarker,
 } from "react-leaflet";
 import LZDimensions from "./LZDimensions";
 import L from "leaflet";
@@ -22,6 +23,7 @@ import ExportBox from "../feature/export/ExportBox";
 import Doghouse from "../feature/doghouses/Doghouse";
 import Helicopter from "../feature/helicopters/Helicopter";
 import GoAroundMarker from "../feature/goAround/GoAround";
+import Backstop from "../feature/backstops/Backstop";
 import ExportHandler from "../feature/export/ExportHandler";
 import CursorGridReadout from "./CursorGridReadout";
 import DraftPointMarkers, { plainDraftPositions } from "./DraftPointMarkers";
@@ -98,6 +100,8 @@ function MapInteractionHandler({
   isSketchingRoute,
   addDraftPoint,
   onDraftPointContextMenu,
+  isDrawingBackstop,
+  addBackstopDraftPoint,
   onMapMove,
   presenting = false,
 }) {
@@ -115,6 +119,10 @@ function MapInteractionHandler({
         return;
       }
       if (isDrawingLZ) return; // Don't interrupt drawing
+      if (isDrawingBackstop) {
+        e.originalEvent.preventDefault();
+        return;
+      }
       if (isSketchingRoute) {
         // Right-click while drawing a route: designate a point (target / IP /
         // checkpoint) at this location instead of the normal map menu.
@@ -142,6 +150,8 @@ function MapInteractionHandler({
         setDrawingPoints((prev) => [...prev, [e.latlng.lat, e.latlng.lng]]);
       } else if (isSketchingRoute) {
         addDraftPoint(e.latlng.lat, e.latlng.lng);
+      } else if (isDrawingBackstop) {
+        addBackstopDraftPoint(e.latlng.lat, e.latlng.lng);
       } else {
         setContextMenu(null); // Click anywhere else to close the menu
       }
@@ -181,6 +191,12 @@ const MapView = ({
   goArounds,
   updateGoAround,
   deleteGoAround,
+  backstops = [],
+  updateBackstop,
+  onBackstopContextMenu,
+  isDrawingBackstop = false,
+  backstopDraftPoints = [],
+  addBackstopDraftPoint,
   pzMarkers,
   updatePZMarker,
   deletePZMarker,
@@ -274,6 +290,8 @@ const MapView = ({
         handleMapRightClick={handleMapRightClick}
         setContextMenu={setContextMenu}
         isSketchingRoute={isSketchingRoute}
+        isDrawingBackstop={isDrawingBackstop}
+        addBackstopDraftPoint={addBackstopDraftPoint}
         addDraftPoint={addDraftPoint}
         onDraftPointContextMenu={onDraftPointContextMenu}
         onMapMove={onMapMove}
@@ -308,6 +326,15 @@ const MapView = ({
                   </Marker>
                 ),
             )}
+          </>
+        )}
+
+        {isDrawingBackstop && backstopDraftPoints.length > 0 && (
+          <>
+            <Polyline positions={backstopDraftPoints.map((p) => [p.lat, p.lon])} pathOptions={{ color: "#000000", weight: 3, dashArray: "10 7" }} />
+            {backstopDraftPoints.map((p, i) => (
+              <CircleMarker key={`backstop-draft-${i}`} center={[p.lat, p.lon]} radius={4} pathOptions={{ color: "#ffffff", weight: 2, fillColor: "#000000", fillOpacity: 1 }} interactive={false} />
+            ))}
           </>
         )}
 
@@ -422,6 +449,17 @@ const MapView = ({
             data={ga}
             updateGoAround={updateGoAround}
             deleteGoAround={deleteGoAround}
+          />
+        ))}
+
+        {targetLocation && backstops.map((backstop) => (
+          <Backstop
+            key={`${activeDiagramId ?? "lz"}-backstop-${backstop.id}`}
+            data={backstop}
+            target={targetLocation}
+            onChange={updateBackstop}
+            onContextMenu={onBackstopContextMenu}
+            passive={isDrawingBackstop || isDrawingLZ || isSketchingRoute}
           />
         ))}
 

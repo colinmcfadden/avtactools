@@ -318,7 +318,7 @@ const GA_OLD = { id: "ga-old", lat: 34.7808, lon: -84.08219, direction: "left" }
 // client that keeps the fields it does not know must keep none of these. Any other name there is one the web drops.
 const LZ_ANALYSIS_NAMES = ["customLZ", "detectedLZ", "terrainData", "results", "analysisResults", "gridElevation", "latLong"];
 const LZ_GRAPHICS_NAMES = [
-  "doghouses", "helicopters", "pzMarkers", "pzMarker", "sectorsOfFire", "goArounds", "goAround", "units", "measurements", "exportBox",
+  "doghouses", "helicopters", "pzMarkers", "pzMarker", "sectorsOfFire", "goArounds", "goAround", "units", "measurements", "backstops", "exportBox",
 ];
 const LZ_VIEW_NAMES = ["mapStyle", "showLZOutline", "showHeatmap"];
 const LZ_READ_NAMES = {
@@ -586,7 +586,7 @@ const sharedCases = () => withoutClockOrRandomness(() => ({
     + "useLzWorkspace.normalizeLzDiagram reads a saved diagram (workspace/diagram.json holds it rule by rule) and each person's "
     + "own fields are then taken out as in `lz`, so a shape is always exactly {schemaVersion: 2, status, target, mapData, "
     + "flightData, analysis: {customLZ, detectedLZ, results, gridElevation, latLong}, graphics: {doghouses, helicopters, "
-    + "pzMarkers, sectorsOfFire, goArounds, units, measurements, exportBox}}, never with a slope raster (terrainData). In it: "
+    + "pzMarkers, sectorsOfFire, goArounds, units, measurements, exportBox}}, never with a slope raster (terrainData), and with graphics.backstops as well only where the data has a list of them. In it: "
     + "status is \"draft\" without a target; else \"analyzed\" when data.status is \"analyzed\" or the analysis's detectedLZ or "
     + "results (below) is truthy as JavaScript has it (an empty list or object is, 0 and \"\" are not; a drawn customLZ does not "
     + "count); else \"targeted\". target is {lat, lon, mgrs} or null. It is read from data.target when that is neither missing "
@@ -710,6 +710,8 @@ const ga = (d) => d.graphics.goArounds;
 const units = (d) => d.graphics.units;
 const dogs = (d) => d.graphics.doghouses;
 const tape = (d) => d.graphics.measurements;
+const BACKSTOP = { id: "bs-1759900000010", points: [{ lat: 34.8, lon: -84.09 }, { lat: 34.8, lon: -84.07 }] };
+const WITH_BACKSTOP = changed(LZ, (d) => { d.graphics.backstops = [BACKSTOP]; });
 const turnHeli = (value) => (d) => { heli(d)[0].heading = value; };
 // Two helicopters with one id, and one between them.
 const TWINS = [
@@ -931,6 +933,9 @@ const LZ_CASES = [
   lz("sectors are named before go-arounds", (d) => { ga(d)[0].lat = 34.7811; sectors(d)[0].color = "#ffff00"; }),
   lz("go-arounds are named before units", (d) => { units(d)[0].lat = 34.7855; ga(d)[0].label = "GA 1"; }),
   lz("doghouses come after units, so a unit is named first", (d) => { dogs(d)[0].lat = 34.7841; units(d)[1].lon = -84.0755; }),
+  lz("a backstop drawn on an LZ/PZ that had none", (d) => { d.graphics.backstops = [BACKSTOP]; }),
+  lz("a backstop moved", (d) => { d.graphics.backstops[0].points[0].lat = 34.81; }, { before: WITH_BACKSTOP }),
+  lz("a backstop deleted", (d) => { d.graphics.backstops = []; }, { before: WITH_BACKSTOP }),
   lz("doghouses are named before measurements", (d) => { tape(d)[0].label = "330 m"; dogs(d)[1].time = "02+12"; }),
   lz("turning the landing doghouse names the doghouse before the landing heading it sets", (d) => {
     dogs(d)[1].heading = "300°";
@@ -1218,7 +1223,7 @@ const describeFixture = () => withoutClockOrRandomness(() => ({
     + "at a time in this order: helicopters (\"Chalk n\"), pzMarkers (\"a PZ marker\"), sectorsOfFire (\"sector NAME\", or \"sector n\" "
     + "when name is missing or empty), goArounds (\"a go-around\"), units (\"unit D\" from a non-empty uniqueDesignation, else \"a unit\"), "
     + "doghouses (\"doghouse L\" from a non-empty `label`, else \"doghouse B\" when id_val is text, B being id_val less one \"[\" at its "
-    + "start and one \"]\" at its end, when that leaves any, else \"a doghouse\"), measurements (\"a measurement\"). The "
+    + "start and one \"]\" at its end, when that leaves any, else \"a doghouse\"), measurements (\"a measurement\"), backstops (\"a backstop\"). The "
     + "noun is taken from the element after the change, or before it for one removed. Only elements that are truthy and whose `id` is "
     + "not undefined are followed (an id of null is followed; a missing one is not), matched by id as above; n is the element's "
     + "place among those followed, from 1, in the list after the change, or before it for one removed. For each followed element "
@@ -1387,7 +1392,7 @@ const editFixture = (clock) => withoutClockOrRandomness(() => ({
 
 // -- Checks on the cases themselves -----------------------------------------------------------------------------
 
-const COLLECTIONS = ["helicopters", "pzMarkers", "sectorsOfFire", "goArounds", "units", "doghouses", "measurements"];
+const COLLECTIONS = ["helicopters", "pzMarkers", "sectorsOfFire", "goArounds", "units", "doghouses", "measurements", "backstops"];
 const POSITION_KEYS = ["lat", "lon", "lng", "position", "points", "center", "start", "end", "tip", "anchor"];
 
 // The keys of a graphic that differ between before and after, across every LZ case.
@@ -1482,7 +1487,7 @@ describe("mission pack shared-data and history fixtures", () => {
     lzShape.forEach((c) => {
       expect([c.name, keys(c.shape)]).toEqual([c.name, ["analysis", "flightData", "graphics", "mapData", "schemaVersion", "status", "target"]]);
       expect([c.name, keys(c.shape.analysis)]).toEqual([c.name, ["customLZ", "detectedLZ", "gridElevation", "latLong", "results"]]);
-      expect([c.name, keys(c.shape.graphics)]).toEqual([c.name, [...COLLECTIONS, "exportBox"].sort()]);
+      expect([c.name, keys(c.shape.graphics)]).toEqual([c.name, [...COLLECTIONS.filter((name) => name !== "backstops"), "exportBox"].sort()]);
     });
     routeShape.forEach((c) => {
       expect([c.name, keys(c.shape)]).toEqual([c.name, ["routes", "version"]]);
