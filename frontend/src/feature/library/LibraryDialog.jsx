@@ -241,7 +241,7 @@ const LibraryDialog = ({ initialTab = "lz", sources, onClose, onAddToPack, onOpe
                     items={[
                       { icon: "pencil", title: "Rename", onSelect: () => setRenaming(entry) },
                       { icon: "copy", title: "Duplicate", onSelect: () => duplicate(entry) },
-                      { icon: "layers", title: "Add to Mission Pack…", onSelect: () => onAddToPack(tab, entry), hidden: !onAddToPack || tab === "threats" || (tab === "routes" && entry.kind === "mission"), text: undefined },
+                      { icon: "layers", title: "Add to Mission Pack…", onSelect: () => onAddToPack(tab, entry), hidden: !onAddToPack || (tab === "routes" && entry.kind === "mission"), text: undefined },
                       { divider: true },
                       { icon: "trash", title: "Delete", danger: true, onSelect: () => setDeleting(entry) },
                     ]}

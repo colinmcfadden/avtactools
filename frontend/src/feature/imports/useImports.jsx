@@ -60,7 +60,8 @@ export const useImports = ({ pack, threatsSaved = false, importers, destinations
             if (item.destination === "library") await dest.library.lps(set);
             if (item.destination === "pack") await dest.pack.lps(set);
           } else if (item.kind === "ths") {
-            const count = await imp.ths(item.file, { name: item.name?.trim() || undefined });
+            const options = { name: item.name?.trim() || undefined };
+            const count = item.destination === "pack" ? await dest.pack.ths(item.file, options) : await imp.ths(item.file, options);
             setThreatFiles((prev) => [...prev, { id: `${Date.now()}-${prev.length}`, fileName: item.file.name, count }]);
           }
           kinds.add(item.kind);

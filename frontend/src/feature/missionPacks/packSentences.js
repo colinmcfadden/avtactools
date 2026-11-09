@@ -5,32 +5,34 @@
  * packActions.js re-exports what was there first.
  */
 
-const PREFIX = { lz: "lz", route: "rt", pointset: "ps" };
-const KIND_WORDS = { lz: "LZ/PZ", route: "route set", pointset: "point set" };
+const PREFIX = { lz: "lz", route: "rt", pointset: "ps", threatset: "ts" };
+const KIND_WORDS = { lz: "LZ/PZ", route: "route set", pointset: "point set", threatset: "threat set" };
 
 /** Who a person is in the history: their name, else their sign-in address, else "Someone". */
 export const actorName = (user) => user?.name || user?.email || "Someone";
 
-/** A new item's uuid in a pack: its kind's prefix (lz-, rt-, ps-) and an id chosen by the client. */
+/** A new item's uuid in a pack: its kind's prefix (lz-, rt-, ps-, ts-) and an id chosen by the client. */
 export const packItemId = (kind, id) => `${PREFIX[kind]}-${id}`;
 
 const DEFAULT_NAMES = {
   lz: (count) => `LZ/PZ ${count + 1}`,
   route: (count) => `ROUTES ${count + 1}`,
   pointset: () => "LOCAL POINTS",
+  threatset: (count) => (count ? `THREATS ${count + 1}` : "THREATS"),
 };
 
 /**
  * What a new item is called: the name given, trimmed, or when that is blank its kind's default
- * (`count` is how many items of that kind the pack has: "LZ/PZ 3", "ROUTES 2", "LOCAL POINTS").
+ * (`count` is how many items of that kind the pack has: "LZ/PZ 3", "ROUTES 2", "LOCAL POINTS", "THREATS").
  */
 export const newItemName = (kind, name, count) => (name ?? "").trim() || DEFAULT_NAMES[kind](count);
 
-/** The history's sentence for an item made in the pack (a point set's says how many points it has). */
+/** The history's sentence for an item made in the pack (a point set's says how many points it has, a threat set's how many threats). */
 export const createSummary = (actor, kind, name, pointCount) => {
   const who = actor || "Someone";
   if (kind === "lz") return `${who} added the LZ/PZ "${name}".`;
   if (kind === "route") return `${who} added the route set "${name}".`;
+  if (kind === "threatset") return `${who} added the threat set "${name}" (${pointCount.toLocaleString("en-US")} threat${pointCount === 1 ? "" : "s"}).`;
   return `${who} added the point set "${name}" (${pointCount.toLocaleString("en-US")} point${pointCount === 1 ? "" : "s"}).`;
 };
 
@@ -39,7 +41,7 @@ export const newItemOp = ({ kind, item, name, count, data, actor }) => {
   const label = newItemName(kind, name, count);
   return {
     type: "item.create", item, kind, name: label, data,
-    summary: createSummary(actor, kind, label, kind === "pointset" ? data.length : undefined),
+    summary: createSummary(actor, kind, label, kind === "pointset" ? data.length : kind === "threatset" ? data.threats.length : undefined),
   };
 };
 

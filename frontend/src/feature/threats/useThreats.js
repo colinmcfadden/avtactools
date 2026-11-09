@@ -94,7 +94,15 @@ export const useThreats = ({ userId = null, canSave = false, notify = () => {} }
   // The threat currently open in the dialog: { threat, isNew }.
   const [editingThreat, setEditingThreat] = useState(null);
 
-  const threats = useMemo(() => sets.flatMap((set) => set.threats), [sets]);
+  // While a Mission Pack is open these are its sets (usePackThreats keeps them in step), in place of the person's own,
+  // which stay as they are and go on saving. null: no pack is open.
+  const [packSets, setPackSets] = useState(null);
+  const shown = packSets ?? sets;
+  const threats = useMemo(() => shown.flatMap((set) => set.threats), [shown]);
+  const packSetsRef = useRef(packSets);
+  packSetsRef.current = packSets;
+  const inPackNow = () => packSetsRef.current !== null;
+  const changeSets = (pack, change) => (pack ? setPackSets((prev) => (prev === null ? prev : change(prev))) : setSets(change));
 
   const setsRef = useRef(sets);
   setsRef.current = sets;
@@ -134,16 +142,16 @@ export const useThreats = ({ userId = null, canSave = false, notify = () => {} }
     return !r.inFlight && r.baseline === JSON.stringify(documentOf(set)) && r.name === set.name;
   };
 
-  const patchThreat = (id, patch) =>
-    setSets((prev) => prev.map((set) => (set.threats.some((t) => t.id === id) ? { ...set, threats: set.threats.map((t) => (t.id === id ? { ...t, ...patch } : t)) } : set)));
+  const patchThreat = (id, patch, pack = inPackNow()) =>
+    changeSets(pack, (prev) => prev.map((set) => (set.threats.some((t) => t.id === id) ? { ...set, threats: set.threats.map((t) => (t.id === id ? { ...t, ...patch } : t)) } : set)));
 
-  /** Recomputes a threat's terrain mask from the backend. */
-  const fetchMask = async (threat) => {
-    patchThreat(threat.id, { maskLoading: true, maskError: null });
+  /** Recomputes a threat's terrain mask from the backend. The answer lands where it was asked for: the pack's sets, or the person's own. */
+  const fetchMask = async (threat, pack = inPackNow()) => {
+    patchThreat(threat.id, { maskLoading: true, maskError: null }, pack);
     const subject = maskSubject(threat);
     const stillAsked = (current) => canon(maskSubject(current)) === canon(subject);
     const land = (patch) =>
-      setSets((prev) =>
+      changeSets(pack, (prev) =>
         prev.map((set) =>
           set.threats.some((t) => t.id === threat.id && stillAsked(t))
             ? { ...set, threats: set.threats.map((t) => (t.id === threat.id && stillAsked(t) ? { ...t, ...patch } : t)) }
@@ -158,7 +166,10 @@ export const useThreats = ({ userId = null, canSave = false, notify = () => {} }
     }
   };
 
-  const maskWhatLacksOne = (list) => list.filter((t) => wantsMask(t) && !maskStillFits(t, t.mask)).forEach((t) => fetchMask(t));
+  const maskWhatLacksOne = (list) => list.filter((t) => wantsMask(t) && !maskStillFits(t, t.mask)).forEach((t) => fetchMask(t, false));
+
+  /** A pack's threats have no mask from the pack; each person's are worked out here, once for each place and radars. */
+  const fetchMissingPackMasks = (list) => list.filter((t) => wantsMask(t) && !maskStillFits(t, t.mask) && !t.maskLoading && !t.maskError).forEach((t) => fetchMask(t, true));
 
   // --- Saving --------------------------------------------------------------------------------------
 
@@ -472,10 +483,19 @@ export const useThreats = ({ userId = null, canSave = false, notify = () => {} }
 
   const freeName = (name) => nextFreeName(name, [...savedRef.current, ...setsRef.current]);
 
-  /** Commits the dialog: adds or updates the threat, then (re)computes its mask. */
-  const saveThreat = (threat) => {
+  /**
+   * Commits the dialog: adds or updates the threat, then (re)computes its mask. In a pack with no set of threats
+   * open, the first one makes an item of the pack (`createSet`), which everyone sees.
+   */
+  const saveThreat = (threat, { createSet } = {}) => {
+    const pack = inPackNow();
+    if (pack && packSetsRef.current.length === 0) {
+      setEditingThreat(null);
+      createSet?.(threat);
+      return;
+    }
     const fresh = newSet(freeName(FIRST_SET_NAME), [threat]);
-    setSets((prev) => {
+    changeSets(pack, (prev) => {
       if (prev.some((set) => set.threats.some((t) => t.id === threat.id))) {
         return prev.map((set) => (set.threats.some((t) => t.id === threat.id) ? { ...set, threats: set.threats.map((t) => (t.id === threat.id ? threat : t)) } : set));
       }
@@ -485,16 +505,16 @@ export const useThreats = ({ userId = null, canSave = false, notify = () => {} }
     });
     setEditingThreat(null);
     // Mask fetch reads the just-saved threat directly (state update is async).
-    fetchMask(threat);
+    fetchMask(threat, pack);
   };
 
-  const removeThreat = (id) => setSets((prev) => prev.map((set) => (set.threats.some((t) => t.id === id) ? { ...set, threats: set.threats.filter((t) => t.id !== id) } : set)));
+  const removeThreat = (id) => changeSets(inPackNow(), (prev) => prev.map((set) => (set.threats.some((t) => t.id === id) ? { ...set, threats: set.threats.filter((t) => t.id !== id) } : set)));
 
   /** Takes every threat off the map and out of its set; the sets stay, empty. */
-  const removeAllThreats = () => setSets((prev) => prev.map((set) => (set.threats.length ? { ...set, threats: [] } : set)));
+  const removeAllThreats = () => changeSets(inPackNow(), (prev) => prev.map((set) => (set.threats.length ? { ...set, threats: [] } : set)));
 
   const toggleVisibility = (id) =>
-    setSets((prev) => prev.map((set) => (set.threats.some((t) => t.id === id) ? { ...set, threats: set.threats.map((t) => (t.id === id ? { ...t, visible: !t.visible } : t)) } : set)));
+    changeSets(inPackNow(), (prev) => prev.map((set) => (set.threats.some((t) => t.id === id) ? { ...set, threats: set.threats.map((t) => (t.id === id ? { ...t, visible: !t.visible } : t)) } : set)));
 
   /** Drag-move a threat marker: reposition and recompute its mask. */
   const moveThreat = (id, lat, lon) => {
@@ -541,7 +561,7 @@ export const useThreats = ({ userId = null, canSave = false, notify = () => {} }
     const set = newSet(freeName(name || setNameFromFile(file.name)), parsed);
     setsRef.current = [...setsRef.current, set];
     setSets((prev) => [...prev, set]);
-    for (const t of parsed) fetchMask(t);
+    for (const t of parsed) fetchMask(t, false);
     return parsed.length;
   };
 
@@ -549,8 +569,11 @@ export const useThreats = ({ userId = null, canSave = false, notify = () => {} }
 
   return {
     threats,
-    sets,
-    activeId: sets.some((set) => set.id === activeId) ? activeId : (sets[sets.length - 1]?.id ?? null),
+    sets: shown,
+    activeId: shown.some((set) => set.id === activeId) ? activeId : (shown[shown.length - 1]?.id ?? null),
+    packSets,
+    setPackSets,
+    fetchMissingPackMasks,
     saveStates,
     canSave,
     savedSets,

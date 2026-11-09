@@ -9,8 +9,8 @@ import "./imports.css";
  * The one review every import goes through (docs/MENU_REDESIGN.md §6, screen ImportReview): what each
  * file is, what is in it, and where it should live. Local points can go to the open pack, the Library
  * or just this session; a mission file to the Library or this session (not a pack: v1 packs hold
- * sketched routes only); threats to the Library as a set named for the file (no pack holds them yet),
- * or this tab where the account has no cloud save. A file that is not one of these says so and is left out.
+ * sketched routes only); threats to the open pack, or the Library as a set named for the file, or this tab
+ * where the account has no cloud save. A file that is not one of these says so and is left out.
  */
 
 const ICONS = { lps: "mapPin", msnx: "route", ths: "diamond" };
@@ -43,14 +43,16 @@ const packRefusal = (kind, pack) => {
   return null;
 };
 
-const destinationsFor = (kind, pack) => {
-  if (kind === "ths") return null;
+const destinationsFor = (kind, pack, threatsSaved = false) => {
+  if (kind === "ths" && !pack) return null;
   const options = [];
   if (pack) {
     const refusal = packRefusal(kind, pack);
     options.push({ value: "pack", label: pack.name, disabled: Boolean(refusal), title: refusal ?? undefined });
   }
-  options.push({ value: "library", label: "Library" }, { value: "session", label: "Session" });
+  // A set of threats kept by this account is in the Library; one that cannot be is in this tab.
+  if (kind === "ths") options.push(threatsSaved ? { value: "library", label: "Library" } : { value: "session", label: "Session" });
+  else options.push({ value: "library", label: "Library" }, { value: "session", label: "Session" });
   return options;
 };
 
@@ -58,8 +60,9 @@ const destinationsFor = (kind, pack) => {
 // Library or stays in this session appears once the person switches back to the Library.
 const noteFor = (item, pack, threatsSaved) => {
   if (item.kind === "ths") {
+    if (item.destination === "pack") return { tone: "pack", text: `Everyone in ${pack.name} (${pack.memberCount} ${pack.memberCount === 1 ? "member" : "members"}) will see these threats and can change them.` };
     if (!threatsSaved) return { tone: "warn", text: "Cloud save is off for this account, so these stay in this tab." };
-    return pack ? { tone: "warn", text: "Saved to your Library. Mission Packs cannot hold threats yet." } : { tone: "", text: "Saved to your Library and shown on the map." };
+    return { tone: "", text: pack ? "Saved to your Library. Shown when you switch back to Library." : "Saved to your Library and shown on the map." };
   }
   if (item.kind === "msnx" && pack) return { tone: "warn", text: "Mission files cannot go into a pack yet (sketched routes only). Shown when you switch back to Library." };
   if (item.destination === "pack") return { tone: "pack", text: `Everyone in ${pack.name} (${pack.memberCount} ${pack.memberCount === 1 ? "member" : "members"}) will see these points.` };
@@ -71,7 +74,10 @@ const noteFor = (item, pack, threatsSaved) => {
 
 export const defaultDestination = (kind, pack, threatsSaved = false) => {
   if (kind === "lps") return pack && !packRefusal(kind, pack) ? "pack" : "library";
-  if (kind === "ths" && threatsSaved) return "library";
+  if (kind === "ths") {
+    if (pack && !packRefusal(kind, pack)) return "pack";
+    return threatsSaved ? "library" : "session";
+  }
   return "session";
 };
 
@@ -147,10 +153,10 @@ const ImportReviewDialog = ({ items: initial, pack, threatsSaved = false, onCanc
                 )}
               </div>
               <div>
-                {destinationsFor(item.kind, pack) ? (
+                {destinationsFor(item.kind, pack, threatsSaved) ? (
                   <Segmented
                     label={`Where ${item.file.name} goes`}
-                    options={destinationsFor(item.kind, pack)}
+                    options={destinationsFor(item.kind, pack, threatsSaved)}
                     value={item.destination}
                     onChange={(destination) => update(index, { destination })}
                   />
