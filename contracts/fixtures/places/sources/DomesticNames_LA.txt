@@ -1,0 +1,4 @@
+﻿feature_id|feature_name|feature_class|state_name|state_numeric|county_name|county_numeric|map_name|date_created|date_edited|bgn_type|bgn_authority|bgn_date|prim_lat_dms|prim_long_dms|prim_lat_dec|prim_long_dec|source_lat_dms|source_long_dms|source_lat_dec|source_long_dec
+548215|Fort Polk|Populated Place|Louisiana|22|Vernon|115|Fort Polk|11/01/1991|06/07/2022||||310248N|0931220W|31.0465776|-93.2054396|||0.0|0.0
+1629968|Leesville|Populated Place|Louisiana|22|Vernon|115|Leesville|06/04/1980|06/07/2022||||310837N|0931540W|31.1435194|-93.260998|||0.0|0.0
+2512473|Fort Polk|Military|Louisiana|22|Vernon|115|Sugrue|11/17/2008|05/31/2022||||305915N|0930300W|30.9874939|-93.0500375|||0.0|0.0

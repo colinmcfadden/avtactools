@@ -255,8 +255,8 @@ const LzPanel = ({
             {pack
               ? readOnly
                 ? `Nothing in ${pack.name}.`
-                : `Nothing in ${pack.name} yet. Set a target with the MGRS box, or right-click the map and choose Set as target, and the new LZ/PZ goes into the pack.`
-              : "No LZ/PZ open. Enter a grid in the MGRS target box, or right-click the map and choose Set as target."}
+                : `Nothing in ${pack.name} yet. Search a grid or lat/long in the top bar, or right-click the map and choose Set as target, and the new LZ/PZ goes into the pack.`
+              : "No LZ/PZ open. Search a grid or lat/long in the top bar, or right-click the map and choose Set as target."}
           </div>
         ) : (
           <PanelSection label={pack ? `In ${pack.name}` : "Open"} count={diagrams.length}>

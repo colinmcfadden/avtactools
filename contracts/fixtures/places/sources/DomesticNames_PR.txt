@@ -1,0 +1,2 @@
+﻿feature_id|feature_name|feature_class|state_name|state_numeric|county_name|county_numeric|map_name|date_created|date_edited|bgn_type|bgn_authority|bgn_date|prim_lat_dms|prim_long_dms|prim_lat_dec|prim_long_dec|source_lat_dms|source_long_dms|source_lat_dec|source_long_dec
+1611718|Ponce|Populated Place|Puerto Rico|72|Ponce|113|Ponce|02/13/1981|06/07/2022|Official|Board Decision|01/01/1952|180040N|0663651W|18.0110768|-66.6140616|||0.0|0.0
