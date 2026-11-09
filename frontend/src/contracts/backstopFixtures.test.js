@@ -1,9 +1,9 @@
-import { backstopAnchor, backstopReading, moveBackstopPoints, rotateBackstopPoints } from "../feature/backstops/backstops";
+import { backstopArrow, backstopReading, moveBackstopArrow } from "../feature/backstops/backstops";
 
 const fs = require("fs");
 const { UPDATE, dumps, fixturePath, writeFixture } = require("./fixtureIO");
 
-// What a backstop's label says and how its line moves and turns, as the web works them out. Places are written to a billionth of a degree
+// Where a backstop's arrow runs, what its label says and how it moves, as the web works them out. Places are written to a billionth of a degree
 // and distances to a millionth of a km, so the sine of an ARM build of V8 and an x86 one (AGENTS.md §11) write the same file.
 
 const NAME = "planning/backstops.json";
@@ -18,21 +18,34 @@ const LINES = {
   noLength: [{ lat: 34.8, lon: -84.09 }, { lat: 34.8, lon: -84.09 }],
 };
 
+const ARROWS = {
+  tipOnTheTarget: { tail: { lat: 34.82, lon: -84.1 } },
+  movedWhole: { tail: { lat: 34.82, lon: -84.1 }, tip: { lat: 34.8, lon: -84.05 } },
+  // A pack sends a field that went as null.
+  tipTakenBackInAPack: { tail: { lat: 34.82, lon: -84.1 }, tip: null },
+};
+
+const reading = (name, backstop) => {
+  const arrow = backstopArrow(backstop, LZ);
+  const read = backstopReading(arrow);
+  return { name, ...backstop, tail: place(arrow.tail), tip: place(arrow.tip), onTarget: arrow.onTarget, azimuth: read.azimuth, distanceKm: round(read.distanceKm, 6), text: read.text };
+};
+
 const fixture = () => ({
   generatedBy: "frontend/src/contracts/backstopFixtures.test.js (UPDATE_CONTRACTS=1)",
   description:
-    "A backstop keeps only its line ({id, points: [{lat, lon}, ...]}). Its arrow starts at the line's middle by distance (anchor) and points at the LZ/PZ's target "
-    + "[lat, lon]; azimuth is that initial great-circle bearing in whole degrees true, 360 written as 0; text is the label: three digits, \"°T · \", the distance in km to one decimal, \" km\". "
-    + "move adds to every point; rotate turns clockwise about a point on a local flat plane (east is scaled by the cosine of its latitude).",
+    "A backstop keeps its line ({id, points: [{lat, lon}, ...]}), which stays where it was sketched, and once its arrow has moved {arrow: {tail, tip?}}. With no arrow the tail is the line's middle by distance; "
+    + "with no tip (or a null one) the tip is on the LZ/PZ's target [lat, lon] and follows it (onTarget). azimuth is the initial great-circle bearing from tail to tip in whole degrees true, 360 written as 0; "
+    + "text is the label: three digits, \"°T · \", the arrow's length in km to one decimal, \" km\". A move adds to both ends and always leaves a tip of its own. A tip dragged within 20 screen pixels of the target goes back onto it "
+    + "(no tip), and one that would leave the arrow under 24 pixels long is refused.",
   target: LZ,
-  readings: Object.entries(LINES).map(([name, points]) => {
-    const reading = backstopReading(points, LZ);
-    return { name, points, anchor: place(backstopAnchor(points)), azimuth: reading.azimuth, distanceKm: round(reading.distanceKm, 6), text: reading.text };
-  }),
-  moves: [{ points: LINES.uneven, dLat: 0.01, dLon: -0.02 }].map((c) => ({ ...c, result: moveBackstopPoints(c.points, c.dLat, c.dLon).map(place) })),
-  rotations: [15, 90, -37, 180].map((degrees) => {
-    const about = backstopAnchor(LINES.uneven);
-    return { points: LINES.uneven, about: place(about), degrees, result: rotateBackstopPoints(LINES.uneven, about, degrees).map(place) };
+  readings: [
+    ...Object.entries(LINES).map(([name, points]) => reading(name, { points })),
+    ...Object.entries(ARROWS).map(([name, arrow]) => reading(name, { points: LINES.twoPoints, arrow })),
+  ],
+  moves: [{ points: LINES.uneven, dLat: 0.01, dLon: -0.02 }, { points: LINES.twoPoints, arrow: ARROWS.movedWhole, dLat: -0.005, dLon: 0.003 }].map(({ dLat, dLon, ...backstop }) => {
+    const moved = moveBackstopArrow(backstopArrow(backstop, LZ), dLat, dLon);
+    return { ...backstop, dLat, dLon, result: { tail: place(moved.tail), tip: place(moved.tip) } };
   }),
 });
 

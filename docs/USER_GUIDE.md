@@ -57,7 +57,7 @@ The **LZ/PZ Tools** grid places draggable markers on the map:
 | **Sector** | Sector-of-fire triangle — drag its corner points to shape it. |
 | **Unit** | Opens a menu of unit symbols to place. |
 | **L-GA / R-GA** | Left/right go-around arrows. |
-| **Backstop** | A dashed line beyond the LZ/PZ for a crew that overflies it. Click along the terrain or landmark you want, then Finish; an arrow from the line back to the LZ/PZ is labelled with the true azimuth and the distance in km. Hover or tap the line for its handles: drag the middle to move it, the end to turn it. Right-click it to delete it. |
+| **Backstop** | A red dashed line beyond the LZ/PZ for a crew that overflies it. Click along the terrain or landmark you want, then Finish; a red arrow from the line back to the LZ/PZ is labelled with its true azimuth and its length in km. The line stays where you drew it and the arrow is what you move: drag it anywhere along its length to move it whole, or drag its tip to change its length and heading (hover or tap the arrow to see the handles). Drop the tip on the LZ/PZ to point it back there. Right-click the line or the arrow to delete the backstop. |
 
 Everything is draggable; most markers can be deleted from their own controls or right-click.
 
