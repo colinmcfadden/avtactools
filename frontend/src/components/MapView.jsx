@@ -39,6 +39,7 @@ import { NO_CHARTS } from "../feature/vfrCharts/useVfrCharts";
 import { VFR_STYLE_ID } from "../feature/vfrCharts/vfrCharts";
 import VfrAttribution from "../feature/vfrCharts/VfrAttribution";
 import VfrChartLayers from "../feature/vfrCharts/VfrChartLayers";
+import KmzOverlayLayer from "../feature/overlays/KmzOverlayLayer";
 import MgrsGridLayer from "../feature/mgrsGrid/MgrsGridLayer";
 import SlopeLayer from "../feature/terrain/SlopeLayer";
 import { SLOPE_OPACITY } from "../feature/terrain/slopeOpacity";
@@ -242,6 +243,8 @@ const MapView = ({
   setContextMenu,
   mapStyle,
   showMgrsGrid,
+  mapOverlays = [],
+  overlayFit = null,
   // The slope map's opacity, a percentage of its own: this browser's (slopeOpacity.js).
   slopeOpacity = SLOPE_OPACITY.DEFAULT,
   localPointSets,
@@ -304,6 +307,13 @@ const MapView = ({
           {...activeMapStyle.options}
         />
       )}
+
+      {/* The KMZ and KML overlays that are switched on, under the grid and everything planned */}
+      <KmzOverlayLayer
+        overlays={mapOverlays}
+        fit={overlayFit}
+        passive={Boolean(presentation) || isDrawingLZ || isDrawingFlot || isDrawingBackstop || isSketchingRoute}
+      />
 
       {/* The MGRS grid, over any base map; screen only, never on an LZ card */}
       {showMgrsGrid && <MgrsGridLayer />}

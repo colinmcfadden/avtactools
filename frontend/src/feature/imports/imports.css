@@ -157,3 +157,18 @@
   .imports__row > div:last-child { grid-column: 2; }
   .imports__seg { width: 100%; }
 }
+
+/* Local points made and edited by hand */
+.imports__new { display: flex; gap: 8px; margin-top: 10px; }
+.imports__expand { background: none; border: none; color: inherit; padding: 0; cursor: pointer; display: inline-flex; }
+.points-form { display: flex; flex-direction: column; gap: 12px; }
+.points-form__field { display: flex; flex: 1; flex-direction: column; gap: 4px; min-width: 0; }
+.points-form__row { display: flex; gap: 10px; }
+.points-form__choices { display: flex; gap: 6px; flex-wrap: wrap; }
+.points-form__choice--on { border-color: var(--ff-accent); color: var(--ff-accent); }
+.points-list { margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--hairline-strong, rgba(255, 255, 255, 0.12)); }
+.points-list__search { width: 100%; margin-bottom: 6px; }
+.points-list__group { display: flex; align-items: center; gap: 6px; min-height: 28px; font-size: 11.5px; font-weight: 600; color: #c9d0d8; }
+.points-list__group-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.points-list__row { display: flex; align-items: center; gap: 6px; padding: 3px 0 3px 8px; }
+.points-list__name { font-size: 12.5px; color: #e3e7ec; overflow-wrap: anywhere; }

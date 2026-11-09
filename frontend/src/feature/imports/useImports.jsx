@@ -10,8 +10,10 @@ import ImportReviewDialog, { defaultDestination } from "./ImportReviewDialog";
  * only then is anything imported. Threat files are remembered (name and count) so the Imports panel
  * can list them; their threats live under Threats.
  *
- * `importers`: { msnx(file), lps(file, { name }), ths(file) } that bring a file into the session and
- * return what they made. `destinations`: { library: { msnx(result, item), lps(set) }, pack: { lps(set) } }.
+ * `importers`: { msnx(file), lps(file, { name, parsed }), ths(file), routefile(parsed, { name }),
+ * overlay(file, { name, parsed }) } that bring a file into the session and return what they made.
+ * `destinations`: { library: { msnx(result, item), lps(set), routefile(result, item), overlay(made) },
+ * pack: { lps(set), ths(file, options), routefile(parsed, options) } }.
  * `onDone(kinds, imported)` hears which kinds came in and, for each file that did, where it went.
  */
 
@@ -25,21 +27,21 @@ export const movePointsToPack = (set, { createItem, removePointSet }) => {
   removePointSet(set.id);
 };
 
-export const useImports = ({ pack, threatsSaved = false, importers, destinations, onDone }) => {
+export const useImports = ({ pack, threatsSaved = false, overlaysSaved = false, importers, destinations, onDone }) => {
   const { show } = useToast();
   const [review, setReview] = useState(null);
   const [threatFiles, setThreatFiles] = useState([]);
   const [dragging, setDragging] = useState(false);
   const depth = useRef(0);
-  const deps = useRef({ importers, destinations, onDone, pack, threatsSaved });
-  deps.current = { importers, destinations, onDone, pack, threatsSaved };
+  const deps = useRef({ importers, destinations, onDone, pack, threatsSaved, overlaysSaved });
+  deps.current = { importers, destinations, onDone, pack, threatsSaved, overlaysSaved };
 
   const begin = useCallback(
     async (files) => {
       const list = [...files];
       if (list.length === 0) return;
       const detected = await Promise.all(list.map((file) => detectImport(file)));
-      setReview(detected.map((item) => ({ ...item, destination: item.kind ? defaultDestination(item.kind, deps.current.pack, deps.current.threatsSaved) : null })));
+      setReview(detected.map((item) => ({ ...item, destination: item.kind ? defaultDestination(item.kind, deps.current.pack, deps.current.threatsSaved, deps.current.overlaysSaved) : null })));
     },
     [],
   );
@@ -56,13 +58,24 @@ export const useImports = ({ pack, threatsSaved = false, importers, destinations
             const result = await imp.msnx(item.file);
             if (item.destination === "library") dest.library.msnx(result, item);
           } else if (item.kind === "lps") {
-            const set = await imp.lps(item.file, { name: item.name?.trim() || undefined });
+            const set = await imp.lps(item.file, { name: item.name?.trim() || undefined, parsed: item.parsed });
             if (item.destination === "library") await dest.library.lps(set);
             if (item.destination === "pack") await dest.pack.lps(set);
           } else if (item.kind === "ths") {
             const options = { name: item.name?.trim() || undefined };
             const count = item.destination === "pack" ? await dest.pack.ths(item.file, options) : await imp.ths(item.file, options);
             setThreatFiles((prev) => [...prev, { id: `${Date.now()}-${prev.length}`, fileName: item.file.name, count }]);
+          } else if (item.kind === "routefile") {
+            const options = { name: item.name?.trim() || undefined };
+            if (item.destination === "pack") {
+              await dest.pack.routefile(item.parsed, options);
+            } else {
+              const result = await imp.routefile(item.parsed, options);
+              if (item.destination === "library") dest.library.routefile(result, item);
+            }
+          } else if (item.kind === "overlay") {
+            const made = await imp.overlay(item.file, { name: item.name?.trim() || undefined, parsed: item.parsed });
+            if (item.destination === "library") await dest.library.overlay(made);
           }
           kinds.add(item.kind);
           imported.push({ kind: item.kind, destination: item.destination, fileName: item.file.name });
@@ -117,7 +130,7 @@ export const useImports = ({ pack, threatsSaved = false, importers, destinations
   ) : null;
 
   const dialog = review ? (
-    <ImportReviewDialog items={review} pack={pack} threatsSaved={threatsSaved} onCancel={() => setReview(null)} onImport={run} />
+    <ImportReviewDialog items={review} pack={pack} threatsSaved={threatsSaved} overlaysSaved={overlaysSaved} onCancel={() => setReview(null)} onImport={run} />
   ) : null;
 
   return { begin, dialog, overlay, dragProps, threatFiles };

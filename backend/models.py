@@ -347,8 +347,24 @@ class SavedRoute(SyncMixin, db.Model):
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
 
+class SavedOverlay(db.Model):
+    """A map overlay (KMZ or KML) in a person's Library. Web only: no sync columns, and a delete is a DELETE."""
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False, index=True)
+    name = db.Column(db.String(100), nullable=False)
+
+    # The file as it came; deferred because listing the Library must not read every overlay.
+    file = db.deferred(db.Column(db.LargeBinary, nullable=False))
+    file_name = db.Column(db.String(255), nullable=False)
+    file_size = db.Column(db.Integer, nullable=False)
+    summary = db.Column(db.String(200), nullable=True)
+
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
 class SavedPointSet(SyncMixin, db.Model):
-    """A named set of local points (imported from an .LPS file) for map display."""
+    """A named set of local points (imported from an .LPS file, or made by hand) for map display."""
     id = db.Column(db.Integer, primary_key=True)
     user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
     name = db.Column(db.String(100), nullable=False)

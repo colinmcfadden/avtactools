@@ -43,6 +43,7 @@ from routes.lz_routes import lz_bp
 from routes.brief_routes import brief_bp
 from routes.saved_routes import saved_routes_bp
 from routes.point_sets import point_sets_bp
+from routes.overlay_routes import overlay_bp
 from routes.threat_set_routes import threat_set_bp
 from routes.threat_routes import threat_bp
 from routes.route_share_routes import route_share_bp
@@ -132,6 +133,7 @@ app.register_blueprint(lz_bp)
 app.register_blueprint(brief_bp)
 app.register_blueprint(saved_routes_bp)
 app.register_blueprint(point_sets_bp)
+app.register_blueprint(overlay_bp)
 app.register_blueprint(threat_set_bp)
 app.register_blueprint(threat_bp)
 app.register_blueprint(route_share_bp)

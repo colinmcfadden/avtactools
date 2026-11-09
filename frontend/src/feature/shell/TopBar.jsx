@@ -23,9 +23,10 @@ const STATUS = {
 
 export const IMPORT_KINDS = [
   { kind: "msnx", icon: "route", title: "Mission file", text: ".msnx · AMPS routes and points" },
+  { kind: "routefile", icon: "route", title: "Flight plan or GPX", text: ".fpl, .gpx · opens as sketched routes" },
   { kind: "lps", icon: "mapPin", title: "Local points", text: ".LPS · AMPS point sets" },
   { kind: "ths", icon: "diamond", title: "Threats", text: ".ths · AMPS threats, saved to your Library" },
-  { kind: "overlay", icon: "image", title: "Map or overlay", text: "KMZ, GeoTIFF, image with world file · not available yet", disabled: true },
+  { kind: "overlay", icon: "image", title: "Map overlay", text: ".kmz, .kml · drawn over the map" },
 ];
 
 const TopBar = ({

@@ -228,7 +228,7 @@ export const useRouteSaves = ({ sets, library, signedIn, onOpenLibrary }) => {
     [show, signedIn],
   );
 
-  // Saves asked for before their set had arrived (a mission imported straight to the Library): run
+  // Saves asked for before their set had arrived (a file imported straight to the Library): run
   // each once its routes are here.
   const [queued, setQueued] = useState([]);
   const queueSave = useCallback((key, name) => setQueued((prev) => [...prev, { key, name }]), []);
@@ -237,7 +237,8 @@ export const useRouteSaves = ({ sets, library, signedIn, onOpenLibrary }) => {
     if (ready.length === 0) return;
     setQueued((prev) => prev.filter((item) => !ready.includes(item)));
     ready.forEach(async (item) => {
-      const existing = (lib.current.savedRoutes ?? []).filter((entry) => entry.kind === "mission");
+      const queuedKind = setsRef.current.find((s) => s.key === item.key)?.kind === "mission" ? "mission" : "sketch";
+      const existing = (lib.current.savedRoutes ?? []).filter((entry) => (entry.kind ?? "sketch") === queuedKind);
       const name = nextFreeName(item.name, existing);
       try {
         await write(item.key, name, null);

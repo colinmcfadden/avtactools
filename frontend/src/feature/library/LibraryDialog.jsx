@@ -22,6 +22,7 @@ const TABS = [
   { key: "routes", label: "Routes", icon: "route", noun: ["saved route set", "saved route sets"], search: "Search routes by name" },
   { key: "points", label: "Local points", icon: "mapPin", noun: ["saved point set", "saved point sets"], search: "Search point sets by name" },
   { key: "threats", label: "Threats", icon: "diamond", noun: ["saved set of threats", "saved sets of threats"], search: "Search threats by name" },
+  { key: "overlays", label: "Overlays", icon: "image", noun: ["saved map overlay", "saved map overlays"], search: "Search overlays by name" },
 ];
 
 const SORTS = [
@@ -34,6 +35,7 @@ const metaFor = (kind, entry) => {
   if (kind === "routes") return `${entry.kind === "mission" ? `Mission file${entry.file_name ? ` · ${entry.file_name}` : ""}` : "Sketched routes"} · ${updated}`;
   if (kind === "points") return `${entry.point_count ?? 0} points · ${updated}`;
   if (kind === "threats") return `${entry.threat_count ?? 0} ${entry.threat_count === 1 ? "threat" : "threats"} · ${updated}`;
+  if (kind === "overlays") return `${entry.summary || entry.file_name || "Map overlay"} · ${updated}`;
   return updated;
 };
 
@@ -211,7 +213,9 @@ const LibraryDialog = ({ initialTab = "lz", sources, onClose, onAddToPack, onOpe
                     ? "No saved routes yet. Save a set from the Routes panel."
                     : tab === "threats"
                       ? "No saved threats yet. Add one from the Threats panel and it is saved here."
-                      : "No saved point sets yet. Import an .LPS file and save it from the Imports panel."}
+                      : tab === "overlays"
+                        ? "No saved overlays yet. Import a .kmz or .kml file and choose Library."
+                        : "No saved point sets yet. Make some, or import an .LPS file, and save them from the Imports panel."}
             </div>
           ) : (
             rows.map((entry) => {
@@ -230,10 +234,10 @@ const LibraryDialog = ({ initialTab = "lz", sources, onClose, onAddToPack, onOpe
                     type="button"
                     className="ui-btn ui-btn--34 library__open"
                     disabled={isOpen || busyId === entry.id}
-                    aria-label={`${openLabel} ${entry.name}`}
+                    aria-label={`${source.openLabel ?? openLabel} ${entry.name}`}
                     onClick={() => open(entry)}
                   >
-                    {busyId === entry.id ? openingLabel : openLabel}
+                    {busyId === entry.id ? (source.openingLabel ?? openingLabel) : (source.openLabel ?? openLabel)}
                   </button>
                   <MoreMenu
                     label={`More actions for ${entry.name}`}
@@ -241,7 +245,7 @@ const LibraryDialog = ({ initialTab = "lz", sources, onClose, onAddToPack, onOpe
                     items={[
                       { icon: "pencil", title: "Rename", onSelect: () => setRenaming(entry) },
                       { icon: "copy", title: "Duplicate", onSelect: () => duplicate(entry) },
-                      { icon: "layers", title: "Add to Mission Pack…", onSelect: () => onAddToPack(tab, entry), hidden: !onAddToPack || (tab === "routes" && entry.kind === "mission"), text: undefined },
+                      { icon: "layers", title: "Add to Mission Pack…", onSelect: () => onAddToPack(tab, entry), hidden: !onAddToPack || tab === "overlays" || (tab === "routes" && entry.kind === "mission"), text: undefined },
                       { divider: true },
                       { icon: "trash", title: "Delete", danger: true, onSelect: () => setDeleting(entry) },
                     ]}

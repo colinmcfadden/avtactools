@@ -23,7 +23,7 @@ from google.oauth2 import id_token
 from google.auth.transport import requests as google_requests
 
 from models import (
-    db, User, SavedRoute, SavedLZ, SavedPointSet, SavedBrief, SavedThreatSet, LoginEvent, AircraftProfile, SyncCounter,
+    db, User, SavedRoute, SavedLZ, SavedPointSet, SavedOverlay, SavedBrief, SavedThreatSet, LoginEvent, AircraftProfile, SyncCounter,
     MissionPack, MissionPackItem, MissionPackMember, Team, TeamMember,
 )
 import data_admin
@@ -390,6 +390,7 @@ def delete_user(uid):
     SavedRoute.query.filter_by(user_id=uid).delete()
     SavedLZ.query.filter_by(user_id=uid).delete()
     SavedPointSet.query.filter_by(user_id=uid).delete()
+    SavedOverlay.query.filter_by(user_id=uid).delete()
     SavedBrief.query.filter_by(user_id=uid).delete()
     SavedThreatSet.query.filter_by(user_id=uid).delete()
     LoginEvent.query.filter_by(user_id=uid).delete()
