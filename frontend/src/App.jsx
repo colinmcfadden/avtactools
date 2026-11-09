@@ -41,11 +41,15 @@ import ForeFlightModal from "./feature/msnxImport/ForeFlightModal";
 import { useSavedRoutes } from "./feature/msnxImport/useSavedRoutes";
 import { exportRouteSetFiles } from "./feature/msnxImport/exportRouteSet";
 import MapStyleSwitcher from "./feature/mapStyles/MapStyleSwitcher";
+import useVfrCharts from "./feature/vfrCharts/useVfrCharts";
+import { VFR_STYLE_ID } from "./feature/vfrCharts/vfrCharts";
 import useMgrsGrid from "./feature/mgrsGrid/useMgrsGrid";
 import useSlopeOpacity from "./feature/terrain/slopeOpacity";
 import UnitBadge from "./components/UnitBadge";
 import { useLocalPoints } from "./feature/localPoints/useLocalPoints";
 import { useThreats } from "./feature/threats/useThreats";
+import { parseThsFile } from "./feature/threats/parseThs";
+import { setNameFromFile } from "./feature/threats/threatSets";
 import ThreatDialog from "./feature/threats/ThreatDialog";
 import ThreatExportModal from "./feature/threats/ThreatExportModal";
 import UnitBuilder from "./feature/unit/UnitBuilder";
@@ -137,6 +141,7 @@ function App() {
   const boundaryVisit = useRef(null);
   const [clickedGrid, setClickedGrid] = useState("Loading...");
   const [mapStyle, setMapStyle] = useState("satellite");
+  const vfrCharts = useVfrCharts(mapStyle === VFR_STYLE_ID);
   // The MGRS grid over the map: this browser's preference, not the diagram's (unlike mapStyle).
   const { showMgrsGrid, setShowMgrsGrid } = useMgrsGrid();
   // How opaque the slope map is drawn: this browser's too.
@@ -605,6 +610,7 @@ function App() {
   const flotTools = useFlots();
 
   const localPoints = useLocalPoints();
+  const threatSets = useThreats({ userId: user?.id ?? null, canSave: feat.threats && feat.cloud_save, notify: toast });
   const {
     threats,
     editingThreat,
@@ -618,7 +624,12 @@ function App() {
     importThsFile,
     exportThsFile,
     exportKmzFile,
-  } = useThreats();
+  } = threatSets;
+  // The last change to a set is written before the session ends, but a server that does not answer keeps nobody here.
+  const signOut = async () => {
+    await Promise.race([threatSets.flush(), new Promise((resolve) => setTimeout(resolve, 2000))]);
+    logout();
+  };
   const [mapCenter, setMapCenter] = useState([34.0522, -118.2437]);
   const [showThreatExport, setShowThreatExport] = useState(false);
   const [showUnitBuilder, setShowUnitBuilder] = useState(false);
@@ -685,14 +696,23 @@ function App() {
     },
     sketch: { sketchedRoutes, flots: flotTools.flots, setFlotsOf: flotTools.setFlotsOf, loadSketchRoutes, replaceRouteSet, removeRouteSet },
     points: { pointSets: localPoints.pointSets, setPointSets: localPoints.setPointSets },
+    threats: {
+      on: feat.threats,
+      packSets: threatSets.packSets,
+      setPackSets: threatSets.setPackSets,
+      fetchMasks: threatSets.fetchMissingPackMasks,
+    },
     library: {
       history,
       savedRoutes,
       savedPointSets: localPoints.savedPointSets,
+      // No tab for an account that cannot keep threats in a Library, or copy them into a pack.
+      savedThreatSets: threatSets.canSave ? threatSets.savedSets : undefined,
       refreshAll: () => {
         fetchHistory();
         fetchSavedRoutes();
         localPoints.fetchSavedPointSets();
+        if (threatSets.canSave) threatSets.fetchSavedSets();
       },
     },
     onOpenLibrary: () => openLibrary("lz"),
@@ -861,8 +881,12 @@ function App() {
   };
 
   const handleAddThreatHere = () => {
-    beginAddThreat(contextMenu.lat, contextMenu.lon);
     setContextMenu(null);
+    if (packs.open && packs.readOnly) {
+      toast({ tone: "warn", message: "This pack is read-only, so nothing new can be added to it." });
+      return;
+    }
+    beginAddThreat(contextMenu.lat, contextMenu.lon);
   };
 
   const handleSketchPointContextMenu = useCallback((routeId, pointId, x, y) => {
@@ -1238,11 +1262,12 @@ function App() {
 
   const imports = useImports({
     pack: packs.packForPanels,
+    threatsSaved: threatSets.canSave,
     importers: {
       msnx: importMission,
       lps: (file, options) => localPoints.importLpsFile(file, options),
-      ths: async (file) => {
-        const count = await importThsFile(file);
+      ths: async (file, options) => {
+        const count = await importThsFile(file, options);
         if (!count) throw new Error("No threats found in this file.");
         return count;
       },
@@ -1254,19 +1279,28 @@ function App() {
       },
       pack: {
         lps: async (set) => movePointsToPack(set, { createItem: packs.packPoints.createItem, removePointSet: localPoints.removePointSet }),
+        ths: async (file, { name } = {}) => {
+          const parsed = await parseThsFile(file);
+          if (!parsed.length) throw new Error("No threats found in this file.");
+          if (!packs.packThreats.createItem(name || setNameFromFile(file.name), parsed)) throw new Error("The pack did not take them.");
+          return parsed.length;
+        },
       },
     },
     onDone: (kinds, imported = []) => {
       // In a pack only the pack's own things are shown (docs/MISSION_PACKS.md §5a): say where a file that
       // went to the Library or stayed in this session is, and do not open an Imports panel that hides it.
-      const elsewhere = inPack ? imported.filter((item) => item.kind === "msnx" || (item.kind === "lps" && item.destination !== "pack")) : [];
+      const elsewhere = inPack ? imported.filter((item) => item.kind === "msnx" || ((item.kind === "lps" || item.kind === "ths") && item.destination !== "pack")) : [];
       if (elsewhere.some((item) => item.kind === "msnx")) {
         toast({ tone: "info", message: "The mission file is in your Library session; packs hold sketched routes only. Switch to Library to see it." });
       }
       if (elsewhere.some((item) => item.kind === "lps")) {
         toast({ tone: "info", message: "The local points are in your Library session, not the pack. Switch to Library to see them." });
       }
-      if (kinds.length === 1 && kinds[0] === "ths") dock.show("threats");
+      if (elsewhere.some((item) => item.kind === "ths")) {
+        toast({ tone: "info", message: "The threats are in your Library, not the pack. Switch to Library to see them." });
+      }
+      if (kinds.length === 1 && kinds[0] === "ths" && elsewhere.length === 0) dock.show("threats");
       else if (kinds.includes("msnx")) dock.show("routes");
       else if (imported.some((item) => !elsewhere.includes(item))) dock.show("imports");
     },
@@ -1347,10 +1381,27 @@ function App() {
       onRenamed: (entry, name) =>
         localPoints.setPointSets((prev) => prev.map((set) => (set.savedId === entry.id ? { ...set, name } : set))),
     },
+    ...(threatSets.canSave
+      ? {
+          threats: {
+            entries: threatSets.savedSets,
+            loading: threatSets.isLoadingSaved,
+            error: threatSets.savedError,
+            openIds: threatSets.openSavedIds,
+            refresh: threatSets.fetchSavedSets,
+            onOpen: async (entry) => {
+              await threatSets.openSavedSet(entry);
+              dock.show("threats");
+            },
+            onDelete: (entry) => threatSets.deleteSavedSet(entry),
+            onRenamed: () => threatSets.pull(),
+          },
+        }
+      : {}),
   };
   const recentLz = history.filter((entry) => !sessionLzIds.has(entry.id)).slice(0, 3);
   // In a pack, opening something from the Library adds a copy of it to the pack.
-  const PACK_KIND = { lz: "lz", routes: "route", points: "pointset" };
+  const PACK_KIND = { lz: "lz", routes: "route", points: "pointset", threats: "threatset" };
   const libraryView = inPack
     ? Object.fromEntries(
         Object.entries(librarySources).map(([tab, source]) => [
@@ -1551,7 +1602,7 @@ function App() {
         user={user}
         isAdmin={Boolean(user?.is_admin)}
         onOpenSurveys={user?.is_admin || feat.lz_surveys ? () => setSurveysOpen(true) : undefined}
-        onSignOut={logout}
+        onSignOut={signOut}
         onOpenLibrary={() => openLibrary("lz")}
         searchSlot={
           <TopBarSearch
@@ -1589,6 +1640,7 @@ function App() {
                     lz: history.length,
                     routes: savedRoutes.length,
                     points: localPoints.savedPointSets.length,
+                    threats: threatSets.canSave ? threatSets.savedSets.length : undefined,
                     unsaved: inPack ? packs.parkedUnsaved : diagrams.filter((d) => d.status === "analyzed" && (d.savedId == null || d.dirty)).length,
                   }}
                   onPick={packs.openPack}
@@ -1704,6 +1756,7 @@ function App() {
           setMapStyle={setMapStyle}
           showMgrsGrid={showMgrsGrid}
           setShowMgrsGrid={setShowMgrsGrid}
+          vfrCharts={vfrCharts}
         />
         <MobileGridInput
           gridInput={gridInput}
@@ -1832,12 +1885,13 @@ function App() {
           handleLZRightClick={editable ? handleLZRightClick : handleMapRightClick}
           setContextMenu={setContextMenu}
           mapStyle={mapStyle}
+          vfrCharts={vfrCharts}
           showMgrsGrid={showMgrsGrid}
           localPointSets={shownPointSets}
           onAddLocalPointToRoute={mapEdit(handleAddLocalPointToRoute)}
           threats={threats}
-          onThreatMove={moveThreat}
-          onThreatEdit={beginEditThreat}
+          onThreatMove={packReadOnly ? undefined : moveThreat}
+          onThreatEdit={packReadOnly ? undefined : beginEditThreat}
           onMapMove={setMapCenter}
           presence={inPack ? packs.others : undefined}
           onPoint={inPack ? packs.pointAt : undefined}
@@ -1861,7 +1915,7 @@ function App() {
               pack={packs.meta}
               members={packs.session?.members ?? []}
               audience={packs.packForPanels?.memberCount}
-              items={packs.items}
+              items={feat.threats ? packs.items : packs.items.filter((item) => item.kind !== "threatset")}
               openIds={packs.openIds}
               people={packs.others}
               me={user?.id}
@@ -1974,7 +2028,15 @@ function App() {
               onImport={pickers.ths.open}
               onEdit={beginEditThreat}
               onRemove={removeThreat}
-              onRemoveAll={() => threats.forEach((threat) => removeThreat(threat.id))}
+              onRemoveAll={threatSets.removeAllThreats}
+              sets={threatSets.sets}
+              activeId={threatSets.activeId}
+              saveStates={threatSets.saveStates}
+              canSave={threatSets.canSave}
+              pack={inPack ? { name: packs.meta?.name ?? "the pack", readOnly: packs.readOnly } : null}
+              onRenameSet={inPack ? (id, name) => packs.packThreats.renameSet(packLocalRef(id).item, name) : threatSets.renameSet}
+              onCloseSet={inPack ? (id) => packItemOf(id) && packs.actions.close(packItemOf(id)) : threatSets.closeSet}
+              onMakeActive={threatSets.setActiveSet}
               onToggleVisibility={toggleThreatVisibility}
               onExportThs={() =>
                 Promise.resolve(exportThsFile("threats")).catch((err) => toast({ tone: "error", message: `The .ths could not be made: ${err.message}` }))
@@ -1991,6 +2053,7 @@ function App() {
                 .filter((set) => set.kind === "mission")
                 .map((set) => ({ key: set.key, fileName: set.fileName, summary: setSummary(set.routes), saved: Boolean(routeSaves.stateOf(set.key).link) }))}
               threatFiles={imports.threatFiles}
+              threatsSaved={threatSets.canSave}
               onImport={pickers.any.open}
               onTogglePoints={localPoints.togglePointSetVisibility}
               onSavePoints={
@@ -2273,7 +2336,7 @@ function App() {
       {editingThreat && (
         <ThreatDialog
           editing={editingThreat}
-          onSave={saveThreat}
+          onSave={(threat) => saveThreat(threat, { createSet: inPack ? (first) => packs.packThreats.createItem("", [first]) : undefined })}
           onCancel={cancelThreatEdit}
         />
       )}

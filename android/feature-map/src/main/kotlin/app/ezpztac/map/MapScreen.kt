@@ -232,7 +232,9 @@ fun MapScreen(
     val top = WindowInsets.safeDrawing.only(WindowInsetsSides.Top + WindowInsetsSides.Horizontal)
     // The search goes with the frame (and the keyboard with it).
     LaunchedEffect(hiding.hidden) { if (hiding.hidden) search.close() }
-    Box(modifier.fillMaxSize()) {
+    // How big the map is, for what it says of the charts in view.
+    var mapSize by remember { mutableStateOf(IntSize.Zero) }
+    Box(modifier.fillMaxSize().onSizeChanged { mapSize = it }) {
         map()
         if (!controls) return@Box
 
@@ -313,6 +315,12 @@ fun MapScreen(
             verticalArrangement = Arrangement.spacedBy(MapChrome.PILL_GAP),
         ) {
             Box(Modifier.weight(1f, fill = false).chromeBox(chrome, "overlay")) { overlay() }
+            // The charts under the map are named on the VFR map alone, and give way to the keyboard: what is typed needs the room.
+            if (state.style.id == MapStyles.VFR_ID) {
+                val pixels = LocalDensity.current
+                val lines = rememberChartLines(state.charts, camera, mapSize, pixels.density.toDouble())
+                if (lines != null && keyboard.getBottom(pixels) == 0) Box(Modifier.chromeBox(chrome, "charts")) { ChartWordsLine(lines) }
+            }
             state.readout?.let { Box(Modifier.chromeBox(chrome, "readout")) { ReadoutPill(it, onCopyReadout) } }
         }
 

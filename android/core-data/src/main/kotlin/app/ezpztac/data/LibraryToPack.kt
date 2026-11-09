@@ -36,10 +36,14 @@ fun interface OpenWrites {
 }
 
 /** The open LZ/PZ and route set: written now if [uuid] is the one open, which may then be held under a new id (its record was deleted elsewhere). */
-class SessionWrites(private val diagrams: DiagramSession, private val routes: RouteSession) : OpenWrites {
+class SessionWrites(private val diagrams: DiagramSession, private val routes: RouteSession, private val threats: ThreatStore? = null) : OpenWrites {
     override suspend fun write(kind: RecordKind, uuid: String): String = when (kind) {
         RecordKind.LZ -> diagrams.writeIfOpen(uuid) { it.id }
         RecordKind.ROUTE -> routes.writeIfOpen(uuid) { it.id }
+        RecordKind.THREAT_SET -> {
+            threats?.flush()                                                                      // a change may be in its pause
+            uuid
+        }
         else -> uuid                                                                              // a set of points is written as it is changed
     }
 
@@ -165,7 +169,7 @@ class LibraryToPack(
 
     companion object {
         /** What can go in a pack, as the server names it: an imported mission cannot yet. */
-        val KINDS = mapOf(RecordKind.LZ to "lz", RecordKind.ROUTE to "route", RecordKind.POINT_SET to "pointset")
+        val KINDS = mapOf(RecordKind.LZ to "lz", RecordKind.ROUTE to "route", RecordKind.POINT_SET to "pointset", RecordKind.THREAT_SET to "threatset")
 
         /** The server has this version: it has the record, and nothing changed here since. A conflict copy counts once it is up. */
         fun uploaded(record: LocalRecord): Boolean = record.serverId != null && !record.dirty && !record.deleted

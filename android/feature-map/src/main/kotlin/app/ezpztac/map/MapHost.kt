@@ -25,7 +25,10 @@ import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import app.ezpztac.designsystem.PanelSheetDefaults
 import app.ezpztac.model.LatLon
+import okhttp3.Dispatcher
+import okhttp3.OkHttpClient
 import org.maplibre.android.MapLibre
+import org.maplibre.android.module.http.HttpRequestUtil
 import org.maplibre.android.camera.CameraPosition
 import org.maplibre.android.camera.CameraUpdateFactory
 import org.maplibre.android.geometry.LatLng
@@ -187,8 +190,8 @@ class MapHost {
 
     internal fun styleLoaded(style: Style) = styleListeners.toList().forEach { it(style) }
 
-    internal fun applyStyle(style: MapBaseStyle) = whenReady { map ->
-        map.setStyle(Style.Builder().fromJson(MapStyles.styleJson(style))) { loaded -> styleLoaded(loaded) }
+    internal fun applyStyle(style: MapBaseStyle, density: Double) = whenReady { map ->
+        map.setStyle(Style.Builder().fromJson(MapStyles.styleJson(style, density))) { loaded -> styleLoaded(loaded) }
     }
 
     /** What is under a point on the screen, for taps; `null` while there is no map. */
@@ -303,7 +306,8 @@ fun EzpzMap(
     }
     LaunchedEffect(rendering, covered) { rendering.set(owner.lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED), covered) }
 
-    LaunchedEffect(style.id, style.tiles) { host.applyStyle(style) }
+    val density = LocalDensity.current.density.toDouble()
+    LaunchedEffect(style, density) { host.applyStyle(style, density) }
     val topPx = with(LocalDensity.current) { padding.top.roundToPx() }
     val bottomPx = with(LocalDensity.current) { padding.bottom.roundToPx() }
     LaunchedEffect(host, topPx, bottomPx) { host.setPadding(topPx, bottomPx) }
@@ -328,6 +332,10 @@ private var libraryReady = false
 private fun createMapView(context: Context): DragMapView {
     if (!libraryReady) {
         MapLibre.getInstance(context.applicationContext)
+        // MapLibre's own client (twenty requests to a host), but watching for a chart tile that fails.
+        HttpRequestUtil.setOkHttpClient(
+            OkHttpClient.Builder().dispatcher(Dispatcher().apply { maxRequestsPerHost = 20 }).addInterceptor(ChartTileWatch.shared).build(),
+        )
         libraryReady = true
     }
     return DragMapView(context)

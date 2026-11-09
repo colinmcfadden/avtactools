@@ -24,7 +24,7 @@ const STATUS = {
 export const IMPORT_KINDS = [
   { kind: "msnx", icon: "route", title: "Mission file", text: ".msnx · AMPS routes and points" },
   { kind: "lps", icon: "mapPin", title: "Local points", text: ".LPS · AMPS point sets" },
-  { kind: "ths", icon: "diamond", title: "Threats", text: ".ths · stays in this session" },
+  { kind: "ths", icon: "diamond", title: "Threats", text: ".ths · AMPS threats, saved to your Library" },
   { kind: "overlay", icon: "image", title: "Map or overlay", text: "KMZ, GeoTIFF, image with world file · not available yet", disabled: true },
 ];
 

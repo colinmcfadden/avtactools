@@ -6,8 +6,8 @@ import kotlinx.serialization.Serializable
  * A threat in the picture a crew is planning against: the threat as it is exported, with the id the app gives it and whether it is shown. The web's
  * `visible` and `id` (`useThreats`); its colour and its fetched mask are not here, because the colours of a threat's rings are the radar type's.
  *
- * Threats are held in memory and in one sealed file on the device (`ThreatStore`), wiped at sign-out, never on a server and never in the database;
- * they are to be saved and shared like other plans (`AGENTS.md` §2, step *T*), which is not built, so nothing about this type is a persistence model for sync yet.
+ * What is saved to the Library is the web's own flat threat, read and written by [ThreatSets]; this is what the screens and the map use, and what an account that cannot save threats
+ * keeps in its sealed file on the device (`ThreatStore`).
  */
 @Serializable
 public data class ThreatEntry(

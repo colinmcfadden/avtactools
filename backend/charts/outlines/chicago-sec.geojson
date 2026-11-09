@@ -1,0 +1,40 @@
+{
+ "type": "Feature",
+ "properties": {
+  "id": "chicago-sec",
+  "title": "Chicago Sectional",
+  "tier": "sectional",
+  "file": "Chicago SEC.tif",
+  "made_from": {
+   "width": 17932,
+   "height": 12384,
+   "transform": [
+    42.335081966,
+    0.0,
+    -411299.27357065,
+    0.0,
+    -42.336080785,
+    269487.460171753
+   ],
+   "ink": 0.999
+  },
+  "edges": {
+   "north": "neighbour:green-bay-sec,twin-cities-sec",
+   "east": "neighbour:detroit-sec,lake-huron-sec",
+   "south": "neatline",
+   "west": "neatline"
+  }
+ },
+ "geometry": {
+  "type": "Polygon",
+  "coordinates": [
+   [
+    [-93.0,40.0],
+    [-85.0,40.0],
+    [-85.0,44.0],
+    [-93.0,44.0],
+    [-93.0,40.0]
+   ]
+  ]
+ }
+}

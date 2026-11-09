@@ -1,0 +1,40 @@
+{
+ "type": "Feature",
+ "properties": {
+  "id": "detroit-sec",
+  "title": "Detroit Sectional",
+  "tier": "sectional",
+  "file": "Detroit SEC.tif",
+  "made_from": {
+   "width": 17925,
+   "height": 12380,
+   "transform": [
+    42.336069569,
+    0.0,
+    -410761.830940369,
+    0.0,
+    -42.334699851,
+    234516.165501187
+   ],
+   "ink": 1.0
+  },
+  "edges": {
+   "north": "neighbour:lake-huron-sec",
+   "east": "neighbour:new-york-sec",
+   "south": "neatline",
+   "west": "neatline"
+  }
+ },
+ "geometry": {
+  "type": "Polygon",
+  "coordinates": [
+   [
+    [-85.0,40.0],
+    [-77.0,40.0],
+    [-77.0,44.0],
+    [-85.0,44.0],
+    [-85.0,40.0]
+   ]
+  ]
+ }
+}

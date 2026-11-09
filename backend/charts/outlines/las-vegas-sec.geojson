@@ -1,0 +1,40 @@
+{
+ "type": "Feature",
+ "properties": {
+  "id": "las-vegas-sec",
+  "title": "Las Vegas Sectional",
+  "tier": "sectional",
+  "file": "Las Vegas SEC.tif",
+  "made_from": {
+   "width": 17849,
+   "height": 12280,
+   "transform": [
+    42.334201996,
+    0.0,
+    -431009.930395724,
+    0.0,
+    -42.335894233,
+    244775.463523652
+   ],
+   "ink": 0.788
+  },
+  "edges": {
+   "north": "neighbour:klamath-falls-sec,salt-lake-city-sec",
+   "east": "neighbour:denver-sec",
+   "south": "edit",
+   "west": "neatline"
+  }
+ },
+ "geometry": {
+  "type": "Polygon",
+  "coordinates": [
+   [
+    [-118.0,35.6875],
+    [-111.0,35.6875],
+    [-111.0,40.0],
+    [-118.0,40.0],
+    [-118.0,35.6875]
+   ]
+  ]
+ }
+}

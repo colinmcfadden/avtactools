@@ -25,7 +25,7 @@ import javax.inject.Singleton
  * - **A planning graphic** of the open diagram: `GraphicEdits.nudge` makes the patch, merged into the saved graphic, so any field a newer web release adds is untouched.
  * - **A point of a route** of the open set, named or shaping. It forgets the ground elevation fetched for the old place (as a nudge does). In an imported mission, the web
  *   moves the *same point* of another route with it (AMPS keeps a hand-off point as two points that share a name and a place), and so does this.
- * - **A threat**: shown at once, written to its sealed file when the finger lifts ([ThreatStore.previewMove]). Threats are local to the device and have no undo.
+ * - **A threat**: shown at once, written when the finger lifts ([ThreatStore.previewMove]), since what it is written to is rewritten whole. Threats have no undo.
  *
  * It is told by the gesture (`start`, `move`, `end`, `cancel`) and knows nothing of a screen; what was under the finger is the caller's to work out.
  */

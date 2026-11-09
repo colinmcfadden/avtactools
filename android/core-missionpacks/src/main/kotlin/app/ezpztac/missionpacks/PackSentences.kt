@@ -14,8 +14,8 @@ import kotlinx.serialization.json.JsonPrimitive
  * An actor is who did it, as [actorName] names them; null or empty is "Someone".
  */
 public object PackSentences {
-    private val PREFIX = mapOf("lz" to "lz", "route" to "rt", "pointset" to "ps")
-    private val KIND_WORDS = mapOf("lz" to "LZ/PZ", "route" to "route set", "pointset" to "point set")
+    private val PREFIX = mapOf("lz" to "lz", "route" to "rt", "pointset" to "ps", "threatset" to "ts")
+    private val KIND_WORDS = mapOf("lz" to "LZ/PZ", "route" to "route set", "pointset" to "point set", "threatset" to "threat set")
     private const val SOMEONE = "Someone"
 
     /** The longest name a kept version is saved under, in UTF-16 units as the web counts them. */
@@ -30,7 +30,7 @@ public object PackSentences {
     /** Who the signed-in person is in the history ([actorName]); "Someone" when nobody is. */
     public fun actorName(user: ApiUser?): String = actorName(user?.name, user?.email)
 
-    /** A new item's uuid in a pack: its kind's prefix (`lz-`, `rt-`, `ps-`) and an id the client chose. */
+    /** A new item's uuid in a pack: its kind's prefix (`lz-`, `rt-`, `ps-`, `ts-`) and an id the client chose. */
     public fun packItemId(kind: String, id: String): String {
         val prefix = requireNotNull(PREFIX[kind]) { "Not a pack item's kind: $kind" }
         return "$prefix-$id"
@@ -38,7 +38,7 @@ public object PackSentences {
 
     /**
      * What a new item is called: [name] trimmed as JavaScript trims (never upper-cased), or when that is blank its kind's default:
-     * "LZ/PZ n" or "ROUTES n", n being one more than the [count] of items of that kind the pack has, and "LOCAL POINTS".
+     * "LZ/PZ n" or "ROUTES n", n being one more than the [count] of items of that kind the pack has, "LOCAL POINTS", and "THREATS", then "THREATS n".
      */
     public fun newItemName(kind: String, name: String?, count: Int): String {
         val trimmed = Js.trim(name.orEmpty())
@@ -47,14 +47,19 @@ public object PackSentences {
             "lz" -> "LZ/PZ ${count + 1}"
             "route" -> "ROUTES ${count + 1}"
             "pointset" -> "LOCAL POINTS"
+            "threatset" -> if (count != 0) "THREATS ${count + 1}" else "THREATS"
             else -> throw IllegalArgumentException("Not a pack item's kind: $kind")
         }
     }
 
-    /** The history's sentence for an item made in the pack; a point set's says how many points it has ([pointCount]). */
+    /** The history's sentence for an item made in the pack; a point set's says how many points it has, a threat set's how many threats ([pointCount]). */
     public fun createSummary(actor: String?, kind: String, name: String, pointCount: Int? = null): String = when (kind) {
         "lz" -> "${who(actor)} added the LZ/PZ \"$name\"."
         "route" -> "${who(actor)} added the route set \"$name\"."
+        "threatset" -> {
+            val count = requireNotNull(pointCount) { "A threat set's sentence says how many threats it has" }
+            "${who(actor)} added the threat set \"$name\" (${grouped(count)} threat${if (count == 1) "" else "s"})."
+        }
         else -> {
             val count = requireNotNull(pointCount) { "A point set's sentence says how many points it has" }
             "${who(actor)} added the point set \"$name\" (${grouped(count)} point${if (count == 1) "" else "s"})."
@@ -67,7 +72,11 @@ public object PackSentences {
      */
     public fun newItemOp(kind: String, item: String, name: String?, count: Int, data: JsonElement, actor: String?): JsonObject {
         val label = newItemName(kind, name, count)
-        val points = if (kind == "pointset") (data as? JsonArray)?.size ?: 0 else null
+        val points = when (kind) {
+            "pointset" -> (data as? JsonArray)?.size ?: 0
+            "threatset" -> ((data as? JsonObject)?.get("threats") as? JsonArray)?.size ?: 0
+            else -> null
+        }
         return JsonObject(
             linkedMapOf(
                 "type" to JsonPrimitive("item.create"),

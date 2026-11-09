@@ -1,0 +1,40 @@
+{
+ "type": "Feature",
+ "properties": {
+  "id": "san-antonio-sec",
+  "title": "San Antonio Sectional",
+  "tier": "sectional",
+  "file": "San Antonio SEC.tif",
+  "made_from": {
+   "width": 16855,
+   "height": 12232,
+   "transform": [
+    42.335499959,
+    0.0,
+    -368445.137233782,
+    0.0,
+    -42.33615073,
+    238489.020483497
+   ],
+   "ink": 1.0
+  },
+  "edges": {
+   "north": "neighbour:albuquerque-sec,dallas-ft-worth-sec",
+   "east": "neighbour:houston-sec",
+   "south": "neatline",
+   "west": "neatline"
+  }
+ },
+ "geometry": {
+  "type": "Polygon",
+  "coordinates": [
+   [
+    [-103.0,28.0],
+    [-97.0,28.0],
+    [-97.0,32.0],
+    [-103.0,32.0],
+    [-103.0,28.0]
+   ]
+  ]
+ }
+}

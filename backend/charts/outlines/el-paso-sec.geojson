@@ -1,0 +1,40 @@
+{
+ "type": "Feature",
+ "properties": {
+  "id": "el-paso-sec",
+  "title": "El Paso Sectional",
+  "tier": "sectional",
+  "file": "El Paso SEC.tif",
+  "made_from": {
+   "width": 16562,
+   "height": 12296,
+   "transform": [
+    42.335772758,
+    0.0,
+    -360564.083823273,
+    0.0,
+    -42.335114263,
+    233585.116905557
+   ],
+   "ink": 1.0
+  },
+  "edges": {
+   "north": "neighbour:albuquerque-sec",
+   "east": "neighbour:san-antonio-sec",
+   "south": "neatline",
+   "west": "neatline"
+  }
+ },
+ "geometry": {
+  "type": "Polygon",
+  "coordinates": [
+   [
+    [-109.0,28.0],
+    [-103.0,28.0],
+    [-103.0,32.0],
+    [-109.0,32.0],
+    [-109.0,28.0]
+   ]
+  ]
+ }
+}

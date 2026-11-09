@@ -157,6 +157,11 @@ class AppViewModelTest {
         override fun update(token: String?) { written += token }
     }
 
+    private class FakeCharts : MapChartsSink {
+        val written = mutableListOf<AppConfig.Charts.Vfr?>()
+        override fun update(vfr: AppConfig.Charts.Vfr?) { written += vfr }
+    }
+
     private class FakeWeather : WeatherApi {
         override suspend fun weather(at: LatLon) = WeatherReportDto("KRYY", "Cobb County Airport", windSpeedKts = JsonPrimitive(10), notams = JsonObject(emptyMap()))
     }
@@ -289,6 +294,7 @@ class AppViewModelTest {
         val accounts = FakeAccounts(owner, unsynced)
         val scheduler = FakeScheduler()
         val tokens = FakeTokens()
+        val charts = FakeCharts()
         val store = Flaky()
         val repository = DiagramRepository(SyncRepository(store, SequentialIds("t")), store, RecordingScheduler())
         val session = DiagramSession(repository, backgroundScope)
@@ -310,7 +316,7 @@ class AppViewModelTest {
         val notifications = FakeNotifications()
         val shell = { saved: SavedStateHandle ->
             AppViewModel(
-                backend, accounts, scheduler, session, routeSession, weather, threats, { cleared++ }, { tilesCleared++ }, incoming, sessionPoints, tokens, packs,
+                backend, accounts, scheduler, session, routeSession, weather, threats, { cleared++ }, { tilesCleared++ }, incoming, sessionPoints, tokens, charts, packs,
                 { briefFlushes += packs.log.count { it == "disable" } }, invites, kept, saved, version, notifications,
             )
         }

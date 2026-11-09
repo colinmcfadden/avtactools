@@ -1,0 +1,40 @@
+{
+ "type": "Feature",
+ "properties": {
+  "id": "albuquerque-sec",
+  "title": "Albuquerque Sectional",
+  "tier": "sectional",
+  "file": "Albuquerque SEC.tif",
+  "made_from": {
+   "width": 17947,
+   "height": 12315,
+   "transform": [
+    42.334328624,
+    0.0,
+    -418330.87674177,
+    0.0,
+    -42.334573864,
+    253556.582296931
+   ],
+   "ink": 1.0
+  },
+  "edges": {
+   "north": "neighbour:denver-sec,wichita-sec",
+   "east": "neighbour:dallas-ft-worth-sec",
+   "south": "neatline",
+   "west": "neatline"
+  }
+ },
+ "geometry": {
+  "type": "Polygon",
+  "coordinates": [
+   [
+    [-109.0,32.0],
+    [-102.0,32.0],
+    [-102.0,36.0],
+    [-109.0,36.0],
+    [-109.0,32.0]
+   ]
+  ]
+ }
+}
