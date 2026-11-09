@@ -24,6 +24,7 @@ import Helicopter from "../feature/helicopters/Helicopter";
 import GoAroundMarker from "../feature/goAround/GoAround";
 import ExportHandler from "../feature/export/ExportHandler";
 import CursorGridReadout from "./CursorGridReadout";
+import DraftPointMarkers, { plainDraftPositions } from "./DraftPointMarkers";
 import MsnxRouteLayer, {
   buildIcon as buildSketchPointIcon,
 } from "../feature/msnxImport/MsnxRouteLayer";
@@ -289,6 +290,7 @@ const MapView = ({
               positions={draftPoints.map((p) => [p.lat, p.lon])}
               pathOptions={{ color: "#64D2FF", weight: 3, dashArray: "5, 5" }}
             />
+            <DraftPointMarkers positions={plainDraftPositions(draftPoints)} color="#64D2FF" />
             {draftPoints.map(
               (p, i) =>
                 p.designation && (
@@ -311,10 +313,13 @@ const MapView = ({
 
         {/* Render the Active Drawing Line */}
         {isDrawingLZ && drawingPoints.length > 0 && (
-          <Polyline
-            positions={drawingPoints}
-            pathOptions={{ color: "#FFC107", weight: 3, dashArray: "5, 5" }}
-          />
+          <>
+            <Polyline
+              positions={drawingPoints}
+              pathOptions={{ color: "#FFC107", weight: 3, dashArray: "5, 5" }}
+            />
+            <DraftPointMarkers positions={drawingPoints} color="#FFC107" />
+          </>
         )}
 
         {/* Render the Completed Custom Polygon */}
