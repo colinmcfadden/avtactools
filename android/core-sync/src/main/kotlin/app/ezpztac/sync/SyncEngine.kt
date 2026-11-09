@@ -463,6 +463,7 @@ public class SyncEngine(
             "route" -> if (change.kind == "mission") RecordKind.MISSION else RecordKind.ROUTE
             "pointset" -> RecordKind.POINT_SET
             "brief" -> RecordKind.BRIEF
+            "threatset" -> RecordKind.THREAT_SET
             else -> return SyncReport()                                    // a collection a newer server adds: not ours to read
         }
         val local = record(kind, change.clientUuid)

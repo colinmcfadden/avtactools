@@ -5,6 +5,10 @@ rules that bit once, what cannot be verified without a device); this file is the
 Read both, then `docs/NATIVE_APPS_PLAN.md` for the plan and its phases. Refresh this file in the same commit as any change
 that moves the "where things stand" or "next" sections.
 
+**Threats saved (2026-11-08, `docs/ANDROID_SCREENS_PLAN.md`, *T*).** On `feat/android-saved-threats`: threats are named sets in the Library, autosaved and synced, several open at once, their terrain masks with them, there
+again after a sign-out or a restart (AGENTS.md §17, *Threats*; database version 5 forgets the sync cursor once). A picture on the device from before becomes a set at that account's first launch after the update. An account without `threats` or `cloud_save` keeps the
+sealed file as before. **To try first on a device:** a threat added, the app closed and opened, signed out and in; then the same set on a second device and on the web. **Next:** the mission-pack item kind `threatset` (web and server first, then `core-missionpacks`).
+
 **3D streamed from USGS (2026-10-26, `docs/DATA_ADMIN_AND_PREBUILT_3D_PLAN.md`).** Phase 0 is built: new tileset keys are an HMAC under
 `LIDAR_KEY_SECRET` (the same value on the API, staging's API and the build service, or they refuse to start), the tileset list is admins' only and a
 tileset's `area.json` is never served. Android's calls are unchanged (one test's recorded key moved). Phase 1 (streaming) is built for the backend and the web
@@ -663,9 +667,8 @@ set it to an Android version.
 Full list in AGENTS.md; the ones that matter most for a fresh agent:
 
 - **Unclassified only.** The mission brief's handbook is CUI-marked: never commit it or send it to a service; the templates carry its item lists
-  and standard values in the app's own words, by the owner's leave (2026-10-16). Threats are never synced or persisted server-side; on the device they
-  live in memory plus a sealed no-backup file, wiped at sign-out. **The only Android threat network call is the terrain mask, made
-  when the person presses its button**: do not add another, or make this one on its own, without the person asking for it.
+  and standard values in the app's own words, by the owner's leave (2026-10-16). Threats are saved and synced as sets in the Library (AGENTS.md §17, *Threats*); an account without
+  `cloud_save` keeps them in memory plus a sealed no-backup file, wiped at sign-out. **The viewshed is asked for only when the person presses its button**: do not make it run on its own.
 - **Agents do not deploy.** Never push `main`, run `fly deploy`, or trigger production. No new major dependency without asking.
 - **The web is the reference; `contracts/` fixtures are the contract.** Never hand-edit a fixture; change the web (or backend)
   first, regenerate, review the diff, then follow in the clients.

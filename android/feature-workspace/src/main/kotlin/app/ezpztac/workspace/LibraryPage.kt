@@ -201,10 +201,11 @@ private val LibraryTab.icon: Int
         LibraryTab.LZ -> EzpzIcons.flightLand
         LibraryTab.ROUTES -> EzpzIcons.route
         LibraryTab.POINTS -> EzpzIcons.scatterPlot
+        LibraryTab.THREATS -> EzpzIcons.crisisAlert
     }
 
 /** What an item already shown says (`Open in session`), and what a set of points says, since opening one is showing it on the map. */
-private fun inSessionWords(tab: LibraryTab) = if (tab == LibraryTab.POINTS) "On the map" else "Open in session"
+private fun inSessionWords(tab: LibraryTab) = if (tab == LibraryTab.POINTS || tab == LibraryTab.THREATS) "On the map" else "Open in session"
 
 /**
  * The page's actions: what the host was given (opening, renaming, deleting and settling an item are its panels'; adding one to a pack is the frame's), with the
@@ -393,8 +394,8 @@ private fun LibraryRow(row: LibraryRowUi, actions: LibraryActions, busy: Boolean
             modifier = Modifier.fillMaxWidth().heightIn(min = 88.dp).padding(start = Tokens.Spacing.lg.dp, top = Tokens.Spacing.md.dp, end = Tokens.Spacing.xs.dp, bottom = Tokens.Spacing.md.dp),
             fixed = {
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    if (addingTo != null) {
-                        // An imported mission cannot go in a pack yet, nor a conflict copy before it is settled.
+                    if (addingTo != null && row.tab != LibraryTab.THREATS) {
+                        // An imported mission cannot go in a pack yet, nor a conflict copy before it is settled, nor (until a pack holds them) a set of threats.
                         val busyHere = adding == row.uuid
                         TextButton(
                             onClick = { actions.addToOpenPack(row) }, enabled = adding == null && !row.isMission && row.conflictOf == null,
@@ -452,6 +453,7 @@ private fun noun(row: LibraryRowUi) = when (row.tab) {
     LibraryTab.LZ -> "LZ/PZ"
     LibraryTab.ROUTES -> if (row.isMission) "mission" else "set of routes"
     LibraryTab.POINTS -> "set of points"
+    LibraryTab.THREATS -> "set of threats"
 }
 
 @Composable
@@ -485,7 +487,7 @@ private fun RowMenu(row: LibraryRowUi, busy: Boolean, onRename: () -> Unit, onDe
                 leadingIcon = { Icon(painterResource(EzpzIcons.contentCopy), contentDescription = null) },
             )
             val addToPack = actions.addToPack
-            if (offerPack && addToPack != null && !row.isMission && row.conflictOf == null) {
+            if (offerPack && addToPack != null && !row.isMission && row.conflictOf == null && row.tab != LibraryTab.THREATS) {
                 DropdownMenuItem(
                     text = { Text("Add to Mission Pack…") }, onClick = { open = false; addToPack(row) },
                     leadingIcon = { Icon(painterResource(EzpzIcons.groups), contentDescription = null, tint = MaterialTheme.colorScheme.tertiary) },
@@ -507,11 +509,13 @@ private fun Empty(state: LibraryUiState) {
             LibraryTab.LZ -> "No saved LZ/PZ matches that name or grid."
             LibraryTab.ROUTES -> "No saved route set matches that name."
             LibraryTab.POINTS -> "No saved point set matches that name."
+            LibraryTab.THREATS -> "No saved threat set matches that name."
         }
         else -> when (state.tab) {
             LibraryTab.LZ -> "No LZ/PZs saved yet. Make one in the LZ/PZ panel."
             LibraryTab.ROUTES -> "No route sets saved yet. Sketch a route, or import an AMPS mission file."
             LibraryTab.POINTS -> "No sets of points saved yet. Import an AMPS .LPS file."
+            LibraryTab.THREATS -> "No threats saved yet. Add one in the Threats panel, or import an AMPS .ths file."
         }
     }
     Text(
@@ -602,7 +606,7 @@ internal fun LibraryRenameContent(row: LibraryRowUi, others: List<Pair<String, S
                     )
                 },
                 keyboardOptions = KeyboardOptions(
-                    capitalization = if (row.tab == LibraryTab.ROUTES) KeyboardCapitalization.Characters else KeyboardCapitalization.None, imeAction = ImeAction.Done,
+                    capitalization = if (row.tab == LibraryTab.ROUTES || row.tab == LibraryTab.THREATS) KeyboardCapitalization.Characters else KeyboardCapitalization.None, imeAction = ImeAction.Done,
                 ),
                 keyboardActions = KeyboardActions(onDone = { submit() }), shape = RoundedCornerShape(Tokens.Radius.sm.dp),
                 modifier = Modifier.fillMaxWidth().focusRequester(focus),
@@ -617,7 +621,7 @@ internal fun LibraryRenameContent(row: LibraryRowUi, others: List<Pair<String, S
 }
 
 /** A name as each kind keeps it: a set of routes in capitals, as the web writes them (`RouteSetNames.clean`); an LZ/PZ and a set of points as typed. */
-internal fun cleanName(tab: LibraryTab, name: String): String = if (tab == LibraryTab.ROUTES) name.trim().uppercase() else name.trim()
+internal fun cleanName(tab: LibraryTab, name: String): String = if (tab == LibraryTab.ROUTES || tab == LibraryTab.THREATS) name.trim().uppercase() else name.trim()
 
 /** The noun with its article, as it is said: "an LZ/PZ" (el-zee), "a set of routes", "a mission". */
 private fun a(noun: String) = if (noun.startsWith("LZ") || noun.first().lowercaseChar() in "aeiou") "an $noun" else "a $noun"

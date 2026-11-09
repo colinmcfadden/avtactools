@@ -12,12 +12,14 @@ class LibraryTabsTest {
         assertEquals(LibraryTab.LZ, libraryTabFor(Panel.Lz))
         assertEquals(LibraryTab.ROUTES, libraryTabFor(Panel.Routes))
         assertEquals(LibraryTab.POINTS, libraryTabFor(Panel.Imports))
-        assertEquals(LibraryTab.LZ, libraryTabFor(Panel.Threats))                                  // threats are not saved yet (step T)
+        assertEquals(LibraryTab.THREATS, libraryTabFor(Panel.Threats, threatsSaved = true))
+        assertEquals(LibraryTab.LZ, libraryTabFor(Panel.Threats))                                  // an account that cannot save threats has no tab of them
     }
 
     @Test
     fun `an account has the tabs of the panels it is offered`() {
-        assertEquals(LibraryTab.entries, libraryTabsFor(Panel.entries))
+        assertEquals(LibraryTab.entries, libraryTabsFor(Panel.entries, threatsSaved = true))
+        assertEquals(LibraryTab.entries - LibraryTab.THREATS, libraryTabsFor(Panel.entries))
         assertEquals(listOf(LibraryTab.LZ, LibraryTab.POINTS), libraryTabsFor(listOf(Panel.Lz, Panel.Threats, Panel.Imports)))
     }
 }

@@ -33,7 +33,7 @@ import app.ezpztac.designsystem.Tokens
 /** The design's Import, as a modal bottom sheet ([ImportSheetContent]). Dismissing it opens nothing. */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun ImportSheet(threatsAllowed: Boolean, onChoose: () -> Unit, onDismiss: () -> Unit) {
+fun ImportSheet(threatsAllowed: Boolean, threatsSaved: Boolean, onChoose: () -> Unit, onDismiss: () -> Unit) {
     val state = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     ModalBottomSheet(onDismissRequest = onDismiss, sheetState = state, containerColor = MaterialTheme.colorScheme.surfaceContainerLow) {
         ImportSheetContent(threatsAllowed, onChoose = { onDismiss(); onChoose() })
@@ -41,12 +41,12 @@ fun ImportSheet(threatsAllowed: Boolean, onChoose: () -> Unit, onDismiss: () -> 
 }
 
 /**
- * What can be imported (the design's Import menu): an AMPS mission, local points, threats (only with the account's threats on, and kept on this device). Each
+ * What can be imported (the design's Import menu): an AMPS mission, local points, threats (only with the account's threats on). Each
  * opens the system's picker, and every file chosen goes to the review, which says what it turned out to be and where it goes: what a file is comes from what is
  * in it, not the row it was chosen from, so the rows only say what the app takes. Map overlays are not offered (the owner's decision 2 of the redesign).
  */
 @Composable
-fun ImportSheetContent(threatsAllowed: Boolean, onChoose: () -> Unit, modifier: Modifier = Modifier) {
+fun ImportSheetContent(threatsAllowed: Boolean, onChoose: () -> Unit, modifier: Modifier = Modifier, threatsSaved: Boolean = false) {
     Column(modifier.fillMaxWidth().padding(bottom = 20.dp)) {
         Column(Modifier.padding(start = Tokens.Spacing.xl.dp, end = Tokens.Spacing.xl.dp, bottom = Tokens.Spacing.md.dp)) {
             Text("Import", style = MaterialTheme.typography.titleLarge, modifier = Modifier.semantics { heading() })
@@ -57,7 +57,9 @@ fun ImportSheetContent(threatsAllowed: Boolean, onChoose: () -> Unit, modifier: 
         }
         Choice(EzpzIcons.route, "Mission file", ".msnx · AMPS routes and points", onChoose)
         Choice(EzpzIcons.scatterPlot, "Local points", ".LPS · AMPS point sets", onChoose)
-        if (threatsAllowed) Choice(EzpzIcons.crisisAlert, "Threats", ".ths · stays on this device", onChoose, locked = true)
+        if (threatsAllowed) {
+            if (threatsSaved) Choice(EzpzIcons.crisisAlert, "Threats", ".ths · AMPS threats", onChoose) else Choice(EzpzIcons.crisisAlert, "Threats", ".ths · stays on this device", onChoose, locked = true)
+        }
         HorizontalDivider(Modifier.padding(top = Tokens.Spacing.sm.dp), color = MaterialTheme.colorScheme.outlineVariant)
         Row(
             Modifier.padding(start = Tokens.Spacing.xl.dp, top = Tokens.Spacing.lg.dp, end = Tokens.Spacing.xl.dp),

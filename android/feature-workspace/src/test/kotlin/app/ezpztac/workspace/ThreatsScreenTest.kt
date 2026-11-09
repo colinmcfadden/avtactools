@@ -17,6 +17,7 @@ import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performTextInput
+import app.ezpztac.data.ThreatSetStanding
 import app.ezpztac.designsystem.EzpzTheme
 import app.ezpztac.designsystem.ThemeMode
 import app.ezpztac.model.LatLon
@@ -47,6 +48,7 @@ class ThreatsScreenTest {
             formNudge = { n, e -> log += "nudge:${n.toLong()}:${e.toLong()}" }, formToCrosshair = { log += "crosshair" },
             formToText = { text -> log += "text:$text"; moveProblem }, showMask = { log += "showMask:$it" }, hideMask = { log += "hideMask:$it" },
             removeAll = { log += "removeAll" }, dismissError = { log += "dismissError" }, dismissNote = { log += "dismissNote" },
+            useSet = { log += "use:$it" }, renameSet = { id, name -> log += "rename:$id:$name" }, closeSet = { log += "close:$it" }, browseLibrary = { log += "browse" },
         )
     }
 
@@ -72,6 +74,71 @@ class ThreatsScreenTest {
     private val zsu = ThreatRowUi("t2", "ZSU-23", "SHAPMFF-------", "Custom symbol", "16S GD 67993 52949", "Engage 2.5 nm", visible = false, held = true)
 
     // -- The panel -------------------------------------------------------------------------------------------------------------
+
+    private val one = ThreatSetUi("s1", "NORTH GA", ThreatSetStanding.SAVED, listOf(sa8), active = false)
+    private val two = ThreatSetUi("s2", "SOUTH", ThreatSetStanding.NOT_SAVED, listOf(zsu), active = true)
+    private val saving = ThreatsUiState(threats = listOf(sa8, zsu), sets = listOf(one, two), saves = true)
+
+    @Test
+    fun `saved threats say so, in place of the notice that they stay on the device, with the way to the rest`() {
+        val r = show(saving)
+        assertEquals(0, count("Threats stay on this device only", substring = true))
+        compose.onNodeWithText("Saved to your Library as you work", substring = true).assertIsDisplayed()
+        compose.onNodeWithText("Browse all").performClick()
+        assertEquals(listOf("browse"), r.log)
+    }
+
+    @Test
+    fun `each set stands over its own threats, and says only when it could not be saved`() {
+        show(saving)
+        compose.onNodeWithText("NORTH GA · 1").assertIsDisplayed()
+        compose.onNodeWithText("SOUTH · 1").assertIsDisplayed()
+        assertEquals(1, count("Not saved"))                                                     // Saved is what nearly every set is: not said
+        assertEquals(0, count("Saved"))
+        compose.onNodeWithText("New threats go here").assertIsDisplayed()
+    }
+
+    @Test
+    fun `a set's menu renames it, closes it, and puts new threats in it`() {
+        val r = show(saving)
+        compose.onNodeWithContentDescription("More for NORTH GA").performClick()
+        compose.onNodeWithText("Put new threats here").performClick()
+        compose.onNodeWithContentDescription("More for NORTH GA").performClick()
+        compose.onNodeWithText("Close").performClick()
+        assertEquals(listOf("use:s1", "close:s1"), r.log)
+    }
+
+    @Test
+    fun `a set alone has no choice of where new threats go`() {
+        show(ThreatsUiState(threats = listOf(sa8), sets = listOf(one.copy(active = true)), saves = true))
+        assertEquals(0, count("New threats go here"))
+        compose.onNodeWithContentDescription("More for NORTH GA").performClick()
+        assertEquals(0, count("Put new threats here"))
+    }
+
+    @Test
+    fun `an empty set open says so`() {
+        show(ThreatsUiState(sets = listOf(one.copy(rows = emptyList())), saves = true))
+        compose.onNodeWithText("No threats in this set.").assertIsDisplayed()
+    }
+
+    @Test
+    fun `removing saved threats says what happens to the sets`() {
+        val r = show(saving)
+        compose.onNodeWithText("Remove all threats").performScrollTo().performClick()
+        compose.onNodeWithText("which stay in your Library with nothing in them", substring = true).assertIsDisplayed()
+        assertTrue(r.log.isEmpty())
+    }
+
+    @Test
+    fun `a set's new name must have something in it`() {
+        val named = mutableListOf<String>()
+        compose.setContent { EzpzTheme(ThemeMode.Dark) { RenameSetContent("") { named += it } } }
+        compose.onNodeWithText("Rename").assertIsNotEnabled()
+        compose.onNodeWithText("Name").performTextInput("KILO")
+        compose.onNodeWithText("Rename").performClick()
+        assertEquals(listOf("KILO"), named)
+    }
 
     @Test
     fun `the panel says first where threats are kept, and an empty picture how to begin`() {

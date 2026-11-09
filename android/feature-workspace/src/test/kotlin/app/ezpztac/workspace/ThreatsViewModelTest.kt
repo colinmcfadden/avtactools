@@ -80,7 +80,7 @@ class ThreatsViewModelTest {
         val maskApi = FakeMaskApi()
         val masks = ThreatMasks(maskApi, store, scope.backgroundScope)
         private val template = File("../../backend/threat_template.ths").readBytes()
-        val model = ThreatsViewModel(store, selection, ThreatTransfer(ThsWriter { template }), masks).also {
+        val model = ThreatsViewModel(store, selection, ThreatTransfer(ThsWriter { template }), masks, { _, _, _ -> }).also {
             it.worker = StandardTestDispatcher(scope.testScheduler)
         }
         val notices = mutableListOf<String>()
