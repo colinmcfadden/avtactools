@@ -2,6 +2,7 @@ import React, { useState, useRef, useEffect } from 'react';
 import { UNIT_TYPES } from '../feature/unit/UnitIcons';
 import { symbolDataUri } from '../feature/symbols/milsym';
 import Icon from '../feature/ui/Icon';
+import BackstopGlyph from '../feature/backstops/BackstopGlyph';
 import './MobileQuickAccess.css';
 
 const MobileQuickAccess = ({
@@ -9,6 +10,8 @@ const MobileQuickAccess = ({
     addHelo,
     addPZMarker,
     addSector,
+    isDrawingBackstop = false,
+    onToggleBackstop,
     addUnit,
     addGoAround,
     enableExportMode,
@@ -250,6 +253,17 @@ const MobileQuickAccess = ({
         </svg>
       </button>
     
+      {/* Backstop Button */}
+      <button
+        onClick={() => canUseDiagramTools && onToggleBackstop?.()}
+        disabled={!canUseDiagramTools}
+        className={`qa-btn ${isDrawingBackstop ? 'active-qa-btn' : ''}`}
+        aria-pressed={isDrawingBackstop}
+        title={canUseDiagramTools ? "Draw a backstop" : readinessMessage}
+      >
+        <BackstopGlyph />
+      </button>
+
       {/* Unit Button with Pop-out Menu */}
       <div className="unit-menu-wrapper" ref={menuRef}>
         <button 

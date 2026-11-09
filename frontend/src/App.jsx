@@ -20,6 +20,10 @@ import {
 import { useHelicopters } from "./feature/helicopters/useHelicopters";
 import { useSectorsOfFire } from "./feature/sectorsOfFire/useSectorsOfFire";
 import { useGoAround } from "./feature/goAround/useGoAround";
+import { useBackstops } from "./feature/backstops/useBackstops";
+import BackstopDrawBar from "./feature/backstops/BackstopDrawBar";
+import { useFlots } from "./feature/flot/useFlots";
+import { flotsFromData, setsWithFlots } from "./feature/flot/flots";
 import { useWeather } from "./feature/weather/useWeather";
 import { useUnit } from "./feature/unit/useUnit";
 import { usePzMarker } from "./feature/pzMarker/usePzMarker";
@@ -32,7 +36,7 @@ import { useMsnxImport } from "./feature/msnxImport/useMsnxImport";
 import { useAircraftProfiles } from "./feature/aircraft/useAircraftProfiles";
 import AircraftProfileModal from "./feature/aircraft/AircraftProfileModal";
 import { matchProfileToAircraft } from "./feature/aircraft/aircraftProfiles";
-import { useRouteSketch } from "./feature/msnxImport/useRouteSketch";
+import { isOpenedSetId, useRouteSketch } from "./feature/msnxImport/useRouteSketch";
 import ForeFlightModal from "./feature/msnxImport/ForeFlightModal";
 import { useSavedRoutes } from "./feature/msnxImport/useSavedRoutes";
 import { exportRouteSetFiles } from "./feature/msnxImport/exportRouteSet";
@@ -107,6 +111,8 @@ const IGNORE_DROPS = {
   },
   onDrop: (event) => event.preventDefault(),
 };
+
+const DRAWING_ALREADY = "Finish or cancel what you are drawing on the map first.";
 
 const EMPTY_LZ_GRAPHICS = Object.freeze({
   doghouses: Object.freeze([]),
@@ -286,6 +292,10 @@ function App() {
     (nextValue) => setActiveGraphicCollection("units", nextValue),
     [setActiveGraphicCollection],
   );
+  const setBackstops = useCallback(
+    (nextValue) => setActiveGraphicCollection("backstops", nextValue),
+    [setActiveGraphicCollection],
+  );
   const setExportBox = useCallback(
     (nextValue) => {
       const diagram = workspaceRef.current?.diagramsById?.[
@@ -352,6 +362,7 @@ function App() {
       goAround: activeGraphics.goArounds ?? [],
       setGoAround,
     });
+  const backstopTools = useBackstops({ backstops: activeGraphics.backstops, setBackstops });
   const {
     sectorsOfFire,
     addSectorOfFire,
@@ -589,6 +600,7 @@ function App() {
     refreshRouteElevations,
     applyForecastWinds,
   } = useRouteSketch({ aircraftProfile: activeProfile });
+  const flotTools = useFlots();
 
   const localPoints = useLocalPoints();
   const {
@@ -626,7 +638,7 @@ function App() {
   // The route sets in this session: the sketched routes, each saved set opened beside them, then each
   // imported mission file.
   const routeSets = useMemo(() => {
-    const sets = sketchSets.map(({ setId, routes }) => ({ key: setId ?? SKETCHES, kind: "sketch", routes }));
+    const sets = setsWithFlots(sketchSets, flotTools.flots, isOpenedSetId).map(({ setId, routes, flots }) => ({ key: setId ?? SKETCHES, kind: "sketch", routes, flots }));
     const byFile = new Map();
     importedRoutes.forEach((route) => {
       if (!byFile.has(route.fileId)) {
@@ -637,7 +649,7 @@ function App() {
       byFile.get(route.fileId).routes.push(route);
     });
     return sets;
-  }, [importedRoutes, sketchSets]);
+  }, [importedRoutes, sketchSets, flotTools.flots]);
 
   const routeSaves = useRouteSaves({
     sets: routeSets,
@@ -669,7 +681,7 @@ function App() {
       setActiveDiagram,
       hydrateWorkspace: lzWorkspace.hydrateWorkspace,
     },
-    sketch: { sketchedRoutes, loadSketchRoutes, replaceRouteSet, removeRouteSet },
+    sketch: { sketchedRoutes, flots: flotTools.flots, setFlotsOf: flotTools.setFlotsOf, loadSketchRoutes, replaceRouteSet, removeRouteSet },
     points: { pointSets: localPoints.pointSets, setPointSets: localPoints.setPointSets },
     library: {
       history,
@@ -762,9 +774,11 @@ function App() {
       routeSaves.adopt(fileId, entry);
     } else {
       const record = await loadSavedRoute(entry.id);
-      const routes = record.route_data?.routes;
-      if (!routes?.length) throw new Error("This save contains no routes.");
-      routeSaves.adopt(openSavedRoutes(routes) ?? SKETCHES, entry);
+      const routes = record.route_data?.routes ?? [];
+      if (routes.length === 0 && flotsFromData(record.route_data).length === 0) throw new Error("This save contains no routes.");
+      const setId = openSavedRoutes(routes, { beside: flotTools.hasSessionFlots() });
+      flotTools.openSavedFlots(setId, record.route_data);
+      routeSaves.adopt(setId ?? SKETCHES, entry);
     }
   };
 
@@ -773,9 +787,17 @@ function App() {
     routeSaves.recordChanged(id, { deleted: true });
   };
 
+  const beginRouteSketch = () => {
+    if (backstopTools.isDrawing || flotTools.isDrawing) {
+      toast({ tone: "warn", message: DRAWING_ALREADY });
+      return;
+    }
+    startSketch();
+  };
+
   const toggleRouteSketch = () => {
     if (!isSketching) {
-      startSketch();
+      beginRouteSketch();
       return;
     }
     if (draftPoints.length < 2) {
@@ -829,6 +851,7 @@ function App() {
   const dropRouteSet = (set) => {
     if (set.kind === "mission") closeMission(set.routes[0]?.fileId);
     else removeRouteSet(set.key === SKETCHES ? null : set.key);
+    flotTools.setFlotsOf(set.key === SKETCHES ? null : set.key, []);
   };
   const closeRouteSet = (set) => {
     if (routeSaves.stateOf(set.key).dirty) setClosingSet(set);
@@ -1033,6 +1056,10 @@ function App() {
       toast({ tone: "warn", message: "Set a target on the map before drawing an LZ/PZ boundary." });
       return;
     }
+    if (backstopTools.isDrawing || flotTools.isDrawing) {
+      toast({ tone: "warn", message: DRAWING_ALREADY });
+      return;
+    }
 
     if (isDrawingLZ) {
       // Finish drawing
@@ -1055,6 +1082,51 @@ function App() {
       setIsDrawingLZ(true);
     }
   };
+
+  // A backstop is drawn with clicks on the map, as a boundary and a route are, so only one of them is under way at a time.
+  const toggleBackstopDrawing = () => {
+    if (backstopTools.isDrawing) {
+      if (backstopTools.draftPoints.length >= 2) backstopTools.finishDrawing();
+      else backstopTools.cancelDrawing();
+      return;
+    }
+    if (isDrawingLZ || isSketching || flotTools.isDrawing) {
+      toast({ tone: "warn", message: DRAWING_ALREADY });
+      return;
+    }
+    if (canEditGraphics && editable) backstopTools.startDrawing();
+  };
+  // A draft belongs to the LZ/PZ it was begun on, and one that can no longer be edited (a pack finished meanwhile) has none.
+  const canDrawBackstop = canEditGraphics && editable && !presented;
+  useEffect(() => {
+    backstopTools.cancelDrawing();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeDiagramId, canDrawBackstop]);
+
+  // A FLOT is drawn into the set new routes go into.
+  const startFlotDrawing = () => {
+    if (isDrawingLZ || isSketching || backstopTools.isDrawing) {
+      toast({ tone: "warn", message: DRAWING_ALREADY });
+      return;
+    }
+    if (editable) flotTools.startDrawing();
+  };
+  const finishFlotDrawing = () => {
+    if (!inPack) {
+      flotTools.finishDrawing();
+      return;
+    }
+    const target = packRouteSetFor() ?? packs.packRoutes.createItem();
+    if (target) {
+      setPackRouteTarget(target);
+      flotTools.finishDrawing(packs.packRoutes.setIdOf(target));
+    }
+  };
+  // A draft belongs to the workspace it was begun in, and a pack that can no longer be edited, or a brief being presented, has none.
+  useEffect(() => {
+    flotTools.cancelDrawing();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [packs.open, editable, Boolean(presented)]);
 
   // A place chosen in the target field (TargetField: a grid or a lat/long in any notation, read in the
   // browser with no call to the API) starts a new LZ/PZ there; startDiagramAtTarget writes its grid into
@@ -1270,6 +1342,7 @@ function App() {
 
   // What is shown while a pack is open: its own route sets and point sets; the Library's stay loaded.
   const ofOpenPack = (localId) => Boolean(localId) && packLocalRef(localId)?.pack === packs.open;
+  const shownFlots = inPack ? flotTools.flots.filter((f) => ofOpenPack(f.setId)) : flotTools.flots.filter((f) => !f.setId || !packLocalRef(f.setId));
   const shownSketches = inPack ? sketchedRoutes.filter((r) => ofOpenPack(r.setId)) : sketchedRoutes.filter((r) => !r.setId || !packLocalRef(r.setId));
   const shownImported = inPack ? [] : importedRoutes;
 
@@ -1357,6 +1430,7 @@ function App() {
           kind: "sketch",
           item,
           routes: sketchedRoutes.filter((r) => r.setId === setId),
+          flots: flotTools.flots.filter((flot) => flot.setId === setId),
           pack: {
             finished: packs.readOnly,
             target: packRouteSetFor() === uuid,
@@ -1545,6 +1619,8 @@ function App() {
           showLZOutline={showLZOutline}
           setShowLZOutline={setShowLZOutline}
           addSector={addSectorOfFire}
+          isDrawingBackstop={backstopTools.isDrawing}
+          onToggleBackstop={toggleBackstopDrawing}
           exportBox={exportBox}
           enableExportMode={enableExportMode}
           setIsExporting={setIsExporting}
@@ -1623,6 +1699,8 @@ function App() {
           addHelo={addHelo}
           addPZMarker={addPZMarker}
           addSector={addSectorOfFire}
+          isDrawingBackstop={backstopTools.isDrawing}
+          onToggleBackstop={toggleBackstopDrawing}
           addUnit={addUnit}
           onOpenUnitBuilder={() => setShowUnitBuilder(true)}
           addGoAround={addGoAround}
@@ -1644,7 +1722,37 @@ function App() {
           diagramStatus={diagramStatus}
           diagramReadinessText={diagramReadinessText}
         />
+        {flotTools.isDrawing && (
+          <BackstopDrawBar
+            title="Drawing the FLOT."
+            hint="Click the map along the line, in order."
+            points={flotTools.draftPoints.length}
+            onUndo={flotTools.undoDraftPoint}
+            onCancel={flotTools.cancelDrawing}
+            onFinish={finishFlotDrawing}
+          />
+        )}
+        {backstopTools.isDrawing && (
+          <BackstopDrawBar
+            points={backstopTools.draftPoints.length}
+            onUndo={backstopTools.undoDraftPoint}
+            onCancel={backstopTools.cancelDrawing}
+            onFinish={backstopTools.finishDrawing}
+          />
+        )}
         <MapView
+          backstops={backstopTools.backstops}
+          updateBackstop={mapEdit(backstopTools.updateBackstop)}
+          onBackstopContextMenu={(id, x, y) => setContextMenu({ type: "backstop", id, x, y })}
+          isDrawingBackstop={backstopTools.isDrawing}
+          backstopDraftPoints={backstopTools.draftPoints}
+          addBackstopDraftPoint={backstopTools.addDraftPoint}
+          flots={shownFlots}
+          updateFlot={mapEdit(flotTools.updateFlot)}
+          onFlotContextMenu={(id, x, y) => setContextMenu({ type: "flot", id, x, y })}
+          isDrawingFlot={flotTools.isDrawing}
+          flotDraftPoints={flotTools.draftPoints}
+          addFlotDraftPoint={flotTools.addDraftPoint}
           flyTo={flyTo}
           importedRoutes={shownImported}
           onUpdateMsnxPointPosition={mapEdit(updatePointPosition)}
@@ -1810,7 +1918,7 @@ function App() {
                 sketchInto: inPack
                   ? (set) => {
                       setPackRouteTarget(set.key);
-                      if (!isSketching) startSketch();
+                      if (!isSketching) beginRouteSketch();
                     }
                   : undefined,
                 addToPack:
@@ -1819,6 +1927,8 @@ function App() {
                 share: setForeFlightRoute,
                 toggleVisibility: (set, id) => (set.kind === "mission" ? toggleRouteVisibility(id) : toggleSketchVisibility(id)),
                 removeRoute: (set, id) => (set.kind === "mission" ? removeRoute(id) : removeSketchRoute(id)),
+                flipFlot: flotTools.flipFlot,
+                removeFlot: flotTools.deleteFlot,
               }}
               plan={(set) => (set.kind === "mission" ? importedPlan : sketchedPlan)}
               localPointNames={localPointNames}
@@ -1827,10 +1937,11 @@ function App() {
                 name: `ROUTE ${sketchedRoutes.length + 1}`,
                 points: draftPoints.length,
                 enabled: feat.routes && editable,
-                onStart: startSketch,
+                onStart: beginRouteSketch,
                 onCancel: cancelSketch,
                 onFinish: toggleRouteSketch,
               }}
+              flot={{ active: flotTools.isDrawing, enabled: feat.routes && editable, onStart: startFlotDrawing, onCancel: flotTools.cancelDrawing }}
               onImportMsnx={pickers.msnx.open}
               canImportMsnx={feat.msnx_import}
               onCollapse={() => dock.setCollapsed(true)}
@@ -1933,6 +2044,37 @@ function App() {
                 Add Threat Here
               </button>
             </>
+          ) : contextMenu.type === "flot" ? (
+            <>
+              <button
+                className="ctx-btn"
+                onClick={() => {
+                  flotTools.flipFlot(contextMenu.id);
+                  setContextMenu(null);
+                }}
+              >
+                Flip the scallops
+              </button>
+              <button
+                className="ctx-btn ctx-btn--danger"
+                onClick={() => {
+                  flotTools.deleteFlot(contextMenu.id);
+                  setContextMenu(null);
+                }}
+              >
+                Delete FLOT
+              </button>
+            </>
+          ) : contextMenu.type === "backstop" ? (
+            <button
+              className="ctx-btn ctx-btn--danger"
+              onClick={() => {
+                backstopTools.deleteBackstop(contextMenu.id);
+                setContextMenu(null);
+              }}
+            >
+              Delete backstop
+            </button>
           ) : contextMenu.type === "lz" ? (
             // --- THE LZ CONTEXT MENU ---
             <>

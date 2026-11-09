@@ -6,6 +6,7 @@ import { SLOPE_OPACITY } from "../feature/terrain/slopeOpacity";
 import "../feature/aircraft/aircraft.css";
 import { UNIT_TYPES } from "../feature/unit/UnitIcons";
 import { symbolDataUri } from "../feature/symbols/milsym";
+import BackstopGlyph from "../feature/backstops/BackstopGlyph";
 import packageJson from "../../package.json";
 
 /**
@@ -45,6 +46,8 @@ const Controls = ({
   showLZOutline,
   setShowLZOutline,
   addSector,
+  isDrawingBackstop = false,
+  onToggleBackstop,
   exportBox,
   enableExportMode,
   isExporting,
@@ -446,6 +449,21 @@ const Controls = ({
                 />
               </svg>
               <span className="btn-label">R-GA</span>
+            </button>
+
+            <button
+              className={`ff-tool-btn ${isDrawingBackstop ? "active" : ""}`}
+              onClick={() => {
+                if (!canUseDiagramTools) return;
+                onToggleBackstop?.();
+                closeMobileMenu?.();
+              }}
+              disabled={!canUseDiagramTools}
+              aria-pressed={isDrawingBackstop}
+              title={canUseDiagramTools ? "Draw a backstop beyond the LZ/PZ" : readinessMessage}
+            >
+              <BackstopGlyph />
+              <span className="btn-label">Backstop</span>
             </button>
           </div>
         </div>
