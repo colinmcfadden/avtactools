@@ -64,6 +64,8 @@ import useLzSaves from "./feature/saveDialog/useLzSaves";
 import useRouteSaves, { SKETCHES } from "./feature/saveDialog/useRouteSaves";
 import NameDialog from "./feature/ui/NameDialog";
 import { useToast } from "./feature/ui/Toast";
+import { nextStepSeq } from "./feature/undo/history";
+import { useUndo } from "./feature/undo/useUndo";
 import useApiCompat from "./feature/apiCompat/useApiCompat";
 import useFilePicker from "./feature/imports/useFilePicker";
 import useImports, { movePointsToPack } from "./feature/imports/useImports";
@@ -125,6 +127,7 @@ function App() {
   const [gridInput, setGridInput] = useState("");
   const [isDrawingLZ, setIsDrawingLZ] = useState(false);
   const [drawingPoints, setDrawingPoints] = useState([]);
+  const boundaryVisit = useRef(null);
   const [clickedGrid, setClickedGrid] = useState("Loading...");
   const [mapStyle, setMapStyle] = useState("satellite");
   // The MGRS grid over the map: this browser's preference, not the diagram's (unlike mapStyle).
@@ -193,7 +196,7 @@ function App() {
   const diagramStatus = activeDiagram?.status ?? "no_target";
 
   const updateActiveAnalysis = useCallback(
-    (key, nextValue) => {
+    (key, nextValue, step = null) => {
       const diagram = workspaceRef.current?.diagramsById?.[
         workspaceRef.current?.activeDiagramId
       ];
@@ -203,6 +206,7 @@ function App() {
           [key]: resolveStateUpdate(nextValue, diagram.analysis?.[key]),
         },
         diagram.id,
+        step,
       );
     },
     [setAnalysisDraft],
@@ -210,6 +214,11 @@ function App() {
 
   const setCustomLZ = useCallback(
     (nextValue) => updateActiveAnalysis("customLZ", nextValue),
+    [updateActiveAnalysis],
+  );
+  // The boundary a person draws or deletes, which undo can take back (setCustomLZ is the analysis's own).
+  const setDrawnLZ = useCallback(
+    (nextValue, step) => updateActiveAnalysis("customLZ", nextValue, step ?? {}),
     [updateActiveAnalysis],
   );
   const setDetectedLZ = useCallback(
@@ -442,6 +451,7 @@ function App() {
             diagramId,
           ),
           diagramId,
+          { quiet: true },
         );
       }
     },
@@ -515,6 +525,10 @@ function App() {
 
   const {
     importedRoutes,
+    missionHistory,
+    undoMission,
+    redoMission,
+    closeMission,
     importMsnxFile,
     updatePointPosition,
     insertPoint,
@@ -549,9 +563,13 @@ function App() {
     draftPoints,
     sketchedRoutes,
     sketchSets,
+    sketchHistory,
+    undoSketch,
+    redoSketch,
     startSketch,
     cancelSketch,
     addDraftPoint,
+    removeLastDraftPoint,
     finishSketch,
     designateSketchPoint,
     updateSketchPointPosition,
@@ -809,8 +827,8 @@ function App() {
   // A route set being closed with unsaved changes asks first.
   const [closingSet, setClosingSet] = useState(null);
   const dropRouteSet = (set) => {
-    if (set.kind === "mission") set.routes.forEach((route) => removeRoute(route.id));
-    else set.routes.forEach((route) => removeSketchRoute(route.id));
+    if (set.kind === "mission") closeMission(set.routes[0]?.fileId);
+    else removeRouteSet(set.key === SKETCHES ? null : set.key);
   };
   const closeRouteSet = (set) => {
     if (routeSaves.stateOf(set.key).dirty) setClosingSet(set);
@@ -1019,7 +1037,7 @@ function App() {
     if (isDrawingLZ) {
       // Finish drawing
       if (drawingPoints.length > 2) {
-        setCustomLZ(drawingPoints);
+        setDrawnLZ(drawingPoints, { key: boundaryVisit.current, label: "Draw boundary" });
       }
       setIsDrawingLZ(false);
       setDrawingPoints([]);
@@ -1027,10 +1045,12 @@ function App() {
       // Start drawing
       // Changing an already analyzed boundary makes the existing analysis
       // stale. Keep its graphics, but require analysis again before edits.
+      // Starting and finishing are one thing done: undoing it brings the analysis back.
+      boundaryVisit.current = `boundary-${nextStepSeq()}`;
       if (activeDiagram?.status === "analyzed") {
-        resetAnalysis(activeDiagram.id);
+        resetAnalysis(activeDiagram.id, { key: boundaryVisit.current, label: "Draw boundary" });
       }
-      setCustomLZ(null);
+      setDrawnLZ(null, { key: boundaryVisit.current, label: "Draw boundary" });
       setDrawingPoints([]);
       setIsDrawingLZ(true);
     }
@@ -1252,6 +1272,35 @@ function App() {
   const ofOpenPack = (localId) => Boolean(localId) && packLocalRef(localId)?.pack === packs.open;
   const shownSketches = inPack ? sketchedRoutes.filter((r) => ofOpenPack(r.setId)) : sketchedRoutes.filter((r) => !r.setId || !packLocalRef(r.setId));
   const shownImported = inPack ? [] : importedRoutes;
+
+  // Undo and redo (feature/undo): the LZ/PZ showing and the route sets on the map, in this workspace.
+  const undoControls = useUndo({
+    sources: [
+      activeDiagramId && {
+        history: lzWorkspace.workspace.history?.[activeDiagramId],
+        undo: () => lzWorkspace.undoDiagram(activeDiagramId),
+        redo: () => lzWorkspace.redoDiagram(activeDiagramId),
+      },
+      ...Object.entries(sketchHistory)
+        .filter(([key]) => (inPack ? ofOpenPack(key) : !packLocalRef(key)))
+        .map(([key, history]) => ({ history, undo: () => undoSketch(key), redo: () => redoSketch(key) })),
+      ...(inPack
+        ? []
+        : Object.entries(missionHistory).map(([fileId, history]) => ({
+            history,
+            undo: () => undoMission(fileId),
+            redo: () => redoMission(fileId),
+          }))),
+    ],
+    draft: isSketching
+      ? { points: draftPoints.length, removeLast: removeLastDraftPoint }
+      : isDrawingLZ
+        ? { points: drawingPoints.length, removeLast: () => setDrawingPoints((prev) => prev.slice(0, -1)) }
+        : null,
+    lockedReason: packReadOnly ? "This Mission Pack is read-only." : null,
+    keysOff: presenting || is3DOpen || surveysOpen,
+    toast,
+  });
   const shownPointSets = (inPack ? localPoints.pointSets.filter((set) => ofOpenPack(set.id)) : localPoints.pointSets.filter((set) => !packLocalRef(set.id)))
     .map((set) => (packLocalRef(set.id) ? { ...set, packItemId: packLocalRef(set.id).item } : set));
 
@@ -1404,6 +1453,7 @@ function App() {
       </button>
       {/* Across the whole window, over the control panel and the map alike (the dock and the panel sit under it). */}
       <TopBar
+        undo={undoControls}
         user={user}
         isAdmin={Boolean(user?.is_admin)}
         onOpenSurveys={user?.is_admin || feat.lz_surveys ? () => setSurveysOpen(true) : undefined}
@@ -1568,6 +1618,7 @@ function App() {
           searchPlaces={feat.place_search ? searchPlaces : null}
         />
         <MobileQuickAccess
+          undo={undoControls}
           features={feat}
           addHelo={addHelo}
           addPZMarker={addPZMarker}
@@ -1927,7 +1978,7 @@ function App() {
               <button
                 className="ctx-btn ctx-btn--danger"
                 onClick={() => {
-                  setCustomLZ(null);
+                  setDrawnLZ(null);
                   setDrawingPoints([]);
                   setContextMenu(null);
                 }}

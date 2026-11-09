@@ -5,6 +5,7 @@ import Icon from '../feature/ui/Icon';
 import './MobileQuickAccess.css';
 
 const MobileQuickAccess = ({
+  undo,
     addHelo,
     addPZMarker,
     addSector,
@@ -147,6 +148,16 @@ const MobileQuickAccess = ({
   return (
     <>
     <div className="mobile-quick-access-container">
+      {undo && (
+        <>
+          <button type="button" className="qa-btn" onClick={undo.undo} disabled={!undo.canUndo} title={undo.undoTitle} aria-label={undo.undoTitle}>
+            <Icon name="undo" size={22} />
+          </button>
+          <button type="button" className="qa-btn" onClick={undo.redo} disabled={!undo.canRedo} title={undo.redoTitle} aria-label={undo.redoTitle}>
+            <Icon name="redo" size={22} />
+          </button>
+        </>
+      )}
       {/* The readiness hint ("Set a target…") is intentionally NOT rendered here.
           On mobile it pushed this vertical icon rail toward mid-screen; the same
           message still shows inside the control panel once it's opened. The text

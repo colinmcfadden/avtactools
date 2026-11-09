@@ -2,6 +2,8 @@ import { useCallback, useMemo, useState } from "react";
 import { describeRouteChange, routeSetData, routesFromItem, sharedRouteData } from "./packRoutes";
 import { packLocalId } from "./packRef";
 import { newItemOp, packItemId } from "./packSentences";
+import { restoreSketchRoute } from "../msnxImport/useRouteSketch";
+import { applyOpsTo } from "./packRebase";
 import { usePackItemSync } from "./usePackItemSync";
 
 /*
@@ -53,8 +55,15 @@ export const usePackRoutes = ({
 
   const currentShape = useCallback((item) => routeSetData(routesFromItem(item, setIdOf(item.uuid))), [setIdOf]);
   const applyTheirs = useCallback(
-    (uuid, item) => {
-      replaceRouteSet(setIdOf(uuid), item.data?.routes ?? []);
+    (uuid, item, { ops, dropHistory } = {}) => {
+      const setId = setIdOf(uuid);
+      replaceRouteSet(setId, item.data?.routes ?? [], {
+        dropHistory,
+        // A version is the set's routes; a route someone else added comes in as the pack has it.
+        rebase: ops?.length
+          ? (routes) => applyOpsTo({ routes }, ops).routes.map((route) => (route.setId ? route : restoreSketchRoute(route, setId)))
+          : undefined,
+      });
       setNames((n) => ({ ...n, [uuid]: item.name }));
     },
     [replaceRouteSet, setIdOf],

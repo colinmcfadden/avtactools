@@ -151,3 +151,37 @@ describe("usePackRoutes", () => {
     expect(route.points[0].lat).toBe(34.4);
   });
 });
+
+describe("undo in a pack's route set", () => {
+  const history = (result) => result.current.sketch.sketchHistory[SET_ID];
+  const pointOf = (result, id) => setRoutes(result)[0].points.find((p) => p.id === id);
+
+  it("takes back this person's move and leaves someone else's standing, on redo too", () => {
+    const { result } = opened();
+    const start = pointOf(result, "p-2").lat;
+    act(() => { result.current.sketch.updateSketchPointPosition("r-1", "p-2", 34.61, -84.21); });
+    settleTimers();
+    act(() => { result.current.pack.remote([{ type: "patch", item: "rt-1", path: ["routes", { id: "r-1" }, "points", { id: "p-1" }], value: { name: "THEIRS" } }]); });
+    settleTimers();
+    expect(history(result).undo).toHaveLength(1);
+    act(() => { result.current.sketch.undoSketch(SET_ID); });
+    settleTimers();
+    expect([pointOf(result, "p-2").lat, pointOf(result, "p-1").name]).toEqual([start, "THEIRS"]);
+    act(() => { result.current.sketch.redoSketch(SET_ID); });
+    settleTimers();
+    expect([pointOf(result, "p-2").lat, pointOf(result, "p-1").name]).toEqual([34.61, "THEIRS"]);
+    expect(result.current.pack.items[0].data.routes[0].points.find((p) => p.id === "p-1").name).toBe("THEIRS");
+  });
+
+  it("keeps a route someone else added through an undo", () => {
+    const { result } = opened();
+    act(() => { result.current.sketch.updateSketchPointPosition("r-1", "p-2", 34.61, -84.21); });
+    settleTimers();
+    const route = { ...result.current.pack.items[0].data.routes[0], id: "r-2", name: "THEIR ROUTE" };
+    act(() => { result.current.pack.remote([{ type: "insert", item: "rt-1", path: ["routes"], after: "r-1", value: route }]); });
+    settleTimers();
+    act(() => { result.current.sketch.undoSketch(SET_ID); });
+    settleTimers();
+    expect(setRoutes(result).map((r) => [r.id, r.setId])).toEqual([["r-1", SET_ID], ["r-2", SET_ID]]);
+  });
+});
