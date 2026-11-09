@@ -306,6 +306,25 @@ describe("usePackLz with the flight data following the doghouses, as App.jsx wir
     expect(result.current.items[0].data.flightData.landing_hdg).toBe("123°");
   });
 
+  it("adds no step to undo for a doghouse turned elsewhere, heard at once or a part at a time, and undo leaves it", () => {
+    for (const parts of [[TURN], [[TURN[0]], [TURN[1]]]]) {
+      const { result, unmount } = openedWired();
+      act(() => { result.current.ws.patchGraphic("doghouses", RP, { label: "MINE" }, DIAGRAM); });
+      settleTimers();
+      parts.forEach((ops) => {
+        act(() => { result.current.remote(ops); });
+        act(() => { vi.advanceTimersByTime(5); });
+      });
+      settleTimers();
+      expect(result.current.ws.workspace.history[DIAGRAM].undo).toHaveLength(1);
+      act(() => { result.current.ws.undoDiagram(DIAGRAM); });
+      settleTimers();
+      expect(landing(result)).toEqual(["105°", "105°"]);
+      expect(diagramOf(result).graphics.doghouses[1].label).not.toBe("MINE");
+      unmount();
+    }
+  });
+
   it("sends the headings an item lacks once, when it is opened", () => {
     const { result } = openedWired({ data: { ...WITH_DOGHOUSES, flightData: {} } });
     expect(result.current.sent.current).toEqual([[{
@@ -321,5 +340,64 @@ describe("usePackLz with the flight data following the doghouses, as App.jsx wir
     settleTimers();
     expect(result.current.sent.current).toEqual([]);
     expect(diagramOf(result).flightData).toEqual({});
+  });
+});
+
+describe("undo in a pack", () => {
+  const history = (result) => result.current.ws.workspace.history?.[DIAGRAM] ?? { undo: [], redo: [] };
+  const moved = (result) => {
+    act(() => { result.current.ws.patchGraphic("helicopters", 101, { lat: 34.499 }, DIAGRAM); });
+    settleTimers();
+  };
+  const theirs = (result) => {
+    act(() => { result.current.remote([{ type: "patch", item: "lz-1", path: ["graphics", "helicopters", { id: 102 }], value: { heading: 270 } }]); });
+    settleTimers();
+  };
+  const fields = (result) => {
+    const [first, second] = diagramOf(result).graphics.helicopters;
+    return [first.lat, second.heading];
+  };
+
+  it("takes back this person's step and leaves someone else's change standing, on redo too", () => {
+    const { result } = opened();
+    moved(result);
+    theirs(result);
+    expect(history(result).undo).toHaveLength(1);
+    act(() => { result.current.ws.undoDiagram(DIAGRAM); });
+    settleTimers();
+    expect(fields(result)).toEqual([34.5, 270]);
+    act(() => { result.current.ws.redoDiagram(DIAGRAM); });
+    settleTimers();
+    expect(fields(result)).toEqual([34.499, 270]);
+  });
+
+  it("sends an undo to the pack as an ordinary change, and nothing of someone else's back", () => {
+    const { result } = opened();
+    moved(result);
+    theirs(result);
+    act(() => { result.current.ws.undoDiagram(DIAGRAM); });
+    settleTimers();
+    expect(result.current.sent.current).toHaveLength(2);
+    expect(result.current.sent.current[1].map((op) => [op.type, op.path, op.value])).toEqual([
+      ["patch", ["graphics", "helicopters", { id: 101 }], { lat: 34.5 }],
+    ]);
+    expect(result.current.items[0].data.graphics.helicopters[1].heading).toBe(270);
+  });
+
+  it("does not bring back something someone else took away when a step about something else is undone", () => {
+    const { result } = opened();
+    moved(result);
+    act(() => { result.current.remote([{ type: "remove", item: "lz-1", path: ["graphics", "helicopters", { id: 102 }] }]); });
+    settleTimers();
+    act(() => { result.current.ws.undoDiagram(DIAGRAM); });
+    settleTimers();
+    expect(diagramOf(result).graphics.helicopters.map((h) => [h.id, h.lat])).toEqual([[101, 34.5]]);
+  });
+
+  it("forgets the steps behind a change the pack refused", () => {
+    const { result } = opened({ refuse: "read_only" });
+    moved(result);
+    expect(diagramOf(result).graphics.helicopters[0].lat).toBe(34.5);
+    expect(history(result).undo).toEqual([]);
   });
 });

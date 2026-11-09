@@ -91,6 +91,11 @@ class PackItemStore<D : Any>(
         baselines.keys.retainAll { it == localId }
     }
 
+    /** The same, for an editor with many documents open at once. On [main]. */
+    internal fun forgetAllBut(open: Set<String>) {
+        baselines.keys.retainAll { it in open }
+    }
+
     /** Whether [localId] is being saved. On [main]. */
     internal fun isSaving(localId: String): Boolean = saving.containsKey(localId)
 
@@ -104,8 +109,11 @@ class PackItemStore<D : Any>(
     internal fun takeUndelivered(localId: String): Undelivered<D>? = held.remove(localId)
 
     /** The changes held back for every document but [localId], let go of: documents that left the editor with them. On [main]. */
-    internal fun takeUndeliveredExcept(localId: String?): List<Pair<String, Undelivered<D>>> =
-        held.keys.filter { it != localId }.mapNotNull { id -> held.remove(id)?.let { id to it } }
+    internal fun takeUndeliveredExcept(localId: String?): List<Pair<String, Undelivered<D>>> = takeUndeliveredExcept(setOfNotNull(localId))
+
+    /** The same, for an editor with many documents open at once. */
+    internal fun takeUndeliveredExcept(open: Set<String>): List<Pair<String, Undelivered<D>>> =
+        held.keys.filter { it !in open }.mapNotNull { id -> held.remove(id)?.let { id to it } }
 
     /** Holds back again a change [takeUndeliveredExcept] gave, that could not be kept yet (nobody the packs are for). On [main]. */
     internal fun holdAgain(localId: String, undelivered: Undelivered<D>) {

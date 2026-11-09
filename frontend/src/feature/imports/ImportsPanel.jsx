@@ -36,6 +36,7 @@ const ImportsPanel = ({
   pointSets = [],
   missions = [],
   threatFiles = [],
+  threatsSaved = false,
   pack = null,
   onImport,
   onTogglePoints,
@@ -141,7 +142,7 @@ const ImportsPanel = ({
                   <button type="button" className="ui-link" style={{ marginRight: 8 }} onClick={onOpenThreats}>Open in Threats</button>
                 </div>
                 <div className="imports__item-chips">
-                  <Where where="locked" />
+                  <Where where={threatsSaved ? "library" : "locked"} />
                 </div>
               </div>
             ))}

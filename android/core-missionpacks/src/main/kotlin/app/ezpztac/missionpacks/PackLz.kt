@@ -29,7 +29,7 @@ public object PackLz {
     // so [carryUnknown] must never put one back: it would undo the reshape, or bring an old name back beside its new one.
     private val ANALYSIS_NAMES = listOf("customLZ", "detectedLZ", "terrainData", "results", "analysisResults", "gridElevation", "latLong")
     private val GRAPHICS_NAMES = listOf(
-        "doghouses", "helicopters", "pzMarkers", "pzMarker", "sectorsOfFire", "goArounds", "goAround", "units", "measurements", "exportBox",
+        "doghouses", "helicopters", "pzMarkers", "pzMarker", "sectorsOfFire", "goArounds", "goAround", "units", "measurements", "backstops", "exportBox",
     )
     private val VIEW_NAMES = listOf("mapStyle", "showLZOutline", "showHeatmap")
     private val TOP_NAMES: Set<String> = (
@@ -125,6 +125,7 @@ public object PackLz {
             }
         },
         Collection("measurements") { _, _ -> "a measurement" },
+        Collection("backstops") { _, _ -> "a backstop" },
     )
 
     private val POSITION_KEYS = setOf("lat", "lon", "lng", "position", "points", "center", "start", "end", "tip", "anchor")

@@ -10,9 +10,11 @@ import app.ezpztac.missionpacks.PackNotice
 import app.ezpztac.missionpacks.PackRef
 import app.ezpztac.missionpacks.PackSession
 import app.ezpztac.missionpacks.PackStore
+import app.ezpztac.missionpacks.PackThreatSet
 import app.ezpztac.missionpacks.PackUser
 import app.ezpztac.missionpacks.RecordingKeeper
 import app.ezpztac.missionpacks.RoutePackKind
+import app.ezpztac.missionpacks.ThreatPackKind
 import app.ezpztac.model.Diagram
 import app.ezpztac.model.DiagramNormalizer
 import app.ezpztac.model.RouteSet
@@ -119,7 +121,11 @@ internal class PackEditorRig(
     val routeRepository = RouteRepository(library.repository, library.store as InMemorySyncStore, scheduler, dispatcher)
     val diagrams = DiagramSession(diagramRepository, scope, packs = lzItems)
     val routes = RouteSession(routeRepository, scope, packs = routeItems)
-    val workspace = PackWorkspace(engine, diagrams, routes, lzItems, routeItems, keeper)
+    val threatItems = PackItemStore<PackThreatSet>(engine, ThreatPackKind, copy, { it.id }, dispatcher, dispatcher)
+    val threats = ThreatStore(NoVault, scope, dispatcher)
+    var threatsOn = true
+    val threatSync = PackThreatSync(threats, threatItems, engine, keeper, threatsOn = { threatsOn })
+    val workspace = PackWorkspace(engine, diagrams, routes, lzItems, routeItems, threatSync, keeper)
 
     /** Everything the person was told, in order: the engine's notices and the editors'. */
     val notices = mutableListOf<PackNotice>()
@@ -193,6 +199,12 @@ internal class PackEditorRig(
     fun close() {
         scope.cancel()
         settled()
+    }
+
+    private object NoVault : ThreatVault {
+        override fun load(): ThreatPicture? = null
+        override fun save(picture: ThreatPicture) = Unit
+        override fun wipe() = Unit
     }
 
     companion object {
