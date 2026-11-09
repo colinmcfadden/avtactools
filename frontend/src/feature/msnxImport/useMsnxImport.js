@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useReducer, useRef } from "react";
 import { parseMsnxFile } from "./parseMsnx";
 import {
   updatePointCoordinate,
@@ -11,12 +11,59 @@ import {
 import { nextRouteColor } from "./colorPalette";
 import { defaultRoutePlan, fetchPointElevationsFt } from "./routeCalc";
 import { fetchForecastWinds, mergeWindsIntoPlan } from "./routeWinds";
+import { INITIAL_SKETCH_STATE, makeRouteReducer } from "./routeSketchReducer";
+import { currentFieldVisit } from "../undo/fieldVisit";
+import { nextStepSeq, topRedo, topUndo } from "../undo/history";
 
 const generateId = (prefix) => `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2)}`;
 
+// A mission's undo history is its file's: moving a hand-off point changes two of its routes at once.
+const missionReducer = makeRouteReducer((route) => route.fileId);
+
+const mapRoute = (routeId, change) => (routes) => routes.map((route) => (route.id === routeId ? change(route) : route));
+
 export const useMsnxImport = () => {
-  const [importedRoutes, setImportedRoutes] = useState([]);
+  const [{ routes: importedRoutes, history: missionHistory }, dispatch] = useReducer(missionReducer, INITIAL_SKETCH_STATE);
   const filesRef = useRef(new Map()); // fileId -> { zip, docs, originalName }
+  const routesRef = useRef(importedRoutes);
+  routesRef.current = importedRoutes;
+
+  const editRoutes = useCallback((routeId, label, update, key = null) => {
+    dispatch({ type: "edit", routeId, update, step: { label, key, seq: nextStepSeq() } });
+  }, []);
+
+  /**
+   * A point's place and name also live in the mission's XML, changed as they are edited. Undo and redo
+   * write what differs between now and the version going back in, here and never in a reducer (React
+   * runs those twice). A route taken off the list is not in `now`: its points were not touched while gone.
+   */
+  const writeVersionToDocs = useCallback((fileId, version) => {
+    const docs = filesRef.current.get(fileId)?.docs;
+    if (!docs) return;
+    const now = new Map(routesRef.current.filter((r) => r.fileId === fileId).flatMap((r) => r.points).map((p) => [p.id, p]));
+    version.forEach((route) =>
+      route.points.forEach((target) => {
+        const point = now.get(target.id);
+        if (!point) return;
+        if (point.lat !== target.lat || point.lon !== target.lon) updatePointCoordinate(docs, target.id, target.lat, target.lon);
+        if (point.name !== target.name) updatePointNameInDocs(docs, target.id, target.name);
+      }),
+    );
+  }, []);
+
+  const undoMission = useCallback((fileId) => {
+    const step = topUndo(missionHistory[fileId]);
+    if (!step) return;
+    writeVersionToDocs(fileId, step.before);
+    dispatch({ type: "undo", setKey: fileId, seq: nextStepSeq() });
+  }, [missionHistory, writeVersionToDocs]);
+
+  const redoMission = useCallback((fileId) => {
+    const step = topRedo(missionHistory[fileId]);
+    if (!step) return;
+    writeVersionToDocs(fileId, step.after);
+    dispatch({ type: "redo", setKey: fileId });
+  }, [missionHistory, writeVersionToDocs]);
 
   const importMsnxFile = async (file) => {
     const { zip, docs, routes, aircraft } = await parseMsnxFile(file);
@@ -38,22 +85,18 @@ export const useMsnxImport = () => {
       elevations: route.elevations || {},
     }));
 
-    setImportedRoutes((prev) => [...prev, ...newRoutes]);
+    dispatch({ type: "append", routes: newRoutes });
     // The airframe AMPS recorded in the mission, so the caller can switch the
     // active aircraft to match what was actually planned.
     return { fileId, aircraft };
   };
 
   const toggleRouteVisibility = (routeId) => {
-    setImportedRoutes((prev) =>
-      prev.map((route) =>
-        route.id === routeId ? { ...route, visible: !route.visible } : route,
-      ),
-    );
+    dispatch({ type: "visible", routeId });
   };
 
   // NOTE for both handlers below: the XML-doc mutation must happen OUTSIDE the
-  // setImportedRoutes updater. React re-runs updater functions (StrictMode
+  // reducer. React re-runs updater functions (StrictMode
   // double-invokes them in development), so a non-idempotent mutation inside
   // one runs twice — for insertPoint the second run threw "Couldn't find the
   // connecting leg" because the first run had already split that leg.
@@ -91,8 +134,8 @@ export const useMsnxImport = () => {
       for (const id of idsToUpdate) updatePointCoordinate(fileEntry.docs, id, lat, lon);
     }
 
-    setImportedRoutes((prev) =>
-      prev.map((route) => {
+    editRoutes(routeId, "Move point", (routes) =>
+      routes.map((route) => {
         if (route.fileId !== sourceRoute.fileId) return route;
         if (!route.points.some((p) => idsToUpdate.has(p.id))) return route;
 
@@ -104,7 +147,7 @@ export const useMsnxImport = () => {
         };
       }),
     );
-  }, [importedRoutes]);
+  }, [importedRoutes, editRoutes]);
 
   const insertPoint = useCallback((routeId, lat, lon) => {
     const route = importedRoutes.find((r) => r.id === routeId);
@@ -116,16 +159,18 @@ export const useMsnxImport = () => {
     // caught here so the caller's try/catch can surface it to the user.
     const { afterPointId, point: newPoint } = insertPointOnRoute(fileEntry.docs, route, lat, lon);
 
-    setImportedRoutes((prev) =>
-      prev.map((r) => {
-        if (r.id !== routeId) return r;
+    // Splitting a leg in the file cannot be taken back, so nothing before it can be either.
+    dispatch({
+      type: "barrier",
+      setKey: route.fileId,
+      update: mapRoute(routeId, (r) => {
         const afterIndex = r.points.findIndex((p) => p.id === afterPointId);
         if (afterIndex === -1) return r;
         const points = [...r.points];
         points.splice(afterIndex + 1, 0, newPoint);
         return { ...r, points };
       }),
-    );
+    });
   }, [importedRoutes]);
 
   // --- inline plan editing (mirrors useRouteSketch, for imported routes) ---
@@ -134,33 +179,35 @@ export const useMsnxImport = () => {
   // mutate the docs immediately (like the drag handler above).
 
   const updateRoutePlan = (routeId, patch) => {
-    setImportedRoutes((prev) =>
-      prev.map((route) =>
-        route.id === routeId
-          ? { ...route, plan: { ...defaultRoutePlan(), ...route.plan, ...patch } }
-          : route,
-      ),
+    editRoutes(
+      routeId,
+      "Edit route plan",
+      mapRoute(routeId, (route) => ({ ...route, plan: { ...defaultRoutePlan(), ...route.plan, ...patch } })),
+      currentFieldVisit(),
     );
   };
 
   const updatePointPlanOverride = (routeId, pointId, patch) => {
-    setImportedRoutes((prev) =>
-      prev.map((route) => {
-        if (route.id !== routeId) return route;
+    editRoutes(
+      routeId,
+      "Edit point plan",
+      mapRoute(routeId, (route) => {
         const plan = { ...defaultRoutePlan(), ...route.plan };
         const perPoint = { ...plan.perPoint };
         if (patch === null) delete perPoint[pointId];
         else perPoint[pointId] = { ...perPoint[pointId], ...patch };
         return { ...route, plan: { ...plan, perPoint } };
       }),
+      currentFieldVisit(),
     );
   };
 
   /** Sets/clears a point's clock (TOT); only one point anchors at a time. */
   const setPointClock = (routeId, pointId, clock) => {
-    setImportedRoutes((prev) =>
-      prev.map((route) => {
-        if (route.id !== routeId) return route;
+    editRoutes(
+      routeId,
+      "Set clock",
+      mapRoute(routeId, (route) => {
         const plan = { ...defaultRoutePlan(), ...route.plan };
         const perPoint = {};
         for (const [id, over] of Object.entries(plan.perPoint || {})) {
@@ -181,24 +228,24 @@ export const useMsnxImport = () => {
       updatePointNameInDocs(fileEntry.docs, pointId, name);
       if (coords) updatePointCoordinate(fileEntry.docs, pointId, coords.lat, coords.lon);
     }
-    setImportedRoutes((prev) =>
-      prev.map((r) => {
-        if (r.id !== routeId) return r;
-        return {
-          ...r,
-          points: r.points.map((p) =>
-            p.id === pointId
-              ? {
-                  ...p,
-                  name,
-                  ...(coords
-                    ? { lat: coords.lat, lon: coords.lon, chartElevationFt }
-                    : {}),
-                }
-              : p,
-          ),
-        };
-      }),
+    editRoutes(
+      routeId,
+      "Rename point",
+      mapRoute(routeId, (r) => ({
+        ...r,
+        points: r.points.map((p) =>
+          p.id === pointId
+            ? {
+                ...p,
+                name,
+                ...(coords
+                  ? { lat: coords.lat, lon: coords.lon, chartElevationFt }
+                  : {}),
+              }
+            : p,
+        ),
+      })),
+      currentFieldVisit(),
     );
   };
 
@@ -206,11 +253,7 @@ export const useMsnxImport = () => {
     const route = importedRoutes.find((r) => r.id === routeId);
     if (!route) return;
     const elevations = await fetchPointElevationsFt(route);
-    setImportedRoutes((prev) =>
-      prev.map((r) =>
-        r.id === routeId ? { ...r, elevations: { ...r.elevations, ...elevations } } : r,
-      ),
-    );
+    dispatch({ type: "quiet", routeId, change: (r) => ({ ...r, elevations: { ...r.elevations, ...elevations } }) });
     return elevations;
   };
 
@@ -219,20 +262,22 @@ export const useMsnxImport = () => {
     if (!route) return { error: "Route not found." };
     const { winds, amps, error } = await fetchForecastWinds(route);
     if (error) return { error };
-    setImportedRoutes((prev) =>
-      prev.map((r) =>
-        r.id === routeId ? { ...r, plan: mergeWindsIntoPlan(r.plan, amps, winds) } : r,
-      ),
-    );
+    dispatch({ type: "quiet", routeId, change: (r) => ({ ...r, plan: mergeWindsIntoPlan(r.plan, amps, winds) }) });
     return { winds };
   };
 
+  // The file's XML keeps the route: taking it off the list and putting it back changes nothing there.
   const removeRoute = (id) => {
-    setImportedRoutes((prev) => prev.filter((route) => route.id !== id));
+    editRoutes(id, "Delete route", (routes) => routes.filter((route) => route.id !== id));
+  };
+
+  /** Closes a mission, its history with it. Not something to undo. */
+  const closeMission = (fileId) => {
+    dispatch({ type: "removeSet", setKey: fileId });
   };
 
   const clearRoutes = () => {
-    setImportedRoutes([]);
+    dispatch({ type: "clear" });
     filesRef.current.clear();
   };
 
@@ -265,6 +310,10 @@ export const useMsnxImport = () => {
 
   return {
     importedRoutes,
+    missionHistory,
+    undoMission,
+    redoMission,
+    closeMission,
     importMsnxFile,
     updatePointPosition,
     insertPoint,

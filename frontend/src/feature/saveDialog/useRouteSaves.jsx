@@ -3,6 +3,7 @@ import { computeRoutePlan, defaultRoutePlan, planPoints } from "../msnxImport/ro
 import { savedFlots } from "../flot/flots";
 import { useToast } from "../ui/Toast";
 import SaveDialog, { nextFreeName } from "./SaveDialog";
+import { SKETCHES } from "../msnxImport/routeSketchReducer";
 
 /*
  * Saving route sets to the Library (docs/MENU_REDESIGN.md §4, screen SaveRoutes). A set is this
@@ -15,7 +16,7 @@ import SaveDialog, { nextFreeName } from "./SaveDialog";
  * opened): routes keep no dirty flag of their own. Hiding or showing a route is not a change.
  */
 
-export const SKETCHES = "sketches";
+export { SKETCHES };
 const PENDING = Symbol("pending");
 
 export const routesFingerprint = (routes, flots = []) => {

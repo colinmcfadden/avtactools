@@ -143,6 +143,8 @@ Exported files deliberately contain geometry only — after opening one in AMPS,
 
 **Save is on the thing you are working on.** The open LZ/PZ's card in the **LZ/PZ** panel has a **Save** button, and so does each route set in **Routes**. The first save asks for a name (a name already in your Library offers *Keep both* or *Replace*); every later save happens without asking and shows a short note at the bottom of the screen. **Ctrl S** (**⌘ S** on a Mac) saves whatever the dock is showing.
 
+**Undo and Redo** are in the top bar and on the map's tools on a phone, and on **Ctrl Z** and **Ctrl Shift Z** (**⌘ Z** and **⇧⌘ Z** on a Mac). They take back the last thing you did on the map, wherever you did it: moving or changing an object, a route or its plan, a boundary. An analysis and fetched winds are not taken back, and neither is anything someone else did in a Mission Pack. While you are drawing a route or a boundary, Ctrl Z removes the last point.
+
 - An LZ/PZ must be analyzed before it can be saved. Saving captures the target, boundary, analysis, everything placed on it and the doghouse edits. Threats and routes are not part of it.
 - **Close** (in an LZ/PZ's **⋯** menu) takes it out of this session; with unsaved changes it asks *Cancel / Don't save / Save*.
 
