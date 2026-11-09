@@ -162,7 +162,7 @@ fun ThreatsHost(
         dismissNote = viewModel::dismissNote, useSet = viewModel::useSet, renameSet = viewModel::renameSet, closeSet = viewModel::closeSet, browseLibrary = onBrowseLibrary,
     )
     ThreatsContent(state, actions, modifier, crosshairGrid)
-    state.editing?.let { ThreatFormDialog(it, actions, crosshairGrid, saves = state.saves) }
+    state.editing?.let { ThreatFormDialog(it, actions, crosshairGrid, saves = state.saves && state.pack == null, packName = state.pack?.name) }
 }
 
 // -- The panel ----------------------------------------------------------------------------------------------------------------------
@@ -177,33 +177,46 @@ fun ThreatsContent(state: ThreatsUiState, actions: ThreatsActions, modifier: Mod
     var confirmRemove by rememberSaveable { mutableStateOf<String?>(null) }
     var renaming by rememberSaveable { mutableStateOf<String?>(null) }
     Column(modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(Tokens.Spacing.sm.dp)) {
-        if (state.saves) SavedLine(actions.browseLibrary) else KeptNotice()
-        Row(Modifier.padding(top = Tokens.Spacing.xs.dp), horizontalArrangement = Arrangement.spacedBy(Tokens.Spacing.sm.dp)) {
-            PillButton("Add threat", onClick = actions.beginAdd, icon = EzpzIcons.addLocationAlt, modifier = Modifier.weight(1f))
-            PillButton("Import .ths", onClick = actions.importFile, icon = EzpzIcons.fileOpen, style = PillStyle.Tonal, modifier = Modifier.weight(1f))
+        val pack = state.pack
+        val locked = pack?.locked != null
+        when {
+            pack != null -> PackLine(pack)
+            state.saves -> SavedLine(actions.browseLibrary)
+            else -> KeptNotice()
         }
-        Text(
-            if (crosshairGrid != null) "Add threat puts one at the crosshair, $crosshairGrid." else "Add threat puts one at the crosshair.",
-            style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
+        if (!locked) {
+            Row(Modifier.padding(top = Tokens.Spacing.xs.dp), horizontalArrangement = Arrangement.spacedBy(Tokens.Spacing.sm.dp)) {
+                PillButton("Add threat", onClick = actions.beginAdd, icon = EzpzIcons.addLocationAlt, modifier = Modifier.weight(1f))
+                PillButton("Import .ths", onClick = actions.importFile, icon = EzpzIcons.fileOpen, style = PillStyle.Tonal, modifier = Modifier.weight(1f))
+            }
+            Text(
+                if (crosshairGrid != null) "Add threat puts one at the crosshair, $crosshairGrid." else "Add threat puts one at the crosshair.",
+                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
         state.error?.let { Banner(it, BannerKind.Error, actionLabel = "Dismiss", onAction = actions.dismissError) }
         state.note?.let { Banner(it, BannerKind.Info, actionLabel = "Dismiss", onAction = actions.dismissNote) }
         if (state.threats.isEmpty()) {
             Text(
-                if (state.saves) "No threats on the map. Add one at the crosshair, import an AMPS .ths file, or open a set from your Library." else "No threats on the map. Add one at the crosshair, or import an AMPS .ths file.",
+                when {
+                    locked -> "No threats on the map."
+                    pack != null -> "No threats on the map. Add one at the crosshair, or import an AMPS .ths file, and it is added to the pack."
+                    state.saves -> "No threats on the map. Add one at the crosshair, import an AMPS .ths file, or open a set from your Library."
+                    else -> "No threats on the map. Add one at the crosshair, or import an AMPS .ths file."
+                },
                 style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = Tokens.Spacing.sm.dp),
             )
         }
         if (state.sets.isNotEmpty()) {
             state.sets.forEach { set ->
                 key(set.id) {
-                    ThreatSetHeader(set, offerUse = state.sets.size > 1, actions, onRename = { renaming = set.id })
-                    set.rows.forEach { row -> key(row.id) { ThreatRow(row, actions, onRemove = { confirmRemove = row.id }) } }
+                    ThreatSetHeader(set, offerUse = state.sets.size > 1 && !locked, actions, onRename = { renaming = set.id }, inPack = pack != null, locked = locked)
+                    set.rows.forEach { row -> key(row.id) { ThreatRow(row, actions, onRemove = { confirmRemove = row.id }, locked = locked) } }
                 }
             }
         } else if (state.threats.isNotEmpty()) {
             SectionLabel("On the map · ${state.threats.size}", Modifier.padding(top = Tokens.Spacing.sm.dp))
-            state.threats.forEach { row -> ThreatRow(row, actions, onRemove = { confirmRemove = row.id }) }
+            state.threats.forEach { row -> ThreatRow(row, actions, onRemove = { confirmRemove = row.id }, locked = locked) }
         }
         if (state.threats.isNotEmpty()) {
             SectionLabel("Export", Modifier.padding(top = Tokens.Spacing.sm.dp))
@@ -214,30 +227,35 @@ fun ThreatsContent(state: ThreatsUiState, actions: ThreatsActions, modifier: Mod
             Row(Modifier.padding(top = Tokens.Spacing.xs.dp), horizontalArrangement = Arrangement.spacedBy(Tokens.Spacing.sm.dp)) {
                 Icon(painterResource(EzpzIcons.info), contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(16.dp))
                 Text(
-                    if (state.saves) {
-                        "The .ths file is built on this device. A terrain mask is worked out by the server and saved with its threat."
-                    } else {
-                        "The .ths file is built on this device. Showing a terrain mask sends a threat's position and radars to the server once. Nothing is kept."
+                    when {
+                        pack != null -> "The .ths file is built on this device. A terrain mask is worked out by the server and stays on this device."
+                        state.saves -> "The .ths file is built on this device. A terrain mask is worked out by the server and saved with its threat."
+                        else -> "The .ths file is built on this device. Showing a terrain mask sends a threat's position and radars to the server once. Nothing is kept."
                     },
                     style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
-            Box(Modifier.fillMaxWidth().padding(top = Tokens.Spacing.sm.dp), contentAlignment = Alignment.Center) {
-                TextButton(onClick = { confirmClear = true }, colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error)) {
-                    Icon(painterResource(EzpzIcons.deleteSweep), contentDescription = null, modifier = Modifier.size(20.dp))
-                    Spacer(Modifier.width(Tokens.Spacing.sm.dp))
-                    Text("Remove all threats")
+            if (!locked) {
+                Box(Modifier.fillMaxWidth().padding(top = Tokens.Spacing.sm.dp), contentAlignment = Alignment.Center) {
+                    TextButton(onClick = { confirmClear = true }, colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error)) {
+                        Icon(painterResource(EzpzIcons.deleteSweep), contentDescription = null, modifier = Modifier.size(20.dp))
+                        Spacer(Modifier.width(Tokens.Spacing.sm.dp))
+                        Text("Remove all threats")
+                    }
                 }
             }
         }
     }
+    if (confirmClear && state.pack?.locked != null) confirmClear = false
+    if (confirmRemove != null && state.pack?.locked != null) confirmRemove = null
+    if (renaming != null && state.pack?.locked != null) renaming = null
     if (confirmClear) {
         ConfirmDialog(
             title = "Remove all threats?",
-            text = if (state.saves) {
-                "${countOf(state.threats.size, "threat")} ${if (state.threats.size == 1) "comes" else "come"} off the map and out of the sets open now, which stay in your Library with nothing in them. This cannot be undone."
-            } else {
-                "${countOf(state.threats.size, "threat")} ${if (state.threats.size == 1) "comes" else "come"} off the map. They are not saved anywhere else, so they cannot be brought back."
+            text = when {
+                state.pack != null -> "${countOf(state.threats.size, "threat")} ${if (state.threats.size == 1) "comes" else "come"} off the map and out of ${state.pack.name}, for everyone. The sets stay, empty."
+                state.saves -> "${countOf(state.threats.size, "threat")} ${if (state.threats.size == 1) "comes" else "come"} off the map and out of the sets open now, which stay in your Library with nothing in them. This cannot be undone."
+                else -> "${countOf(state.threats.size, "threat")} ${if (state.threats.size == 1) "comes" else "come"} off the map. They are not saved anywhere else, so they cannot be brought back."
             },
             confirm = "Remove all",
             onConfirm = { confirmClear = false; actions.removeAll() },
@@ -251,7 +269,11 @@ fun ThreatsContent(state: ThreatsUiState, actions: ThreatsActions, modifier: Mod
         } else {
             ConfirmDialog(
                 title = "Remove ${row.name}?",
-                text = if (state.saves) "It comes off the map and out of its set. This cannot be undone." else "It comes off the map. It is not saved anywhere else, so it cannot be brought back.",
+                text = when {
+                    state.pack != null -> "It comes off the map and out of ${state.pack.name}, for everyone."
+                    state.saves -> "It comes off the map and out of its set. This cannot be undone."
+                    else -> "It comes off the map. It is not saved anywhere else, so it cannot be brought back."
+                },
                 confirm = "Remove",
                 onConfirm = { confirmRemove = null; actions.remove(id) },
                 onCancel = { confirmRemove = null },
@@ -279,9 +301,22 @@ private fun SavedLine(onBrowse: () -> Unit) {
     }
 }
 
-/** A saved set's line above its threats: its name, how it stands against the Library, and its menu. */
+/** Whose these threats are while a Mission Pack is open, the web's words, said once at the top of the panel. */
 @Composable
-private fun ThreatSetHeader(set: ThreatSetUi, offerUse: Boolean, actions: ThreatsActions, onRename: () -> Unit) {
+private fun PackLine(pack: ThreatsPackUi) {
+    Text(
+        buildAnnotatedString {
+            withStyle(SpanStyle(fontWeight = FontWeight.SemiBold)) { append("In ${pack.name}.") }
+            append(if (pack.locked != null) " This pack is read-only, so these threats can be looked at and exported, not changed." else " Everyone in the pack sees these threats and can change them.")
+            append(" Hiding one, and its terrain mask, stay on your device.")
+        },
+        style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant,
+    )
+}
+
+/** A saved set's line above its threats: its name, how it stands against the Library, and its menu. In a pack it goes nowhere near the Library, so nothing is said of that. */
+@Composable
+private fun ThreatSetHeader(set: ThreatSetUi, offerUse: Boolean, actions: ThreatsActions, onRename: () -> Unit, inPack: Boolean = false, locked: Boolean = false) {
     var menu by remember { mutableStateOf(false) }
     Column(Modifier.fillMaxWidth().padding(top = Tokens.Spacing.sm.dp)) {
         Row(Modifier.heightIn(min = 48.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -289,22 +324,24 @@ private fun ThreatSetHeader(set: ThreatSetUi, offerUse: Boolean, actions: Threat
                 "${set.name} · ${set.rows.size}", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant,
                 maxLines = 2, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f).semantics { heading() },
             )
-            when (set.standing) {
-                ThreatSetStanding.SAVED -> Unit                                                  // what is true of nearly every set: said only when it is not
-                ThreatSetStanding.SAVING -> StateChip("Saving", StatusTone.Neutral, Modifier.padding(start = Tokens.Spacing.sm.dp))
-                ThreatSetStanding.NOT_SAVED -> StateChip("Not saved", StatusTone.Error, Modifier.padding(start = Tokens.Spacing.sm.dp))
+            if (!inPack) {
+                when (set.standing) {
+                    ThreatSetStanding.SAVED -> Unit                                              // what is true of nearly every set: said only when it is not
+                    ThreatSetStanding.SAVING -> StateChip("Saving", StatusTone.Neutral, Modifier.padding(start = Tokens.Spacing.sm.dp))
+                    ThreatSetStanding.NOT_SAVED -> StateChip("Not saved", StatusTone.Error, Modifier.padding(start = Tokens.Spacing.sm.dp))
+                }
             }
             Box {
                 RowIcon(EzpzIcons.moreVert, "More for ${set.name}") { menu = true }
                 DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
                     if (offerUse && !set.active) DropdownMenuItem(text = { Text("Put new threats here") }, onClick = { menu = false; actions.useSet(set.id) })
-                    DropdownMenuItem(text = { Text("Rename…") }, onClick = { menu = false; onRename() })
-                    DropdownMenuItem(text = { Text("Close") }, onClick = { menu = false; actions.closeSet(set.id) })
+                    if (!locked) DropdownMenuItem(text = { Text("Rename…") }, onClick = { menu = false; onRename() })
+                    DropdownMenuItem(text = { Text(if (inPack) "Close here" else "Close") }, onClick = { menu = false; actions.closeSet(set.id) })
                 }
             }
         }
         if (offerUse && set.active) Text("New threats go here", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        if (set.standing == ThreatSetStanding.NOT_SAVED) {
+        if (set.standing == ThreatSetStanding.NOT_SAVED && !inPack) {
             Text("This set could not be saved. It stays here and is tried again with your next change.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
         }
         if (set.rows.isEmpty()) Text("No threats in this set.", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -372,7 +409,7 @@ internal fun ConfirmDialog(title: String, text: String, confirm: String, onConfi
  * held bar has the rest), if it is shown.
  */
 @Composable
-private fun ThreatRow(row: ThreatRowUi, actions: ThreatsActions, onRemove: () -> Unit) {
+private fun ThreatRow(row: ThreatRowUi, actions: ThreatsActions, onRemove: () -> Unit, locked: Boolean = false) {
     val dim = if (row.visible) Modifier else Modifier.alpha(0.6f)
     Column(
         Modifier.fillMaxWidth().heightIn(min = 72.dp)
@@ -391,11 +428,24 @@ private fun ThreatRow(row: ThreatRowUi, actions: ThreatsActions, onRemove: () ->
             }
             // The buttons side by side, as the design draws them: 48 dp each, no gap between.
             RowIcon(if (row.visible) EzpzIcons.visibility else EzpzIcons.visibilityOff, if (row.visible) "Hide ${row.name}" else "Show ${row.name}") { actions.toggleVisible(row.id) }
-            RowIcon(EzpzIcons.edit, "Edit ${row.name}") { actions.beginEdit(row.id) }
-            RowIcon(EzpzIcons.delete, "Remove ${row.name}", onClick = onRemove)
+            if (!locked) {
+                RowIcon(EzpzIcons.edit, "Edit ${row.name}") { actions.beginEdit(row.id) }
+                RowIcon(EzpzIcons.delete, "Remove ${row.name}", onClick = onRemove)
+            }
         }
         // Under the name, with the row's width to itself: beside three buttons on a 360 dp phone with large text it would lose its words.
         MaskChip(row.mask, dim.padding(start = 52.dp, top = 6.dp))
+        // A read-only pack's threat has no form to ask for its mask in; the mask is this person's own, so it is asked for here.
+        if (locked && row.visible) MaskAction(row, actions, Modifier.padding(start = 52.dp))
+    }
+}
+
+@Composable
+private fun MaskAction(row: ThreatRowUi, actions: ThreatsActions, modifier: Modifier = Modifier) {
+    when (row.mask) {
+        ThreatMaskUi.Status.WORKING -> Unit
+        ThreatMaskUi.Status.OFF, ThreatMaskUi.Status.FAILED -> TextAction("Show terrain mask", onClick = { actions.showMask(row.id) }, modifier = modifier)
+        else -> TextAction("Hide mask", onClick = { actions.hideMask(row.id) }, modifier = modifier)
     }
 }
 
@@ -442,11 +492,11 @@ private fun ThreatSymbol(sidc: String) {
  * moved, since Save is the only way it is kept.
  */
 @Composable
-fun ThreatFormDialog(editing: ThreatEditUi, actions: ThreatsActions, crosshairGrid: String?, saves: Boolean = false) {
+fun ThreatFormDialog(editing: ThreatEditUi, actions: ThreatsActions, crosshairGrid: String?, saves: Boolean = false, packName: String? = null) {
     var confirmLeave by rememberSaveable { mutableStateOf(false) }
     val leave: () -> Unit = { if (editing.changed) confirmLeave = true else actions.cancelEdit() }
     Dialog(onDismissRequest = leave, properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false)) {
-        ThreatFormContent(editing, actions, crosshairGrid, onClose = leave, saves = saves)
+        ThreatFormContent(editing, actions, crosshairGrid, onClose = leave, saves = saves, packName = packName)
     }
     if (confirmLeave) {
         AlertDialog(
@@ -466,7 +516,7 @@ fun ThreatFormDialog(editing: ThreatEditUi, actions: ThreatsActions, crosshairGr
  * scrolled.
  */
 @Composable
-fun ThreatFormContent(editing: ThreatEditUi, actions: ThreatsActions, crosshairGrid: String?, modifier: Modifier = Modifier, onClose: () -> Unit = actions.cancelEdit, saves: Boolean = false) {
+fun ThreatFormContent(editing: ThreatEditUi, actions: ThreatsActions, crosshairGrid: String?, modifier: Modifier = Modifier, onClose: () -> Unit = actions.cancelEdit, saves: Boolean = false, packName: String? = null) {
     val draft = editing.draft
     val title = if (editing.isNew) "Add threat" else "Edit threat"
     var confirmRemove by rememberSaveable { mutableStateOf(false) }
@@ -532,7 +582,11 @@ fun ThreatFormContent(editing: ThreatEditUi, actions: ThreatsActions, crosshairG
     if (confirmRemove) {
         ConfirmDialog(
             title = "Remove ${editing.startedDraft.name.ifBlank { "this threat" }}?",
-            text = if (saves) "It comes off the map and out of its set. This cannot be undone." else "It comes off the map. It cannot be brought back.",
+            text = when {
+                packName != null -> "It comes off the map and out of $packName, for everyone."
+                saves -> "It comes off the map and out of its set. This cannot be undone."
+                else -> "It comes off the map. It cannot be brought back."
+            },
             confirm = "Remove",
             onConfirm = { confirmRemove = false; actions.removeEditing() },
             onCancel = { confirmRemove = false },

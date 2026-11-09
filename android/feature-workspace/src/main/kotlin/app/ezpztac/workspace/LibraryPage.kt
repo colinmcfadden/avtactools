@@ -394,7 +394,7 @@ private fun LibraryRow(row: LibraryRowUi, actions: LibraryActions, busy: Boolean
             modifier = Modifier.fillMaxWidth().heightIn(min = 88.dp).padding(start = Tokens.Spacing.lg.dp, top = Tokens.Spacing.md.dp, end = Tokens.Spacing.xs.dp, bottom = Tokens.Spacing.md.dp),
             fixed = {
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    if (addingTo != null && row.tab != LibraryTab.THREATS) {
+                    if (addingTo != null) {
                         // An imported mission cannot go in a pack yet, nor a conflict copy before it is settled, nor (until a pack holds them) a set of threats.
                         val busyHere = adding == row.uuid
                         TextButton(
@@ -487,7 +487,7 @@ private fun RowMenu(row: LibraryRowUi, busy: Boolean, onRename: () -> Unit, onDe
                 leadingIcon = { Icon(painterResource(EzpzIcons.contentCopy), contentDescription = null) },
             )
             val addToPack = actions.addToPack
-            if (offerPack && addToPack != null && !row.isMission && row.conflictOf == null && row.tab != LibraryTab.THREATS) {
+            if (offerPack && addToPack != null && !row.isMission && row.conflictOf == null) {
                 DropdownMenuItem(
                     text = { Text("Add to Mission Pack…") }, onClick = { open = false; addToPack(row) },
                     leadingIcon = { Icon(painterResource(EzpzIcons.groups), contentDescription = null, tint = MaterialTheme.colorScheme.tertiary) },

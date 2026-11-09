@@ -34,7 +34,7 @@ from sqlalchemy.orm import Session
 import notify
 from models import (
     MissionPack, MissionPackEvent, MissionPackInvite, MissionPackItem, MissionPackMember, MissionPackSeen,
-    SavedLZ, SavedPointSet, SavedRoute, SurveyBook, Team, TeamMember, User, db,
+    SavedLZ, SavedPointSet, SavedRoute, SavedThreatSet, SurveyBook, Team, TeamMember, User, db,
 )
 
 ROLES = ('owner', 'editor', 'viewer')
@@ -52,7 +52,7 @@ MAX_DESCRIPTION = 2000
 MAX_SUMMARY = 300
 SYSTEM_ACTOR = 'EZ-PZ'
 
-LIBRARY_MODELS = {'lz': SavedLZ, 'route': SavedRoute, 'pointset': SavedPointSet}
+LIBRARY_MODELS = {'lz': SavedLZ, 'route': SavedRoute, 'pointset': SavedPointSet, 'threatset': SavedThreatSet}
 # Everything a pack holds, which goes when the pack does (a deleted pack keeps only its tombstone row).
 PACK_CONTENT = (MissionPackEvent, MissionPackItem, MissionPackInvite, MissionPackMember, MissionPackSeen)
 

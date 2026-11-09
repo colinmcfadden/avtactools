@@ -31,7 +31,7 @@ export const maskStillFits = (threat, mask) => Boolean(mask?.for) && canon(mask.
 
 export const wantsMask = (threat) => (threat.radars ?? []).some((radar) => radar.showMask);
 
-const readable = (threat) =>
+export const readableThreat = (threat) =>
   Boolean(threat) && typeof threat === "object" && typeof threat.lat === "number" && typeof threat.lon === "number" && Array.isArray(threat.radars)
   && threat.radars.every((radar) => radar && Array.isArray(radar.bands));
 
@@ -46,7 +46,7 @@ export const readDocument = (data, usedIds = new Set()) => {
   const threats = [];
   const unreadable = [];
   (Array.isArray(list) ? list : []).forEach((threat) => {
-    if (!readable(threat)) {
+    if (!readableThreat(threat)) {
       unreadable.push(threat);
       return;
     }

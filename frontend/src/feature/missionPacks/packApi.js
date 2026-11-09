@@ -43,7 +43,7 @@ export const markSeen = (uuid, seq) => api.put(`${pack(uuid)}/seen`, { seq }).th
 // -- Items ---------------------------------------------------------------------------
 
 /**
- * Copies one of the person's library records in. `source`: { kind: "lz"|"route"|"pointset", id } or
+ * Copies one of the person's library records in. `source`: { kind: "lz"|"route"|"pointset"|"threatset", id } or
  * { kind, client_uuid }. Pass `item` (the new item's uuid) so a retry returns the first copy.
  */
 export const copyIntoPack = (uuid, { source, item: itemUuid, name, summary } = {}) =>

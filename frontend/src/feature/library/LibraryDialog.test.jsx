@@ -77,7 +77,7 @@ describe("the Library", () => {
     expect(screen.queryByText(/Working with a team/)).toBeNull();
   });
 
-  it("has a Threats tab only for an account given its source, and no way to send a set to a pack yet", () => {
+  it("has a Threats tab only for an account given its source, and a set can go to a pack", () => {
     const { unmount } = show({});
     expect(screen.queryByRole("tab", { name: /Threats/ })).toBeNull();
     unmount();
@@ -88,6 +88,6 @@ describe("the Library", () => {
     expect(screen.getByText(/^1 threat · Updated/)).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "More actions for OP DK THREATS" }));
     expect(screen.getByRole("menuitem", { name: /Duplicate/ })).toBeInTheDocument();
-    expect(screen.queryByRole("menuitem", { name: /Add to Mission Pack/ })).toBeNull();
+    expect(screen.getByRole("menuitem", { name: /Add to Mission Pack/ })).toBeInTheDocument();
   });
 });

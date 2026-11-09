@@ -410,7 +410,11 @@ private fun ThreatFileRow(file: ThreatFileImport, actions: ImportsActions) {
                 style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
             Box(Modifier.padding(top = Tokens.Spacing.xs.dp)) {
-                if (file.saved) PlaceTag(EzpzIcons.collectionsBookmark, "Library", TagTone.LIBRARY) else PlaceTag(EzpzIcons.lock, "This device only", TagTone.DEVICE)
+                when {
+                    file.pack != null -> PlaceTag(EzpzIcons.groups, file.pack.orEmpty(), TagTone.LIBRARY)
+                    file.saved -> PlaceTag(EzpzIcons.collectionsBookmark, "Library", TagTone.LIBRARY)
+                    else -> PlaceTag(EzpzIcons.lock, "This device only", TagTone.DEVICE)
+                }
             }
         }
     }

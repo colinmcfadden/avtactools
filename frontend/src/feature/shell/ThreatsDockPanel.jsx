@@ -12,7 +12,8 @@ import "./shell.css";
 /*
  * The Threats panel of the dock (screen Threats). Threats are kept in named sets in the Library, written as
  * they change (AGENTS.md §2; useThreats), each open set a section of its own here, and the panel says where
- * they are first. Add, import, the list with each one's ranges and terrain mask, the exports, and Remove all.
+ * they are first. While a Mission Pack is open it shows the pack's sets instead (`pack`), which everyone in the
+ * pack can change unless it is read-only. Add, import, the list with each one's ranges and terrain mask, the exports, and Remove all.
  */
 
 const radarText = (threat) => {
@@ -47,12 +48,12 @@ const ThreatRow = ({ threat, onEdit, onRemove, onToggleVisibility }) => {
       <button type="button" className="ui-btn ui-btn--ghost ui-btn--30 ui-btn--square" aria-label={`${hidden ? "Show" : "Hide"} ${threat.name}`} aria-pressed={hidden} onClick={() => onToggleVisibility(threat.id)}>
         <Icon name={hidden ? "eyeOff" : "eye"} size={15} />
       </button>
-      <button type="button" className="ui-btn ui-btn--ghost ui-btn--30 ui-btn--square" aria-label={`Edit ${threat.name}`} onClick={() => onEdit(threat.id)}>
+      {onEdit && <button type="button" className="ui-btn ui-btn--ghost ui-btn--30 ui-btn--square" aria-label={`Edit ${threat.name}`} onClick={() => onEdit(threat.id)}>
         <Icon name="pencil" size={15} />
-      </button>
-      <button type="button" className="ui-btn ui-btn--ghost ui-btn--30 ui-btn--square" aria-label={`Remove ${threat.name}`} onClick={() => onRemove(threat.id)}>
+      </button>}
+      {onRemove && <button type="button" className="ui-btn ui-btn--ghost ui-btn--30 ui-btn--square" aria-label={`Remove ${threat.name}`} onClick={() => onRemove(threat.id)}>
         <Icon name="trash" size={15} />
-      </button>
+      </button>}
     </div>
   );
 };
@@ -72,6 +73,7 @@ const ThreatsDockPanel = ({
   activeId,
   saveStates = {},
   canSave = false,
+  pack = null,
   onAdd,
   onImport,
   onEdit,
@@ -89,13 +91,20 @@ const ThreatsDockPanel = ({
   const [renaming, setRenaming] = useState(null);
   const count = threats.length;
   const many = sets.length > 1;
+  const readOnly = Boolean(pack?.readOnly);
+  const keeps = canSave || Boolean(pack);
+  const canRename = pack ? !readOnly : canSave;
   return (
     <>
-      <PanelHead title="Threats" subtitle={`${count} on the map${canSave ? "" : " · this session only"}`} onCollapse={onCollapse} />
+      <PanelHead title="Threats" subtitle={`${count} on the map${keeps ? "" : " · this session only"}`} onCollapse={onCollapse} />
       <div className="shell-dock__body">
         <div className="shell-notice">
-          <Icon name={canSave ? "folder" : "lock"} size={15} />
-          {canSave ? (
+          <Icon name={pack ? "layers" : canSave ? "folder" : "lock"} size={15} />
+          {pack ? (
+            <div>
+              <b>In {pack.name}.</b> {readOnly ? "This pack is read-only, so these threats can be looked at and exported, not changed." : "Everyone in the pack sees these threats and can change them."} Hiding one, and its terrain mask, stay on your device.
+            </div>
+          ) : canSave ? (
             <div>
               <b>Saved as you work.</b> Threats are kept in your Library, and the sets open now come back when you next sign in.
             </div>
@@ -105,7 +114,7 @@ const ThreatsDockPanel = ({
             </div>
           )}
         </div>
-        <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
+        {!readOnly && <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
           <button type="button" className="ui-btn ui-btn--primary ui-btn--grow" onClick={onAdd}>
             <Icon name="plus" size={15} />
             <span>Add threat</span>
@@ -114,10 +123,10 @@ const ThreatsDockPanel = ({
             <Icon name="download" size={15} />
             <span>Import .ths</span>
           </button>
-        </div>
-        <div style={{ marginTop: 8, fontSize: 12, color: "var(--ff-text-muted)" }}>
+        </div>}
+        {!readOnly && <div style={{ marginTop: 8, fontSize: 12, color: "var(--ff-text-muted)" }}>
           Add threat puts one in the middle of the map. You can also right-click the map and choose Add threat here.
-        </div>
+        </div>}
 
         {sets.map((set) => (
           <div key={set.id} style={{ marginTop: 16 }}>
@@ -126,16 +135,16 @@ const ThreatsDockPanel = ({
               count={set.threats.length}
               action={
                 <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
-                  {canSave && saveChip(set, saveStates[set.id])}
-                  {many && set.id === activeId && <Chip tone="info" dot={false}>New threats go here</Chip>}
-                  {canSave && (
+                  {canSave && !pack && saveChip(set, saveStates[set.id])}
+                  {many && !readOnly && set.id === activeId && <Chip tone="info" dot={false}>New threats go here</Chip>}
+                  {keeps && (
                     <MoreMenu
                       label={`More actions for ${set.name}`}
                       size={30}
                       items={[
-                        { icon: "pencil", title: "Rename", onSelect: () => setRenaming(set) },
-                        { icon: "plus", title: "Put new threats here", onSelect: () => onMakeActive(set.id), hidden: !many || set.id === activeId },
-                        { icon: "x", title: "Close", text: "It stays in your Library", onSelect: () => onCloseSet(set.id) },
+                        { icon: "pencil", title: "Rename", onSelect: () => setRenaming(set), hidden: !canRename },
+                        { icon: "plus", title: "Put new threats here", onSelect: () => onMakeActive(set.id), hidden: readOnly || !many || set.id === activeId },
+                        { icon: "x", title: "Close", text: pack ? "It stays in the pack" : "It stays in your Library", onSelect: () => onCloseSet(set.id) },
                       ]}
                     />
                   )}
@@ -144,7 +153,7 @@ const ThreatsDockPanel = ({
             >
               <div className="shell-list">
                 {set.threats.map((threat) => (
-                  <ThreatRow key={threat.id} threat={threat} onEdit={onEdit} onRemove={onRemove} onToggleVisibility={onToggleVisibility} />
+                  <ThreatRow key={threat.id} threat={threat} onEdit={readOnly ? undefined : onEdit} onRemove={readOnly ? undefined : onRemove} onToggleVisibility={onToggleVisibility} />
                 ))}
               </div>
             </PanelSection>
@@ -171,9 +180,9 @@ const ThreatsDockPanel = ({
                 Building a file sends threat positions to the server once, to make the file. The file is not kept.
               </div>
             </div>
-            <div style={{ marginTop: 14, textAlign: "center" }}>
+            {!readOnly && <div style={{ marginTop: 14, textAlign: "center" }}>
               <button type="button" className="shell-danger-link" onClick={() => setConfirmAll(true)}>Remove all threats</button>
-            </div>
+            </div>}
           </>
         )}
       </div>
@@ -182,7 +191,7 @@ const ThreatsDockPanel = ({
           title={`Rename “${renaming.name}”`}
           initialName={renaming.name}
           confirmLabel="Rename"
-          hint="Press Enter to rename. It changes on every device you use."
+          hint={pack ? "Press Enter to rename. Everyone in the pack sees the new name." : "Press Enter to rename. It changes on every device you use."}
           onCancel={() => setRenaming(null)}
           onConfirm={(name) => {
             onRenameSet(renaming.id, name);
@@ -193,7 +202,7 @@ const ThreatsDockPanel = ({
       {confirmAll && (
         <ConfirmDialog
           title="Remove all threats?"
-          text={`${count} ${count === 1 ? "threat comes" : "threats come"} off the map${canSave ? " and out of the sets they are saved in. The sets stay, empty." : ", and cannot be brought back."}`}
+          text={`${count} ${count === 1 ? "threat comes" : "threats come"} off the map${pack ? ` and out of ${pack.name}, for everyone. The sets stay, empty.` : canSave ? " and out of the sets they are saved in. The sets stay, empty." : ", and cannot be brought back."}`}
           icon="trash"
           iconTone="danger"
           confirmLabel="Remove all"

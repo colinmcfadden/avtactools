@@ -221,6 +221,7 @@ class DtoFixtureTest {
     fun `a pack's item counts take briefs, and a server that does not count them says none`() {
         assertEquals(PackItemCounts(1, 2, 0, 0), strict.decodeFromString(PackItemCounts.serializer(), """{"lz": 1, "route": 2, "pointset": 0}"""))
         assertEquals(3, strict.decodeFromString(PackItemCounts.serializer(), """{"lz": 1, "route": 2, "pointset": 0, "brief": 3}""").brief)
+        assertEquals(4, strict.decodeFromString(PackItemCounts.serializer(), """{"lz": 1, "route": 2, "pointset": 0, "threatset": 4}""").threatset)
     }
 
     @Test

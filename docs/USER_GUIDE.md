@@ -160,18 +160,20 @@ The **Imports** panel lists what you have brought in, with where it lives; missi
 
 ### Mission Packs
 
-A Mission Pack is a shared space for one operation: everyone in it edits the same LZ/PZs, route sets and point sets, and sees each other's changes as they are made. Use the workspace switcher at the top left (it says **Library** until a pack is open).
+A Mission Pack is a shared space for one operation: everyone in it edits the same LZ/PZs, route sets, point sets and threats, and sees each other's changes as they are made. Use the workspace switcher at the top left (it says **Library** until a pack is open).
 
 - **New pack**: name it, say what it is for, and choose who can open it (just you, a team as editors or viewers, or particular people). People on your teams are found by name; anyone else gets an email.
-- **While a pack is open** the top bar turns violet and says whether everything has reached everyone. Anything you start goes into the pack: a new target, a sketched route, imported local points. There is no Save: the pack keeps every change. Your Library work is put aside meanwhile and comes back as you left it when you switch back.
+- **While a pack is open** the top bar turns violet and says whether everything has reached everyone. Anything you start goes into the pack: a new target, a sketched route, imported local points, a threat. There is no Save: the pack keeps every change. Your Library work is put aside meanwhile and comes back as you left it when you switch back.
 - **The Pack panel** lists what is in the pack and who changed it last; a violet dot marks what someone else changed since you looked. **History** is every change, newest first. An item copied from your Library says so, and offers **Update** when your original has changed.
-- **Members** (Invite, for the owner): add people, change roles, share with a team, resend or withdraw invitations. Everyone in a pack sees everything in it. Threats are never shared.
+- **Members** (Invite, for the owner): add people, change roles, share with a team, resend or withdraw invitations. Everyone in a pack sees everything in it, threats included.
 - **Finish pack** makes it read-only for everyone; the owner can reopen it. Anyone can still view, export and save copies to their Library.
 - **Manage teams** (bottom of the switcher): make a team, invite people by email, and set who manages it.
 
 ### Threats
 
-Threats have their own panel. They are kept in your Library as you work, with no Save to press, in named sets: the first threat starts a set called THREATS, and an imported `.ths` becomes a set named for its file. The sets you had open come back when you next sign in, on the web for now, terrain masks included. Several can be open at once: each is a section of the panel with its own **⋯** menu (rename, put new threats here, close), and closing one leaves it in the Library's **Threats** tab. Add one in the middle of the map (or right-click the map → **Add Threat Here**), import a `.ths`, and export them as a `.ths` for AMPS or a KMZ for ForeFlight, ATAK or Aero App. **Remove all threats** asks first; the sets stay, empty. If cloud save is off for your account, the panel says **Session only** and threats stay in that browser tab.
+Threats have their own panel. They are kept in your Library as you work, with no Save to press, in named sets: the first threat starts a set called THREATS, and an imported `.ths` becomes a set named for its file. The sets you had open come back when you next sign in, terrain masks included. Several can be open at once: each is a section of the panel with its own **⋯** menu (rename, put new threats here, close), and closing one leaves it in the Library's **Threats** tab. Add one in the middle of the map (or right-click the map → **Add Threat Here**), import a `.ths`, and export them as a `.ths` for AMPS or a KMZ for ForeFlight, ATAK or Aero App. **Remove all threats** asks first; the sets stay, empty. If cloud save is off for your account, the panel says **Session only** and threats stay in that browser tab.
+
+While a Mission Pack is open the threats on the map are the pack's, and anyone who can edit it can add, move or remove them; yours are put aside and come back when you leave it. Copy a set in from the Library's **Threats** tab. Whether you have hidden a threat stays yours, and a terrain mask is worked out on each person's own screen rather than sent to the others.
 
 ## 7. The unit badge
 

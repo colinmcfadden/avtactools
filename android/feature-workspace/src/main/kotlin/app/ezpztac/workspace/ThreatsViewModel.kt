@@ -5,8 +5,11 @@ import androidx.lifecycle.viewModelScope
 import app.ezpztac.data.ExportResult
 import app.ezpztac.data.ThreatSelection
 import app.ezpztac.data.MaskState
+import app.ezpztac.data.OpenPack
+import app.ezpztac.data.PackFacts
 import app.ezpztac.data.ThreatMasks
 import app.ezpztac.data.ThreatSetStanding
+import app.ezpztac.data.ThreatSetView
 import app.ezpztac.data.ThreatStore
 import app.ezpztac.data.ThreatTransfer
 import app.ezpztac.geo.MgrsConverter
@@ -37,7 +40,9 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.drop
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
@@ -128,12 +133,17 @@ data class ThreatSetUi(
     val active: Boolean,
 )
 
+/** The open Mission Pack, whose sets are the ones on the map. [locked] is why nothing in it can be changed, while it is read-only. */
+data class ThreatsPackUi(val name: String, val locked: String? = null)
+
 data class ThreatsUiState(
     val threats: List<ThreatRowUi> = emptyList(),
     /** The sets open now, for an account that can save threats. */
     val sets: List<ThreatSetUi> = emptyList(),
     /** The threats are saved sets in the person's Library, rather than this device's own picture. */
     val saves: Boolean = false,
+    /** Set while a Mission Pack is open: the sets here are its, and every member's. */
+    val pack: ThreatsPackUi? = null,
     val held: HeldThreatUi? = null,
     val editing: ThreatEditUi? = null,
     val exporting: Boolean = false,
@@ -152,6 +162,7 @@ class ThreatsViewModel @Inject constructor(
     private val transfer: ThreatTransfer,
     private val masks: ThreatMasks,
     private val conflicts: ConflictResolver,
+    private val pack: OpenPack = OpenPack.None,
 ) : ViewModel() {
     private data class Local(
         val editing: ThreatEditUi? = null,
@@ -182,15 +193,30 @@ class ThreatsViewModel @Inject constructor(
                 selection.clear()
             }
         }
+        // The pack turned read-only with a threat's form open: what was typed cannot go anywhere, and a reopen must not bring the form back by itself.
+        viewModelScope.launch {
+            pack.lock.collect { lock ->
+                if (lock != null && local.value.editing != null) {
+                    local.update { it.copy(editing = null) }
+                    _notices.tryEmit("${lock.stopped}: the threat was not changed.")
+                }
+            }
+        }
     }
 
-    private val setsNow = combine(store.sets, store.activeSet, store.saves) { sets, active, saves -> Triple(sets, active, saves) }
+    private class SetsNow(val sets: List<ThreatSetView>, val active: String?, val saves: Boolean, val pack: ThreatsPackUi?)
 
-    val state: StateFlow<ThreatsUiState> = combine(store.entries, selection.held, local, masks.states, setsNow) { entries, held, local, maskStates, (sets, active, saves) ->
+    private val packNow = pack.glance.map { glance -> glance?.let { ThreatsPackUi(it.name, it.lock?.reason) } }.distinctUntilChanged()
+
+    private val setsNow = combine(store.sets, store.activeSet, store.saves, packNow) { sets, active, saves, inPack -> SetsNow(sets, active, saves, inPack) }
+
+    val state: StateFlow<ThreatsUiState> = combine(store.entries, selection.held, local, masks.states, setsNow) { entries, held, local, maskStates, now ->
+        val (sets, active, saves) = Triple(now.sets, now.active, now.saves)
         ThreatsUiState(
             threats = entries.map { it.toRow(held, maskStates[it.id]) },
             sets = sets.map { set -> ThreatSetUi(set.id, set.name, set.standing, set.entries.map { it.toRow(held, maskStates[it.id]) }, set.id == active) },
             saves = saves,
+            pack = now.pack,
             held = entries.firstOrNull { it.id == held && it.visible }?.let { heldOf(it, maskStates[it.id]) },
             editing = local.editing?.let { e ->
                 e.copy(grid = gridOf(e.at), mask = e.id?.let { id -> entries.firstOrNull { it.id == id } }?.let { maskOf(it, maskStates[it.id]) })
@@ -199,12 +225,17 @@ class ThreatsViewModel @Inject constructor(
         )
     }.stateIn(viewModelScope, SharingStarted.Eagerly, ThreatsUiState())
 
+    // Why the threats on the map cannot be changed now: they are a read-only pack's. Read as the person acts, never a step behind.
+    private fun locked(): String? = pack.lockNow()?.reason
+
     fun beginAdd(at: LatLon?) {
+        if (pack.lockNow() != null) return say(PackFacts.NOTHING_NEW)
         if (at == null) return fail("Move the map to where the threat should go first.")
         local.update { it.copy(editing = ThreatEditUi(null, at, ThreatDraft.forNew(store.entries.value.size)), error = null, note = null) }
     }
 
     fun beginEdit(id: String) {
+        locked()?.let { return say(it) }
         val entry = store.entries.value.firstOrNull { it.id == id } ?: return
         if (entry.visible) selection.select(id)                                                   // a hidden threat is never held: the map does not draw it
         local.update { it.copy(editing = ThreatEditUi(id, LatLon(entry.threat.lat, entry.threat.lon), ThreatDraft.of(entry.threat)), error = null, note = null) }
@@ -238,6 +269,7 @@ class ThreatsViewModel @Inject constructor(
     /** Removes the threat the form is for, and closes the form (asked about first, by the screen). */
     fun removeEditing() {
         val id = local.value.editing?.id ?: return
+        if (locked() != null) return cancelEdit()
         remove(id)
         cancelEdit()
     }
@@ -248,6 +280,10 @@ class ThreatsViewModel @Inject constructor(
 
     fun saveEdit() {
         val editing = local.value.editing ?: return
+        locked()?.let {
+            cancelEdit()
+            return say(it)
+        }
         when (val checked = editing.draft.check(editing.at, editing.id?.let { id -> store.entries.value.firstOrNull { it.id == id }?.threat })) {
             is ThreatDraft.Checked.Refused -> local.update { it.copy(editing = it.editing?.copy(error = checked.message)) }       // said in the form, where the person is looking
             is ThreatDraft.Checked.Valid -> {
@@ -282,6 +318,7 @@ class ThreatsViewModel @Inject constructor(
     }
 
     fun moveToCrosshair(id: String, at: LatLon?) {
+        locked()?.let { return fail(it) }
         if (at == null) return fail("Move the map to the new position first.")
         if (store.move(id, at.lat, at.lon)) local.update { it.copy(error = null, note = "Threat moved to the map centre.") }
     }
@@ -290,12 +327,13 @@ class ThreatsViewModel @Inject constructor(
     fun nudge(id: String, northFt: Double, eastFt: Double) = move(id) { at -> GraphicEdits.offset(at, northFt / Units.METERS_TO_FEET, eastFt / Units.METERS_TO_FEET) }
 
     /** Puts a threat at a grid or coordinate the person typed. Null when it is moved, else the words for the field. */
-    fun moveToText(id: String, text: String): String? = when (val place = PlaceSearch.resolve(text)) {
+    fun moveToText(id: String, text: String): String? = locked() ?: when (val place = PlaceSearch.resolve(text)) {
         is PlaceResult.Found -> { move(id) { place.at }; null }
         is PlaceResult.NotUnderstood -> place.message
     }
 
     private fun move(id: String, to: (LatLon) -> LatLon) {
+        if (locked() != null) return
         val entry = store.entries.value.firstOrNull { it.id == id } ?: return
         val moved = to(LatLon(entry.threat.lat, entry.threat.lon))
         store.move(id, moved.lat, moved.lon)
@@ -303,6 +341,7 @@ class ThreatsViewModel @Inject constructor(
 
     /** Takes every threat off the map. Saved sets stay, with nothing in them; a device's own picture goes, here and in its file. */
     fun removeAll() {
+        locked()?.let { return fail(it) }
         selection.clear()
         cancelEdit()
         store.removeAll()
@@ -315,6 +354,7 @@ class ThreatsViewModel @Inject constructor(
 
     /** Names an open set. The screen refuses a blank name. */
     fun renameSet(id: String, name: String) {
+        locked()?.let { return fail(it) }
         store.rename(id, name)
     }
 
@@ -393,6 +433,7 @@ class ThreatsViewModel @Inject constructor(
     }
 
     fun remove(id: String) {
+        locked()?.let { return fail(it) }
         if (store.remove(id)) {
             if (selection.held.value == id) selection.clear()
             if (local.value.editing?.id == id) cancelEdit()
@@ -447,6 +488,11 @@ class ThreatsViewModel @Inject constructor(
     fun dismissNote() = local.update { it.copy(note = null) }
 
     private fun fail(message: String) = local.update { it.copy(error = message) }
+
+    // Said in the frame's toasts: what is asked from the map, or the held bar, is asked over another panel.
+    private fun say(message: String) {
+        _notices.tryEmit(message)
+    }
 
     private fun ThreatEntry.toRow(heldId: String?, mask: MaskState?) = ThreatRowUi(
         id = id, name = threat.name, sidc = threat.milstdId, symbol = symbolName(threat.milstdId), grid = gridOf(threat), ranges = reachOf(threat.radars),

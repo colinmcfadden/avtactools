@@ -220,7 +220,11 @@ private fun ReviewItem(item: ImportItemUi, actions: ImportReviewActions, enabled
                     name, { name = it; actions.setName(item.id, it) }, "Name", capitalization = KeyboardCapitalization.Characters, imeAction = ImeAction.Done,
                     onImeAction = { focus.clearFocus() }, enabled = enabled, modifier = Modifier.padding(top = 14.dp),
                 )
-                LockedPlace("Library", "A set of its own, on the map and synced with your account.")
+                if (item.pack != null) {
+                    LockedPlace(item.pack, "A set of its own in the pack, for everyone in it.")
+                } else {
+                    LockedPlace("Library", "A set of its own, on the map and synced with your account.")
+                }
             } else {
                 LockedPlace("This device only", "Threats are not saved to your account or shared yet.")
                 Note(EzpzIcons.encrypted, "Kept in an encrypted file on this device until you sign out.", top = Tokens.Spacing.sm.dp)

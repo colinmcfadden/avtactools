@@ -7,7 +7,9 @@ that moves the "where things stand" or "next" sections.
 
 **Threats saved (2026-11-08, `docs/ANDROID_SCREENS_PLAN.md`, *T*).** On `feat/android-saved-threats`: threats are named sets in the Library, autosaved and synced, several open at once, their terrain masks with them, there
 again after a sign-out or a restart (AGENTS.md §17, *Threats*; database version 5 forgets the sync cursor once). A picture on the device from before becomes a set at that account's first launch after the update. An account without `threats` or `cloud_save` keeps the
-sealed file as before. **To try first on a device:** a threat added, the app closed and opened, signed out and in; then the same set on a second device and on the web. **Next:** the mission-pack item kind `threatset` (web and server first, then `core-missionpacks`).
+sealed file as before. **To try first on a device:** a threat added, the app closed and opened, signed out and in; then the same set on a second device and on the web.
+
+**Threats in mission packs (2026-11-09, on `feat/pack-threats`).** A set of threats is a pack item of kind `threatset`, on the server, the web and Android: `PackThreats` and `ThreatPackKind` in core-missionpacks, `PackThreatSync` and `ThreatStore`'s pack mode in core-data, the Pack panel's Threats group, and the Threats panel and the import review while a pack is open (AGENTS.md §17, *Threats*, *In a mission pack*). Every test, lint and the debug build pass; none of it has run on a device. **To try first on a device:** a set copied into a pack, one threat moved on one device and seen on another and on the web; the same pack finished while a threat is being dragged; and leaving the pack to see the person's own sets come back. **The server of PR 163 must be live before an Android build with this reaches anyone.**
 
 **3D streamed from USGS (2026-10-26, `docs/DATA_ADMIN_AND_PREBUILT_3D_PLAN.md`).** Phase 0 is built: new tileset keys are an HMAC under
 `LIDAR_KEY_SECRET` (the same value on the API, staging's API and the build service, or they refuse to start), the tileset list is admins' only and a

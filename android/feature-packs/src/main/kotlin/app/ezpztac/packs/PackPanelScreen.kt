@@ -450,6 +450,7 @@ private fun kindIcon(kind: String): Int = when (kind) {
     "lz" -> EzpzIcons.flightLand
     "route" -> EzpzIcons.route
     "pointset" -> EzpzIcons.scatterPlot
+    "threatset" -> EzpzIcons.crisisAlert
     else -> EzpzIcons.description
 }
 

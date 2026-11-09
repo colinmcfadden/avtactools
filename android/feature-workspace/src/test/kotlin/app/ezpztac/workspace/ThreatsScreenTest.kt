@@ -78,6 +78,7 @@ class ThreatsScreenTest {
     private val one = ThreatSetUi("s1", "NORTH GA", ThreatSetStanding.SAVED, listOf(sa8), active = false)
     private val two = ThreatSetUi("s2", "SOUTH", ThreatSetStanding.NOT_SAVED, listOf(zsu), active = true)
     private val saving = ThreatsUiState(threats = listOf(sa8, zsu), sets = listOf(one, two), saves = true)
+    private val off = sa8.copy(mask = ThreatMaskUi.Status.OFF)
 
     @Test
     fun `saved threats say so, in place of the notice that they stay on the device, with the way to the rest`() {
@@ -300,5 +301,28 @@ class ThreatsScreenTest {
         val preset = app.ezpztac.model.SymbolPresets.threats.last()
         compose.onNodeWithText(preset.label).performClick()
         assertEquals(preset.sidc, r.drafts.last().milstdId)
+    }
+
+    @Test
+    fun `in a pack the panel says whose the threats are, and offers what any member may do`() {
+        show(ThreatsUiState(threats = listOf(off), sets = listOf(two.copy(rows = listOf(off))), saves = true, pack = ThreatsPackUi("OP DK")))
+        compose.onNodeWithText("Everyone in the pack sees these threats", substring = true).assertExists()
+        compose.onNodeWithText("Hiding one, and its terrain mask, stay on your device.", substring = true).assertExists()
+        compose.onNodeWithText("Not saved").assertDoesNotExist()                          // a pack's set goes nowhere near the Library
+        compose.onNodeWithText("Add threat").assertExists()
+        compose.onNodeWithContentDescription("Edit SA-8").assertExists()
+    }
+
+    @Test
+    fun `a read-only pack's threats can be looked at, hidden and masked and nothing else`() {
+        val r = show(ThreatsUiState(threats = listOf(off), sets = listOf(one.copy(rows = listOf(off))), saves = true, pack = ThreatsPackUi("OP DK", "OP DK is finished.")))
+        compose.onNodeWithText("This pack is read-only, so these threats can be looked at and exported, not changed.", substring = true).assertExists()
+        compose.onNodeWithText("Add threat").assertDoesNotExist()
+        compose.onNodeWithText("Import .ths").assertDoesNotExist()
+        compose.onNodeWithText("Remove all threats").assertDoesNotExist()
+        compose.onNodeWithContentDescription("Edit SA-8").assertDoesNotExist()
+        compose.onNodeWithContentDescription("Remove SA-8").assertDoesNotExist()
+        compose.onNodeWithText("Show terrain mask").performScrollTo().performClick()
+        assertEquals(listOf("showMask:t1"), r.log)
     }
 }
