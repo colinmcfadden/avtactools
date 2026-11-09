@@ -45,7 +45,7 @@ internal fun rememberChartLines(charts: VfrCharts, camera: CameraState?, size: I
             while (true) {
                 val at = now()
                 // MapLibre's zoom is the web's less one, and the words count in the web's.
-                lines = ChartWords.of(charts.live, charts.coverage, view, settled.center, settled.zoom + 1.0, at)
+                lines = ChartWords.of(charts.live, charts.coverage, view, settled.center, settled.zoom + 1.0, at, levelsFiner(density))
                 val next = ChartWords.nextExpiry(charts.live, charts.coverage, at) ?: awaitCancellation()
                 delay(next - at)
             }

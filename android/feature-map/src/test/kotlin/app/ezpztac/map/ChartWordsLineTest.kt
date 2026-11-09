@@ -3,6 +3,7 @@ package app.ezpztac.map
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -63,6 +64,25 @@ class ChartWordsLineTest {
         now = expiresAt
         compose.mainClock.advanceTimeBy(1100)
         compose.onNodeWithText("FAA Atlanta Sectional · Expired 23 Dec 2026 — not current").assertIsDisplayed()
+    }
+
+    @Test
+    fun `a dense screen names the chart it draws, a level finer`() {
+        val tac = atlanta.copy(title = "Atlanta TAC", tier = "tac", scale = 250_000.0, shownFrom = 11, nativeLevel = 11.58)
+        val both = VfrCharts(live, ChartCoverage("b", 5, listOf(atlanta, tac)))
+        val at = camera.copy(zoom = 10.0) // the web's 11: a 1× screen draws level 10, and a dense one 11, where the TAC starts
+        compose.setContent {
+            EzpzTheme(ThemeMode.Dark) {
+                Column {
+                    rememberChartLines(both, at, IntSize(1000, 2000), 1.0, now = { expiresAt - 1000 })?.let { ChartWordsLine(it) }
+                    rememberChartLines(both, at, IntSize(1000, 2000), 3.0, now = { expiresAt - 1000 })?.let { ChartWordsLine(it) }
+                }
+            }
+        }
+        compose.mainClock.advanceTimeBy(300)
+        compose.waitForIdle()
+        compose.onNodeWithText("FAA Atlanta Sectional, 29 Oct – 23 Dec 2026").assertIsDisplayed()
+        compose.onNodeWithText("FAA Atlanta TAC, 29 Oct – 23 Dec 2026").assertIsDisplayed()
     }
 
     private fun screen(styleId: String, built: VfrCharts = charts, mode: ThemeMode = ThemeMode.Dark, name: String? = null, at: CameraState = camera) {

@@ -242,7 +242,9 @@ async function showChartTiles() {
     // Its levels and bounds, from the build's own coverage.json (public, and never changed under its name).
     const coverage = await getJson(URLS.chartTiles(build) + "/coverage.json");
     if (asked !== tilesAsked || !$("chart-tiles").checked) return;
-    map.addSource("chart-tiles", { type: "raster", tiles: [URLS.chartTiles(build) + "/{z}/{x}/{y}.webp"], tileSize: 512,
+    // A tile holds 512 pixels: laid over 256 points on a 2× screen, as the map does (docs/VFR_CHARTS.md §8), so a build is judged as it will be seen.
+    const tileSize = window.devicePixelRatio >= Math.SQRT2 ? 256 : 512;
+    map.addSource("chart-tiles", { type: "raster", tiles: [URLS.chartTiles(build) + "/{z}/{x}/{y}.webp"], tileSize,
       minzoom: coverage.minLevel, maxzoom: coverage.maxLevel, bounds: coverage.bounds, attribution: "FAA VFR charts" });
     map.addLayer({ id: "chart-tiles", type: "raster", source: "chart-tiles" }, FIRST_OVERLAY);
     label.textContent = `(${build}, levels ${coverage.minLevel} to ${coverage.maxLevel})`;
