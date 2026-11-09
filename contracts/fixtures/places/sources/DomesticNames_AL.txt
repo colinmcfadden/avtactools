@@ -1,0 +1,6 @@
+﻿feature_id|feature_name|feature_class|state_name|state_numeric|county_name|county_numeric|map_name|date_created|date_edited|bgn_type|bgn_authority|bgn_date|prim_lat_dms|prim_long_dms|prim_lat_dec|prim_long_dec|source_lat_dms|source_long_dms|source_lat_dec|source_long_dec
+117016|Daleville|Populated Place|Alabama|01|Dale|045|Daleville|09/04/1980|06/07/2022||||311837N|0854247W|31.3101719|-85.7129908|||0.0|0.0
+140241|Mount Pleasant|Populated Place|Alabama|01|Randolph|111|Wedowee|12/01/2003|06/07/2022||||331845N|0852335W|33.3126162|-85.3930058|||0.0|0.0
+156751|Mount Pleasant|Populated Place|Alabama|01|Monroe|099|Chrysler|09/04/1980|06/07/2022||||312001N|0874145W|31.3335021|-87.695826|||0.0|0.0
+160171|Mount Pleasant|Populated Place|Alabama|01|Cleburne|029|Heflin|09/04/1980|06/07/2022||||334427N|0853031W|33.7409374|-85.5085683|||0.0|0.0
+2512217|Fort Novosel|Military|Alabama|01|Dale|045|Ozark|11/17/2008|08/22/2025||||312401N|0854445W|31.4003524|-85.745913|||0.0|0.0
