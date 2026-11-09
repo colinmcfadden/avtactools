@@ -1,7 +1,7 @@
 openapi: 3.0.3
 info:
   title: EZ/PZ API (the parts the native apps call)
-  version: 1.3.0
+  version: 2.0.0
   description: |
     The contract between the Flask API and the web and native clients. It holds
     the routes the apps call, one at a time as each arrives; a route missing from
@@ -1099,6 +1099,159 @@ paths:
           $ref: "#/components/responses/SimpleError"
         "409":
           $ref: "#/components/responses/BriefConflict"
+
+  /api/threatsets:
+    get:
+      operationId: listThreatSets
+      summary: The caller's saved sets of threats (summaries, without deleted ones)
+      description: |
+        Threats kept in the Library. Every `/api/threatsets` route needs the `threats` entitlement and answers 403
+        `feature_disabled` without it; a create or an edit needs `cloud_save` too.
+      security:
+        - bearer: []
+      responses:
+        "200":
+          description: Summaries, newest edit first.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/ThreatSetSummary"
+    post:
+      operationId: createThreatSet
+      summary: Save a set of threats
+      description: |
+        As `POST /api/lz`: send `client_uuid`, a UUID the device chose, so a retry after a lost response returns the
+        first record (200) instead of making a second (201). `data` is `{version, threats}`; the server reads only how many
+        threats it lists. A set may have none. A body over 5 MB is answered 413 `too_large`.
+      security:
+        - bearer: []
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name, data]
+              properties:
+                name: { type: string, minLength: 1, maxLength: 100 }
+                data: { description: "`{version: 1, threats: [...]}`. Each threat may carry its terrain mask.", type: object, required: [threats] }
+                client_uuid: { type: string }
+      responses:
+        "201":
+          description: Created.
+          headers:
+            ETag: { $ref: "#/components/headers/ETag" }
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ThreatSetSummary"
+        "200":
+          description: A record with this `client_uuid` already existed; here it is.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ThreatSetSummary"
+        "400":
+          $ref: "#/components/responses/SimpleError"
+        "413":
+          description: "`too_large`: more than 5 MB."
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SimpleError" }
+
+  /api/threatsets/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema: { type: integer }
+    get:
+      operationId: getThreatSet
+      summary: One saved set of threats, with its document
+      security:
+        - bearer: []
+      responses:
+        "200":
+          description: The record.
+          headers:
+            ETag: { $ref: "#/components/headers/ETag" }
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ThreatSetFull"
+        "404":
+          $ref: "#/components/responses/SimpleError"
+    put:
+      operationId: updateThreatSet
+      summary: Edit a saved set of threats
+      description: |
+        As `PUT /api/lz/{id}`: send `If-Match: "<revision>"`; a server that has moved on overwrites nothing and answers
+        409 with its copy. Without `If-Match` the last writer wins. A retry with the same `Idempotency-Key` is answered,
+        not refused. Only what is sent changes.
+      security:
+        - bearer: []
+      parameters:
+        - $ref: "#/components/parameters/IfMatch"
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name: { type: string, minLength: 1, maxLength: 100 }
+                data: { type: object }
+      responses:
+        "200":
+          description: Saved (or recognised as a retry, which answers the whole record).
+          headers:
+            ETag: { $ref: "#/components/headers/ETag" }
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ThreatSetSummary"
+        "400":
+          $ref: "#/components/responses/SimpleError"
+        "413":
+          description: "`too_large`: more than 5 MB."
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SimpleError" }
+        "404":
+          $ref: "#/components/responses/SimpleError"
+        "409":
+          $ref: "#/components/responses/ThreatSetConflict"
+    delete:
+      operationId: deleteThreatSet
+      summary: Delete a saved set of threats
+      description: |
+        Leaves a tombstone, with the content gone, so devices learn of the deletion through `/api/sync/changes`.
+        Deleting twice is not an error. A stale `If-Match` is a 409 and deletes nothing.
+      security:
+        - bearer: []
+      parameters:
+        - $ref: "#/components/parameters/IfMatch"
+        - $ref: "#/components/parameters/IdempotencyKey"
+      responses:
+        "200":
+          description: Deleted.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [status]
+                properties:
+                  status: { type: string, enum: [deleted] }
+                  revision: { type: integer }
+        "404":
+          $ref: "#/components/responses/SimpleError"
+        "409":
+          $ref: "#/components/responses/ThreatSetConflict"
 
   /api/brief/pdf:
     post:
@@ -3178,6 +3331,23 @@ components:
               server:
                 $ref: "#/components/schemas/BriefFull"
 
+    ThreatSetConflict:
+      description: |
+        The set of threats changed on the server since the revision the edit was based on.
+        Nothing was overwritten; `server` is the current copy.
+      headers:
+        ETag: { $ref: "#/components/headers/ETag" }
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [error, code, server]
+            properties:
+              error: { type: string }
+              code: { type: string, enum: [revision_conflict] }
+              server:
+                $ref: "#/components/schemas/ThreatSetFull"
+
     AircraftConflict:
       description: |
         The profile changed on the server since the revision the edit was based on.
@@ -3533,6 +3703,31 @@ components:
         revision: { type: integer, minimum: 1 }
         data: { type: object, description: "The brief document (docs/MISSION_BRIEF.md §2.2)." }
 
+    ThreatSetSummary:
+      type: object
+      required: [id, name, threat_count, created_at, updated_at, client_uuid, revision]
+      properties:
+        id: { type: integer }
+        name: { type: string }
+        threat_count: { type: integer, minimum: 0 }
+        created_at: { type: string }
+        updated_at: { type: string }
+        client_uuid: { type: string, description: "The record's identity: the device's own if it sent one." }
+        revision: { type: integer, minimum: 1, description: Bumped by every change. }
+
+    ThreatSetFull:
+      type: object
+      required: [id, name, threat_count, created_at, updated_at, client_uuid, revision, data]
+      properties:
+        id: { type: integer }
+        name: { type: string }
+        threat_count: { type: integer, minimum: 0 }
+        created_at: { type: string }
+        updated_at: { type: string }
+        client_uuid: { type: string }
+        revision: { type: integer, minimum: 1 }
+        data: { type: object, description: "`{version: 1, threats: [...]}`. Each threat may carry its terrain mask." }
+
     WeatherReport:
       type: object
       required: [station_id, name, temp_c, dewp_c, wind_spd_kts, wind_dir, wind_gust_kts, vis_sm, pressure, flight_category, raw_metar, distance_miles, notams]
@@ -3648,12 +3843,12 @@ components:
       required: [type, id, client_uuid, revision, deleted, name, seq, data]
       description: |
         One changed record. `type` says which collection: `lz`, `route`, `pointset`,
-        `aircraft` (the caller's own profiles; the master list does not sync) or `brief`.
+        `aircraft` (the caller's own profiles; the master list does not sync), `brief` or `threatset`.
         A device passes over a `type` it does not know, which a newer server may add.
         A tombstone has `deleted: true`, an empty `name` and empty `data`. A route also
         has `kind`, `file_name` and `has_file`; fetch the mission file separately.
       properties:
-        type: { type: string, enum: [lz, route, pointset, aircraft, brief] }
+        type: { type: string, enum: [lz, route, pointset, aircraft, brief, threatset] }
         id: { type: integer }
         client_uuid: { type: string }
         revision: { type: integer, minimum: 1 }
@@ -4114,6 +4309,7 @@ components:
         lz: { type: integer, minimum: 0 }
         route: { type: integer, minimum: 0 }
         pointset: { type: integer, minimum: 0 }
+        threatset: { type: integer, minimum: 0 }
 
     PackMember:
       type: object
@@ -4140,7 +4336,7 @@ components:
       required: [uuid, kind, name, revision, seq, created_by, updated_by, created_at, updated_at, source]
       properties:
         uuid: { type: string }
-        kind: { type: string, enum: [lz, route, pointset, brief] }
+        kind: { type: string, enum: [lz, route, pointset, brief, threatset] }
         name: { type: string }
         revision: { type: integer, minimum: 1, description: Bumped by every applied operation. }
         seq: { type: integer, minimum: 0, description: The event that last changed it. }
@@ -4159,7 +4355,7 @@ components:
           description: Where a copy from someone's library came from. Null for an item made in the pack.
           required: [kind, uuid, revision, original, original_updated_at, pack_changes, last_pack_change]
           properties:
-            kind: { type: string, enum: [lz, route, pointset] }
+            kind: { type: string, enum: [lz, route, pointset, threatset] }
             uuid:
               type: string
               nullable: true
@@ -4296,7 +4492,7 @@ components:
       additionalProperties: false
       required: [kind, id, client_uuid, name, revision]
       properties:
-        kind: { type: string, enum: [lz, route, pointset, brief] }
+        kind: { type: string, enum: [lz, route, pointset, brief, threatset] }
         id: { type: integer }
         client_uuid: { type: string }
         name: { type: string }

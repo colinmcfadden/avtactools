@@ -13,7 +13,7 @@ except ImportError:
 
 from database_url import database_uri, is_postgres
 from models import (
-    AccountToken, AircraftProfile, LoginEvent, LzSurveyRevision, SavedBrief, SavedLZ, SavedPointSet, SavedRoute, SurveyBook, User,
+    AccountToken, AircraftProfile, LoginEvent, LzSurveyRevision, SavedBrief, SavedLZ, SavedPointSet, SavedRoute, SavedThreatSet, SurveyBook, User,
     db,
 )
 from affiliation_gate import enforce_affiliation_gate
@@ -41,6 +41,7 @@ from routes.lz_routes import lz_bp
 from routes.brief_routes import brief_bp
 from routes.saved_routes import saved_routes_bp
 from routes.point_sets import point_sets_bp
+from routes.threat_set_routes import threat_set_bp
 from routes.threat_routes import threat_bp
 from routes.route_share_routes import route_share_bp
 from routes.aircraft_routes import aircraft_bp
@@ -130,6 +131,7 @@ app.register_blueprint(lz_bp)
 app.register_blueprint(brief_bp)
 app.register_blueprint(saved_routes_bp)
 app.register_blueprint(point_sets_bp)
+app.register_blueprint(threat_set_bp)
 app.register_blueprint(threat_bp)
 app.register_blueprint(route_share_bp)
 app.register_blueprint(aircraft_bp)
@@ -247,7 +249,7 @@ with app.app_context():
     # Saved records (and a user's own aircraft profiles) gained the sync columns (client_uuid, revision, deleted_at,
     # change_seq, last_idem_key). The unique index that stops a retried create
     # duplicating has to be added by hand: create_all never alters an existing table.
-    for _model in (SavedLZ, SavedRoute, SavedPointSet, SavedBrief, AircraftProfile):
+    for _model in (SavedLZ, SavedRoute, SavedPointSet, SavedBrief, SavedThreatSet, AircraftProfile):
         sync_table_columns(db, _model)
         if not ensure_unique_index(
             db, _model, ('user_id', 'client_uuid'), f'ux_{_model.__tablename__}_user_client_uuid'

@@ -32,7 +32,7 @@ from datetime import datetime
 from flask import jsonify
 from sqlalchemy import select, update
 
-from models import AircraftProfile, SavedBrief, SavedLZ, SavedPointSet, SavedRoute, SyncCounter, db
+from models import AircraftProfile, SavedBrief, SavedLZ, SavedPointSet, SavedRoute, SavedThreatSet, SyncCounter, db
 
 IF_MATCH_ANY = '*'
 INVALID = object()
@@ -171,6 +171,7 @@ _KINDS = (
     ('pointset', SavedPointSet),
     ('aircraft', AircraftProfile),
     ('brief', SavedBrief),
+    ('threatset', SavedThreatSet),
 )
 
 
@@ -239,6 +240,8 @@ def _change(kind, record):
                     data=record.route_data)
     elif kind == 'brief':
         body['data'] = record.brief_data
+    elif kind == 'threatset':
+        body['data'] = record.threat_data
     else:
         body['data'] = record.points_data
     return body

@@ -148,13 +148,13 @@ Exported files deliberately contain geometry only — after opening one in AMPS,
 - An LZ/PZ must be analyzed before it can be saved. Saving captures the target, boundary, analysis, everything placed on it and the doghouse edits. Threats and routes are not part of it.
 - **Close** (in an LZ/PZ's **⋯** menu) takes it out of this session; with unsaved changes it asks *Cancel / Don't save / Save*.
 
-**The Library** (top bar) is everything you have saved, in three tabs: LZ/PZ, Routes and Local points. Search, sort, and **Open** one to add it to this session (one already open says *Open in session*). Its **⋯** menu renames, duplicates or deletes it; deleting asks first, because it is gone from every device. The LZ/PZ panel also lists the three most recent LZ/PZs with a quick **Open**.
+**The Library** (top bar) is everything you have saved, in tabs: LZ/PZ, Routes, Local points and Threats. Search, sort, and **Open** one to add it to this session (one already open says *Open in session*). Its **⋯** menu renames, duplicates or deletes it; deleting asks first, because it is gone from every device. The LZ/PZ panel also lists the three most recent LZ/PZs with a quick **Open**.
 
 Your account menu (your name, top right) holds **Sign out**, and for admins a link to the admin dashboard.
 
 ### Importing files
 
-**Import** in the top bar takes AMPS mission files (`.msnx`), local points (`.LPS`) and threats (`.ths`). You can also drop files anywhere on the map. EZ-PZ works out what each file is from its content, then shows what it found and asks where each should live: local points and missions can be saved to your Library or kept in this session; threats always stay in this session. Anything it cannot read is listed with the reason and left out.
+**Import** in the top bar takes AMPS mission files (`.msnx`), local points (`.LPS`) and threats (`.ths`). You can also drop files anywhere on the map. EZ-PZ works out what each file is from its content, then shows what it found and asks where each should live: local points and missions can be saved to your Library or kept in this session; a threat file becomes a set of threats in your Library. Anything it cannot read is listed with the reason and left out.
 
 The **Imports** panel lists what you have brought in, with where it lives; mission files and threat files link to the panel where they are edited.
 
@@ -171,7 +171,7 @@ A Mission Pack is a shared space for one operation: everyone in it edits the sam
 
 ### Threats
 
-Threats have their own panel. They stay in this browser tab only: they are never saved to your account. Add one in the middle of the map (or right-click the map → **Add Threat Here**), import a `.ths`, and export them as a `.ths` for AMPS or a KMZ for ForeFlight, ATAK or Aero App. **Remove all threats** asks first, because they cannot be brought back.
+Threats have their own panel. They are kept in your Library as you work, with no Save to press, in named sets: the first threat starts a set called THREATS, and an imported `.ths` becomes a set named for its file. The sets you had open come back when you next sign in, on the web for now, terrain masks included. Several can be open at once: each is a section of the panel with its own **⋯** menu (rename, put new threats here, close), and closing one leaves it in the Library's **Threats** tab. Add one in the middle of the map (or right-click the map → **Add Threat Here**), import a `.ths`, and export them as a `.ths` for AMPS or a KMZ for ForeFlight, ATAK or Aero App. **Remove all threats** asks first; the sets stay, empty. If cloud save is off for your account, the panel says **Session only** and threats stay in that browser tab.
 
 ## 7. The unit badge
 
