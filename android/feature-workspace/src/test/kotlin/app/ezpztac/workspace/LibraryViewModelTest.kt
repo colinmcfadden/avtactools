@@ -5,16 +5,23 @@ import app.ezpztac.data.DiagramSession
 import app.ezpztac.data.ImportOutcome
 import app.ezpztac.data.InMemoryOpenDiagramStore
 import app.ezpztac.data.InMemoryOpenRouteSetStore
+import app.ezpztac.data.InMemoryOpenThreatSetStore
 import app.ezpztac.data.OpenDiagrams
 import app.ezpztac.data.OpenRouteSets
+import app.ezpztac.data.OpenThreatSets
 import app.ezpztac.data.PointSetRepository
 import app.ezpztac.data.PointSetView
 import app.ezpztac.data.PointSetViewStore
 import app.ezpztac.data.PointSetViews
 import app.ezpztac.data.RouteRepository
 import app.ezpztac.data.RouteSession
+import app.ezpztac.data.ThreatPicture
+import app.ezpztac.data.ThreatSetRepository
+import app.ezpztac.data.ThreatStore
+import app.ezpztac.data.ThreatVault
 import app.ezpztac.model.DiagramTarget
 import app.ezpztac.model.RouteSets
+import app.ezpztac.model.Threat
 import app.ezpztac.sync.Device
 import app.ezpztac.sync.FakeServer
 import app.ezpztac.sync.FilePart
@@ -24,8 +31,10 @@ import app.ezpztac.sync.RecordKind
 import app.ezpztac.sync.RecordingScheduler
 import app.ezpztac.sync.SyncStatus
 import app.ezpztac.testing.Fixtures
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.TestScope
@@ -62,6 +71,12 @@ class LibraryViewModelTest {
         override fun save(views: Map<String, PointSetView>) { kept = views }
     }
 
+    private object NoVault : ThreatVault {
+        override fun load(): ThreatPicture? = null
+        override fun save(picture: ThreatPicture) = Unit
+        override fun wipe() = Unit
+    }
+
     private class Rig(scope: TestScope) {
         val device = Device("A", FakeServer())
         val store = device.store as InMemorySyncStore
@@ -73,7 +88,10 @@ class LibraryViewModelTest {
         val views = PointSetViews(Memory())
         val openDiagrams = OpenDiagrams(InMemoryOpenDiagramStore())
         val openRouteSets = OpenRouteSets(InMemoryOpenRouteSetStore())
-        val model = LibraryViewModel(diagrams, routes, points, diagramSession, routeSession, openDiagrams, openRouteSets, views)
+        val threatSets = ThreatSetRepository(device.repository, store, RecordingScheduler())
+        val openThreatSets = OpenThreatSets(InMemoryOpenThreatSetStore())
+        val threats = ThreatStore(NoVault, CoroutineScope(SupervisorJob() + StandardTestDispatcher(scope.testScheduler)), StandardTestDispatcher(scope.testScheduler), threatSets, openThreatSets)
+        val model = LibraryViewModel(diagrams, routes, points, diagramSession, routeSession, openDiagrams, openRouteSets, views, threatSets, threats)
         val said = mutableListOf<String>()
         val state get() = model.state.value
 
@@ -91,6 +109,33 @@ class LibraryViewModelTest {
     private val lps = Fixtures.bytes("sqlite/local-points.lps")
 
     @Test
+    fun `the threats tab lists the saved sets, says which are on the map, and duplicates one with what was last changed`() = runTest(dispatcher) {
+        val r = rig()
+        r.threats.attach("7", saves = true); advanceUntilIdle()
+        r.threats.addAsSet(listOf(Threat("SA-8", "SHGPEWRR------", 34.75, -84.05, "", "SOF", radars = emptyList())), "NORTH GA"); advanceUntilIdle()
+        r.model.showTab(LibraryTab.THREATS); advanceUntilIdle()
+
+        var row = r.state.rows.single()
+        assertEquals(LibraryTab.THREATS, row.tab)
+        assertEquals("NORTH GA", row.name)
+        assertEquals("1 threat", row.detail)
+        assertTrue(row.inSession)
+        assertEquals(1, r.state.counts[LibraryTab.THREATS])
+
+        val id = r.threats.sets.value.single().id
+        r.threats.close(id); advanceUntilIdle()
+        assertFalse(r.state.rows.single().inSession)
+
+        r.threats.open(id); advanceUntilIdle()
+        r.threats.add(Threat("SA-6", "SHGPEWRR------", 34.5, -84.5, "", "SOF", radars = emptyList()))                  // not yet saved, when the copy is asked for
+        row = r.state.rows.single()
+        r.model.duplicate(row); advanceUntilIdle()
+        val copy = r.state.rows.first { it.name == "NORTH GA 2" }
+        assertEquals("2 threats", copy.detail)
+        assertFalse(copy.inSession)
+    }
+
+    @Test
     fun `each tab lists its kind, counted whatever the search, with what each is and when it changed`() = runTest(dispatcher) {
         val r = rig()
         r.diagrams.create(DiagramTarget(34.783817, -84.08219, "16S GD 66993 52949"), "LZ HAWK")
@@ -98,7 +143,7 @@ class LibraryViewModelTest {
         r.device.repository.create(RecordKind.MISSION, "GOAT", RouteSets.missionSummary(emptyList()), uuid = "m1", file = FilePart("GOAT_SUCKER.msnx", byteArrayOf(1, 2, 3)))
         r.points.import(lps, "NORTH GA.LPS")
         advanceUntilIdle()
-        assertEquals(mapOf(LibraryTab.LZ to 1, LibraryTab.ROUTES to 2, LibraryTab.POINTS to 1), r.state.counts)
+        assertEquals(mapOf(LibraryTab.LZ to 1, LibraryTab.ROUTES to 2, LibraryTab.POINTS to 1, LibraryTab.THREATS to 0), r.state.counts)
         val lz = r.state.rows.single()
         assertEquals("16S GD 66993 52949", lz.grid)
         assertTrue(lz.updated!!.startsWith("Updated "))

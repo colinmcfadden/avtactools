@@ -44,6 +44,7 @@ class ImportReviewTest {
 
     private val points = ImportItemUi.Points(1, "NORTH_GA_POINTS.LPS", "82 KB", 1234, "NORTH GA POINTS", ImportPlace.LIBRARY)
     private val threats = ImportItemUi.Threats(2, "THREATS_OCT.ths", "12 KB", 7)
+    private val savedThreats = ImportItemUi.Threats(2, "THREATS_OCT.ths", "12 KB", 7, "THREATS_OCT", saved = true)
     private val mission = ImportItemUi.Mission(3, "GOAT_SUCKER.msnx", "1.5 MB", routes = 2, namedPoints = 91, aircraft = "UH-60L")
     private val notes = ImportItemUi.Problem(4, "notes.docx", "EZ/PZ opens AMPS local points (.LPS), threat (.ths) and mission (.msnx) files. This is none of them.")
     private val all = IncomingUiState(listOf(points, threats, mission, notes))
@@ -63,6 +64,15 @@ class ImportReviewTest {
         compose.onNodeWithText("Planned for the UH-60L in AMPS.", substring = true).performScrollTo().assertIsDisplayed()
         compose.onNodeWithText("Not imported.", substring = true).performScrollTo().assertIsDisplayed()
         compose.onNodeWithText("2 to Library · 1 stays on this device").assertIsDisplayed()
+    }
+
+    @Test
+    fun `threats saved to the account are named and go to the Library, not this device`() {
+        show(IncomingUiState(listOf(savedThreats)))
+        compose.onNodeWithContentDescription("Goes to Library").assertIsDisplayed()
+        compose.onNodeWithText("Name").performTextInput("X")
+        assertEquals(listOf("name:2:XTHREATS_OCT"), log)
+        compose.onNodeWithText("1 to Library").assertIsDisplayed()
     }
 
     @Test

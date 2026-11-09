@@ -88,7 +88,7 @@ public class FakeServer : SyncApi {
         RecordKind.MISSION -> JsonObject(mapOf("id" to JsonPrimitive(r.serverId), "name" to JsonPrimitive(r.name), "kind" to JsonPrimitive("mission"),
             "client_uuid" to JsonPrimitive(r.uuid), "revision" to JsonPrimitive(r.revision), "route_data" to r.data,
             "has_file" to JsonPrimitive(r.file != null), "file_name" to JsonPrimitive(r.fileName)))
-        RecordKind.BRIEF -> JsonObject(mapOf("id" to JsonPrimitive(r.serverId), "name" to JsonPrimitive(r.name), "client_uuid" to JsonPrimitive(r.uuid),
+        RecordKind.BRIEF, RecordKind.THREAT_SET -> JsonObject(mapOf("id" to JsonPrimitive(r.serverId), "name" to JsonPrimitive(r.name), "client_uuid" to JsonPrimitive(r.uuid),
             "revision" to JsonPrimitive(r.revision), "data" to r.data, "updated_at" to JsonPrimitive(updatedAt(r.seq))))
     }
 
@@ -102,6 +102,7 @@ public class FakeServer : SyncApi {
         if (existing != null) { lose(); return Remote(existing.serverId, existing.revision, created = false) }
         // The real server refuses a mission with no file (400).
         if (record.kind == RecordKind.MISSION && file == null) throw ApiException(400, null, "Mission saves require the msnx file")
+        refuseIfNoThreats(record)
         val r = Rec(nextId++, record.kind, record.uuid, 1, record.name, record.data, false, ++seq, key, file?.bytes, file?.name)
         records += r
         lose()
@@ -115,10 +116,16 @@ public class FakeServer : SyncApi {
         val r = find(record.kind, record.serverId!!)?.takeUnless { it.deleted } ?: throw ApiException(404, null, "Not found")
         if (r.lastKey == key) { lose(); return Remote(r.serverId, r.revision, false) }              // the same write again
         if (baseRevision != r.revision) throw conflict(r)
+        refuseIfNoThreats(record)
         r.name = record.name; r.data = record.data; r.revision++; r.seq = ++seq; r.lastKey = key
         if (file != null) { r.file = file.bytes; r.fileName = file.name }
         lose()
         return Remote(r.serverId, r.revision, false)
+    }
+
+    /** The real server refuses a set of threats whose document has no list of them (400 `invalid_data`). */
+    private fun refuseIfNoThreats(record: LocalRecord) {
+        if (record.kind == RecordKind.THREAT_SET && record.data["threats"] !is JsonArray) throw ApiException(400, "invalid_data", "data must be an object with a list of threats.")
     }
 
     override suspend fun delete(record: LocalRecord, baseRevision: Int?, key: String) {
@@ -138,7 +145,7 @@ public class FakeServer : SyncApi {
             SyncChange(
                 type = when (it.kind) {
                     RecordKind.LZ -> "lz"; RecordKind.AIRCRAFT -> "aircraft"; RecordKind.ROUTE, RecordKind.MISSION -> "route"; RecordKind.POINT_SET -> "pointset"
-                    RecordKind.BRIEF -> "brief"
+                    RecordKind.BRIEF -> "brief"; RecordKind.THREAT_SET -> "threatset"
                 },
                 id = it.serverId, clientUuid = it.uuid, revision = it.revision, deleted = it.deleted, name = it.name,
                 kind = when (it.kind) { RecordKind.ROUTE -> "sketch"; RecordKind.MISSION -> "mission"; else -> null },

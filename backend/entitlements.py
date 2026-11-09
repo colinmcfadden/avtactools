@@ -30,7 +30,7 @@ FEATURES = (
     ("routes", "Routes", "Sketch and plan routes"),
     ("msnx_import", "Import .msnx", "Import AMPS mission files"),
     ("threats", "Threats", "Threat planning and masks"),
-    ("cloud_save", "Cloud save", "Save/load LZs, routes, and point sets"),
+    ("cloud_save", "Cloud save", "Save/load LZs, routes, point sets and threats"),
     ("exports", "Exports", "Export LZ cards, MSNX, ForeFlight, KMZ, .ths"),
     (
         "aircraft_profiles",

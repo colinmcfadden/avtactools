@@ -14,7 +14,7 @@ contracts/
 ├─ fixtures/        golden inputs and expected outputs, one JSON file per domain
 │  ├─ mgrs/         forward.json, inverse.json      reference: PyGeodesy; grid.json: the web
 │  ├─ coords/       parse.json, reading.json        reference: the web app (coordParse.js; targetReading.js, the target field)
-│  ├─ planning/     aircraft.json, route.json, summary.json, graphics.json   reference: the web app
+│  ├─ planning/     aircraft.json, route.json, summary.json, graphics.json, backstops.json   reference: the web app
 │  ├─ workspace/    diagram.json, ops.json, doghouses.json   reference: the web app
 │  ├─ routes/       sketch.json, winds.json, handoff.json   reference: the web app (sketchOps, routeWinds, foreflight.js)
 │  ├─ formats/      number_text.json                reference: the web app (JavaScript's `String(n)`)
@@ -23,12 +23,12 @@ contracts/
 │  ├─ msnx/         template.msnx, parse.json, ...  reference: the web app
 │  ├─ sqlite/       .LPS / .ths files + tables.json reference: SQLite itself (Python's sqlite3)
 │  ├─ localpoints/  parse.json                      reference: the web app
-│  ├─ threats/      parse.json, export.json         reference: the web app (read), the backend (write)
+│  ├─ threats/      parse.json, export.json, sets.json   reference: the web app (read, the saved document), the backend (write)
 │  ├─ brief/        compile.json (reference: the web, feature/brief/compile.js), light.json (reference: Skyfield, scripts/light_fixtures.py),
 │  │                sandtable.json (reference: the web, feature/brief/sandtableSteps.js, read from compile.json's models),
 │  │                sandtable-fit.json (reference: the web's fitInsets, and Leaflet's own flyToBounds framing),
 │  │                strip-grid.json (reference: the web, feature/brief/stripGrid.js over mgrsGrid.js, the strips' MGRS grid)
-│  ├─ packs/        ops.json, ops-brief.json, diff.json, edit.json, shared.json, describe.json, session.json, session-brief.json, settings.json, history.json
+│  ├─ packs/        ops.json, ops-brief.json, ops-threatset.json, threats.json, diff.json, edit.json, shared.json, describe.json, session.json, session-brief.json, settings.json, history.json
 │  │                reference: the web app (feature/missionPacks/)
 │  ├─ charts/       coverage.json   reference: the VFR chart build (backend/charts/build.py's coverage, over the committed outlines)
 │  ├─ viewer3d/     routeScene.json, compass.json, terrain.json, lidarFlow.json, lidarFlowStream.json, scene.json   reference: the web app (feature/viewer3d/)
@@ -59,6 +59,7 @@ reference is.
 | `coords/parse.json` | `frontend/src/contracts/webFixtures.test.js` | — | `core-geo` |
 | `coords/reading.json` | `frontend/src/contracts/webFixtures.test.js` | — | `core-geo` (`PlaceSearch.read`, `nearestFirst`, `formatLatLong`) |
 | `planning/*.json` | `frontend/src/contracts/webFixtures.test.js` | — | `core-planning` (`summary.json`: `LzSummary`; `graphics.json`: `PlanningGraphics`) |
+| `planning/backstops.json` | `frontend/src/contracts/backstopFixtures.test.js` | — | not ported yet: Android carries a backstop and does not draw one |
 | `workspace/diagram.json` | `frontend/src/contracts/webFixtures.test.js` | — | `core-model` |
 | `brief/compile.json` | `frontend/src/contracts/briefCompileFixtures.test.js` | `backend/tests/test_brief_pdf.py` (prints its first model) | `core-brief` (`CompileBrief`: every case, strictly: null kept apart from absent, numbers in JavaScript's digits, keys in JavaScript's order, the strips' numbers and the slope calls too; `CompileFixtureTest`) |
 | `brief/light.json` | `frontend/src/contracts/briefLightFixtures.test.js` | — (reference: Skyfield, `scripts/light_fixtures.py`) | `core-brief` (`Light`, within the file's tolerances; `LightFixtureTest`) |
@@ -82,8 +83,11 @@ reference is.
 | `network/priority.json` | `frontend/src/contracts/networkFixtures.test.js` | — | `core-network` |
 | `places/*` | — (the web asks the server) | `backend/tests/test_places.py` (`PlaceFixtureTests`: `contracts/scripts/place_fixtures.py check`) | not yet (P3 of `docs/PLACE_SEARCH.md`: Android's search over `places.sqlite` must answer every case of `queries.json`, in order) |
 | `threats/export.json` | — | `backend/tests/test_contract_fixtures.py` (the rows the exporter writes) | `core-formats` (`ThsExport`) |
+| `threats/sets.json` | `frontend/src/contracts/threatSetFixtures.test.js` | — | `core-model` (`ThreatSets`: what is made of a saved set of threats and what is written back) |
 | `packs/ops.json` | `frontend/src/contracts/packOpsFixtures.test.js` | `backend/tests/test_pack_ops.py` (the server applies every mission-pack edit with it) | `core-missionpacks` (`PackOps`: every case, strictly: status, reason, null kept apart from absent, keys in JavaScript's order; `PackOpsFixtureTest`) |
 | `packs/ops-brief.json` | `frontend/src/contracts/packOpsFixtures.test.js` | `backend/tests/test_pack_ops.py` | `core-missionpacks` (`PackOpsFixtureTest`, its cases beside `ops.json`'s, as strictly) |
+| `packs/ops-threatset.json` | `frontend/src/contracts/packOpsFixtures.test.js` | `backend/tests/test_pack_ops.py` | `core-missionpacks` (`PackOpsFixtureTest`, its cases beside `ops.json`'s, as strictly) |
+| `packs/threats.json` | `frontend/src/contracts/packThreatsFixtures.test.js` | — | `core-missionpacks` (`PackThreatsFixtureTest`): a set as the pack holds it, what of it is each person's own, the history's sentence |
 | `packs/session-brief.json` | `frontend/src/contracts/packSessionFixtures.test.js` | — | `core-missionpacks` (`PackSessionFixtureTest`, every scenario as `session.json`'s are played): brief edits taken in a read-only pack, sent in batches of their own, kept when the pack turns read-only |
 | `packs/diff.json` | `frontend/src/contracts/packDiffFixtures.test.js` | — | `core-missionpacks` (`PackDiff`: the operations an editor's change is sent as, every case strictly and in order, each rebuilt with `PackOps`, and every `sameData` pair; the `webBug` cases and pairs are not copied and have tests of the right behaviour; `PackDiffFixtureTest`) |
 | `packs/shared.json`, `packs/describe.json`, `packs/edit.json` | `frontend/src/contracts/packSharedFixtures.test.js` | — | `core-missionpacks` (`PackLz`, `PackRoutes`, `PackPoints`, `PackSentences`, `PackEdit`: what is each person's own, the history's sentences and new items' names, how one edit is put together; every case, the `webBug` ones not copied and tested for the right behaviour; `PackSharedFixtureTest`, `PackDescribeFixtureTest`, `PackEditFixtureTest`) |
@@ -154,6 +158,8 @@ sync is held to these files:
 |---|---|---|
 | `ops.json` | What one operation does to a pack's items (the server applies it the same way) | `packOps.js` |
 | `ops-brief.json` | The same, for the `brief` kind | `packOps.js` |
+| `ops-threatset.json` | The same, for the `threatset` kind | `packOps.js` |
+| `threats.json` | A set of threats in a pack: its shared part, an item read for the map, the history's sentence, a new set's operation | `packThreats.js` |
 | `session-brief.json` | `session.json`'s rules for brief edits: taken in a read-only pack, their own batches, kept when the pack turns read-only | `packSession.js` |
 | `diff.json` | The operations an editor's change to an item is sent as, in order | `packDiff.js` |
 | `edit.json` | One change as sent: the rename, the operations that bring an old item to today's shape, the change, one sentence on each | `packEdit.js` (`composeEdit`, from `usePackItemSync`) |

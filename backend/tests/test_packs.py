@@ -18,7 +18,7 @@ from auth_rate_limit import clear_rate_limits  # noqa: E402
 from entitlements import resolve_features  # noqa: E402
 from models import (  # noqa: E402
     MissionPack, MissionPackEvent, MissionPackInvite, MissionPackItem, MissionPackMember, MissionPackSeen,
-    SavedBrief, SavedLZ, Team, TeamMember, User, db,
+    SavedBrief, SavedLZ, SavedThreatSet, Team, TeamMember, User, db,
 )
 from openapi_check import check_response, load_spec  # noqa: E402
 from routes.admin_routes import admin_bp  # noqa: E402
@@ -28,6 +28,7 @@ from routes.point_sets import point_sets_bp  # noqa: E402
 from routes.saved_routes import saved_routes_bp  # noqa: E402
 from routes.sync_routes import sync_bp  # noqa: E402
 from routes.team_routes import team_bp  # noqa: E402
+from routes.threat_set_routes import threat_set_bp  # noqa: E402
 
 LZ_DATA = {
     'schemaVersion': 2, 'id': 'd-1', 'name': 'LZ HAWK', 'status': 'analyzed',
@@ -59,7 +60,7 @@ def pack_state(pack_uuid):
 
 
 class PackCase(NativeAuthCase):
-    extra_blueprints = (lz_bp, saved_routes_bp, point_sets_bp, pack_bp, team_bp)
+    extra_blueprints = (lz_bp, saved_routes_bp, point_sets_bp, threat_set_bp, pack_bp, team_bp)
 
     def setUp(self):
         super().setUp()
@@ -934,6 +935,118 @@ class BriefItemTests(PackCase):
     def test_a_copy_of_the_pack_carries_its_brief(self):
         copy = self.ok(self.call(self.alex, 'post', f'/api/packs/{self.uuid}/duplicate'), 201)
         self.assertEqual(self.item(self.pack(copy['uuid'], who=self.alex), 'br-1')['kind'], 'brief')
+
+
+THREAT_SET_DATA = {'version': 1, 'threats': [
+    {'id': 't-1', 'name': 'SA-6', 'milstdId': 'SHAPMFG--------', 'lat': 34.5, 'lon': -84.1, 'radars': []},
+    {'id': 't-2', 'name': 'SA-8', 'milstdId': 'SHAPMFG--------', 'lat': 34.6, 'lon': -84.2, 'radars': []},
+]}
+
+
+def copied(data, item):
+    """A set of threats as the pack keeps a copy of it: each threat's id its own to the item."""
+    return {**data, 'threats': [{**threat, 'id': f'{item}.{threat["id"]}'} for threat in data['threats']]}
+
+
+class ThreatSetItemTests(PackCase):
+    """A set of threats in a pack is an item like any, copied in from the Library and back out, every member editing it."""
+
+    def setUp(self):
+        super().setUp()
+        self.uuid = self.new_pack()['uuid']
+        self.member(self.uuid, self.sam)
+        self.mine = self.ok(self.call(self.colin, 'post', '/api/threatsets',
+                                      json={'name': 'AIR DEFENCE', 'data': THREAT_SET_DATA}), 201)
+
+    def turn_threats_off(self, who):
+        with self.app.app_context():
+            db.session.get(User, who['id']).features = {'mission_packs': True, 'threats': False}
+            db.session.commit()
+
+    def copy_in(self, who=None, **body):
+        return self.call(who or self.colin, 'post', f'/api/packs/{self.uuid}/items',
+                         json={'source': {'kind': 'threatset', 'id': self.mine['id']}, **body})
+
+    def test_a_set_of_threats_is_copied_in_and_remembers_where_it_came_from(self):
+        body = self.ok(self.copy_in(item='ts-1'), 201)
+        self.assertEqual(check_response(load_spec(), '/api/packs/{uuid}/items', 'post', 201, body), [])
+        item = body['item']
+        self.assertEqual((item['kind'], item['name'], item['data']), ('threatset', 'AIR DEFENCE', copied(THREAT_SET_DATA, 'ts-1')))
+        self.assertEqual((item['source']['kind'], item['source']['original']), ('threatset', 'same'))
+        self.assertEqual(body['event']['summary'], 'Colin added "AIR DEFENCE" (copied from their library).')
+
+    def test_two_copies_of_a_set_do_not_share_their_threats(self):
+        # Everything finds a threat by id across every set open at once: the same id twice would move both.
+        one = self.ok(self.copy_in(item='ts-1'), 201)['item']['data']['threats']
+        two = self.ok(self.copy_in(item='ts-2'), 201)['item']['data']['threats']
+        self.assertFalse({t['id'] for t in one} & {t['id'] for t in two})
+
+    def test_an_update_from_the_original_lands_on_the_same_threats(self):
+        self.ok(self.copy_in(item='ts-1'), 201)
+        before = [t['id'] for t in self.item(self.pack(self.uuid), 'ts-1')['data']['threats']]
+        changed = {'version': 1, 'threats': [{**t, 'name': 'MOVED'} for t in THREAT_SET_DATA['threats']]}
+        self.ok(self.call(self.colin, 'put', f'/api/threatsets/{self.mine["id"]}', json={'data': changed}))
+        self.ok(self.call(self.colin, 'post', f'/api/packs/{self.uuid}/items/ts-1/update-from-original'))
+        self.assertEqual([t['id'] for t in self.item(self.pack(self.uuid), 'ts-1')['data']['threats']], before)
+
+    def test_a_copy_of_a_copy_does_not_grow_its_ids(self):
+        self.ok(self.copy_in(item='ts-1'), 201)
+        saved = self.ok(self.call(self.colin, 'post', f'/api/packs/{self.uuid}/items/ts-1/library', json={'name': 'BACK'}), 201)
+        again = self.ok(self.call(self.colin, 'post', f'/api/packs/{self.uuid}/items',
+                                  json={'item': 'ts-2', 'source': {'kind': 'threatset', 'id': saved['id']}}), 201)
+        self.assertEqual([t['id'] for t in again['item']['data']['threats']], ['ts-2.t-1', 'ts-2.t-2'])
+
+    def test_a_copy_needs_the_threats_feature(self):
+        self.turn_threats_off(self.colin)
+        refused = self.copy_in(item='ts-1')
+        self.assertEqual((refused.status_code, refused.get_json()['code']), (403, 'feature_disabled'))
+
+    def test_every_member_edits_it_and_the_original_is_untouched(self):
+        self.ok(self.copy_in(item='ts-1'), 201)
+        moved = self.op('patch', 'ts-1', path=['threats', {'id': 'ts-1.t-1'}], value={'lat': 34.55, 'lon': -84.15})
+        self.ok(self.send(self.uuid, moved, who=self.sam))
+        self.assertEqual(self.item(self.pack(self.uuid), 'ts-1')['data']['threats'][0]['lat'], 34.55)
+        original = self.ok(self.call(self.colin, 'get', f'/api/threatsets/{self.mine["id"]}'))
+        self.assertEqual((original['data'], original['revision']), (THREAT_SET_DATA, 1))
+
+    def test_a_copy_is_updated_from_its_original(self):
+        self.ok(self.copy_in(item='ts-1'), 201)
+        changed = {'version': 1, 'threats': THREAT_SET_DATA['threats'][:1]}
+        self.ok(self.call(self.colin, 'put', f'/api/threatsets/{self.mine["id"]}', json={'data': changed}))
+        self.assertEqual(self.item(self.pack(self.uuid), 'ts-1')['source']['original'], 'changed')
+        self.ok(self.call(self.colin, 'post', f'/api/packs/{self.uuid}/items/ts-1/update-from-original'))
+        item = self.item(self.pack(self.uuid), 'ts-1')
+        self.assertEqual((item['data'], item['source']['original']), (copied(changed, 'ts-1'), 'same'))
+
+    def test_any_member_saves_it_to_their_own_library(self):
+        self.ok(self.copy_in(item='ts-1'), 201)
+        path = f'/api/packs/{self.uuid}/items/ts-1/library'
+        saved = self.ok(self.call(self.sam, 'post', path, json={'name': 'MY THREATS'}), 201)
+        self.assertEqual(check_response(load_spec(), '/api/packs/{uuid}/items/{item}/library', 'post', 201, saved), [])
+        self.assertEqual((saved['kind'], saved['name'], saved['revision']), ('threatset', 'MY THREATS', 1))
+        with self.app.app_context():
+            record = db.session.get(SavedThreatSet, saved['id'])
+            self.assertEqual((record.user_id, record.threat_data, record.threat_count), (self.sam['id'], copied(THREAT_SET_DATA, 'ts-1'), 2))
+        self.turn_threats_off(self.sam)
+        refused = self.call(self.sam, 'post', path)
+        self.assertEqual((refused.status_code, refused.get_json()['code']), (403, 'feature_disabled'))
+
+    def test_a_set_with_no_list_of_threats_cannot_go_to_the_library(self):
+        self.ok(self.send(self.uuid, self.op('item.create', 'ts-2', kind='threatset', name='ODD', data={'version': 1})))
+        refused = self.call(self.colin, 'post', f'/api/packs/{self.uuid}/items/ts-2/library')
+        self.assertEqual((refused.status_code, refused.get_json()['code']), (400, 'unreadable_source'))
+
+    def test_a_finished_pack_takes_no_edit_to_it(self):
+        self.ok(self.copy_in(item='ts-1'), 201)
+        self.ok(self.call(self.colin, 'post', f'/api/packs/{self.uuid}/finish'))
+        response = self.send(self.uuid, self.op('remove', 'ts-1', path=['threats', {'id': 't-1'}]))
+        self.assertEqual(response.status_code, 423)
+
+    def test_a_list_of_packs_counts_them(self):
+        self.ok(self.copy_in(item='ts-1'), 201)
+        rows = self.ok(self.call(self.colin, 'get', '/api/packs'))
+        rows = rows['packs'] if isinstance(rows, dict) else rows
+        self.assertEqual(next(p for p in rows if p['uuid'] == self.uuid)['item_counts']['threatset'], 1)
 
 
 class LostAnswerTests(PackCase):
@@ -2002,7 +2115,7 @@ class SeenTests(PackCase):
                           self.op('item.create', 'lz-2', kind='lz', name='LZ CROW', data=LZ_DATA),
                           self.op('item.delete', 'lz-2')))
         [summary] = self.ok(self.call(self.colin, 'get', '/api/packs'))['packs']
-        self.assertEqual(summary['item_counts'], {'lz': 1, 'route': 1, 'pointset': 1})
+        self.assertEqual(summary['item_counts'], {'lz': 1, 'route': 1, 'pointset': 1, 'threatset': 0})
         self.assertEqual(summary['item_count'], 3)
 
 

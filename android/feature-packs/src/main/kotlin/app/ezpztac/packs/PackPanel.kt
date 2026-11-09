@@ -176,13 +176,13 @@ data class PackPanelUi(
         } else if (readOnly) {
             "This pack is empty."
         } else {
-            "Nothing in this pack yet. Set a target or sketch a route while the pack is open, and it goes into the pack."
+            "Nothing in this pack yet. Set a target, sketch a route or add a threat while the pack is open, and it goes into the pack."
         }
 }
 
 /** The Pack panel's words, the web's (PackPanel.jsx, usePackWorkspace.jsx, time.js), with times in the person's zone. */
 object PackPanelWords {
-    private val GROUPS = listOf("lz" to "LZ/PZ", "route" to "Routes", "pointset" to "Point sets")
+    private val GROUPS = listOf("lz" to "LZ/PZ", "route" to "Routes", "pointset" to "Point sets", "threatset" to "Threats")
     private val ROLE_WORDS = mapOf("owner" to "the owner", "editor" to "an editor", "viewer" to "a viewer")
 
     // Why the server did not apply an edit (pack_ops.py).
@@ -203,6 +203,7 @@ object PackPanelWords {
         "closed" to "no pack is open",
         "empty_point_set" to "a point set needs at least one point",
         "mission_brief_off" to "mission briefs are not turned on for your account",
+        "threats_off" to "saved threats are not turned on for your account",
         "paused" to "sending to the pack is paused for now",
         "missing" to "it is no longer in the pack",
     )
@@ -267,6 +268,7 @@ object PackPanelWords {
     fun detail(item: PackItemView): String? = when (item.kind) {
         "route" -> ((item.data as? JsonObject)?.get("routes") as? JsonArray)?.size.let { count(it ?: 0, "route", "routes") }
         "pointset" -> count((item.data as? JsonArray)?.size ?: 0, "point", "points")
+        "threatset" -> count(((item.data as? JsonObject)?.get("threats") as? JsonArray)?.size ?: 0, "threat", "threats")
         else -> null
     }
 
@@ -278,6 +280,7 @@ object PackPanelWords {
         "lz" -> "LZ/PZ"
         "route" -> "route set"
         "pointset" -> "point set"
+        "threatset" -> "threat set"
         else -> "item"
     }
 

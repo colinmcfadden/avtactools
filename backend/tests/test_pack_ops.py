@@ -1,4 +1,4 @@
-"""The server applies pack operations exactly as the web's reference does (contracts/fixtures/packs/ops.json, ops-brief.json)."""
+"""The server applies pack operations exactly as the web's reference does (contracts/fixtures/packs/ops.json, ops-brief.json, ops-threatset.json)."""
 
 import copy
 import json
@@ -13,8 +13,8 @@ if str(BACKEND_DIR) not in sys.path:
 import pack_ops  # noqa: E402
 
 FIXTURES = Path(__file__).resolve().parents[2] / 'contracts' / 'fixtures' / 'packs'
-# ops-brief.json holds the brief kind's cases, apart from ops.json until every client has ported the kind.
-CASES = [case for name in ('ops.json', 'ops-brief.json')
+# ops-brief.json and ops-threatset.json hold those kinds' cases, apart from ops.json until every client has ported them.
+CASES = [case for name in ('ops.json', 'ops-brief.json', 'ops-threatset.json')
          for case in json.loads((FIXTURES / name).read_text(encoding='utf-8'))['cases']]
 
 
