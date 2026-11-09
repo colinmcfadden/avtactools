@@ -14,7 +14,9 @@ import app.ezpztac.data.SessionPointSets
 import app.ezpztac.data.ThreatFileLog
 import app.ezpztac.data.ThreatSelection
 import app.ezpztac.data.ThreatStore
+import app.ezpztac.model.ThreatSets
 import dagger.hilt.android.lifecycle.HiltViewModel
+import javax.inject.Inject
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
@@ -32,7 +34,6 @@ import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import javax.inject.Inject
 
 /** Where a file goes (the design's ImportReview): saved to the Library, held for this session only, or kept on this device (threats, until step *T*). */
 enum class ImportPlace { LIBRARY, SESSION, DEVICE }
@@ -48,8 +49,8 @@ sealed interface ImportItemUi {
     /** Local points: [count] points, as a set called [name], to the Library or this session ([place]). */
     data class Points(override val id: Long, override val fileName: String, val size: String, val count: Int, val name: String, val place: ImportPlace) : ImportItemUi
 
-    /** Threats: [count] threats, into the picture on this device. */
-    data class Threats(override val id: Long, override val fileName: String, val size: String, val count: Int) : ImportItemUi
+    /** Threats: [count] threats, a set of their own called [name] in the Library ([saved]), or into the picture on this device. */
+    data class Threats(override val id: Long, override val fileName: String, val size: String, val count: Int, val name: String = "", val saved: Boolean = false) : ImportItemUi
 
     /** An AMPS mission: [routes] routes and [namedPoints] named points, kept with its file in the Library. [aircraft] is what AMPS planned it for, if it says. */
     data class Mission(override val id: Long, override val fileName: String, val size: String, val routes: Int, val namedPoints: Int, val aircraft: String?) : ImportItemUi
@@ -75,9 +76,9 @@ data class IncomingUiState(
     /** Where the files go, in a line under them (the design's): `1 to Library · 1 stays in this session · 2 stay on this device`. */
     val summary: String get() {
         if (reading) return "Looking at what is in the files…"
-        val library = items.count { (it is ImportItemUi.Points && it.place == ImportPlace.LIBRARY) || it is ImportItemUi.Mission }
+        val library = items.count { (it is ImportItemUi.Points && it.place == ImportPlace.LIBRARY) || it is ImportItemUi.Mission || (it is ImportItemUi.Threats && it.saved) }
         val session = items.count { it is ImportItemUi.Points && it.place == ImportPlace.SESSION }
-        val device = items.count { it is ImportItemUi.Threats }
+        val device = items.count { it is ImportItemUi.Threats && !it.saved }
         val parts = listOfNotNull(
             "$library to Library".takeIf { library > 0 },
             (if (session == 1) "1 stays in this session" else "$session stay in this session").takeIf { session > 0 },
@@ -180,7 +181,11 @@ class IncomingViewModel @Inject constructor(
             when (seen) {
                 null -> ImportItemUi.Reading(file.id, file.name)
                 is FilePreview.Threats ->
-                    if (threatsOn) ImportItemUi.Threats(file.id, file.name, size, seen.threats.size) else ImportItemUi.Problem(file.id, file.name, NO_THREATS)
+                    if (threatsOn) {
+                        ImportItemUi.Threats(file.id, file.name, size, seen.threats.size, name ?: ThreatSets.nameFromFile(file.name), threats.saves.value)
+                    } else {
+                        ImportItemUi.Problem(file.id, file.name, NO_THREATS)
+                    }
                 is FilePreview.Points -> ImportItemUi.Points(file.id, file.name, size, seen.count, name ?: seen.setName, place ?: ImportPlace.LIBRARY)
                 is FilePreview.Mission -> ImportItemUi.Mission(file.id, file.name, size, seen.routes, seen.namedPoints, seen.aircraft)
                 is FilePreview.Problem -> ImportItemUi.Problem(file.id, file.name, seen.message)
@@ -247,9 +252,9 @@ class IncomingViewModel @Inject constructor(
                 if (seen == null || !threatsAllowed.value) {
                     null
                 } else {
-                    val ids = threats.addAll(seen.threats)
+                    val ids = threats.addAsSet(seen.threats, item.name.ifBlank { ThreatSets.nameFromFile(file.name) })
                     ids.lastOrNull()?.let(threatSelection::select)
-                    threatFiles.record(file.name, seen.threats.size)
+                    threatFiles.record(file.name, seen.threats.size, item.saved)
                     "Added ${count(seen.threats.size, "threat")} from ${file.name}."
                 }
             }

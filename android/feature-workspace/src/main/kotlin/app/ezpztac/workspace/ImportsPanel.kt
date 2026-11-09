@@ -409,7 +409,9 @@ private fun ThreatFileRow(file: ThreatFileImport, actions: ImportsActions) {
                 "${if (file.count == 1) "1 threat" else "${withCommas(file.count.toLong())} threats"} · listed under Threats",
                 style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
-            Box(Modifier.padding(top = Tokens.Spacing.xs.dp)) { PlaceTag(EzpzIcons.lock, "This device only", TagTone.DEVICE) }
+            Box(Modifier.padding(top = Tokens.Spacing.xs.dp)) {
+                if (file.saved) PlaceTag(EzpzIcons.collectionsBookmark, "Library", TagTone.LIBRARY) else PlaceTag(EzpzIcons.lock, "This device only", TagTone.DEVICE)
+            }
         }
     }
 }

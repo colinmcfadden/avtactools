@@ -23,7 +23,7 @@ contracts/
 │  ├─ msnx/         template.msnx, parse.json, ...  reference: the web app
 │  ├─ sqlite/       .LPS / .ths files + tables.json reference: SQLite itself (Python's sqlite3)
 │  ├─ localpoints/  parse.json                      reference: the web app
-│  ├─ threats/      parse.json, export.json         reference: the web app (read), the backend (write)
+│  ├─ threats/      parse.json, export.json, sets.json   reference: the web app (read, the saved document), the backend (write)
 │  ├─ brief/        compile.json (reference: the web, feature/brief/compile.js), light.json (reference: Skyfield, scripts/light_fixtures.py),
 │  │                sandtable.json (reference: the web, feature/brief/sandtableSteps.js, read from compile.json's models),
 │  │                sandtable-fit.json (reference: the web's fitInsets, and Leaflet's own flyToBounds framing),
@@ -81,6 +81,7 @@ reference is.
 | `network/priority.json` | `frontend/src/contracts/networkFixtures.test.js` | — | `core-network` |
 | `places/*` | — (the web asks the server) | `backend/tests/test_places.py` (`PlaceFixtureTests`: `contracts/scripts/place_fixtures.py check`) | not yet (P3 of `docs/PLACE_SEARCH.md`: Android's search over `places.sqlite` must answer every case of `queries.json`, in order) |
 | `threats/export.json` | — | `backend/tests/test_contract_fixtures.py` (the rows the exporter writes) | `core-formats` (`ThsExport`) |
+| `threats/sets.json` | `frontend/src/contracts/threatSetFixtures.test.js` | — | `core-model` (`ThreatSets`: what is made of a saved set of threats and what is written back) |
 | `packs/ops.json` | `frontend/src/contracts/packOpsFixtures.test.js` | `backend/tests/test_pack_ops.py` (the server applies every mission-pack edit with it) | `core-missionpacks` (`PackOps`: every case, strictly: status, reason, null kept apart from absent, keys in JavaScript's order; `PackOpsFixtureTest`) |
 | `packs/ops-brief.json` | `frontend/src/contracts/packOpsFixtures.test.js` | `backend/tests/test_pack_ops.py` | `core-missionpacks` (`PackOpsFixtureTest`, its cases beside `ops.json`'s, as strictly) |
 | `packs/session-brief.json` | `frontend/src/contracts/packSessionFixtures.test.js` | — | `core-missionpacks` (`PackSessionFixtureTest`, every scenario as `session.json`'s are played): brief edits taken in a read-only pack, sent in batches of their own, kept when the pack turns read-only |

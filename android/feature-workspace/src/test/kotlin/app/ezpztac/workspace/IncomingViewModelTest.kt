@@ -142,7 +142,7 @@ class IncomingViewModelTest {
         r.incoming.offer("notes.txt", "hello".toByteArray())
         advanceUntilIdle()
         val (threatItem, pointsItem, missionItem, problem) = r.state.items
-        assertEquals(ImportItemUi.Threats(1, "SA-6 site.ths", IncomingViewModel.sizeOf(threatFile.size.toLong()), threatCount), threatItem)
+        assertEquals(ImportItemUi.Threats(1, "SA-6 site.ths", IncomingViewModel.sizeOf(threatFile.size.toLong()), threatCount, "SA-6 SITE", saved = false), threatItem)
         assertEquals(ImportItemUi.Points(2, "NORTH GA.LPS", IncomingViewModel.sizeOf(pointsFile.size.toLong()), pointCount, "NORTH GA", ImportPlace.LIBRARY), pointsItem)
         missionItem as ImportItemUi.Mission
         assertEquals(1, missionItem.routes)
