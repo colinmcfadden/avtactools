@@ -12,10 +12,25 @@
 }
 
 .backstop-head polygon {
-  fill: #000;
   stroke: #fff;
-  stroke-width: 1.5;
+  stroke-width: 2;
   paint-order: stroke;
+}
+
+.backstop-grip,
+.backstop-grip-handle {
+  position: absolute;
+  top: 0;
+  left: 0;
+}
+
+.backstop-grip {
+  height: 24px;
+  cursor: move;
+}
+
+.backstop-grip-handle {
+  transform: translate(-50%, -50%);
 }
 
 .backstop-label {

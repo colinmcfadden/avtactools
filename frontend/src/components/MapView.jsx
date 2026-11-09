@@ -24,6 +24,7 @@ import Doghouse from "../feature/doghouses/Doghouse";
 import Helicopter from "../feature/helicopters/Helicopter";
 import GoAroundMarker from "../feature/goAround/GoAround";
 import Backstop from "../feature/backstops/Backstop";
+import { BACKSTOP_CASING, BACKSTOP_LINE, BACKSTOP_RED } from "../feature/backstops/backstopStyle";
 import Flot from "../feature/flot/Flot";
 import ExportHandler from "../feature/export/ExportHandler";
 import CursorGridReadout from "./CursorGridReadout";
@@ -356,9 +357,10 @@ const MapView = ({
 
         {isDrawingBackstop && backstopDraftPoints.length > 0 && (
           <>
-            <Polyline positions={backstopDraftPoints.map((p) => [p.lat, p.lon])} pathOptions={{ color: "#000000", weight: 3, dashArray: "10 7" }} />
+            <Polyline positions={backstopDraftPoints.map((p) => [p.lat, p.lon])} pathOptions={BACKSTOP_CASING} />
+            <Polyline positions={backstopDraftPoints.map((p) => [p.lat, p.lon])} pathOptions={BACKSTOP_LINE} />
             {backstopDraftPoints.map((p, i) => (
-              <CircleMarker key={`backstop-draft-${i}`} center={[p.lat, p.lon]} radius={4} pathOptions={{ color: "#ffffff", weight: 2, fillColor: "#000000", fillOpacity: 1 }} interactive={false} />
+              <CircleMarker key={`backstop-draft-${i}`} center={[p.lat, p.lon]} radius={4} pathOptions={{ color: "#ffffff", weight: 2, fillColor: BACKSTOP_RED, fillOpacity: 1 }} interactive={false} />
             ))}
           </>
         )}
