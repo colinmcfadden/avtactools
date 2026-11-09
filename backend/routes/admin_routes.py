@@ -23,7 +23,7 @@ from google.oauth2 import id_token
 from google.auth.transport import requests as google_requests
 
 from models import (
-    db, User, SavedRoute, SavedLZ, SavedPointSet, SavedBrief, LoginEvent, AircraftProfile, SyncCounter,
+    db, User, SavedRoute, SavedLZ, SavedPointSet, SavedBrief, SavedThreatSet, LoginEvent, AircraftProfile, SyncCounter,
     MissionPack, MissionPackItem, MissionPackMember, Team, TeamMember,
 )
 import data_admin
@@ -391,6 +391,7 @@ def delete_user(uid):
     SavedLZ.query.filter_by(user_id=uid).delete()
     SavedPointSet.query.filter_by(user_id=uid).delete()
     SavedBrief.query.filter_by(user_id=uid).delete()
+    SavedThreatSet.query.filter_by(user_id=uid).delete()
     LoginEvent.query.filter_by(user_id=uid).delete()
     SyncCounter.query.filter_by(user_id=uid).delete()
     db.session.delete(user)  # cascades local_credential + account_tokens

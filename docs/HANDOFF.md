@@ -5,6 +5,14 @@ rules that bit once, what cannot be verified without a device); this file is the
 Read both, then `docs/NATIVE_APPS_PLAN.md` for the plan and its phases. Refresh this file in the same commit as any change
 that moves the "where things stand" or "next" sections.
 
+**Threats saved (2026-11-08, `docs/ANDROID_SCREENS_PLAN.md`, *T*).** On `feat/android-saved-threats`: threats are named sets in the Library, autosaved and synced, several open at once, their terrain masks with them, there
+again after a sign-out or a restart (AGENTS.md §17, *Threats*; database version 5 forgets the sync cursor once). A picture on the device from before becomes a set at that account's first launch after the update. An account without `threats` or `cloud_save` keeps the
+sealed file as before. **To try first on a device:** a threat added, the app closed and opened, signed out and in; then the same set on a second device and on the web.
+
+**Threats in mission packs (2026-11-09, on `feat/pack-threats`).** A set of threats is a pack item of kind `threatset`, on the server, the web and Android: `PackThreats` and `ThreatPackKind` in core-missionpacks, `PackThreatSync` and `ThreatStore`'s pack mode in core-data, the Pack panel's Threats group, and the Threats panel and the import review while a pack is open (AGENTS.md §17, *Threats*, *In a mission pack*). Every test, lint and the debug build pass; none of it has run on a device. **To try first on a device:** a set copied into a pack, one threat moved on one device and seen on another and on the web; the same pack finished while a threat is being dragged; and leaving the pack to see the person's own sets come back. **The server of PR 163 must be live before an Android build with this reaches anyone.**
+
+**The VFR map from the FAA's own charts (2026-11-08, `docs/VFR_CHARTS.md`, C4).** Android draws the server's chart tiles where `/api/config` names a build, ArcGIS elsewhere, with the charts named above the readout (AGENTS.md §17, *The VFR charts*).
+
 **The VFR map from the FAA's own charts (2026-11-09, `docs/VFR_CHARTS.md`, C4 built, C5 rehearsed; what is left is the owner's run on production, its steps in §9 there).** Android draws the server's chart tiles where `/api/config` names a build, ArcGIS elsewhere, with the charts named above the readout (AGENTS.md §17, *The VFR charts*).
 **To try first on a device:** against a server with a live build, open the VFR map over CONUS and then Hawaii; take the build away (roll back on the Data tab) and see the map follow within a minute of a tile failing. No device has run it.
 
@@ -666,9 +674,8 @@ set it to an Android version.
 Full list in AGENTS.md; the ones that matter most for a fresh agent:
 
 - **Unclassified only.** The mission brief's handbook is CUI-marked: never commit it or send it to a service; the templates carry its item lists
-  and standard values in the app's own words, by the owner's leave (2026-10-16). Threats are never synced or persisted server-side; on the device they
-  live in memory plus a sealed no-backup file, wiped at sign-out. **The only Android threat network call is the terrain mask, made
-  when the person presses its button**: do not add another, or make this one on its own, without the person asking for it.
+  and standard values in the app's own words, by the owner's leave (2026-10-16). Threats are saved and synced as sets in the Library (AGENTS.md §17, *Threats*); an account without
+  `cloud_save` keeps them in memory plus a sealed no-backup file, wiped at sign-out. **The viewshed is asked for only when the person presses its button**: do not make it run on its own.
 - **Agents do not deploy.** Never push `main`, run `fly deploy`, or trigger production. No new major dependency without asking.
 - **The web is the reference; `contracts/` fixtures are the contract.** Never hand-edit a fixture; change the web (or backend)
   first, regenerate, review the diff, then follow in the clients.

@@ -10,7 +10,7 @@ import "./packs.css";
  * a pack, choosing several Library items to add to the open pack, and the banner a finished pack shows.
  */
 
-const KIND_WORDS = { lz: "LZ/PZ", route: "route set", pointset: "point set" };
+const KIND_WORDS = { lz: "LZ/PZ", route: "route set", pointset: "point set", threatset: "threat set" };
 
 // Everyone who can open the pack, the team it is shared with included, as the switcher counts them.
 const people = (p) => {
@@ -88,11 +88,13 @@ const TABS = [
   { key: "lz", label: "LZ/PZ" },
   { key: "route", label: "Routes" },
   { key: "pointset", label: "Local points" },
+  { key: "threatset", label: "Threats" },
 ];
 
 /**
  * Choosing Library items to copy into the open pack (the pack panel's Add from Library). `library`:
- * { lz: [...], route: [...], pointset: [...] } of Library entries. Imported AMPS missions cannot go
+ * { lz: [...], route: [...], pointset: [...], threatset: [...] } of Library entries, a kind this account
+ * has no Library of being left undefined and offered no tab. Imported AMPS missions cannot go
  * into a pack yet and are listed as such.
  */
 export const AddFromLibraryDialog = ({ packName, library, onAdd, onCancel }) => {

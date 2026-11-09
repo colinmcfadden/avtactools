@@ -479,6 +479,65 @@ public suspend fun ApiClient.deleteBrief(id: Int, baseRevision: Int? = null, ide
     )
 }
 
+// A named set of threats in the Library (AGENTS.md §2): a document the server keeps as it was given, counting its threats for the list. Every route needs the
+// `threats` entitlement, and a create or an edit `cloud_save` too. A document past 5 MB is refused 413 `too_large`.
+
+public suspend fun ApiClient.listThreatSets(): List<ThreatSetSummary> =
+    decode(execute(ApiClient.Call("GET", "/api/threatsets")))
+
+public suspend fun ApiClient.getThreatSet(id: Int): ThreatSetFull =
+    decode(execute(ApiClient.Call("GET", "/api/threatsets/$id")))
+
+/**
+ * Saves a new set of threats. Pass the [clientUuid] the device chose and a retry after a lost response returns the first record ([Saved.created] false)
+ * instead of making a second.
+ */
+public suspend fun ApiClient.createThreatSet(
+    name: String,
+    data: JsonObject,
+    clientUuid: String,
+    idempotencyKey: String = newKey(),
+): Saved<ThreatSetSummary> {
+    val response = execute(
+        ApiClient.Call(
+            "POST", "/api/threatsets",
+            body = buildJsonObject { put("name", name); put("data", data); put("client_uuid", clientUuid) },
+            headers = mapOf("Idempotency-Key" to idempotencyKey),
+        ),
+    )
+    return Saved(decode(response), created = response.status == 201)
+}
+
+/**
+ * Edits a set of threats on top of [baseRevision], the revision the edit was made against. Only what is given is sent and changed. If the server has moved on,
+ * nothing is overwritten and [RevisionConflictException] carries the server's copy.
+ */
+public suspend fun ApiClient.updateThreatSet(
+    id: Int,
+    baseRevision: Int?,
+    name: String? = null,
+    data: JsonObject? = null,
+    idempotencyKey: String = newKey(),
+): ThreatSetSummary = decode(
+    execute(
+        ApiClient.Call(
+            "PUT", "/api/threatsets/$id",
+            body = buildJsonObject { if (name != null) put("name", name); if (data != null) put("data", data) },
+            headers = revisionHeader(baseRevision) + ("Idempotency-Key" to idempotencyKey),
+        ),
+    ),
+)
+
+/** Deletes a set of threats. The server keeps a tombstone so other devices learn of it. Deleting twice is not an error. */
+public suspend fun ApiClient.deleteThreatSet(id: Int, baseRevision: Int? = null, idempotencyKey: String = newKey()) {
+    execute(
+        ApiClient.Call(
+            "DELETE", "/api/threatsets/$id",
+            headers = revisionHeader(baseRevision) + ("Idempotency-Key" to idempotencyKey),
+        ),
+    )
+}
+
 // -- Aircraft profiles ------------------------------------------------------------
 
 /** The master list, then the caller's own profiles. */

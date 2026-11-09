@@ -10,7 +10,28 @@
  * lines up with the footprint the separation math uses.
  */
 
+import UH60_SVG from "./uh60.svg?raw";
+
 const DISC = 46; // rotor-disc radius in viewBox units, i.e. the sprite's edge
+
+/**
+ * The UH-60 is the original EZ/PZ helicopter (black, outlined in green), drawn to the
+ * UH-60L/M's published dimensions in decimetres with the mast at 0, 0: uh60.svg, the
+ * Android app's own picture byte for byte (contracts/uh60Svg.test.js). Its frame is wider
+ * than its rotor, so on the map the rotor, not the frame, is the sprite's size.
+ */
+const UH60_FRAME = 236.6;
+const UH60_ROTOR = 163.6;
+const UH60_GREEN = "#64F338";
+const UH60_COLOURS = { normal: UH60_GREEN, violation: "#FF3B30", ghost: "#9AA5B1" };
+const UH60_BODY = UH60_SVG.replace(/^<\?xml[^>]*>\s*/, "").replace(/<!--[\s\S]*?-->\s*/g, "").trim();
+
+const uh60Svg = (frameSizePx, state, style) => {
+  const colour = UH60_COLOURS[state] || UH60_GREEN;
+  return UH60_BODY
+    .replaceAll(UH60_GREEN, colour)
+    .replace("<svg ", `<svg width="${frameSizePx}" height="${frameSizePx}" style="${style}" aria-hidden="true" `);
+};
 
 /**
  * `count` individual blades radiating from the mast — one line per blade, not
@@ -128,6 +149,13 @@ const PALETTES = {
  * @param state     "normal" | "violation" | "ghost"
  */
 export const aircraftSvg = (iconKey, sizePx = 40, state = "normal") => {
+  if (iconKey === "uh60") {
+    // The rotor is sizePx across; the frame round it overflows the box evenly on every
+    // side, so the mast stays at the box's centre, where the sprite turns.
+    const frame = Math.round(((sizePx * UH60_FRAME) / UH60_ROTOR) * 1000) / 1000;
+    const overflow = Math.round((-(frame - sizePx) / 2) * 1000) / 1000;
+    return uh60Svg(frame, state, `flex:none;margin:${overflow}px;overflow:visible`);
+  }
   const draw = SILHOUETTES[iconKey] || SILHOUETTES.generic;
   const palette = PALETTES[state] || PALETTES.normal;
   const style = [
@@ -143,6 +171,6 @@ export const aircraftSvg = (iconKey, sizePx = 40, state = "normal") => {
 
 /** Small preview for pickers and lists, where scale-to-rotor doesn't apply. */
 export const aircraftPreviewSvg = (iconKey, sizePx = 28) =>
-  aircraftSvg(iconKey, sizePx, "normal");
+  iconKey === "uh60" ? uh60Svg(sizePx, "normal", "") : aircraftSvg(iconKey, sizePx, "normal");
 
 export const ICON_KEYS = Object.keys(SILHOUETTES);

@@ -10,7 +10,10 @@ import app.ezpztac.data.PointSetRepository
 import app.ezpztac.data.PointSetViews
 import app.ezpztac.data.RouteRepository
 import app.ezpztac.data.RouteSession
+import app.ezpztac.data.ThreatSetRepository
+import app.ezpztac.data.ThreatStore
 import app.ezpztac.geo.MgrsConverter
+import app.ezpztac.model.ThreatSets
 import app.ezpztac.sync.SyncStatus
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.CancellationException
@@ -31,6 +34,7 @@ enum class LibraryTab(val label: String, val one: String, val many: String, val 
     LZ("LZ/PZ", "saved LZ/PZ", "saved LZ/PZs", "Search LZ/PZs by name or grid"),
     ROUTES("Routes", "saved route set", "saved route sets", "Search route sets by name"),
     POINTS("Local points", "saved point set", "saved point sets", "Search point sets by name"),
+    THREATS("Threats", "saved threat set", "saved threat sets", "Search threat sets by name"),
 }
 
 /**
@@ -102,6 +106,8 @@ class LibraryViewModel @Inject constructor(
     openDiagrams: OpenDiagrams,
     openRouteSets: OpenRouteSets,
     views: PointSetViews,
+    private val threatSets: ThreatSetRepository,
+    private val threatStore: ThreatStore,
 ) : ViewModel() {
     private data class Choices(val tab: LibraryTab = LibraryTab.LZ, val query: String = "", val sort: LibrarySort = LibrarySort.UPDATED, val busy: Boolean = false)
 
@@ -141,8 +147,18 @@ class LibraryViewModel @Inject constructor(
         }
     }
 
-    val state: StateFlow<LibraryUiState> = combine(lzRows, routeRows, pointRows, choices) { lz, routes, points, c ->
-        val all = mapOf(LibraryTab.LZ to lz, LibraryTab.ROUTES to routes, LibraryTab.POINTS to points)
+    private val threatRows = combine(threatSets.observe(), threatStore.sets) { records, open ->
+        val onMap = open.mapTo(HashSet()) { it.id }
+        records.map { r ->
+            LibraryRowUi(
+                r.uuid, LibraryTab.THREATS, r.name, detail = countOf(ThreatSets.countIn(r.data), "threat"), updated = updatedLine(r.updatedAt), inSession = r.uuid in onMap,
+                sync = r.status, conflictOf = r.conflictOf, updatedAt = r.updatedAt,
+            )
+        }
+    }
+
+    val state: StateFlow<LibraryUiState> = combine(lzRows, routeRows, pointRows, threatRows, choices) { lz, routes, points, threats, c ->
+        val all = mapOf(LibraryTab.LZ to lz, LibraryTab.ROUTES to routes, LibraryTab.POINTS to points, LibraryTab.THREATS to threats)
         LibraryUiState(
             tab = c.tab, query = c.query, sort = c.sort, busy = c.busy,
             rows = sorted(all.getValue(c.tab).filter { matches(it, c.query) }, c.sort),
@@ -182,6 +198,10 @@ class LibraryViewModel @Inject constructor(
                         routeSets.duplicate(row.uuid, name)
                     }
                     LibraryTab.POINTS -> pointSets.duplicate(row.uuid, name)
+                    LibraryTab.THREATS -> {
+                        threatStore.flush()
+                        threatSets.duplicate(row.uuid, name)
+                    }
                 }
                 _notices.tryEmit(if (made != null) "Made “$name”, a copy of “${row.name}”" else "“${row.name}” is no longer in your Library.")
             } catch (e: CancellationException) {
