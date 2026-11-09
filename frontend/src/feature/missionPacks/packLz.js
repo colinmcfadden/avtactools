@@ -52,6 +52,7 @@ const COLLECTIONS = {
     return box ? `doghouse ${box}` : "a doghouse";
   },
   measurements: () => "a measurement",
+  backstops: () => "a backstop",
 };
 
 const POSITION_KEYS = ["lat", "lon", "lng", "position", "points", "center", "start", "end", "tip", "anchor"];
