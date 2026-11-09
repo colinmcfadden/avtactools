@@ -24,7 +24,7 @@ const placeOf = (map) => {
  * so it sits where attributions do on every screen, and like them is left off an LZ card.
  */
 export default function VfrAttribution({ charts }) {
-  const { known, live, coverage } = charts;
+  const { known, live, coverage, finer } = charts;
   const map = useMap();
   const [host, setHost] = useState(null);
   const [place, setPlace] = useState(() => placeOf(map));
@@ -50,7 +50,7 @@ export default function VfrAttribution({ charts }) {
   }, [live, coverage, place.now]);
 
   if (!host || !known) return null;
-  const { lines, enlarged } = chartWords({ live, coverage, ...place });
+  const { lines, enlarged } = chartWords({ live, coverage, finer, ...place });
   return createPortal(
     <>
       {enlarged && <div className="vfr-attribution__enlarged">{enlarged}</div>}

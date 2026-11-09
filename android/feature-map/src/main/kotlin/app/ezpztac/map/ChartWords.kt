@@ -13,7 +13,7 @@ data class ChartLines(val lines: List<ChartLine>, val enlarged: String?)
 
 /**
  * The web's `chartWords` (`frontend/src/feature/vfrCharts/vfrCharts.js`), function by function, held to the same `contracts/fixtures/charts/words.json`
- * over the same `coverage.json`. The zoom it takes is the web's (Leaflet's): MapLibre's plus one.
+ * over the same `coverage.json`. The zoom it takes is the web's (Leaflet's): MapLibre's plus one. `finer` is the screen's [levelsFiner], which decides which charts are drawn.
  */
 object ChartWords {
     /** What the layers from ArcGIS's service are called: it publishes no edition. */
@@ -24,12 +24,12 @@ object ChartWords {
     private const val SAMPLES = 5       // points a side of the view tried against a chart's outline
     private const val DAY_MS = 24L * 60 * 60 * 1000
 
-    fun of(live: VfrLive?, coverage: ChartCoverage?, view: ChartBox, center: LatLon, zoom: Double, now: Long): ChartLines {
+    fun of(live: VfrLive?, coverage: ChartCoverage?, view: ChartBox, center: LatLon, zoom: Double, now: Long, finer: Int = 0): ChartLines {
         if (live == null) return ChartLines(listOf(ChartLine(ARCGIS, false)), null)
         val views = viewsOf(view)
-        val lines = if (coverage != null) linesOf(chartsInView(coverage, views, levelAt(zoom, coverage)), now) else listOf(buildLine(live, now))
+        val lines = if (coverage != null) linesOf(chartsInView(coverage, views, levelAt(zoom, coverage, finer)), now) else listOf(buildLine(live, now))
         val overArcgis = live.fallback.any { box -> views.any { it.west < box.east && box.west < it.east && it.south < box.north && box.south < it.north } }
-        return ChartLines(if (overArcgis) lines + ChartLine(ARCGIS, false) else lines, coverage?.let { enlargedWords(it, center, zoom) })
+        return ChartLines(if (overArcgis) lines + ChartLine(ARCGIS, false) else lines, coverage?.let { enlargedWords(it, center, zoom, finer) })
     }
 
     /** The next instant a chart's edition runs out, after [now]; null when none will. */
@@ -82,7 +82,7 @@ object ChartWords {
     private fun finestFirst(charts: List<CoverageChart>) = charts.sortedBy { it.scale }
 
     // The level whose tiles the map is drawn from: the web's map rounds its zoom, and shrinks the first level's tiles below it.
-    private fun levelAt(zoom: Double, coverage: ChartCoverage) = max(RouteCalc.jsRound(zoom).toInt() - 1, coverage.minLevel)
+    private fun levelAt(zoom: Double, coverage: ChartCoverage, finer: Int) = max(RouteCalc.jsRound(zoom).toInt() - 1 + finer, coverage.minLevel)
 
     // The charts drawn in the view, finest first: those shown at this level whose outlines reach it, less any wholly under a finer one.
     private fun chartsInView(coverage: ChartCoverage, views: List<ChartBox>, level: Int): List<CoverageChart> {
@@ -119,8 +119,9 @@ object ChartWords {
     }
 
     // Past the chart's own detail, by the whole power of two nearest: a line that changed with every tenth of a zoom would not be quiet.
-    private fun enlargedWords(coverage: ChartCoverage, center: LatLon, zoom: Double): String? {
-        val level = levelAt(zoom, coverage)
+    // Counted from the chart's native zoom, so the same on every screen; only which chart is drawn there follows the screen.
+    private fun enlargedWords(coverage: ChartCoverage, center: LatLon, zoom: Double, finer: Int): String? {
+        val level = levelAt(zoom, coverage, finer)
         val lon = wrapped(center.lon)
         val chart = finestFirst(coverage.charts).firstOrNull { it.shownFrom <= level && insideRing(it.ring, lon, center.lat) } ?: return null
         val power = RouteCalc.jsRound(zoom - 1 - chart.nativeLevel).toInt()

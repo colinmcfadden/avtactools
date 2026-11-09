@@ -173,6 +173,13 @@ interface VfrChartSource {
     suspend fun look()
 }
 
+/**
+ * How many levels finer than its zoom a screen draws the charts from (the web's `levelsFiner`; docs/VFR_CHARTS.md §8, *A dense screen*): 1 where a point is more than about
+ * one pixel across, else 0. A tile holds its size in pixels, no more (Mapbox's `@2x` hold twice that), so drawn over 512 points it is spread over 1,536 pixels on a phone of
+ * density 3; the next level, over 256, gives each tile pixel half as many. From √2 that level is the nearer of the two to one for one.
+ */
+internal fun levelsFiner(density: Double): Int = if (density >= Math.sqrt(2.0)) 1 else 0
+
 /** The instant of a time as the server writes it (`2026-12-24T09:01Z`, with no seconds, which `Instant.parse` refuses); null for anything else. */
 internal fun chartInstant(text: String): Long? = try {
     OffsetDateTime.parse(text).toInstant().toEpochMilli()

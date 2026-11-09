@@ -43,6 +43,26 @@ class MapLogicTest {
     }
 
     @Test
+    fun `on a dense screen the charts are laid over half the points, one level finer, and every other tile is as it was`() {
+        fun source(style: MapBaseStyle, density: Double, name: String) =
+            Fixtures.json.parseToJsonElement(MapStyles.styleJson(style, density)).jsonObject.getValue("sources").jsonObject.getValue(name).jsonObject
+        val vfr = MapStyles.byId(MapStyles.VFR_ID, token, live)
+        val dense = source(vfr, 3.0, "base")
+        assertEquals("256", dense.getValue("tileSize").jsonPrimitive.content)
+        assertEquals("5", dense.getValue("minzoom").jsonPrimitive.content)
+        assertEquals("14", dense.getValue("maxzoom").jsonPrimitive.content)
+        assertEquals("512", source(vfr, 1.0, "base").getValue("tileSize").jsonPrimitive.content)
+        assertEquals("256", source(vfr, 3.0, "fallback-0").getValue("tileSize").jsonPrimitive.content)
+        assertEquals("512", source(MapStyles.byId("satellite", token), 3.0, "base").getValue("tileSize").jsonPrimitive.content)
+        assertEquals("256", source(MapStyles.byId(MapStyles.VFR_ID, token, null), 3.0, "base").getValue("tileSize").jsonPrimitive.content)
+    }
+
+    @Test
+    fun `a screen draws a level finer only from the density where that level is the nearer of the two, and never two`() {
+        assertEquals(listOf(0, 0, 1, 1, 1, 1), listOf(1.0, 1.33, 1.5, 2.0, 3.0, 4.0).map(::levelsFiner))
+    }
+
+    @Test
     fun `each region with no chart of ours is ArcGIS within its own bounds, under the chart layer`() {
         val doc = styleDoc(MapStyles.byId(MapStyles.VFR_ID, token, live))
         assertEquals(listOf(-158.9, 18.6, -154.7, 22.6), boundsOf(doc, "fallback-0"))

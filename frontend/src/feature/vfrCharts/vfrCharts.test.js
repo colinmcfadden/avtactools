@@ -1,4 +1,4 @@
-import { ARCGIS_WORDS, apiRootOf, chartLayerOptions, chartPreviewUrl, chartWords, isCoverage, leafletBounds, liveBuildOf, nextExpiry } from "./vfrCharts";
+import { ARCGIS_WORDS, apiRootOf, chartLayerOptions, chartPreviewUrl, chartWords, isCoverage, leafletBounds, levelsFiner, liveBuildOf, nextExpiry } from "./vfrCharts";
 
 const { readFixture } = require("../../contracts/readFixture");
 
@@ -77,6 +77,22 @@ describe("the chart layer", () => {
       bounds: [[32, -88], [40, -72]],
     });
     expect(leafletBounds([-158.9, 18.6, -154.7, 22.6])).toEqual([[18.6, -158.9], [22.6, -154.7]]);
+  });
+
+  it("on a dense screen lays each tile over half the width, one level finer, within the same levels", () => {
+    expect(chartLayerOptions(LIVE, 1)).toEqual({
+      tileSize: 256,
+      zoomOffset: 0,
+      minNativeZoom: 5,
+      maxNativeZoom: 14,
+      maxZoom: 20,
+      bounds: [[32, -88], [40, -72]],
+    });
+  });
+
+  it("draws one level finer only from the ratio where that level is the nearer of the two, and never two", () => {
+    expect([1, 1.25, 1.4].map(levelsFiner)).toEqual([0, 0, 0]);
+    expect([1.5, 2, 2.625, 3, 4].map(levelsFiner)).toEqual([1, 1, 1, 1, 1]);
   });
 
   it("gives the switcher a tile of the build, over Denver where it reaches", () => {

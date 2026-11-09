@@ -25,6 +25,8 @@ data class MapBaseStyle(
     val bounds: ChartBox? = null,
     /** Drawn under it, each within its own bounds: the ArcGIS sectional where a build of the FAA's charts has none (docs/VFR_CHARTS.md §4.6). */
     val under: List<MapBaseStyle> = emptyList(),
+    /** The size they are drawn at on a dense screen ([levelsFiner]). Half for a build's tiles, which hold only their size in pixels; the same for the rest. */
+    val denseTileSize: Int = tileSize,
 )
 
 object MapStyles {
@@ -53,7 +55,7 @@ object MapStyles {
     // The live build where it reaches, over ArcGIS in each region it has no chart of (Hawaii, Alaska); with no build, ArcGIS everywhere (§4.6).
     private fun vfr(live: VfrLive?): MapBaseStyle = if (live == null) ARCGIS_VFR else ARCGIS_VFR.copy(
         tiles = live.tiles, tileSize = live.tileSize, minZoom = live.minZoom, maxZoom = live.maxZoom, bounds = live.bounds,
-        under = live.fallback.map { ARCGIS_VFR.copy(bounds = it) },
+        under = live.fallback.map { ARCGIS_VFR.copy(bounds = it) }, denseTileSize = live.tileSize / 2,
     )
 
     /**
@@ -78,14 +80,14 @@ object MapStyles {
     /**
      * A MapLibre style document for [style]: its tiles over a background in the app's dark navy (so the first frame, and a tile that
      * has not arrived, are not white). The layer on top is always `base`, which the overlays are put above; those it stands over go under it.
-     * Overlays are added to the loaded style afterwards.
+     * Overlays are added to the loaded style afterwards. [density] is the screen's pixels to the point, which says how fine its charts are drawn.
      */
-    fun styleJson(style: MapBaseStyle): String = buildJsonObject {
+    fun styleJson(style: MapBaseStyle, density: Double = 1.0): String = buildJsonObject {
         put("version", 8)
         put("name", style.id)
         putJsonObject("sources") {
-            style.under.forEachIndexed { index, below -> put("$UNDER$index", sourceOf(below)) }
-            put("base", sourceOf(style))
+            style.under.forEachIndexed { index, below -> put("$UNDER$index", sourceOf(below, density)) }
+            put("base", sourceOf(style, density))
         }
         putJsonArray("layers") {
             addJsonObject {
@@ -108,10 +110,10 @@ object MapStyles {
         }
     }.toString()
 
-    private fun sourceOf(style: MapBaseStyle) = buildJsonObject {
+    private fun sourceOf(style: MapBaseStyle, density: Double) = buildJsonObject {
         put("type", "raster")
         putJsonArray("tiles") { add(JsonPrimitive(style.tiles)) }
-        put("tileSize", style.tileSize)
+        put("tileSize", if (levelsFiner(density) > 0) style.denseTileSize else style.tileSize)
         put("minzoom", style.minZoom)
         put("maxzoom", style.maxZoom)
         put("attribution", style.attribution)

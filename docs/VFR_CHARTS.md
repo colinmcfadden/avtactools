@@ -84,7 +84,7 @@ the four files we unzipped (Atlanta sectional and TAC, Washington and Baltimore 
 | Helicopter insets: Washington, O'Hare, Love Field, Downtown Manhattan, Boston Downtown | 1:90,000 – 1:50,000 | 4.23 – 7.62 m | 13.9 – 14.8 |
 | US Gulf Coast helicopter, Caribbean 1 and 2 | 1:1,000,000 | 84.67 m | 10.7 |
 
-*Native web zoom* is where one chart pixel is one CSS pixel. On a 2× screen, one chart pixel fills one device pixel a zoom higher.
+*Native web zoom* is where one chart pixel is one CSS pixel. On a 2× screen, one chart pixel fills one device pixel a zoom lower.
 
 **What the files hold**, from their own metadata and from reading them:
 - Each file is one band of 8-bit palette colour (256 entries), LZW-compressed, in stripes, not tiled, in a Lambert conformal conic projection on NAD83.
@@ -151,6 +151,9 @@ Shrunk further, its small text would alias below legibility. A tier is stored to
 - that keeps every pixel of the source;
 - a stored level beyond it would be the source enlarged, at four times the tiles, which the client enlarges as well, for free.
 The brief for this work proposed *native plus one*; the owner chose rounded up (§10, 4).
+
+**The table's zooms are a 1× screen's.** A dense screen draws a level finer (§8, *A dense screen*), so it shows each tier a zoom sooner: the tile
+a 1× screen draws from web zoom 12 for a TAC, a 2× screen draws from 11, at the same tile pixels to device pixels.
 
 **Left out:**
 - the US Gulf Coast helicopter chart and the two Caribbean charts: 1:1,000,000, coarser than the sectional;
@@ -694,7 +697,7 @@ the tab's other answers are):
   - A click shows the chart's name, scale, edition dates, which builds hold it, and the zoom it is stored to.
   - Built from the live build, or from the build chosen in the Charts card.
 - **The chart tiles themselves**, a *Chart tiles* checkbox apart from the `data-layer` ones (the page fetches every `data-layer` as
-  GeoJSON). It adds a raster source of the chosen build's tiles under the overlays: `tileSize` 512, from the public tile route on the
+  GeoJSON). It adds a raster source of the chosen build's tiles under the overlays: `tileSize` 512 (256 on a dense screen, §8), from the public tile route on the
   same host. This is how a build is looked at before it is switched to.
 - **The map's bounds stay as they are.** The page's `maxBounds`, `[[-180, 5], [-40, 75]]`, holds every CONUS chart. Building Alaska
   later would change this: the Western Aleutians sectional crosses the antimeridian, so its outline would need continuous longitudes
@@ -893,13 +896,15 @@ like `/r/<token>`. Both go into `contracts/openapi.yaml` in C2, with `coverage.j
 - Its URL comes from `/api/config`, and with none it is today's ArcGIS service (§4.6). While the VFR map is shown, the config is asked
   for again every 5 minutes, at `expires`, and after a chart tile fails. The last is at most once a minute and past the browser's
   cache (§4.5). A new build changes the layer's URL.
-- `tileSize: 512` and `zoomOffset: -1`, as the Mapbox styles have; native zooms 6–15 (web zoom); `maxZoom` 20.
+- `tileSize: 512` and `zoomOffset: -1`, native zooms 6–15 (web zoom), and on a dense screen `tileSize: 256` and `zoomOffset: 0`, native zooms 5–14
+  (*A dense screen*, below); `maxZoom` 20.
 - The attribution is a small component that reads `coverage.json` (§4.5).
 - The preview tile moves to one the archive has.
 - The survey editor's map already leaves VFR out (`SurveyMap.jsx`).
 
 **Android** (`MapStyles.kt`):
-- The VFR style's `tiles`, `tileSize` 512, `minzoom` and `maxzoom` come from the config, which is remembered as the Mapbox token is.
+- The VFR style's `tiles`, `tileSize` 512 (halved on a dense screen: *A dense screen*, below), `minzoom` and `maxzoom` come from the config, which is
+  remembered as the Mapbox token is.
 - With none remembered, the ArcGIS service is drawn (§4.6).
 - While the VFR style is shown, the config is asked for again every 5 minutes, at `expires`, and after a chart tile fails, as on the
   web. The ArcGIS fallback source never triggers it.
@@ -925,6 +930,24 @@ sizes or editions:
 Strip charts at 1:100,000 and 1:250,000 then show a TAC or helicopter chart where one exists, at its own symbol size.
 
 **The 3D view** drapes Mapbox imagery, not the VFR map, so it does not change.
+
+**A dense screen** (found 2026-11-09, by the owner looking at the real charts: soft zoomed out, and short of SkyVector's zoomed in). A tile's size
+on the map is in points (CSS pixels), not image pixels. Mapbox's `@2x` tiles hold 1,024 pixels in a 512-point slot; a build's tile holds 512, so
+laid over 512 points it was spread over 1,024 device pixels on a 2× screen and 1,536 on a 3×, and the next level, already in the archive, was never
+asked for.
+- **From √2 device pixels to the point the charts are drawn one level finer**: the tile over 256 points, and the level asked for one more (`levelsFiner`,
+  the web's and Android's). √2 is where that level is the nearer of the two to one tile pixel per device pixel: 1.25× stays, 1.5× and up go finer.
+- **Never two levels finer.** A 3× screen is a little nearer two (0.75 device pixels to the tile pixel against 1.5), but that is sixteen times the
+  tiles, on what is usually a phone.
+- **What it costs**: about four times the tile requests on those screens. The server and the archive do not change.
+- **A tier is stored where it is, so it shows a zoom sooner** on a dense screen. What the map says follows the level drawn (`chartWords`' `finer`, held
+  to `contracts/fixtures/charts/words.json`); *enlarged N×* is counted from the chart's native zoom, the same on every screen.
+- **Past the chart's own detail nothing helps**: a sectional's pixel is 42.33 m, so on a 2× screen from about web zoom 11.6 the FAA's own pixels are
+  being enlarged, whichever level is drawn.
+- **Measured** from real tiles at Athens, Georgia, on a simulated 2× screen, as drawn before against a level finer. The contrast left in a one-pixel
+  line: web zoom 9, 12% and 31%; 10, 25% and 61%; 11, 50% and 100%; 12, 85% and 100%; 12.4, 99% and 98%. An edge's width zoomed out: 2.5–3.25 device
+  pixels and 0.75–1.5. WebP at quality 90 is not the cause: a magenta line reads the same lossy and lossless. SkyVector's tiles were not measured.
+- ArcGIS's tiles (256 pixels over 256 points, levels 8 to 12) are left as they were, here and under the build.
 
 ---
 
@@ -1116,7 +1139,7 @@ Charts card and by the automatic cycle, and drawn on the tab's map. Where it dif
   build holds in `vfr-coverage.json` among the app's files, so a launch with no signal has the chart lines too.
 - **What cannot be drawn is no build** (`VfrLive.of`): the config is remembered as text, and a bad box or zoom range would make MapLibre refuse the whole style, which is no map at all. So every field is checked and anything else
   draws ArcGIS. A chart in `coverage.json` that cannot be read is left out of it. Its `nativeLevel` is a fraction (10.58): the first reader took it for a whole number and dropped every chart, which the fixture found at once.
-- **The style**: the chart layer is the source `base` within its `bounds`, its `tiles`, `tileSize`, `minzoom` and `maxzoom` the config's; one ArcGIS source `fallback-N` for each rectangle, within its own bounds, under it. `base` stays
+- **The style**: the chart layer is the source `base` within its `bounds`, its `tiles`, `tileSize` (halved on a dense screen, §8), `minzoom` and `maxzoom` the config's; one ArcGIS source `fallback-N` for each rectangle, within its own bounds, under it. `base` stays
   the top layer because the MGRS grid and every overlay are put above it. With no build, `base` is ArcGIS everywhere and has no bounds. A build changes the VFR style alone: its id, and so what a diagram saves, stay `vfr-sectional`.
 - **Looks** (§4.5) are `ChartLooks`, run only while the VFR map shows and the app is in front: at once if 5 minutes have passed, every 5 minutes, at `expires` plus 61 s, and after a chart tile fails, at most once a minute. `/api/config`
   is asked with `Cache-Control: no-cache`. A look under way is not cut short by the build it brings. Back on the map within 5 minutes it does not look, unless the build's coverage is missing.

@@ -7,6 +7,7 @@ import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.boolean
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.double
+import kotlinx.serialization.json.int
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
@@ -42,6 +43,7 @@ class ChartWordsFixtureTest {
             center = LatLon(center.number("lat"), center.number("lon")),
             zoom = case.number("zoom"),
             now = requireNotNull(chartInstant(case.getValue("now").jsonPrimitive.content)),
+            finer = case["finer"]?.jsonPrimitive?.int ?: 0,
         )
     }
 
@@ -55,7 +57,7 @@ class ChartWordsFixtureTest {
 
     @Test
     fun `the words are the web's in every case`() {
-        assertTrue(cases.size >= 24)
+        assertTrue(cases.size >= 29)
         for (case in cases) assertEquals(case.getValue("name").jsonPrimitive.content, expected(case), said(case))
     }
 

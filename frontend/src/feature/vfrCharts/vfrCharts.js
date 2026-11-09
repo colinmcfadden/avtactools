@@ -57,15 +57,28 @@ export const isCoverage = (data) => Array.isArray(data?.charts) && Number.isInte
 /** `[west, south, east, north]` as Leaflet's bounds. */
 export const leafletBounds = ([west, south, east, north]) => [[south, west], [north, east]];
 
-/** The chart layer's options: Leaflet counts in map zooms, which at 512 px are the build's levels plus one (§8). */
-export const chartLayerOptions = (live) => ({
-  tileSize: live.tileSize,
-  zoomOffset: -1,
-  minNativeZoom: live.minZoom + 1,
-  maxNativeZoom: live.maxZoom + 1,
-  maxZoom: 20,
-  bounds: leafletBounds(live.bounds),
-});
+/**
+ * How many levels finer than its zoom a screen draws the charts from (§8, *A dense screen*): 1 where a CSS pixel is more than about one
+ * physical pixel across, else 0. A tile holds its size in pixels, no more (Mapbox's `@2x` hold twice that), so laid over 512 CSS pixels it
+ * is spread over 1,024 physical ones on a 2× screen; the next level, laid over 256, is one for one. From √2 that level is the nearer of the two.
+ */
+export const levelsFiner = (pixelRatio) => (pixelRatio >= Math.SQRT2 ? 1 : 0);
+
+/**
+ * The chart layer's options. Leaflet counts in map zooms, which at 512 px are the build's levels plus one (§8); `finer` lays each tile over
+ * half the width, where they are the build's levels.
+ */
+export const chartLayerOptions = (live, finer = 0) => {
+  const zoomOffset = finer - 1;
+  return {
+    tileSize: Math.floor(live.tileSize / 2 ** finer),
+    zoomOffset,
+    minNativeZoom: live.minZoom - zoomOffset,
+    maxNativeZoom: live.maxZoom - zoomOffset,
+    maxZoom: 20,
+    bounds: leafletBounds(live.bounds),
+  };
+};
 
 /** The switcher's thumbnail: a tile the build has, over Denver where the build reaches it. */
 export const chartPreviewUrl = (live) => {
@@ -135,7 +148,7 @@ const covers = (ring, view) => samplesOf(view).every(([lon, lat]) => insideRing(
 const finestFirst = (charts) => [...charts].sort((a, b) => a.scale - b.scale);
 
 // The level whose tiles the map is drawn from: Leaflet rounds its zoom, and shrinks the first level's tiles below it.
-const levelAt = (zoom, coverage) => Math.max(Math.round(zoom) - 1, coverage.minLevel);
+const levelAt = (zoom, coverage, finer) => Math.max(Math.round(zoom) - 1 + finer, coverage.minLevel);
 
 // The charts drawn in the view, finest first: those shown at this level whose outlines reach it, less any wholly under a finer one.
 const chartsInView = (coverage, views, level) => {
@@ -177,8 +190,9 @@ const buildLine = (live, now) => {
 };
 
 // Past the chart's own detail, by the whole power of two nearest: a line that changed with every tenth of a zoom would not be quiet.
-const enlargedWords = (coverage, center, zoom) => {
-  const level = levelAt(zoom, coverage);
+// Counted from the chart's native zoom, so the same on every screen; only which chart is drawn there follows the screen.
+const enlargedWords = (coverage, center, zoom, finer) => {
+  const level = levelAt(zoom, coverage, finer);
   const lon = wrapped(center.lon);
   const chart = finestFirst(coverage.charts).find(
     (candidate) => candidate.shownFrom <= level && insideRing(ringOf(candidate), lon, center.lat),
@@ -190,17 +204,17 @@ const enlargedWords = (coverage, center, zoom) => {
 
 /**
  * What the map says of the VFR charts under it (§4.5): `lines`, each `{text, expired}`, naming what is in `view` with its edition,
- * and `enlarged`, the quiet line about the chart at `center`, or null.
+ * and `enlarged`, the quiet line about the chart at `center`, or null. `finer` is this screen's `levelsFiner`: it decides which charts are drawn.
  */
-export const chartWords = ({ live, coverage, view, center, zoom, now }) => {
+export const chartWords = ({ live, coverage, view, center, zoom, now, finer = 0 }) => {
   if (!live) return { lines: [{ text: ARCGIS_WORDS, expired: false }], enlarged: null };
   const views = viewsOf(view);
-  const lines = coverage ? linesOf(chartsInView(coverage, views, levelAt(zoom, coverage)), now) : [buildLine(live, now)];
+  const lines = coverage ? linesOf(chartsInView(coverage, views, levelAt(zoom, coverage, finer)), now) : [buildLine(live, now)];
   const overArcgis = live.fallback.some(([west, south, east, north]) =>
     views.some((v) => v.west < east && west < v.east && v.south < north && south < v.north),
   );
   return {
     lines: overArcgis ? [...lines, { text: ARCGIS_WORDS, expired: false }] : lines,
-    enlarged: coverage ? enlargedWords(coverage, center, zoom) : null,
+    enlarged: coverage ? enlargedWords(coverage, center, zoom, finer) : null,
   };
 };

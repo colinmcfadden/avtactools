@@ -53,6 +53,45 @@ const opened = async (shown = true) => {
   return hook;
 };
 
+describe("how fine the screen draws the charts", () => {
+  const setRatio = (ratio) => Object.defineProperty(window, "devicePixelRatio", { value: ratio, configurable: true });
+  let changed;
+
+  beforeEach(() => {
+    changed = [];
+    window.matchMedia = () => ({
+      addEventListener: (_, listener) => changed.push(listener),
+      removeEventListener: (_, listener) => { changed = changed.filter((other) => other !== listener); },
+    });
+  });
+
+  afterEach(() => {
+    delete window.matchMedia;
+    delete window.devicePixelRatio;
+  });
+
+  it("is a level finer on a 2× screen and none on a 1× one", async () => {
+    setRatio(2);
+    expect((await opened()).result.current.finer).toBe(1);
+    setRatio(1);
+    expect((await opened()).result.current.finer).toBe(0);
+  });
+
+  it("follows the window to another screen", async () => {
+    setRatio(1);
+    const hook = await opened();
+    setRatio(2);
+    act(() => changed.forEach((listener) => listener()));
+    expect(hook.result.current.finer).toBe(1);
+  });
+
+  it("works from the ratio alone in a browser with no way to say when it changes", async () => {
+    delete window.matchMedia;
+    setRatio(2);
+    expect((await opened()).result.current.finer).toBe(1);
+  });
+});
+
 describe("the first look", () => {
   it("knows nothing until the server answers, so nothing is drawn from ArcGIS meanwhile", async () => {
     const hook = renderHook(() => useVfrCharts(true));

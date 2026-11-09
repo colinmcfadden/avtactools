@@ -8,7 +8,7 @@ import { VFR_STYLE_ID, chartLayerOptions, leafletBounds } from "./vfrCharts";
  * the build has no charts; with no live build, ArcGIS everywhere. Only the chart layer's failures ask for the config again.
  */
 export default function VfrChartLayers({ charts }) {
-  const { known, live, tileFailed } = charts;
+  const { known, live, tileFailed, finer } = charts;
   const handlers = useMemo(() => ({ tileerror: tileFailed }), [tileFailed]);
   if (!known) return null;
 
@@ -26,12 +26,12 @@ export default function VfrChartLayers({ charts }) {
           zIndex={1}
         />
       ))}
-      {/* Keyed by the build: a new one has its own URL, bounds and levels, and a layer's options are fixed once made. */}
+      {/* Keyed by the build and the screen: each gives other URLs, bounds or levels, and a layer's options are fixed once made. */}
       <TileLayer
-        key={live.build}
+        key={`${live.build}/${finer}`}
         url={live.tiles}
         crossOrigin="anonymous"
-        {...chartLayerOptions(live)}
+        {...chartLayerOptions(live, finer)}
         zIndex={2}
         eventHandlers={handlers}
       />

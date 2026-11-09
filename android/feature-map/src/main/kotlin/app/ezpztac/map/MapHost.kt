@@ -190,8 +190,8 @@ class MapHost {
 
     internal fun styleLoaded(style: Style) = styleListeners.toList().forEach { it(style) }
 
-    internal fun applyStyle(style: MapBaseStyle) = whenReady { map ->
-        map.setStyle(Style.Builder().fromJson(MapStyles.styleJson(style))) { loaded -> styleLoaded(loaded) }
+    internal fun applyStyle(style: MapBaseStyle, density: Double) = whenReady { map ->
+        map.setStyle(Style.Builder().fromJson(MapStyles.styleJson(style, density))) { loaded -> styleLoaded(loaded) }
     }
 
     /** What is under a point on the screen, for taps; `null` while there is no map. */
@@ -306,7 +306,8 @@ fun EzpzMap(
     }
     LaunchedEffect(rendering, covered) { rendering.set(owner.lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED), covered) }
 
-    LaunchedEffect(style) { host.applyStyle(style) }
+    val density = LocalDensity.current.density.toDouble()
+    LaunchedEffect(style, density) { host.applyStyle(style, density) }
     val topPx = with(LocalDensity.current) { padding.top.roundToPx() }
     val bottomPx = with(LocalDensity.current) { padding.bottom.roundToPx() }
     LaunchedEffect(host, topPx, bottomPx) { host.setPadding(topPx, bottomPx) }

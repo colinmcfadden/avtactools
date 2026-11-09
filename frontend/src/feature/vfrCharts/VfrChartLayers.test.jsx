@@ -7,7 +7,8 @@ const layers = vi.hoisted(() => []);
 vi.mock("react-leaflet", async (importOriginal) => ({
   ...(await importOriginal()),
   TileLayer: (props) => {
-    layers.push(props);
+    const [made] = React.useState(() => ({}));
+    layers.push({ ...props, made });
     return null;
   },
 }));
@@ -55,6 +56,12 @@ describe("the VFR map's layers", () => {
     expect(chart).toMatchObject({ tileSize: 512, zoomOffset: -1, minNativeZoom: 6, maxNativeZoom: 15, maxZoom: 20, bounds: [[24, -125], [50, -66]] });
   });
 
+  it("draws a dense screen's charts a level finer, and leaves ArcGIS's as they were", () => {
+    const [hawaii, , chart] = drawn({ live: LIVE, finer: 1 });
+    expect(chart).toMatchObject({ tileSize: 256, zoomOffset: 0, minNativeZoom: 5, maxNativeZoom: 14 });
+    expect(hawaii.tileSize).toBe(drawn({ live: LIVE })[0].tileSize);
+  });
+
   it("draws the charts over ArcGIS's", () => {
     const found = drawn({ live: LIVE });
     expect(found[2].zIndex).toBeGreaterThan(found[0].zIndex);
@@ -71,6 +78,15 @@ describe("the VFR map's layers", () => {
     expect(found[0].eventHandlers).toBeUndefined();
     expect(found[1].eventHandlers).toBeUndefined();
     expect(drawn({ live: null, tileFailed })[0].eventHandlers).toBeUndefined();
+  });
+
+  it("is made anew when the window moves to a screen of another density, as a layer's tile size is fixed once made", () => {
+    const chartLayer = () => layers.filter((layer) => layer.url === LIVE.tiles).pop();
+    const { rerender } = render(<VfrChartLayers charts={{ known: true, live: LIVE, tileFailed: () => {}, finer: 0 }} />);
+    const before = chartLayer();
+    rerender(<VfrChartLayers charts={{ known: true, live: LIVE, tileFailed: () => {}, finer: 1 }} />);
+    expect(chartLayer().tileSize).toBe(256);
+    expect(chartLayer().made).not.toBe(before.made);
   });
 
   it("is made anew for a new build, whose bounds and levels a layer cannot take on later", () => {
