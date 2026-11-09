@@ -50,6 +50,7 @@ from models import LocalCredential, MissionPackInvite, Notification, User, db  #
 from openapi_check import check_response, load_spec  # noqa: E402
 from routes.aircraft_routes import aircraft_bp  # noqa: E402
 from routes.brief_routes import brief_bp  # noqa: E402
+from routes.chart_routes import chart_bp  # noqa: E402
 from routes.config_routes import config_bp  # noqa: E402
 from routes.lidar_routes import lidar_bp  # noqa: E402
 from routes.lz_routes import lz_bp  # noqa: E402
@@ -69,6 +70,8 @@ if "routes.terrain_routes" not in sys.modules:
     sys.modules.setdefault("ultralytics", MagicMock())
 from routes.terrain_routes import terrain_bp  # noqa: E402
 from routes.threat_routes import threat_bp  # noqa: E402
+from charts import serve as chart_serve, state as chart_state  # noqa: E402
+from test_chart_serve import NOW as CHART_NOW, listed as list_chart_build, make_build as make_chart_build  # noqa: E402
 
 FIXTURE = BACKEND_DIR.parent / "contracts" / "fixtures" / "network" / "responses.json"
 # A real tileset py3dtiles made (contracts/scripts/tileset_fixture.py), which the 3D view's recordings serve.
@@ -140,7 +143,7 @@ def documented(method, path, status):
 
 class NetworkFixtureTests(NativeAuthCase):
     extra_blueprints = (config_bp, lz_bp, saved_routes_bp, point_sets_bp, aircraft_bp, sync_bp, terrain_bp, threat_bp, weather_bp,
-                        pack_bp, team_bp, brief_bp, threat_set_bp, lidar_bp, notification_bp)
+                        pack_bp, team_bp, brief_bp, threat_set_bp, lidar_bp, notification_bp, chart_bp)
 
     def setUp(self):
         super().setUp()
@@ -183,6 +186,22 @@ class NetworkFixtureTests(NativeAuthCase):
             self.assertEqual(problems, [], f"{name}: {template} {response.status_code} does not match the contract")
         return response
 
+    def charts(self):
+        """The config once a VFR chart build is live (docs/VFR_CHARTS.md §4.5), and a build that is gone: a small build of the
+        recorded coverage in a chart folder of its own, the server's own routes reading it."""
+        where = Path(tempfile.mkdtemp())
+        try:
+            make_chart_build(where, "2026-10-29.1", {(11, 540, 816): b""})
+            list_chart_build(where, "2026-10-29.1")
+            chart_state.switch(where, "2026-10-29.1", "Ann", CHART_NOW)
+            with patch.dict(os.environ, {"CHART_TILES_DIR": str(where)}):
+                self.rec("config: a chart build live", self.client.get("/api/config", headers=ANDROID), "Cache-Control")
+                self.rec("chart tile: a build that is gone", self.client.get("/charts/vfr/2026-10-29.9/11/540/816.webp"),
+                         "Cache-Control", "X-Chart-Build", "Access-Control-Allow-Origin")
+        finally:
+            chart_serve.REGISTRY.close_all()
+            shutil.rmtree(where, ignore_errors=True)
+
     @staticmethod
     def cross_cutting(response):
         """Answers any route behind a token can give, described once in the spec's introduction, not per route."""
@@ -204,6 +223,7 @@ class NetworkFixtureTests(NativeAuthCase):
         KEPT_UUIDS.add(mine)
 
         self.rec("config", self.client.get("/api/config", headers=ANDROID), "Cache-Control")
+        self.charts()
 
         self.make_account()
         creds = {"email": "pilot@example.com", "password": PASSWORD}

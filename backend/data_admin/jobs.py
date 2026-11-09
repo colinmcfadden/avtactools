@@ -45,6 +45,15 @@ INCOMING = ".incoming"
 TRASH = ".trash"
 
 
+# One job at a time: the check for a job queued or running and the insert, under one lock (one gunicorn process, AGENTS.md §9). The
+# tab's routes and the automatic cycle (docs/VFR_CHARTS.md §5.7) both take it; ``auto.lock`` keeps two containers from both starting.
+CREATING = threading.Lock()
+
+
+class Busy(RuntimeError):
+    """Another job is queued or running."""
+
+
 class Cancelled(Exception):
     pass
 

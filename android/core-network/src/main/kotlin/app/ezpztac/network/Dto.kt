@@ -97,11 +97,36 @@ public data class AppConfig(
     val apiVersion: String? = null,
     /** Every API major the server still answers; absent from a server older than the field. */
     val apiMajors: List<Int>? = null,
+    /**
+     * The server's own VFR chart tiles (docs/VFR_CHARTS.md §4.5), sent only while a build is live. Absent: the ArcGIS
+     * service is drawn everywhere, as before (§4.6).
+     */
+    val charts: Charts? = null,
 ) {
     @Serializable public data class MinAppVersion(val android: String? = null, val ios: String? = null)
     @Serializable public data class Maintenance(val active: Boolean, val message: String? = null)
     @Serializable public data class Services(val lidarBuilds: Boolean, val packs: Boolean)
     @Serializable public data class MapboxConfig(val publicToken: String? = null)
+    @Serializable public data class Charts(val vfr: Vfr) {
+        /**
+         * The live build: [tiles] and [coverage] are relative to the API's root (no `/api`), [tileSize] 512 with [minZoom] and
+         * [maxZoom] in MapLibre's levels, [effective] and [expires] instants in UTC, [bounds] `[west, south, east, north]` outside
+         * which no chart tile is asked for, and [fallback] the rectangles where the ArcGIS service is drawn instead (§4.6).
+         */
+        @Serializable public data class Vfr(
+            val build: String,
+            val cycle: String,
+            val tiles: String,
+            val tileSize: Int,
+            val minZoom: Int,
+            val maxZoom: Int,
+            val effective: String,
+            val expires: String,
+            val coverage: String,
+            val bounds: List<Double>,
+            val fallback: List<List<Double>>,
+        )
+    }
 }
 
 /** A saved LZ without its diagram. */
