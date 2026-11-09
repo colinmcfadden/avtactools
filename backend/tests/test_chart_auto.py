@@ -372,9 +372,12 @@ class AutoTests(AutoCase):
             self.look()
         self.assertEqual(len(self.chart_jobs()), 1)
         self.assertEqual(len(self.sent), 1)
+        words = "Built 2026-12-03T12:00:00Z as 2026-12-24.1, {} at 2026-12-24T09:01:00Z."
+        self.assertEqual(auto.describe(self.held(), DEC, True, self.clock, auto.mode())["text"], words.format("switches"))
         # its time comes: it is served, and written down by the next look
         self.clock = at("2026-12-24T09:01:00")
         self.assertEqual(state.serving(self.root, self.clock)["live"], "2026-12-24.1")
+        self.assertEqual(auto.describe(self.held(), DEC, True, self.clock, auto.mode())["text"], words.format("was scheduled to switch"))
         self.look()
         self.assertEqual((self.held()["live"], self.held()["previous"]), ("2026-12-24.1", "2026-10-29.1"))
         self.assertEqual(len(self.chart_jobs()), 1)
