@@ -1,11 +1,11 @@
 import Icon from "../ui/Icon";
 import "./backstops.css";
 
-/** Over the map while a backstop is drawn, so a phone with its sheet down can still finish one. */
-const BackstopDrawBar = ({ points, onUndo, onCancel, onFinish }) => (
+/** Over the map while a backstop or a FLOT is drawn, so a phone with its sheet down can still finish one. */
+const BackstopDrawBar = ({ points, onUndo, onCancel, onFinish, title = "Drawing a backstop.", hint = "Click the map beyond the LZ/PZ to lay out the line." }) => (
   <div className="backstop-draw-bar" role="status">
     <div className="backstop-draw-bar__text">
-      <b>Drawing a backstop.</b> Click the map beyond the LZ/PZ to lay out the line.
+      <b>{title}</b> {hint}
       {points > 0 && ` ${points} ${points === 1 ? "point" : "points"} so far.`}
     </div>
     <div className="backstop-draw-bar__actions">

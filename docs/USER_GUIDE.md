@@ -116,6 +116,15 @@ Use **Import → Mission file** in the top bar, **Import .msnx** at the foot of 
 
 Imported routes are fully editable: drag points (serpentine geometry updates too) and insert points on legs.
 
+### The FLOT
+
+**Draw FLOT** at the foot of the Routes panel marks the forward line of troops. Click along the line in order, then **Finish**. It draws as a scalloped blue line labelled FLOT.
+
+- **Flip** beside it in the Routes panel, or **Flip the scallops** on its right-click menu, chooses which side the scallops face.
+- Hover the line and drag a point to move it. **Delete FLOT** is on the right-click menu, and the panel has a remove button beside it.
+
+It is saved with the sketched routes, and shared with them in a Mission Pack. It never goes into an exported `.msnx`, and it can't be added to an imported mission: it goes with your sketched routes instead.
+
 ### The Routes panel
 
 Routes are listed in the dock's **Routes** panel, one card per *route set*: the routes you sketched this session, and each imported mission file.

@@ -24,6 +24,7 @@ import Doghouse from "../feature/doghouses/Doghouse";
 import Helicopter from "../feature/helicopters/Helicopter";
 import GoAroundMarker from "../feature/goAround/GoAround";
 import Backstop from "../feature/backstops/Backstop";
+import Flot from "../feature/flot/Flot";
 import ExportHandler from "../feature/export/ExportHandler";
 import CursorGridReadout from "./CursorGridReadout";
 import MsnxRouteLayer, {
@@ -101,6 +102,8 @@ function MapInteractionHandler({
   onDraftPointContextMenu,
   isDrawingBackstop,
   addBackstopDraftPoint,
+  isDrawingFlot,
+  addFlotDraftPoint,
   onMapMove,
   presenting = false,
 }) {
@@ -118,7 +121,7 @@ function MapInteractionHandler({
         return;
       }
       if (isDrawingLZ) return; // Don't interrupt drawing
-      if (isDrawingBackstop) {
+      if (isDrawingBackstop || isDrawingFlot) {
         e.originalEvent.preventDefault();
         return;
       }
@@ -151,6 +154,8 @@ function MapInteractionHandler({
         addDraftPoint(e.latlng.lat, e.latlng.lng);
       } else if (isDrawingBackstop) {
         addBackstopDraftPoint(e.latlng.lat, e.latlng.lng);
+      } else if (isDrawingFlot) {
+        addFlotDraftPoint(e.latlng.lat, e.latlng.lng);
       } else {
         setContextMenu(null); // Click anywhere else to close the menu
       }
@@ -196,6 +201,12 @@ const MapView = ({
   isDrawingBackstop = false,
   backstopDraftPoints = [],
   addBackstopDraftPoint,
+  flots = [],
+  updateFlot,
+  onFlotContextMenu,
+  isDrawingFlot = false,
+  flotDraftPoints = [],
+  addFlotDraftPoint,
   pzMarkers,
   updatePZMarker,
   deletePZMarker,
@@ -291,6 +302,8 @@ const MapView = ({
         isSketchingRoute={isSketchingRoute}
         isDrawingBackstop={isDrawingBackstop}
         addBackstopDraftPoint={addBackstopDraftPoint}
+        isDrawingFlot={isDrawingFlot}
+        addFlotDraftPoint={addFlotDraftPoint}
         addDraftPoint={addDraftPoint}
         onDraftPointContextMenu={onDraftPointContextMenu}
         onMapMove={onMapMove}
@@ -335,6 +348,25 @@ const MapView = ({
             ))}
           </>
         )}
+
+        {isDrawingFlot && flotDraftPoints.length > 0 && (
+          <>
+            <Polyline positions={flotDraftPoints.map((p) => [p.lat, p.lon])} pathOptions={{ color: "#2f8fff", weight: 3, dashArray: "8 6" }} />
+            {flotDraftPoints.map((p, i) => (
+              <CircleMarker key={`flot-draft-${i}`} center={[p.lat, p.lon]} radius={4} pathOptions={{ color: "#ffffff", weight: 2, fillColor: "#2f8fff", fillOpacity: 1 }} interactive={false} />
+            ))}
+          </>
+        )}
+
+        {flots.map((flot) => (
+          <Flot
+            key={`flot-${flot.id}`}
+            data={flot}
+            onChange={updateFlot}
+            onContextMenu={onFlotContextMenu}
+            passive={isDrawingFlot || isDrawingBackstop || isDrawingLZ || isSketchingRoute}
+          />
+        ))}
 
         {/* Render the Active Drawing Line */}
         {isDrawingLZ && drawingPoints.length > 0 && (
@@ -454,7 +486,7 @@ const MapView = ({
             target={targetLocation}
             onChange={updateBackstop}
             onContextMenu={onBackstopContextMenu}
-            passive={isDrawingBackstop || isDrawingLZ || isSketchingRoute}
+            passive={isDrawingBackstop || isDrawingFlot || isDrawingLZ || isSketchingRoute}
           />
         ))}
 
