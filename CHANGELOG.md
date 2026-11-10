@@ -1,3 +1,36 @@
+## [1.10.0](https://github.com/colinmcfadden/avtactools/compare/v1.9.1...v1.10.0) (2026-11-10)
+
+### Features
+
+* add a backstop tool for an lz/pz ([d95d0d8](https://github.com/colinmcfadden/avtactools/commit/d95d0d8e220ef87cc265e8cfc820b29ef5e33872))
+* add a flot line to route sets ([6526dd8](https://github.com/colinmcfadden/avtactools/commit/6526dd8941b4044feae05058ec33d40578f1b7f7))
+* add and delete route points from the plan, and find local points by name ([2014320](https://github.com/colinmcfadden/avtactools/commit/2014320eb7ebfd82eaa26d3fc6366a8f825ddc52))
+* **android:** draw the faa's own vfr charts from the live build ([bb94cf3](https://github.com/colinmcfadden/avtactools/commit/bb94cf3f9998adac2d5d34b21e96a0a9a60a2ce4))
+* **android:** keep a mission pack's threats on the map and in step ([b9058b5](https://github.com/colinmcfadden/avtactools/commit/b9058b54c530b3a90f87f189bef26a941f502986))
+* **android:** keep a route set's flots and say them in a pack's history ([e4b8f78](https://github.com/colinmcfadden/avtactools/commit/e4b8f78f4103a7ca750a200172ef185f69543dc4))
+* **android:** keep backstops through a save and a mission pack ([c7bbb28](https://github.com/colinmcfadden/avtactools/commit/c7bbb28d4a14cd1bb9016e3c3f33159ea92b2786))
+* **android:** save threats in named sets in the library ([64e550d](https://github.com/colinmcfadden/avtactools/commit/64e550d27df252d8bc10b34ea00fb7e86f586161))
+* **backend:** build the FAA's VFR charts as a Data tab job ([269c671](https://github.com/colinmcfadden/avtactools/commit/269c671eb0490685043b9e4fe9e1ce4753cc4f46))
+* **backend:** build VFR chart tiles from the FAA's GeoTIFFs (C0) ([a3d46a6](https://github.com/colinmcfadden/avtactools/commit/a3d46a695d52e46145099872811ea33d1fd4f55d))
+* **backend:** serve the VFR chart tiles and switch builds from the Data tab (C2) ([266fcb7](https://github.com/colinmcfadden/avtactools/commit/266fcb725d87d8e996e55eaa440b6082faeea511))
+* **contracts:** name the threatset pack item in api 2.0.0 ([c7b2ebb](https://github.com/colinmcfadden/avtactools/commit/c7b2ebbb4c2cf44f8645421bffb59ba7dcd0549b))
+* drag a backstop's arrow whole or by its tip, drawn red outlined in white ([a171567](https://github.com/colinmcfadden/avtactools/commit/a17156726dd5945a3989d2acde69bfc4e49e9f8f))
+* draw the VFR map and the brief's figures from the FAA's own charts (C3) ([ad7dd73](https://github.com/colinmcfadden/avtactools/commit/ad7dd73bdce9632cf77ca9ee0431991bc4dbed1b))
+* edit routes on the map and undo them a point at a time ([5446cb2](https://github.com/colinmcfadden/avtactools/commit/5446cb22756ba872e0ade0ffb1aa0d54a54a1c4f))
+* open kmz overlays, flight plans and gpx, and make local points by hand ([4bdf7e4](https://github.com/colinmcfadden/avtactools/commit/4bdf7e43176ee128a454aa4b3ed73922385e10c7))
+* save threats in named sets in the library ([ec22243](https://github.com/colinmcfadden/avtactools/commit/ec22243f5e63ea04afc621ea23f13f78e2823690))
+* share threats in mission packs as an item of their own ([71242ee](https://github.com/colinmcfadden/avtactools/commit/71242eed951596a4b9c97295e07af07af7686617))
+* undo and redo what a person does while planning ([480748f](https://github.com/colinmcfadden/avtactools/commit/480748fdb3f7087f3e7ab3487f5c2c9b54bca255))
+
+### Bug Fixes
+
+* **backend:** say a chart build's scheduled switch has passed once it has ([8373a2f](https://github.com/colinmcfadden/avtactools/commit/8373a2f12b7101be73b792d953a4263469cd01d5))
+* draw the FAA charts a level finer on dense screens ([25b95d7](https://github.com/colinmcfadden/avtactools/commit/25b95d79ec9d132d80b51fc4075b2121fb48c37a))
+* **frontend:** draw the uh-60 as the original green helicopter at its real size ([26f277e](https://github.com/colinmcfadden/avtactools/commit/26f277e8e9b46199f28bbb20f4db2e22430cfe49))
+* leave the mouse to the map while a backstop or flot is drawn ([6446429](https://github.com/colinmcfadden/avtactools/commit/644642933b9c89f976d8be0e2cd9c6e53629d978))
+* make draft points readable over the VFR chart ([c2958ba](https://github.com/colinmcfadden/avtactools/commit/c2958ba69249bbeab7c590949a0cffd08daf6c5c))
+* show the first point of a route or boundary being drawn ([f5f94c9](https://github.com/colinmcfadden/avtactools/commit/f5f94c9c0f4b9a6fb617661680fd1f4bdfc41da7))
+
 ## [1.9.1](https://github.com/colinmcfadden/avtactools/compare/v1.9.0...v1.9.1) (2026-11-06)
 
 ### Bug Fixes
