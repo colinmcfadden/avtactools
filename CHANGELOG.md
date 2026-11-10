@@ -1,3 +1,32 @@
+## [1.9.1](https://github.com/colinmcfadden/avtactools/compare/v1.9.0...v1.9.1) (2026-11-06)
+
+### Bug Fixes
+
+* **frontend:** draw the uh-60 as the original green helicopter at its real size ([45578fd](https://github.com/colinmcfadden/avtactools/commit/45578fd8ab49904734d30a9a813394a27501acea))
+
+## [1.9.0](https://github.com/colinmcfadden/avtactools/compare/v1.8.0...v1.9.0) (2026-11-06)
+
+### Features
+
+* **android:** list what the map's search could be as it is typed ([5548c2a](https://github.com/colinmcfadden/avtactools/commit/5548c2a30cd1d5d6316dd72e5e45fd13956e5cb2))
+* **android:** send a grid by the share sheet, and open a grid link ([c0b2259](https://github.com/colinmcfadden/avtactools/commit/c0b2259148ba0ee0aa4159f9a3e59e2dfcb34fcf))
+* **android:** show a shared grid's qr code, drawn with zxing core ([7b152d5](https://github.com/colinmcfadden/avtactools/commit/7b152d5e5493c2331c1844f48c2675dad45b18d4))
+* **backend:** add the admin's data tab, a map of the server's terrain and DEM downloads from USGS ([fe55d58](https://github.com/colinmcfadden/avtactools/commit/fe55d5852a5b84e2af540dd0d958b8006ab645cd))
+* **backend:** add USGS GNIS names to the place search ([736b3d8](https://github.com/colinmcfadden/avtactools/commit/736b3d8246978f657e2dd6a216351c25e5ab51b9))
+* **backend:** search FAA airports, heliports, navaids and fixes ([7c7c387](https://github.com/colinmcfadden/avtactools/commit/7c7c3870c019afd5f61165b40a4501089883df0e))
+* **frontend,android:** open the grid search over the map, spotlight style ([4fac128](https://github.com/colinmcfadden/avtactools/commit/4fac1283b10f49bb88b8f6a69cfed3ab1b8f2837))
+* **frontend,contracts:** read the target field as it is typed, offering its grid and lat/long ([ffb4ddd](https://github.com/colinmcfadden/avtactools/commit/ffb4ddd98c396b3f02c2b2c018e82265290d2335))
+* **frontend,contracts:** send a grid to someone by share sheet, QR code or link ([fbc1493](https://github.com/colinmcfadden/avtactools/commit/fbc1493c94adfa38b9e8bbaf9fbf2f408c38caf7))
+* **frontend:** move the grid search into the top bar, with share buttons ([18a0273](https://github.com/colinmcfadden/avtactools/commit/18a0273aafcbd1b2085f960f8b325456edb9266a))
+* list FAA places in the map's search as they are typed ([e0ff9f7](https://github.com/colinmcfadden/avtactools/commit/e0ff9f7a56c03ca059aac71856310d3f1443cbb5))
+* **web:** offer the USGS topo map under Layers ([c51e3d1](https://github.com/colinmcfadden/avtactools/commit/c51e3d144eadaaf6f880713acb47dfc389972c11))
+* **web:** open the map at the person's location when the browser allows it ([a086fb2](https://github.com/colinmcfadden/avtactools/commit/a086fb2a535d4abfe2fb99b7d1b897b620106ba7))
+
+### Bug Fixes
+
+* **frontend,contracts:** keep a grid link's place and its toast right in a pack ([299f640](https://github.com/colinmcfadden/avtactools/commit/299f6401c3817f372319eb85d2047d869f924b7d))
+* **frontend,contracts:** read what the review found the target field misread ([dd8aaff](https://github.com/colinmcfadden/avtactools/commit/dd8aaffd82c688174e5e010aef02f769a0acb593))
+
 ## [1.8.0](https://github.com/colinmcfadden/avtactools/compare/v1.7.8...v1.8.0) (2026-10-31)
 
 ### Features
