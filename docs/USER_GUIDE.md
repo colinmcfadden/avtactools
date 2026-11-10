@@ -15,14 +15,14 @@ The interface has four parts:
 
 ## 1. Getting started: set a target
 
-Type an MGRS grid, or a latitude and longitude in any common form (`34.5457, -84.1234`, `34°32'44.4"N 84°07'24.4"W`, `3432.740N 08407.407W`), in the search box in the top bar (on a phone, the box over the map). On a computer it opens wider over the map when you click it. As you type, a list under the box shows the grid and the lat/long it reads; choose either (or press **GO** or Enter) to go there. The share button on each row, or beside **GO**, sends that grid to someone: by your device's share sheet, a copy, a link or a QR code. If what you typed could mean two places, such as `34 84` with no minus sign or N/S/E/W, the list offers both, nearest the map first, and you choose. The map flies to the location, drops a gold star on the target, and automatically generates two **doghouses** (SP/RP flight-data cards) beside it.
+Type an MGRS grid, or a latitude and longitude in any common form (`34.5457, -84.1234`, `34°32'44.4"N 84°07'24.4"W`, `3432.740N 08407.407W`), in the search box in the top bar (on a phone, the box over the map). On a computer it opens wider over the map when you click it. As you type, a list under the box shows the grid and the lat/long it reads; choose either (or press **GO** or Enter) to go there. A local point can be found the same way by its name, whether its set is on the map or kept in your Library. The share button on each row, or beside **GO**, sends that grid to someone: by your device's share sheet, a copy, a link or a QR code. If what you typed could mean two places, such as `34 84` with no minus sign or N/S/E/W, the list offers both, nearest the map first, and you choose. The map flies to the location, drops a gold star on the target, and automatically generates two **doghouses** (SP/RP flight-data cards) beside it.
 
 ![Search result with doghouses](images/02-search.png)
 
 You can also **right-click anywhere on the map** → **Set as Target** to move the target without typing a grid.
 
 - Doghouse values (heading, time, distance, airspeed) are editable — click a value and enter a new one.
-- Use **Layers** (bottom left of the map) to switch between **Satellite**, **USGS** (the USGS topographic map), **Topo** and the **VFR** sectional, and to turn on the **MGRS grid** over any of them. The grid draws zone boundaries, 100 km squares, and lines at 10 km, 1 km or 100 m as you zoom in, labelled with the zone, the square and each line's digits, so a grid reference can be read straight off the map. It is for planning on screen only: it never appears on an exported LZ card.
+- Use **Layers** (bottom left of the map) to switch between **Satellite**, **USGS** (the USGS topographic map), **Topo** and the **VFR** sectional, and to turn on the **MGRS grid** over any of them. Each map overlay you have open has its own switch right under the grid's. The grid draws zone boundaries, 100 km squares, and lines at 10 km, 1 km or 100 m as you zoom in, labelled with the zone, the square and each line's digits, so a grid reference can be read straight off the map. It is for planning on screen only: it never appears on an exported LZ card.
 - **Where the map opens.** The first time the map loads, your browser may ask to share your location. Allow it and the map opens around where you are; refuse it (EZ/PZ will not ask again in that browser) and it opens where it always has. Your location only centres the map: it is not sent to the server, saved with a plan or shown to anyone in a Mission Pack. If an LZ/PZ, a grid link or a pack opens first, or you move the map before the browser answers, the map stays where it is. To be asked again, allow location for the site in your browser's settings.
 
 ## 2. Analyze the LZ
@@ -57,6 +57,7 @@ The **LZ/PZ Tools** grid places draggable markers on the map:
 | **Sector** | Sector-of-fire triangle — drag its corner points to shape it. |
 | **Unit** | Opens a menu of unit symbols to place. |
 | **L-GA / R-GA** | Left/right go-around arrows. |
+| **Backstop** | A red dashed line beyond the LZ/PZ for a crew that overflies it. Click along the terrain or landmark you want, then Finish; a red arrow from the line back to the LZ/PZ is labelled with its true azimuth and its length in km. The line stays where you drew it and the arrow is what you move: drag it anywhere along its length to move it whole, or drag its tip to change its length and heading (hover or tap the arrow to see the handles). Drop the tip on the LZ/PZ to point it back there. Right-click the line or the arrow to delete the backstop. |
 
 Everything is draggable; most markers can be deleted from their own controls or right-click.
 
@@ -105,7 +106,9 @@ This mirrors how AMPS models routes: only *designated* points (SP, checkpoints, 
 
 Symbols match AMPS iconography, and designations survive export/re-import. Each route keeps at least two designated endpoints.
 
-**Editing**: drag any point to move it. Right-click the route *line* → **Insert Point Here** to add a point mid-leg.
+**Editing**: drag any point to move it. Moving the mouse onto a route thickens and lights up its line and names it. Right-click the route *line* → **Add point here** to bend the line there, or **Add checkpoint here** to add a named point. Right-click a *point* → **Delete point** to take it off (a route keeps at least two points, two of them named).
+
+The route's list of points does the same without the map. The trash button deletes a point. **Add point here** under a point, or **Add point** at the end of the list, opens a box that takes a grid, a lat/long, a place or a local point from your Library; the box stays open so you can add several in a row. A point added from a place or a local point takes its name, and a local point its charted elevation. On an imported mission a new point goes on the nearest leg, can't be undone, and points can't be deleted.
 
 ### Importing a .msnx
 
@@ -114,6 +117,15 @@ Use **Import → Mission file** in the top bar, **Import .msnx** at the foot of 
 ![Imported mission alongside a sketch](images/10-import.png)
 
 Imported routes are fully editable: drag points (serpentine geometry updates too) and insert points on legs.
+
+### The FLOT
+
+**Draw FLOT** at the foot of the Routes panel marks the forward line of troops. Click along the line in order, then **Finish**. It draws as a scalloped blue line labelled FLOT.
+
+- **Flip** beside it in the Routes panel, or **Flip the scallops** on its right-click menu, chooses which side the scallops face.
+- Hover the line and drag a point to move it. **Delete FLOT** is on the right-click menu, and the panel has a remove button beside it.
+
+It is saved with the sketched routes, and shared with them in a Mission Pack. It never goes into an exported `.msnx`, and it can't be added to an imported mission: it goes with your sketched routes instead.
 
 ### The Routes panel
 
@@ -133,33 +145,43 @@ Exported files deliberately contain geometry only — after opening one in AMPS,
 
 **Save is on the thing you are working on.** The open LZ/PZ's card in the **LZ/PZ** panel has a **Save** button, and so does each route set in **Routes**. The first save asks for a name (a name already in your Library offers *Keep both* or *Replace*); every later save happens without asking and shows a short note at the bottom of the screen. **Ctrl S** (**⌘ S** on a Mac) saves whatever the dock is showing.
 
+**Undo and Redo** are in the top bar and on the map's tools on a phone, and on **Ctrl Z** and **Ctrl Shift Z** (**⌘ Z** and **⇧⌘ Z** on a Mac). They take back the last thing you did on the map, wherever you did it: moving or changing an object, a route or its plan, a boundary. An analysis and fetched winds are not taken back, and neither is anything someone else did in a Mission Pack. While you are drawing a route or a boundary, Ctrl Z removes the last point. A route you have finished comes back the same way, one point at a time, until its last two points go together.
+
 - An LZ/PZ must be analyzed before it can be saved. Saving captures the target, boundary, analysis, everything placed on it and the doghouse edits. Threats and routes are not part of it.
 - **Close** (in an LZ/PZ's **⋯** menu) takes it out of this session; with unsaved changes it asks *Cancel / Don't save / Save*.
 
-**The Library** (top bar) is everything you have saved, in three tabs: LZ/PZ, Routes and Local points. Search, sort, and **Open** one to add it to this session (one already open says *Open in session*). Its **⋯** menu renames, duplicates or deletes it; deleting asks first, because it is gone from every device. The LZ/PZ panel also lists the three most recent LZ/PZs with a quick **Open**.
+**The Library** (top bar) is everything you have saved, in tabs: LZ/PZ, Routes, Local points, Threats and Overlays. Search, sort, and **Open** one to add it to this session (one already open says *Open in session*). Its **⋯** menu renames, duplicates or deletes it; deleting asks first, because it is gone from every device. The LZ/PZ panel also lists the three most recent LZ/PZs with a quick **Open**.
 
 Your account menu (your name, top right) holds **Sign out**, and for admins a link to the admin dashboard.
 
 ### Importing files
 
-**Import** in the top bar takes AMPS mission files (`.msnx`), local points (`.LPS`) and threats (`.ths`). You can also drop files anywhere on the map. EZ-PZ works out what each file is from its content, then shows what it found and asks where each should live: local points and missions can be saved to your Library or kept in this session; threats always stay in this session. Anything it cannot read is listed with the reason and left out.
+**Import** in the top bar takes AMPS mission files (`.msnx`), local points (`.LPS`), threats (`.ths`), flight plans (`.fpl` and `.gpx`) and map overlays (`.kmz` and `.kml`). You can also drop files anywhere on the map. EZ-PZ works out what each file is from its content, then shows what it found and asks where each should live: local points and missions can be saved to your Library or kept in this session; a threat file becomes a set of threats in your Library. Anything it cannot read is listed with the reason and left out.
 
 The **Imports** panel lists what you have brought in, with where it lives; mission files and threat files link to the panel where they are edited.
 
+**Flight plans.** A Garmin `.fpl` or a `.gpx` opens as a route set in **Routes**, to save and plan like one you drew. Neither format says what kind of point each one is, so EZ-PZ goes by the name: `TGT`, `LZ` or `PZ` is a target, `SP`, `RP` or `IP` an IP point, and any other name a checkpoint; a point with no name only bends the line. Check them before you export for AMPS. A `.gpx` that holds only waypoints comes in as local points.
+
+**Map overlays.** A `.kmz` or `.kml` is drawn over the map as a layer of your own: points, lines, areas and any picture laid on the ground that is inside the file. Save it to your Library (the **Overlays** tab) or keep it for this session. **Layers** has a switch for each one that is open, and clicking a point or line shows what the file says about it. The review says what was left out: nothing in the file is ever fetched from the internet, so network links and pictures held elsewhere do not come in, nor do rotated pictures or 3D models. Overlays are yours alone and are not shared in a Mission Pack.
+
+**Your own local points.** **New local point** in the Imports panel, or right-click the map and choose **Add Local Point Here**, makes one with a name, a place (an MGRS grid or a lat/long), and if you like an elevation, a group and a description. Add it to a set you have open or start a new one. Under a set, the arrow shows its points by group: add to a group, change a point with the pencil, or use **⋯** to delete it or export it. A set's own **⋯** menu saves it to your Library, once it has at least one point, and exports the whole set as `.LPS` for AMPS or as GPX; a group or a single point exports the same way.
+
 ### Mission Packs
 
-A Mission Pack is a shared space for one operation: everyone in it edits the same LZ/PZs, route sets and point sets, and sees each other's changes as they are made. Use the workspace switcher at the top left (it says **Library** until a pack is open).
+A Mission Pack is a shared space for one operation: everyone in it edits the same LZ/PZs, route sets, point sets and threats, and sees each other's changes as they are made. Use the workspace switcher at the top left (it says **Library** until a pack is open).
 
 - **New pack**: name it, say what it is for, and choose who can open it (just you, a team as editors or viewers, or particular people). People on your teams are found by name; anyone else gets an email.
-- **While a pack is open** the top bar turns violet and says whether everything has reached everyone. Anything you start goes into the pack: a new target, a sketched route, imported local points. There is no Save: the pack keeps every change. Your Library work is put aside meanwhile and comes back as you left it when you switch back.
+- **While a pack is open** the top bar turns violet and says whether everything has reached everyone. Anything you start goes into the pack: a new target, a sketched route, imported local points, a threat. There is no Save: the pack keeps every change. Your Library work is put aside meanwhile and comes back as you left it when you switch back.
 - **The Pack panel** lists what is in the pack and who changed it last; a violet dot marks what someone else changed since you looked. **History** is every change, newest first. An item copied from your Library says so, and offers **Update** when your original has changed.
-- **Members** (Invite, for the owner): add people, change roles, share with a team, resend or withdraw invitations. Everyone in a pack sees everything in it. Threats are never shared.
+- **Members** (Invite, for the owner): add people, change roles, share with a team, resend or withdraw invitations. Everyone in a pack sees everything in it, threats included.
 - **Finish pack** makes it read-only for everyone; the owner can reopen it. Anyone can still view, export and save copies to their Library.
 - **Manage teams** (bottom of the switcher): make a team, invite people by email, and set who manages it.
 
 ### Threats
 
-Threats have their own panel. They stay in this browser tab only: they are never saved to your account. Add one in the middle of the map (or right-click the map → **Add Threat Here**), import a `.ths`, and export them as a `.ths` for AMPS or a KMZ for ForeFlight, ATAK or Aero App. **Remove all threats** asks first, because they cannot be brought back.
+Threats have their own panel. They are kept in your Library as you work, with no Save to press, in named sets: the first threat starts a set called THREATS, and an imported `.ths` becomes a set named for its file. The sets you had open come back when you next sign in, terrain masks included. Several can be open at once: each is a section of the panel with its own **⋯** menu (rename, put new threats here, close), and closing one leaves it in the Library's **Threats** tab. Add one in the middle of the map (or right-click the map → **Add Threat Here**), import a `.ths`, and export them as a `.ths` for AMPS or a KMZ for ForeFlight, ATAK or Aero App. **Remove all threats** asks first; the sets stay, empty. If cloud save is off for your account, the panel says **Session only** and threats stay in that browser tab.
+
+While a Mission Pack is open the threats on the map are the pack's, and anyone who can edit it can add, move or remove them; yours are put aside and come back when you leave it. Copy a set in from the Library's **Threats** tab. Whether you have hidden a threat stays yours, and a terrain mask is worked out on each person's own screen rather than sent to the others.
 
 ## 7. The unit badge
 

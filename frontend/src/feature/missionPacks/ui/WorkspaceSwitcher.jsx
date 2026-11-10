@@ -21,6 +21,7 @@ const countsText = (counts = {}) =>
     counts.lz && `${counts.lz} LZ/PZ`,
     counts.route && plural(counts.route, "route set"),
     counts.pointset && plural(counts.pointset, "point set"),
+    counts.threatset && plural(counts.threatset, "threat set"),
   ]
     .filter(Boolean)
     .join(" · ");
@@ -85,6 +86,7 @@ const WorkspaceSwitcher = ({
     library.lz != null && plural(library.lz, "LZ/PZ", "LZ/PZs"),
     library.routes != null && plural(library.routes, "route set"),
     library.points != null && plural(library.points, "point set"),
+    library.threats != null && plural(library.threats, "threat set"),
   ]
     .filter(Boolean)
     .join(", ");

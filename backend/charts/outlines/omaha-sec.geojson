@@ -1,0 +1,40 @@
+{
+ "type": "Feature",
+ "properties": {
+  "id": "omaha-sec",
+  "title": "Omaha Sectional",
+  "tier": "sectional",
+  "file": "Omaha SEC.tif",
+  "made_from": {
+   "width": 17921,
+   "height": 12358,
+   "transform": [
+    42.335440574,
+    0.0,
+    -411171.578339697,
+    0.0,
+    -42.334973725,
+    257040.430107308
+   ],
+   "ink": 1.0
+  },
+  "edges": {
+   "north": "neighbour:twin-cities-sec",
+   "east": "neighbour:chicago-sec,green-bay-sec",
+   "south": "neatline",
+   "west": "neatline"
+  }
+ },
+ "geometry": {
+  "type": "Polygon",
+  "coordinates": [
+   [
+    [-101.0,40.0],
+    [-93.0,40.0],
+    [-93.0,44.5],
+    [-101.0,44.5],
+    [-101.0,40.0]
+   ]
+  ]
+ }
+}

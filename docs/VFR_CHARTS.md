@@ -1,6 +1,7 @@
 # VFR charts — plan
 
-Status: **decided, not built** (2026-11-05). The owner finds the VFR base map too soft next to SkyVector and ForeFlight. This file
+Status: **decided; C0 to C4 built, and C5 rehearsed and left to the owner's run on production (§9)** (2026-11-05: the outlines and the build; the build as a Data tab job; the tiles served, switched
+from the tab and built each cycle on production; the web's VFR map, the brief's figures and Android's VFR map from them, §9). The owner finds the VFR base map too soft next to SkyVector and ForeFlight. This file
 proposes replacing it with chart tiles EZ/PZ builds itself from the FAA's free digital charts: the sectional everywhere, then the
 Terminal Area Chart (TAC) and the Helicopter Route Chart stacked over it where they exist, on the web and Android.
 
@@ -83,7 +84,7 @@ the four files we unzipped (Atlanta sectional and TAC, Washington and Baltimore 
 | Helicopter insets: Washington, O'Hare, Love Field, Downtown Manhattan, Boston Downtown | 1:90,000 – 1:50,000 | 4.23 – 7.62 m | 13.9 – 14.8 |
 | US Gulf Coast helicopter, Caribbean 1 and 2 | 1:1,000,000 | 84.67 m | 10.7 |
 
-*Native web zoom* is where one chart pixel is one CSS pixel. On a 2× screen, one chart pixel fills one device pixel a zoom higher.
+*Native web zoom* is where one chart pixel is one CSS pixel. On a 2× screen, one chart pixel fills one device pixel a zoom lower.
 
 **What the files hold**, from their own metadata and from reading them:
 - Each file is one band of 8-bit palette colour (256 entries), LZW-compressed, in stripes, not tiled, in a Lambert conformal conic projection on NAD83.
@@ -151,6 +152,9 @@ Shrunk further, its small text would alias below legibility. A tier is stored to
 - a stored level beyond it would be the source enlarged, at four times the tiles, which the client enlarges as well, for free.
 The brief for this work proposed *native plus one*; the owner chose rounded up (§10, 4).
 
+**The table's zooms are a 1× screen's.** A dense screen draws a level finer (§8, *A dense screen*), so it shows each tier a zoom sooner: the tile
+a 1× screen draws from web zoom 12 for a TAC, a 2× screen draws from 11, at the same tile pixels to device pixels.
+
 **Left out:**
 - the US Gulf Coast helicopter chart and the two Caribbean charts: 1:1,000,000, coarser than the sectional;
 - everything outside CONUS: the Alaska and Hawaii sectionals, their TACs and insets, Puerto Rico, the Pacific insets (§10, 2);
@@ -189,6 +193,12 @@ edges. Insets that sit inside a chart's body are cut out as holes.
 checks each one over an overview image before it is committed. It is about 84 charts (37 sectionals, about 29 TACs, Grand Canyon,
 Eastern Long Island, 11 helicopter sheets and 5 insets), plus the insets' holes, done once. There are more polygons than zips (§5.2)
 because some zips hold more than one chart.
+
+**Made (C0).** 86 polygons: 37 sectionals, 33 of the TAC tier (31 TACs, Grand Canyon and Eastern Long Island), 11 helicopter sheets
+and 5 insets, from 74 zips (`backend/charts/catalog.py`, `neatline.py`; `outlines/<id>.geojson`, with what each was made from, and
+the hand corrections in `outlines/edits.json`). Each was looked at over its chart. The sectionals' union has no sliver between two of
+them; its only holes are two insets cut out over the Gulf where no other sectional is (New Orleans' Eglin and Pensacola diagram,
+Jacksonville's west inset), so nothing is drawn there below a TAC.
 
 **Each cycle**, the pipeline compares each chart with the one its polygon was made from: dimensions, transform, and the neatline's
 pixels along the polygon.
@@ -239,6 +249,12 @@ sparse Ellijay at level 11, Atlanta TAC at 12, Washington helicopter at 13.
 | WebP, quality 80 | 40 – 57 KB | ~4.5 GB |
 
 The charts are scanned images, with screened tints and dither, so lossless encodings stay large.
+
+**Measured on C0's build** (WebP quality 90, method 4, as built): the same four blocks drawn alone are 81.5, 79.3, 75.8 and 71.4 KB a
+tile, inside the range above. Stacked as built they are 90.0 KB (dense Atlanta at level 11, which draws the TAC over the sectional
+there), 79.3, 75.8 and 62.1 KB (the helicopter chart at 13, where the inset is drawn over it). The whole prototype, 4,946 tiles over
+levels 5 to 14, averages about 59 KB a tile in its 292 MB file, so expect about **5 GB** for CONUS, not 7. Method 6 is 3% smaller and
+twice as slow to encode (36 ms a tile against 17), so method 4 stays. What WebP loses is 31 to 37 dB PSNR against the warp it encodes.
 
 **Recommendation: WebP at quality 90.**
 - Enlarged twice, it could not be told from lossless in our comparisons, and it is a fifth the size. Tiles download faster on a phone, and Android's tile cache holds five times as many.
@@ -365,7 +381,7 @@ What the Data tab has today, and what charts change in it, from reading PR #143'
 | Today | For charts |
 |---|---|
 | One runner thread, whose `run` is DEM-only. `DataJob.kind` exists but nothing reads it, and `resume` would run any queued row as a DEM download. | The runner dispatches on `kind`; `resume` too. |
-| `product` is `String(10)`, not null, `13` or `1m`. | A chart build's `product` is `vfr`. New nullable columns, added through `schema_sync` (`sync_table_columns(db, DataJob)`, which `app.py` does not call for this table yet): `build` (`String(20)`), `stage` (`String(20)`), `work_done` / `work_total` (tiles, as `bytes_done` / `bytes_total` count bytes), and `token` (a random token the build process was started with, §5.1). |
+| `product` is `String(10)`, not null, `13` or `1m`. | A chart build's `product` is `vfr`. New nullable columns, added through `schema_sync` (`sync_table_columns(db, DataJob)`, which `app.py` calls since C1): `build` (`String(20)`), `stage` (`String(20)`), `work_done` / `work_total` (tiles, as `bytes_done` / `bytes_total` count bytes), and `token` (a random token the build process was started with, §5.1). |
 | One job at a time, of any kind (the 409 under `_creating`). | Kept: a chart build and a DEM download wait for each other. `check_room` counts only the bytes one write adds, not another job's writes running beside it, so two at once could pass the reserve check together and break it. |
 | A job resumes when the tab or its job list is next opened, never at start-up. | Every job left queued or running resumes, DEM downloads included, at the chart look 5 minutes after start (§5.7) or when an admin opens the tab, whichever comes first. A job left by a redeploy then never holds the tab, and the automatic cycle with it, until someone happens to open the page. |
 | Downloads only from USGS's two hosts, no redirects. `_download` needs every file's size before the job starts, checks no host itself, unzips nothing, and its words and User-Agent name USGS. | `_download` takes the allow-list, the source's name for its words, and the User-Agent as arguments, and checks the host itself. Chart jobs allow `aeronav.faa.gov` alone, `https`, no redirects; it answers the zips directly with `Accept-Ranges: bytes` (checked 2026-11-05). The zips' sizes are asked by `HEAD` in the job's first stage, not in the request that creates it (§5.2), and unzipping is a step of its own (§5.3). |
@@ -394,7 +410,7 @@ eight threads share one Python interpreter with SAM and the terrain tiles, and t
 behind terrain work. A build on a thread in that process would slow every analysis for an hour.
 
 **The Data tab's job starts a separate process in the same container and watches it** (§10, 6):
-- **A fresh interpreter, not a fork.** The job runs `python -m charts.build <job id> <token>`. Forking would copy SAM's gigabyte.
+- **A fresh interpreter, not a fork.** The job runs `python -m charts.job <job id> <token>` (as built in C1; `charts.build` stays C0's tool run by hand). Forking would copy SAM's gigabyte.
   - It must not import `app.py`, which loads SAM at import. It opens the database through a small factory of its own (a `db_app.py`:
     a bare Flask app with `db.init_app`, `database_url.database_uri` and the API's engine options), and imports only `models` and the
     chart code. A test starts it and checks `torch` and `ultralytics` are not in `sys.modules`.
@@ -410,8 +426,9 @@ behind terrain work. A build on a thread in that process would slow every analys
     `finished_at` changed. It does so only for its own child, which it watched die, and only once the staging lock is free.
 - **One build process, ever, judged by its lock, never by a pid.** A redeploy runs the old and new containers together for a moment,
   each with its own process numbers. A pid recorded in one means nothing in the other, and may name an unrelated process there. So:
-  - The child takes an exclusive `flock` on `.staging-<build>/.lock` and holds it until it exits. Its workers inherit the
-    descriptor, so the lock lasts until the whole group is gone. The volume is shared, so the lock holds across both containers.
+  - The child takes an exclusive `flock` on `.staging-<build>/.lock` and holds it until it exits. The volume is shared, so the lock
+    holds across both containers. (Its workers are spawned and inherit no descriptor, so they hold no lock: after a child that ended
+    with no end state the parent kills its whole group before it looks at the lock. As built in C1; this said they inherited it.)
   - A child that cannot take the lock exits at once **with a status of its own** ("already running") and writes nothing. Its parent
     takes that status as "busy, look again later". It writes no `failed`, deletes no staging, and the automation counts no try
     (§5.7).
@@ -680,7 +697,7 @@ the tab's other answers are):
   - A click shows the chart's name, scale, edition dates, which builds hold it, and the zoom it is stored to.
   - Built from the live build, or from the build chosen in the Charts card.
 - **The chart tiles themselves**, a *Chart tiles* checkbox apart from the `data-layer` ones (the page fetches every `data-layer` as
-  GeoJSON). It adds a raster source of the chosen build's tiles under the overlays: `tileSize` 512, from the public tile route on the
+  GeoJSON). It adds a raster source of the chosen build's tiles under the overlays: `tileSize` 512 (256 on a dense screen, §8), from the public tile route on the
   same host. This is how a build is looked at before it is switched to.
 - **The map's bounds stay as they are.** The page's `maxBounds`, `[[-180, 5], [-40, 75]]`, holds every CONUS chart. Building Alaska
   later would change this: the Western Aleutians sectional crosses the antimeridian, so its outline would need continuous longitudes
@@ -763,8 +780,9 @@ The tab says which, and why.
 - **A cycle not yet posted is never a try.** It is waited for, however late the FAA is.
 - **These are not tries either:** a waiting job; an "already running" lock (§5.1); a restart after a redeploy; a build an admin
   cancelled.
-- **A download or validation failure is a try.** A cycle is tried at most three times, at least 6 hours apart, then given up
-  (`gave_up`). The tab shows it in red with the last reason, and the owner is emailed once.
+- **A download or validation failure is a try**, and so is a build that finished but whose folder went before it was listed (it
+  can never be listed now). A cycle is tried at most three times, at least 6 hours apart, then given up (`gave_up`). The tab
+  shows it in red with the last reason, and the owner is emailed once.
 - **A refusal for room is not retried.** It gives the cycle up at once, with what the room check said, and is emailed, because room
   has to be made by someone. *Try again* on the Charts card clears `gave_up` and the tries, for this case and the one above.
 - **A cycle that has waited more than 24 hours behind another job** is emailed once, naming the job.
@@ -823,6 +841,9 @@ WebP encode is a fraction of that, so expect about **0.1 s a tile on one core**:
 
 The VM's real figure is the first thing C1 measures, sharing the API container's CPU.
 
+**Measured by C0** on the owner's Mac: **0.08 s to warp and composite a tile and 0.015 s to encode it**, so the estimate holds. The
+prototype's 4,122 tiles of levels 11 to 14 took 66 s on six processes, preparing its seven charts 6.5 s, and its 824 lower tiles 6 s.
+
 ---
 
 ## 7. Serving
@@ -875,13 +896,15 @@ like `/r/<token>`. Both go into `contracts/openapi.yaml` in C2, with `coverage.j
 - Its URL comes from `/api/config`, and with none it is today's ArcGIS service (§4.6). While the VFR map is shown, the config is asked
   for again every 5 minutes, at `expires`, and after a chart tile fails. The last is at most once a minute and past the browser's
   cache (§4.5). A new build changes the layer's URL.
-- `tileSize: 512` and `zoomOffset: -1`, as the Mapbox styles have; native zooms 6–15 (web zoom); `maxZoom` 20.
+- `tileSize: 512` and `zoomOffset: -1`, native zooms 6–15 (web zoom), and on a dense screen `tileSize: 256` and `zoomOffset: 0`, native zooms 5–14
+  (*A dense screen*, below); `maxZoom` 20.
 - The attribution is a small component that reads `coverage.json` (§4.5).
 - The preview tile moves to one the archive has.
 - The survey editor's map already leaves VFR out (`SurveyMap.jsx`).
 
 **Android** (`MapStyles.kt`):
-- The VFR style's `tiles`, `tileSize` 512, `minzoom` and `maxzoom` come from the config, which is remembered as the Mapbox token is.
+- The VFR style's `tiles`, `tileSize` 512 (halved on a dense screen: *A dense screen*, below), `minzoom` and `maxzoom` come from the config, which is
+  remembered as the Mapbox token is.
 - With none remembered, the ArcGIS service is drawn (§4.6).
 - While the VFR style is shown, the config is asked for again every 5 minutes, at `expires`, and after a chart tile fails, as on the
   web. The ArcGIS fallback source never triggers it.
@@ -908,6 +931,24 @@ Strip charts at 1:100,000 and 1:250,000 then show a TAC or helicopter chart wher
 
 **The 3D view** drapes Mapbox imagery, not the VFR map, so it does not change.
 
+**A dense screen** (found 2026-11-09, by the owner looking at the real charts: soft zoomed out, and short of SkyVector's zoomed in). A tile's size
+on the map is in points (CSS pixels), not image pixels. Mapbox's `@2x` tiles hold 1,024 pixels in a 512-point slot; a build's tile holds 512, so
+laid over 512 points it was spread over 1,024 device pixels on a 2× screen and 1,536 on a 3×, and the next level, already in the archive, was never
+asked for.
+- **From √2 device pixels to the point the charts are drawn one level finer**: the tile over 256 points, and the level asked for one more (`levelsFiner`,
+  the web's and Android's). √2 is where that level is the nearer of the two to one tile pixel per device pixel: 1.25× stays, 1.5× and up go finer.
+- **Never two levels finer.** A 3× screen is a little nearer two (0.75 device pixels to the tile pixel against 1.5), but that is sixteen times the
+  tiles, on what is usually a phone.
+- **What it costs**: about four times the tile requests on those screens. The server and the archive do not change.
+- **A tier is stored where it is, so it shows a zoom sooner** on a dense screen. What the map says follows the level drawn (`chartWords`' `finer`, held
+  to `contracts/fixtures/charts/words.json`); *enlarged N×* is counted from the chart's native zoom, the same on every screen.
+- **Past the chart's own detail nothing helps**: a sectional's pixel is 42.33 m, so on a 2× screen from about web zoom 11.6 the FAA's own pixels are
+  being enlarged, whichever level is drawn.
+- **Measured** from real tiles at Athens, Georgia, on a simulated 2× screen, as drawn before against a level finer. The contrast left in a one-pixel
+  line: web zoom 9, 12% and 31%; 10, 25% and 61%; 11, 50% and 100%; 12, 85% and 100%; 12.4, 99% and 98%. An edge's width zoomed out: 2.5–3.25 device
+  pixels and 0.75–1.5. WebP at quality 90 is not the cause: a magenta line reads the same lossy and lossless. SkyVector's tiles were not measured.
+- ArcGIS's tiles (256 pixels over 256 points, levels 8 to 12) are left as they were, here and under the build.
+
 ---
 
 ## 9. Steps
@@ -924,6 +965,225 @@ no stop after the web to decide (§10, 1).
 | **C4** | Android: the style from config, the fallback (none at all, and ArcGIS outside CONUS), the config asked again while VFR shows, the attribution and the line. | Held to the same coverage fixture as the web. |
 | **C5** | A real cycle change on production, by the automation: the next edition built when posted and its switch scheduled with no one pressing anything, the email received, the switch seen in both clients, and a roll back tried from the tab. | Seen by the owner on production. |
 | later | Vector airspace and airports (§11). | — |
+
+**C0, as built** (2026-11-05). `backend/charts/` holds the catalog, the neatline tool, the 86 outlines (§4.2) and the build
+(`python -m charts.build <zips> <out> <chart id> …`: steps 3 to 7 of §5.3, resumable, a process pool), run by hand over seven charts
+of the 10-29-2026 edition, every tier: the Atlanta and Washington sectionals, the Atlanta and Baltimore-Washington TACs, the Washington
+and Baltimore helicopter charts and the Washington inset. It validated with nothing refused:
+- **The warp is GDAL's**: every tier's tile, against the chart warped by GDAL's own warped VRT and encoded alike, differs by nothing; a
+  level-10 tile inside each TAC is the sectional's (a mean difference of 1.6 and 2.0 from it, 38 and 52 from the TAC).
+- **No seams between tiles**: the step in colour across a tile's edge is that between two columns inside a tile (a ratio of 0.93 to
+  1.02 at levels 7 to 13).
+- **The tiers lie on each other**: each chart's printed 5′ graticule is within half a pixel of its georeference, and one tier's lines
+  meet the next's within about 10 to 18 m (Atlanta's TAC and sectional 18 m, Baltimore-Washington's TAC and the Washington sectional
+  15 m, the helicopter chart and the TAC 10 m), about a pixel of a level-12 tile and under one of the sectional's own 42 m pixels. The
+  state lines, rivers and roads run on across the TAC's, the helicopter chart's and the inset's edges. The white band round the
+  Atlanta TAC is the sectional's own print (its legend's margin), not the build's.
+- Its `coverage.json` is `contracts/fixtures/charts/coverage.json`, and `backend/tests/test_charts.py` (in CI) holds it to the
+  committed outlines and the catalog, and runs the whole build over a small sectional and TAC made in the test.
+
+**C1, as built** (2026-11-05). A cycle is built from the Data tab's *VFR charts* card as a job of its own kind (`chart_build`,
+`backend/charts/job.py`), one at a time with the DEM downloads, and lands in `builds/<cycle>.<n>/`, listed in `state.json`. Where it
+differs from §5, or says more:
+- **The build process is `python -m charts.job <job> <token> --parent <pid>`** (§5.1 named `charts.build`, which stays C0's tool run by
+  hand). It opens the database through `backend/db_app.py` and imports neither `app.py` nor torch; a test runs it and looks at
+  `sys.modules`. Its exit statuses say what it wrote: 0 its end state; 75 busy (another holds the lock), 76 its parent gone, 77 its row
+  no longer its own (the token changed): the last three wrote nothing.
+- **Its workers are spawned and hold no lock.** §5.1 had them inherit the lock's descriptor, but a spawned process inherits none, and
+  Python opens descriptors non-inheritable. So after a build process that ended with no end state, the API kills its whole group
+  (`killpg`, `SIGKILL`) and writes `failed` (or `cancelled`) only once the lock is free, waiting up to 30 s for it; while another
+  holds it, it writes nothing. Each worker looks for the pause file and its parent between tasks and ends with its parent. With
+  `CHART_BUILD_PROCESSES=1` the tiles are made in the build process itself.
+- **`PR_SET_PDEATHSIG` fires when the thread that started the process ends**, not the process, so the job thread that starts it
+  waits on it to its end; the build process also checks `getppid` against the `--parent` it was given.
+- **A job left running resumes when an admin opens the tab or its job list** (`Runner.resume`, as the downloads always did). The look
+  five minutes after start is C2's, with the automatic cycle. The same look registers a build whose parent was killed between its `done`
+  and registering it (`recover`), and lets go of what a failed or cancelled build left whose lock is free.
+- **What a build keeps**: its folder holds `vfr.mbtiles`, `coverage.json`, `report.json` (who made it, the tile counts, what was held
+  back and why, and validate's report) and `sources/<cycle>/`, the zips and outlines it was made from. A chart held back is stood in for
+  by the newest listed build that keeps a copy of it, which is copied in under that build's cycle (`sources/2026-10-29/` inside a
+  December build), so every build keeps what it was made from and a later one can find it.
+- **Staging**: the zips come down to `.incoming/<build>/` and are unzipped there; `.staging-<build>/` holds `.lock`, `.pause`,
+  `checked.json`, `empty.json`, `work/` and `out/`, and `out/` is renamed to `builds/<build>/` on the same volume when the build is
+  whole. A file is written under a name of its own (`<name>.<pid>.part`, a random suffix for `state.json`) and renamed once whole.
+- **Each stage resumes**: tiles already in the MBTiles are not made again; a stored tile found empty is noted in `empty.json`, so a
+  resume does not make it again and validate does not count it missing; the lower levels are made from what the MBTiles holds.
+- **A build expires with the first of its own cycle's charts to.** A chart held back from an older build keeps its own (older) edition
+  on its line of `coverage.json`, and does not make the whole build expired.
+- **A later cycle's chart is compared with its outline by ink as well** (`neatline.ink_moved`): the share of points along the outline's
+  outer ring that have ink within 3 pixels, against the share it was made with, now kept in each outline as `made_from.ink` (all 86
+  outlines: 0.555 to 1.0, median 0.999; lowest Halifax, Phoenix, Lake Huron and Los Angeles, whose outlines take edges from
+  neighbours or the file). More than 10 points below refuses the chart. The size and transform alone would pass a chart whose body had
+  moved on its sheet.
+- **`CHART_BUILD_ONLY`**, development only, builds a few catalog ids (`atlanta-sec,atlanta-tac`); ignored in production. The room asked
+  for is still the whole cycle's (22 GB), since the zips' sizes are known only in the job's first stage.
+- **Tests**: `backend/tests/test_chart_jobs.py`, in CI's list, with the FAA stood in for: state's numbers, never given twice and right
+  with eight writers at once; registering twice changes nothing; a state that cannot be read is said and never written over; the route
+  refusing on the container's disk, below the reserve, a cycle not offered or not posted, writes off, a second job (409); a build from its
+  first stage to registered; one stopped part way (its parent gone) resumed with a stale pause file left by the parent, making no tile
+  twice, and registered at the next look of the tab; a cancel cleaning up; no room failing in words; a sectional with no older copy
+  refusing the build, and one held back with an older build's copy standing in; the child's progress never overwritten by the API; a
+  child dead with no end state, its row untouched while the lock is held; and, with real processes, a resume while the old build process
+  holds the lock writing and starting nothing (and a second process all the same exiting 75), and one after it starting one process
+  again, which a cancel then ends as `cancelled`, never `failed`; the process importing no torch and stopping without its parent.
+  `test_schema_sync.py` adds the new columns to a `data_job` as the downloads made it. Fifteen mutations of the lock, token, pause,
+  registration, refusal and recovery code were each run against these tests, and every one failed them (one that first survived, a
+  busy process taken as dead, now has its own test).
+- **Tried locally** (2026-11-05, the owner's Mac): the real API over a scratch SQLite database, `CHART_TILES_DIR` on a mounted disk image
+  (its own device, as a Coolify mount is), `CHART_BUILD_ONLY=atlanta-sec,atlanta-tac`, two processes. The Data tab's routes (signed in as
+  an admin, as the page does) offered 2026-10-29 as posted and 2026-12-24 as not, and the build ran from the button's request: the FAA's two
+  zips (123 MB) in 10 s, the tiles in about a minute, the build registered as `2026-10-29.1` (1,730 tiles, levels 5 to 12; 261 MB with
+  its sources), validate refusing nothing, staging gone, and a second build asked meanwhile refused (409). The build process ran niced, in
+  its own process group, with spawned workers. **Not tried here:** the API's Linux image (no Docker on that machine, so §12's check of
+  rasterio's GDAL and Pillow's WebP in the image is the owner's, before release), and a whole CONUS cycle, the owner's on the VM.
+
+
+**C2, as built** (2026-11-05). What `state.json` says is served at `/charts/vfr/`, named in `/api/config`, changed from the tab's
+Charts card and by the automatic cycle, and drawn on the tab's map. Where it differs from §5 and §7, or says more:
+- **One reader of the state** (`charts/state.py`): `effective(state, now)` is pure, and `serving(where, now)` is the file as last
+  written (kept in memory, read again when its inode, `mtime_ns` or size changes) with a passed switch applied. The config, the tile
+  route, the coverage layers and the card all read through it, and no `GET` writes. Every write (`update`) first writes down a passed
+  switch at `next.at` and forgets builds retired more than a day ago, then does what was asked; a forgotten build's folder is moved
+  into `.trash/` after the write and deleted from there, so it is never half there under its name. A refusal (`Refused`) is said in
+  words and writes nothing it asked. A scheduled switch is at 0901Z on the cycle's date, as the FAA dates its editions.
+- **The actions** are `POST /admin/data/charts/builds/<build>/{switch,schedule,delete}`, `/charts/roll-back`, `/charts/schedule/cancel`
+  and `/charts/cycles/<cycle>/try-again`, under the CSRF check and `DATA_ADMIN=write`, each recorded in `history` with the admin's name.
+- **The tile route** (`routes/chart_routes.py`, `charts/serve.py`) is §7's, headers and all. Past level 11 a tile not stored is cut from
+  its nearest stored ancestor and enlarged with Lanczos (the build composites every chart shown at a level under each tile it stores,
+  so under a TAC's edge it is the sectional's level-11 tile); an ancestor with nothing drawn under the tile, and ground with no stored
+  ancestor, is the shared transparent tile. The last 400 enlarged tiles are kept in memory. Tile numbers are digits only, no leading
+  zero, at most seven. Pillow alone serves: rasterio is the build's, and a test holds the tile size, WebP quality and top level to it.
+- **The registry**: one connection per build, `mode=ro&immutable=1`, `check_same_thread=False`, used under a lock per build. A request
+  that finds `state.json` changed closes the connections to builds it no longer lists; one unused for 10 minutes is closed at the
+  next sweep (every minute, at a request). A request that met a connection closed under it opens it again.
+- **`/api/config`'s `charts`** is `{vfr: {build, cycle, tiles, tileSize, minZoom, maxZoom, effective, expires, coverage, bounds,
+  fallback}}`, left out where nothing is live, the live build's files will not open, or `CHART_TILES_DIR` is not set: the clients
+  then draw ArcGIS everywhere. `bounds` is the build's own, from its `coverage.json` (the tile route allows its five-decimal rounding); `fallback` is each
+  region of the table below that no outline of the build reaches. API 1.4.0, read as additive by `api_version.py check`.
+- **The fallback table** (`serve.FALLBACK_TILES`) is where ArcGIS's VFR service has charts and a CONUS build does not, measured
+  2026-11-06 (UTC) from its tilemap at level 12 by `contracts/scripts/arcgis_vfr.py`, which fetched a tile inside and outside each
+  edge: Alaska (split at the antimeridian, the Western Aleutians reaching 180° from the west), Hawaii, the Marianas and American
+  Samoa. The script writes `contracts/fixtures/charts/arcgis_vfr.json`, and `test_chart_serve.py` holds the table to it and to the
+  CONUS outlines (no region reaches one; none is left out of a CONUS build).
+- **The automatic cycle** is `charts/auto.py`, §5.7 step by step, its record in `state.json`'s `auto[<cycle>]` and its looks in
+  `looks`. The tab's one-job rule is now a lock both share (`data_admin.jobs.CREATING`), and `auto.lock` keeps two containers from
+  both starting. Its emails go through `email_service.send_email`, each claimed in `told` under the state's lock before it is sent.
+- **The Charts card** lists what serves (live, previous with *Roll back*, next with *Cancel*), the automatic cycle (on or off and why,
+  its last and next look, an error), the current and next cycle (what the automation did or will do, *Build now*, *Try again*), every
+  build with its role and actions (*Switch*, *Switch at its effective time*, *Delete*), and the history. Read-only with
+  `DATA_ADMIN=read`.
+- **The coverage layers** (`/admin/data/layers/vfr-{sectional,tac,helicopter}.json`, `layers.vfr_charts`; the helicopter layer holds
+  the insets too) are each chart's neatline from the live build's `coverage.json`, or the build chosen in the card (`?build=`, a 404 in
+  words unless `state.json` lists it). **One more state than §5.6 named**: a build chosen ahead of its cycle has charts *not in effect
+  yet* (blue), beside *in effect* (green), *held back* (amber) and *out of date* (red). **Held back is judged first**: a chart kept from
+  the last cycle has that cycle's edition, which ends as its build's begins, so judged by date every held-back chart would read out of
+  date; its popup says *past its date* instead. A chart is dashed where the next build's edition of it differs or it has none, and
+  its popup names every build that holds it. *Chart tiles* draws the chosen build's tiles from the public route on the same host,
+  under the overlays, at 512 px and within its levels and bounds.
+- **Tests**, all in CI's list: `test_chart_auto.py` (every test §5.5 and §5.7 name, on a fake clock with the FAA faked, and the card's
+  routes), `test_chart_serve.py` (the tiles, the registry with requests from many threads while builds are deleted and made again,
+  the config held to the spec, the coverage schema, the fallback table, the coverage layers), `test_chart_jobs.py` (the coverage
+  layers' route and the page), and the recorded config in `responses.json`, which Android's `DtoFixtureTest` decodes.
+  A mutation run (2026-11-06) over the new and changed code. Of 49 mutations of `serve.py`, `layers.py`, `chart_routes.py` and
+  `admin_data.py`, all but two were killed, and those two change nothing. One drops an alpha plane that is all opaque, which libwebp
+  leaves out anyway. The other sends level 11 down the enlarging path, which finds no ancestor and gives the same transparent tile. Of
+  65 mutations of `state.py` and `auto.py`, all but three were killed, and those three change nothing either. Reading three tries as
+  more than three changes nothing, because a third failure always gives up first. *Try again* leaving `seen` changes nothing, because
+  `seen` is only compared with the `started` it clears. A build in `gone` not being skipped changes nothing, because a build is listed
+  before it can be deleted, and listing an automatic build marks it seen. The run found one fault, now fixed and tested. A build that
+  finished but whose folder went before it was listed left the card saying *Building* for ever. It is now a failed try.
+- **Tried locally** (2026-11-06 UTC, the owner's Mac): the real API over C1's scratch database and disk image (`CHART_TILES_DIR` on the
+  image, `DATA_ADMIN=write`), driven as the tab and a client ask. Before a switch `/api/config` had no `charts`, and the listed build's
+  `coverage.json` was served all the same. *Switch* made `2026-10-29.1` live, and the config then named it with Atlanta's bounds and the
+  five fallback regions. Atlanta's tiles at levels 5, 8, 11 and 12 came `immutable` for a year, with `*` and `nosniff`. Huntsville's
+  at level 12, outside the TAC, was cut from the sectional's level 11 and enlarged. Level 13, a tile outside the bounds and a leading
+  zero were each a 404 kept a day; a build not listed was a 404 `no-store` with `X-Chart-Build: gone`. A second build of the cycle made
+  from the card (`2026-10-29.2`, 70 s) was switched to and rolled back both ways, and the previous build's tiles were served meanwhile.
+  Every refusal was in words: scheduling a cycle already in effect, cancelling with nothing scheduled, deleting the live or the
+  previous build, *Try again* on a cycle not given up, and a request with no CSRF. In a browser the card, the coverage layers
+  (Atlanta's sectional and TAC in effect, each popup naming both builds) and the tile preview drew as described.
+- **Owner steps before it serves**: the Cloudflare cache rule for `/charts/*` (§7), and `CHART_AUTO=off` on the API if the first
+  build is to be switched to by hand. **Not tried here**: Cloudflare in front of the route, Resend's emails, the automatic cycle's
+  six-hourly looks on the VM, and staging's read-only tab, which waits for production to run C2 (only production writes `state.json`).
+
+**C3, as built** (2026-11-08). The web's VFR map and the brief's figures draw the live build. Where it differs from §4.5, §4.6 and §8, or says more:
+- **`frontend/src/feature/vfrCharts/`**: `vfrCharts.js` is plain code (what the config says, where the layers go, the words); `useVfrCharts(shown)` keeps the config; `VfrChartLayers` and
+  `VfrAttribution` draw them. `App.jsx` holds the hook, so the Layers menu and the map read one answer.
+- **Nothing is drawn until the first answer** (`known`): a page opening on the VFR map asks ArcGIS for nothing it will not draw. A look that gets no answer leaves what was known, and the
+  first such look draws ArcGIS rather than leaving the map empty. A `charts` whose fields cannot be read is none.
+- **Looks** (§4.5) are made with `cache: 'no-store'`. The one after a build runs out is at `expires` plus 61 s, since the server keeps its answer for 60 s. A tab in the back makes none; one
+  coming back after 5 minutes makes one. A new build is a new layer (keyed by the build: a Leaflet layer's options are fixed once made), and the same build changes nothing.
+- **The layers** (§4.6): one ArcGIS layer for each `fallback` rectangle at z-index 1, the chart layer within its bounds at 2, both `crossOrigin="anonymous"` for the LZ card's canvas. Only the
+  chart layer's `tileerror` asks for the config again.
+- **The attribution** is a Leaflet control of its own just above the map's, which `keepInCapture` leaves off an LZ card as it does every control. A line for each edition in view (a chart held
+  back keeps its own, §4.2): the charts drawn, finest first, those wholly under a finer one left out, two named and then `and n more`. Before `coverage.json` has come the build's own edition is
+  said. It turns red at the instant a chart expires, whether or not anyone moves the map. Words outside a build's charts are `FAA, via ArcGIS`, which publishes no edition.
+- **"No finer chart here"** is read at the map's middle, from the finest chart whose outline holds it at the level drawn: the enlargement is `2 ** (round(zoom) - 1 - stored level)`, said from 2×.
+- **The words are held** to `contracts/fixtures/charts/words.json` (24 cases over the recorded `coverage.json`, written by `frontend/src/contracts/chartWordsFixtures.test.js`), which Android is held to as well (C4).
+- **The switcher's thumbnail** is a tile the build has, over Denver where the build reaches it (the other base maps' thumbnails are the Rockies), else the middle of its bounds; ArcGIS's where there is no build.
+- **The brief** (`brief/figures.py`): as §8. A chart tile can be transparent where the chart ends, so each is laid over the figure's ground colour. The framing's top level at a
+  sectional-only post is 11 at 512 px, the same ground per pixel as ArcGIS's 12 at 256 px. **What is printed** is `FAA Atlanta Sectional, 29 Oct – 23 Dec 2026`, `FAA Atlanta TAC +1, …` where
+  more charts of that edition lie under the figure at its zoom (the finest named), editions joined by `; `, and `…, expired 23 Dec 2026` for a build run out, which still prints (§4.5's red notice, on paper); ArcGIS stays `FAA VFR sectional chart`.
+- **Tests**: the web's `vfrCharts.test.js`, `useVfrCharts.test.jsx`, `VfrChartLayers.test.jsx`, `VfrAttribution.test.jsx`, `MapStyleSwitcher.test.jsx`; the backend's `test_brief_chart_figures.py`, in CI's list: a figure and a strip chart at a sectional-only CONUS post,
+  in Hawaii, and on a server with no charts and with none live, each printing a chart and never grey squares. 53 mutations of the new code in `figures.py` were each failed by those tests (five first survived and now have a test of their own).
+- **Tried locally** (2026-11-08 UTC, the owner's Mac): the real API over a scratch database and the real web, against a **synthetic build** (`2026-10-29.1`, the Atlanta sectional and TAC with the real
+  `coverage.json` shape, each tile labelled with its address; the real FAA build of C1 was on a disk image since lost). VFR's thumbnail came from the build. At an Alabama post the tiles came from the build, addressed right
+  (the label on the tile read as its own address), and said `FAA Atlanta Sectional, 29 Oct – 23 Dec 2026` and `Sectional enlarged 32× — no finer chart here`; at Atlanta `FAA Atlanta TAC, …` and
+  `TAC enlarged 16× — …`; Hawaii and Alaska drew ArcGIS and said `FAA, via ArcGIS`. With the page's clock moved past the build's end the line turned red (`Expired 23 Dec 2026 — not current`).
+  The real *Export LZ card* on an LZ analysed by SAM captured the chart under the graphics, with no taint of the canvas. At 375 px wide the words fit and the page does not scroll sideways. **Not tried here:** the real FAA tiles in a browser,
+  a real switch reaching an open page (held by `useVfrCharts.test.jsx`), Cloudflare in front of the tile route, a PDF from the real Gotenberg (the figures are held by the tests, not looked at in a print).
+
+**C4, as built** (2026-11-08). Android's VFR map draws the live build. Where it differs from §4.5, §4.6 and §8, or says more:
+- **Where it is**: `feature-map`: `VfrCharts.kt` (what the config and `coverage.json` are read as, and `VfrChartSource`, the seam), `ChartWords.kt` (the web's `chartWords`, function by function),
+  `ChartLooks.kt` (when it asks, and `ChartTileWatch`), `ChartWordsLine.kt` (the line) and `MapStyles`. `app`: `ChartConfig`, which remembers the config as `MapPreferences` remembers the token, and keeps what the
+  build holds in `vfr-coverage.json` among the app's files, so a launch with no signal has the chart lines too.
+- **What cannot be drawn is no build** (`VfrLive.of`): the config is remembered as text, and a bad box or zoom range would make MapLibre refuse the whole style, which is no map at all. So every field is checked and anything else
+  draws ArcGIS. A chart in `coverage.json` that cannot be read is left out of it. Its `nativeLevel` is a fraction (10.58): the first reader took it for a whole number and dropped every chart, which the fixture found at once.
+- **The style**: the chart layer is the source `base` within its `bounds`, its `tiles`, `tileSize` (halved on a dense screen, §8), `minzoom` and `maxzoom` the config's; one ArcGIS source `fallback-N` for each rectangle, within its own bounds, under it. `base` stays
+  the top layer because the MGRS grid and every overlay are put above it. With no build, `base` is ArcGIS everywhere and has no bounds. A build changes the VFR style alone: its id, and so what a diagram saves, stay `vfr-sectional`.
+- **Looks** (§4.5) are `ChartLooks`, run only while the VFR map shows and the app is in front: at once if 5 minutes have passed, every 5 minutes, at `expires` plus 61 s, and after a chart tile fails, at most once a minute. `/api/config`
+  is asked with `Cache-Control: no-cache`. A look under way is not cut short by the build it brings. Back on the map within 5 minutes it does not look, unless the build's coverage is missing.
+- **A failed tile is seen in the HTTP client, not MapLibre's tile listener**, which does not reliably report a 404, the very answer a build taken away gives. `HttpRequestUtil.setOkHttpClient` hands MapLibre a client like its default one
+  (20 requests a host) with `ChartTileWatch` in it: 400 and up, or a connection that failed, on `/charts/vfr/` alone. ArcGIS's tiles never count, and neither does a request MapLibre gave up on as the map moved.
+- **The line** is Compose, on a plain ground above the readout, the VFR map alone: worked out 200 ms after the camera settles, over the view MapLibre's padding leaves (the MGRS grid's own `viewOf`), at the web's zoom (MapLibre's plus one), and again
+  at the instant a chart runs out, which turns it red with nothing else having moved. It gives way to the keyboard, and the grid's labels keep off it.
+- **Below MapLibre zoom 5 no chart is drawn**, MapLibre drawing nothing of a raster source below its `minzoom`, so the first launch's camera (zoom 4) shows only the background until the person zooms in. ArcGIS's was blank below 7, so this is no loss.
+- **Tests**: `ChartWordsFixtureTest` holds every case of `words.json` over the recorded `coverage.json`; `ChartWordsTest` what that fixture cannot say (two editions at once, a map panned past the date line); `VfrChartsTest`, `MapLogicTest` and `MapViewModelTest` the reading and the style; `ChartLooksTest` the looks by a virtual clock; `ChartTileWatchTest` real requests through
+  MockWebServer; `ChartConfigTest` the memory; `ChartCallsTest` the two calls; `ChartWordsLineTest` the line, its turning red and three pictures. 62 mutations of the new code were each failed by them (five first survived, and tests were added or corrected to catch them). **Not tried here:** a device. Nothing on the JVM draws MapLibre, so the two layers, `bounds`, MapLibre's real requests going through the watch and a style changed under a map that is showing all want a device run.
+
+**C5, rehearsed** (2026-11-09). C5 itself is the owner's to see on production. What could be tried short of that was, twice, on a developer's machine: the production command (`gunicorn --workers 1 --threads 8 --timeout 180 app:app`), `CHART_AUTO=on`, the FAA itself, and a real build limited to the Atlanta sectional and TAC (`CHART_BUILD_ONLY`), on a clock set back to the morning of the 29 October edition (`charts.state.now_utc` alone, in the API and in its build process) with a build of the 3 September edition live and running out at 0901Z. SQLite, and the emails to the log.
+- **With no one pressing anything.** The first look came 5 minutes after the start, asked the FAA and started the build, which took 72 s and was scheduled for 09:01:00Z *by Automatic*. Its email went as it was listed, not at the next look (6 hours off). From 09:01:00 `/api/config` named the new build, and `state.json` recorded the switch, as scheduled and at 09:01:00, at its next write. A web page open on the VFR map, its clock moved the same, took the new tiles and dates by itself at 09:02:01, its look 61 s after the old build ran out (the config may be 60 s old). Until then, from 09:01:00, it said in red that what it drew had expired, which it had. Nothing else showed the change, and a page in a hidden tab looks when it is shown.
+- **A roll back from the tab** changed `/api/config` at once and reached the open page at its next 5-minute look, the old tiles with the red *Expired* words. Nothing undoes it: a built cycle is not built again, and `auto.registered` runs only when a build is listed. *Roll back* pressed again goes forward.
+- **A redeploy in the middle of a build** (server A; B started while A lived; A stopped; C started). B's look, 23 s into A's build, left it alone: one build process, one try. With A gone the build process stopped within 2 s and its job stayed `running`. C's first look took it up with no try counted, used what was already downloaded and finished in 30 s, scheduled the same switch and sent one email. Its result is the uninterrupted build's, byte for byte: all 1,730 rows of `vfr.mbtiles`, `coverage.json`, `report.json` and the sources. A look that finds a build's lock held looks again only in 6 hours; on a real redeploy the old container is gone by the new one's first look, 5 minutes after it starts.
+- **Found and fixed:** the Charts card went on saying a build "switches at" a time gone by (`auto.describe`).
+- **Not tried, and only a production run can:** the Linux image, two containers on one mount (the rehearsal's were processes on one disk), Postgres, Resend, Cloudflare, a whole CONUS build on the VM, and Android on a device.
+
+**C5, the owner's steps.** The moment itself cannot come before the FAA posts the 24 December edition (not posted on 2026-11-08), and the switch is at 0901Z that day. Everything before it can be done now.
+
+Before the release:
+1. Merge the C0 to C5 pull requests in order (#151, #154, #158, #162, #167, then C5's). Each is based on the one before it.
+2. Build the image, check the two things a build depends on, and boot it against a Postgres container (AGENTS.md §14):
+   ```powershell
+   docker build -t ezpz-api:charts backend
+   docker run --rm ezpz-api:charts python -c "import rasterio, PIL.features, pkg_resources; print(rasterio.__gdal_version__, PIL.features.check('webp'))"
+   ```
+   It prints `3.10.3 True`. (`gunicorn` 20.1.0 imports `pkg_resources`, which a setuptools of 82 or later no longer has; the rehearsal's virtual environment had one, and the check says whether the image does.)
+3. On the production API, in Coolify: mount `/data/charts` read-write; set `CHART_TILES_DIR=/data/charts` and `DATA_ADMIN=write`, and `CHART_NOTIFY_EMAIL` if the emails should not go to `SUPER_ADMIN_EMAIL`; confirm the container's CPU and memory limits (a build shares them for about an hour) and that the mount has 22 GB free beyond its reserve.
+4. Decide about the first build. With `CHART_AUTO` unset, the first look, 5 minutes after the deploy, builds the cycle in effect across CONUS and switches to it when done, nothing being live. To make that one from the tab instead, set `CHART_AUTO=off` first, and **take it off again** before the FAA posts the next edition, or nothing builds it.
+5. Add the Cloudflare Cache Rule for `/charts/*` on the API's hostname (§7), once the plan's terms have been read.
+6. On staging: mount `/data/charts` read-only; set `CHART_TILES_DIR=/data/charts` and `DATA_ADMIN=read`.
+7. Release `develop` through `release/*` to `main`, then put a build of the app on a device (`cd android; .\gradlew.bat installDebug`).
+
+Then, on production:
+8. The Data tab's *VFR charts* card says *Automatic cycle: On*, with its last and next look. Once a build is live, `/api/config` names it, and the VFR map on the web and the device draws it:
+   ```powershell
+   (Invoke-RestMethod https://prod-ezpz-api.mcfadd.in/api/config).charts.vfr.build
+   ```
+9. When the FAA posts 12-24-2026, within 6 hours the card says *Building as 2026-12-24.1*. An hour or so later comes the email *VFR charts 2026-12-24 built as 2026-12-24.1* (the first through Resend), and the card's *Next* names it for 24 Dec 0901Z. Press nothing: an admin's *Build now* leaves that cycle to the admin.
+10. At 24 Dec 0901Z `/api/config` names it within a minute. A web page or the device showing the VFR map says in red that the old build has expired for about a minute (it has), then draws the new one, with no reload.
+11. Press *Roll back* on the card: both clients go back to the old build at their next look, 5 minutes at most, and red, the old build having expired. Press it again to go forward.
+
+C5 is done when the owner has seen those on production.
 
 The tests of the chart routes and state go in a file CI runs (`backend.yaml`'s list), with their imports added to its install step.
 `test_data_admin.py` itself runs only locally today.
@@ -977,10 +1237,10 @@ the path to sharpness at LZ zooms, not planned.
 - The VM's build time sharing the API container's CPU, Coolify's limits, and Cloudflare's caching through the tunnel.
 - That the Linux wheels in the API image do what the macOS ones did here: rasterio 1.4.4's GDAL (3.10.3) reading and warping the FAA's
   GeoTIFFs, and Pillow 12.1.1 encoding WebP. C1 checks them in the image first.
-- The FAA's effective time for charts (0901 UTC is the usual), and that next cycle's folder appears where this one's did. C2 and C5
-  confirm them.
-- The automatic cycle on production: its thread across a real redeploy (two containers at once), the staging lock held across them,
-  and its emails through Resend. C5.
+- The FAA's effective time for charts (0901 UTC is the usual), and that next cycle's folder appears where this one's did. The 09-03-2026
+  and 10-29-2026 editions were where the build looks (checked 2026-11-08); the owner's run of C5 confirms the rest.
+- The automatic cycle on production. *C5, rehearsed* (§9) tried it in real processes on one machine, a redeploy in the middle of a build
+  included; two containers on one mount and its emails through Resend are the owner's run of C5.
 - The ArcGIS fallback's rectangles (§4.6): the islands it serves were probed tile by tile here, and their edges are C2's to measure.
 
 The owner checks each in the step named.

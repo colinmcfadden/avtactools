@@ -1,10 +1,12 @@
+import { flotsFromData, savedFlots } from "../flot/flots";
 import { restoreSketchRoute } from "../msnxImport/useRouteSketch";
 import { sameData } from "./packDiff";
 
 /*
  * A set of sketched routes as a mission pack item. Its data is what the library saves for sketched
- * routes ({ version: 1, routes }), less what is each person's own: which routes they have hidden,
- * and the set the sketch files them under here (`setId`: packLocalId, the pack and the item).
+ * routes ({ version: 1, routes }, with `flots` beside them when it has any), less what is each
+ * person's own: which routes they have hidden, and the set the sketch files them under here
+ * (`setId`: packLocalId, the pack and the item).
  */
 
 const OWN_ROUTE_FIELDS = ["visible", "setId"];
@@ -16,7 +18,8 @@ const withoutOwn = (route) => {
 };
 
 /** A set of routes, as the sketch keeps them, as its pack item has them. */
-export const routeSetData = (routes) => JSON.parse(JSON.stringify({ version: 1, routes: (routes ?? []).map(withoutOwn) }));
+export const routeSetData = (routes, flots = []) =>
+  JSON.parse(JSON.stringify({ version: 1, ...(flots?.length ? { flots: savedFlots(flots) } : {}), routes: (routes ?? []).map(withoutOwn) }));
 
 /** The shared part of a route item's raw data. */
 export const sharedRouteData = (data) => {
@@ -30,6 +33,9 @@ export const routesFromItem = (item, setId) =>
   (Array.isArray(item?.data?.routes) ? item.data.routes : [])
     .filter((route) => route && typeof route === "object" && route.id !== undefined)
     .map((route) => restoreSketchRoute(route, setId));
+
+/** The FLOTs of a pack item. */
+export const flotsFromItem = (item) => flotsFromData(item?.data);
 
 // -- What a change was, in words, for the pack's history -----------------------------------
 
@@ -70,6 +76,17 @@ export const describeRouteChange = (before, after, { name, actor }) => {
   });
   was.forEach((route, id) => {
     if (!now.has(id)) phrases.push(route.name ? `removed the route ${route.name} from ${set}` : `removed a route from ${set}`);
+  });
+  const flotsBefore = byId(before?.flots);
+  const flotsAfter = byId(after?.flots);
+  flotsAfter.forEach((flot, id) => {
+    const old = flotsBefore.get(id);
+    if (!old) phrases.push(`added a FLOT to ${set}`);
+    else if (Boolean(old.flipped) !== Boolean(flot.flipped)) phrases.push(`flipped a FLOT on ${set}`);
+    else if (!sameData(old.points, flot.points)) phrases.push(`moved a FLOT on ${set}`);
+  });
+  flotsBefore.forEach((_flot, id) => {
+    if (!flotsAfter.has(id)) phrases.push(`removed a FLOT from ${set}`);
   });
   const what = phrases[0] ?? `edited ${set}`;
   return `${actor || "Someone"} ${what}.`.slice(0, 300);

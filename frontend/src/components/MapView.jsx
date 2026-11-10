@@ -7,6 +7,7 @@ import {
   Polygon,
   useMap,
   Tooltip,
+  CircleMarker,
 } from "react-leaflet";
 import LZDimensions from "./LZDimensions";
 import L from "leaflet";
@@ -22,14 +23,23 @@ import ExportBox from "../feature/export/ExportBox";
 import Doghouse from "../feature/doghouses/Doghouse";
 import Helicopter from "../feature/helicopters/Helicopter";
 import GoAroundMarker from "../feature/goAround/GoAround";
+import Backstop from "../feature/backstops/Backstop";
+import { BACKSTOP_CASING, BACKSTOP_LINE, BACKSTOP_RED } from "../feature/backstops/backstopStyle";
+import Flot from "../feature/flot/Flot";
 import ExportHandler from "../feature/export/ExportHandler";
 import CursorGridReadout from "./CursorGridReadout";
+import DraftPointMarkers, { plainDraftPositions } from "./DraftPointMarkers";
 import MsnxRouteLayer, {
   buildIcon as buildSketchPointIcon,
 } from "../feature/msnxImport/MsnxRouteLayer";
 import LocalPointsLayer from "../feature/localPoints/LocalPointsLayer";
 import ThreatLayer from "../feature/threats/ThreatLayer";
 import { getMapStyle } from "../feature/mapStyles/mapStyles";
+import { NO_CHARTS } from "../feature/vfrCharts/useVfrCharts";
+import { VFR_STYLE_ID } from "../feature/vfrCharts/vfrCharts";
+import VfrAttribution from "../feature/vfrCharts/VfrAttribution";
+import VfrChartLayers from "../feature/vfrCharts/VfrChartLayers";
+import KmzOverlayLayer from "../feature/overlays/KmzOverlayLayer";
 import MgrsGridLayer from "../feature/mgrsGrid/MgrsGridLayer";
 import SlopeLayer from "../feature/terrain/SlopeLayer";
 import { SLOPE_OPACITY } from "../feature/terrain/slopeOpacity";
@@ -97,6 +107,10 @@ function MapInteractionHandler({
   isSketchingRoute,
   addDraftPoint,
   onDraftPointContextMenu,
+  isDrawingBackstop,
+  addBackstopDraftPoint,
+  isDrawingFlot,
+  addFlotDraftPoint,
   onMapMove,
   presenting = false,
 }) {
@@ -114,6 +128,10 @@ function MapInteractionHandler({
         return;
       }
       if (isDrawingLZ) return; // Don't interrupt drawing
+      if (isDrawingBackstop || isDrawingFlot) {
+        e.originalEvent.preventDefault();
+        return;
+      }
       if (isSketchingRoute) {
         // Right-click while drawing a route: designate a point (target / IP /
         // checkpoint) at this location instead of the normal map menu.
@@ -141,6 +159,10 @@ function MapInteractionHandler({
         setDrawingPoints((prev) => [...prev, [e.latlng.lat, e.latlng.lng]]);
       } else if (isSketchingRoute) {
         addDraftPoint(e.latlng.lat, e.latlng.lng);
+      } else if (isDrawingBackstop) {
+        addBackstopDraftPoint(e.latlng.lat, e.latlng.lng);
+      } else if (isDrawingFlot) {
+        addFlotDraftPoint(e.latlng.lat, e.latlng.lng);
       } else {
         setContextMenu(null); // Click anywhere else to close the menu
       }
@@ -180,6 +202,18 @@ const MapView = ({
   goArounds,
   updateGoAround,
   deleteGoAround,
+  backstops = [],
+  updateBackstop,
+  onBackstopContextMenu,
+  isDrawingBackstop = false,
+  backstopDraftPoints = [],
+  addBackstopDraftPoint,
+  flots = [],
+  updateFlot,
+  onFlotContextMenu,
+  isDrawingFlot = false,
+  flotDraftPoints = [],
+  addFlotDraftPoint,
   pzMarkers,
   updatePZMarker,
   deletePZMarker,
@@ -209,6 +243,8 @@ const MapView = ({
   setContextMenu,
   mapStyle,
   showMgrsGrid,
+  mapOverlays = [],
+  overlayFit = null,
   // The slope map's opacity, a percentage of its own: this browser's (slopeOpacity.js).
   slopeOpacity = SLOPE_OPACITY.DEFAULT,
   localPointSets,
@@ -222,6 +258,7 @@ const MapView = ({
   // The live sandtable (feature/brief): while it is given, the map shows the brief's step and nothing of the planning
   // layers, and takes no edit. They are drawn again, as they were, when it ends.
   presentation = null,
+  vfrCharts = NO_CHARTS,
 }) => {
   // Default Center (somewhere neutral)
   const defaultCenter = [34.0522, -118.2437];
@@ -257,11 +294,25 @@ const MapView = ({
       <StartAtLocation claimed={Boolean(targetLocation || flyTo || presentation)} />
 
       {/* Base Layer - driven by the mapStyles registry */}
-      <TileLayer
-        key={activeMapStyle.id} // Forces Leaflet to refresh when the style changes
-        url={activeMapStyle.url}
-        crossOrigin="anonymous"
-        {...activeMapStyle.options}
+      {activeMapStyle.id === VFR_STYLE_ID ? (
+        <>
+          <VfrChartLayers charts={vfrCharts} />
+          <VfrAttribution charts={vfrCharts} />
+        </>
+      ) : (
+        <TileLayer
+          key={activeMapStyle.id} // Forces Leaflet to refresh when the style changes
+          url={activeMapStyle.url}
+          crossOrigin="anonymous"
+          {...activeMapStyle.options}
+        />
+      )}
+
+      {/* The KMZ and KML overlays that are switched on, under the grid and everything planned */}
+      <KmzOverlayLayer
+        overlays={mapOverlays}
+        fit={overlayFit}
+        passive={Boolean(presentation) || isDrawingLZ || isDrawingFlot || isDrawingBackstop || isSketchingRoute}
       />
 
       {/* The MGRS grid, over any base map; screen only, never on an LZ card */}
@@ -273,6 +324,10 @@ const MapView = ({
         handleMapRightClick={handleMapRightClick}
         setContextMenu={setContextMenu}
         isSketchingRoute={isSketchingRoute}
+        isDrawingBackstop={isDrawingBackstop}
+        addBackstopDraftPoint={addBackstopDraftPoint}
+        isDrawingFlot={isDrawingFlot}
+        addFlotDraftPoint={addFlotDraftPoint}
         addDraftPoint={addDraftPoint}
         onDraftPointContextMenu={onDraftPointContextMenu}
         onMapMove={onMapMove}
@@ -289,6 +344,7 @@ const MapView = ({
               positions={draftPoints.map((p) => [p.lat, p.lon])}
               pathOptions={{ color: "#64D2FF", weight: 3, dashArray: "5, 5" }}
             />
+            <DraftPointMarkers positions={plainDraftPositions(draftPoints)} color="#64D2FF" />
             {draftPoints.map(
               (p, i) =>
                 p.designation && (
@@ -309,12 +365,44 @@ const MapView = ({
           </>
         )}
 
+        {isDrawingBackstop && backstopDraftPoints.length > 0 && (
+          <>
+            <Polyline positions={backstopDraftPoints.map((p) => [p.lat, p.lon])} pathOptions={BACKSTOP_CASING} />
+            <Polyline positions={backstopDraftPoints.map((p) => [p.lat, p.lon])} pathOptions={BACKSTOP_LINE} />
+            {backstopDraftPoints.map((p, i) => (
+              <CircleMarker key={`backstop-draft-${i}`} center={[p.lat, p.lon]} radius={4} pathOptions={{ color: "#ffffff", weight: 2, fillColor: BACKSTOP_RED, fillOpacity: 1 }} interactive={false} />
+            ))}
+          </>
+        )}
+
+        {isDrawingFlot && flotDraftPoints.length > 0 && (
+          <>
+            <Polyline positions={flotDraftPoints.map((p) => [p.lat, p.lon])} pathOptions={{ color: "#2f8fff", weight: 3, dashArray: "8 6" }} />
+            {flotDraftPoints.map((p, i) => (
+              <CircleMarker key={`flot-draft-${i}`} center={[p.lat, p.lon]} radius={4} pathOptions={{ color: "#ffffff", weight: 2, fillColor: "#2f8fff", fillOpacity: 1 }} interactive={false} />
+            ))}
+          </>
+        )}
+
+        {flots.map((flot) => (
+          <Flot
+            key={`flot-${flot.id}`}
+            data={flot}
+            onChange={updateFlot}
+            onContextMenu={onFlotContextMenu}
+            passive={isDrawingFlot || isDrawingBackstop || isDrawingLZ || isSketchingRoute}
+          />
+        ))}
+
         {/* Render the Active Drawing Line */}
         {isDrawingLZ && drawingPoints.length > 0 && (
-          <Polyline
-            positions={drawingPoints}
-            pathOptions={{ color: "#FFC107", weight: 3, dashArray: "5, 5" }}
-          />
+          <>
+            <Polyline
+              positions={drawingPoints}
+              pathOptions={{ color: "#FFC107", weight: 3, dashArray: "5, 5" }}
+            />
+            <DraftPointMarkers positions={drawingPoints} color="#FFC107" />
+          </>
         )}
 
         {/* Render the Completed Custom Polygon */}
@@ -357,6 +445,7 @@ const MapView = ({
           onUpdatePosition={onUpdateMsnxPointPosition}
           onInsertPoint={onInsertMsnxPoint}
           snapPoints={localSnapPoints}
+          drawing={isDrawingLZ || isSketchingRoute || isDrawingBackstop || isDrawingFlot}
         />
 
         <MsnxRouteLayer
@@ -365,6 +454,7 @@ const MapView = ({
           onInsertPoint={onInsertMsnxPoint}
           onPointContextMenu={onSketchPointContextMenu}
           snapPoints={localSnapPoints}
+          drawing={isDrawingLZ || isSketchingRoute || isDrawingBackstop || isDrawingFlot}
         />
 
         <LocalPointsLayer pointSets={localPointSets} onAddToRoute={onAddLocalPointToRoute} />
@@ -417,6 +507,17 @@ const MapView = ({
             data={ga}
             updateGoAround={updateGoAround}
             deleteGoAround={deleteGoAround}
+          />
+        ))}
+
+        {targetLocation && backstops.map((backstop) => (
+          <Backstop
+            key={`${activeDiagramId ?? "lz"}-backstop-${backstop.id}`}
+            data={backstop}
+            target={targetLocation}
+            onChange={updateBackstop}
+            onContextMenu={onBackstopContextMenu}
+            passive={isDrawingBackstop || isDrawingFlot || isDrawingLZ || isSketchingRoute}
           />
         ))}
 

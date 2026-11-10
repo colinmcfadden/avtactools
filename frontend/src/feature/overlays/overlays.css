@@ -1,0 +1,32 @@
+/* Names beside an overlay's points, and what a click on one says. */
+
+.leaflet-tooltip.kmz-overlay-label {
+  padding: 0 4px;
+  border: none;
+  border-radius: 3px;
+  background: rgba(16, 22, 29, 0.72);
+  box-shadow: none;
+  color: #fff;
+  font-size: 11px;
+  line-height: 15px;
+}
+
+.leaflet-tooltip.kmz-overlay-label::before {
+  display: none;
+}
+
+.kmz-overlay-popup .leaflet-popup-content {
+  margin: 10px 12px;
+  max-height: 240px;
+  overflow-y: auto;
+}
+
+.kmz-overlay-popup__name {
+  font-weight: 600;
+}
+
+.kmz-overlay-popup__text {
+  margin-top: 4px;
+  white-space: pre-line;
+  overflow-wrap: anywhere;
+}

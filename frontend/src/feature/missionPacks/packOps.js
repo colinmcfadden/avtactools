@@ -16,7 +16,7 @@
  */
 
 // A brief (docs/MISSION_BRIEF.md §3) holds an object, as an LZ and a route set do; only a point set holds a list.
-export const ITEM_KINDS = ["lz", "route", "pointset", "brief"];
+export const ITEM_KINDS = ["lz", "route", "pointset", "brief", "threatset"];
 // What a client may send. `item.replace` is the server's own (update from original).
 export const CLIENT_OP_TYPES = ["item.create", "item.delete", "item.rename", "set", "patch", "upsert", "insert", "remove"];
 export const SERVER_OP_TYPES = ["item.replace"];

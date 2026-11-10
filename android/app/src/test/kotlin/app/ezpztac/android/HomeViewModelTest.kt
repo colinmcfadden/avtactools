@@ -2328,15 +2328,36 @@ class HomeViewModelTest {
     }
 
     @Test
-    fun `in a finished pack the person's own threat under one of its graphics is still picked up`() = runTest(dispatcher) {
+    fun `in a finished pack a long press on a threat holds it and does not pick it up`() = runTest(dispatcher) {
         val r = Rig(this)
         advanceUntilIdle()
         packLz(r)
-        val id = r.threat(LatLon(34.7838, -84.0822))
+        val id = r.threat(LatLon(34.79, -84.0822))
         r.packs.open.value = pack(finished = true)
         advanceUntilIdle()
-        assertTrue(r.model.dragStarted(LatLon(34.7838, -84.0822), view(), touchRadiusPx = 24.0))
-        assertEquals(app.ezpztac.model.DragTarget.Threat(id), r.mapDragActive())
+        assertTrue(r.model.dragStarted(LatLon(34.79, -84.0822), view(), touchRadiusPx = 24.0))
+        assertNull("the threats on the map are the pack's, and it takes no change", r.mapDragActive())
         assertEquals(id, r.threatSelection.held.value)
+    }
+
+    @Test
+    fun `a pack going read-only ends a threat's drag where it is`() = runTest(dispatcher) {
+        val r = Rig(this)
+        advanceUntilIdle()
+        packLz(r)
+        val id = r.threat(LatLon(34.79, -84.0822))
+        r.packs.open.value = pack()
+        advanceUntilIdle()
+        val said = mutableListOf<String>()
+        val collecting = launch(UnconfinedTestDispatcher(testScheduler)) { r.model.notices.collect { said += it } }
+        assertTrue(r.model.dragStarted(LatLon(34.79, -84.0822), view(), touchRadiusPx = 24.0))
+        assertEquals(app.ezpztac.model.DragTarget.Threat(id), r.mapDragActive())
+
+        r.packs.open.value = pack(finished = true)
+        advanceUntilIdle()
+
+        assertNull(r.mapDragActive())
+        assertEquals(listOf("OP DK was finished: moving stopped."), said)
+        collecting.cancel()
     }
 }

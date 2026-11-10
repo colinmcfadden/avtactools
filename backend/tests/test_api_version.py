@@ -147,9 +147,11 @@ class CheckTests(unittest.TestCase):
 
     # Read from the spec, so these hold whatever version the API is at.
     VERSION = REAL["info"]["version"]
-    SERVED = (VERSION, [1])
-    NEXT_MINOR = f"{VERSION.split('.')[0]}.{int(VERSION.split('.')[1]) + 1}.0"
-    CLIENTS = {"android": [1], "web": [1]}
+    MAJOR = int(VERSION.split(".")[0])
+    SERVED = (VERSION, [MAJOR])
+    NEXT_MINOR = f"{MAJOR}.{int(VERSION.split('.')[1]) + 1}.0"
+    NEXT_MAJOR = f"{MAJOR + 1}.0.0"
+    CLIENTS = {"android": [MAJOR], "web": [MAJOR]}
 
     def broken_real(self):
         """The real spec with a field an app reads taken out of /api/config."""
@@ -166,27 +168,28 @@ class CheckTests(unittest.TestCase):
     def test_a_break_without_a_new_major_fails(self):
         errors, _, report = script.problems(self.broken_real(), REAL, self.SERVED, self.CLIENTS)
         self.assertTrue(any("serverVersion: removed" in b for b in report.breaking), report.breaking)
-        self.assertTrue(any("breaking change" in e and "2.0.0" in e for e in errors), errors)
+        self.assertTrue(any("breaking change" in e and self.NEXT_MAJOR in e for e in errors), errors)
 
     def test_a_break_with_a_new_major_passes_once_the_clients_support_it(self):
         broken = self.broken_real()
-        broken["info"]["version"] = "2.0.0"
-        errors, _, _ = script.problems(broken, REAL, ("2.0.0", [2]), self.CLIENTS)
-        self.assertTrue(any("android supports API majors [1]" in e for e in errors), errors)
-        errors, _, _ = script.problems(broken, REAL, ("2.0.0", [2]), {"android": [1, 2], "web": [2]})
+        broken["info"]["version"] = self.NEXT_MAJOR
+        new = self.MAJOR + 1
+        errors, _, _ = script.problems(broken, REAL, (self.NEXT_MAJOR, [new]), self.CLIENTS)
+        self.assertTrue(any(f"android supports API majors [{self.MAJOR}]" in e for e in errors), errors)
+        errors, _, _ = script.problems(broken, REAL, (self.NEXT_MAJOR, [new]), {"android": [self.MAJOR, new], "web": [new]})
         self.assertEqual(errors, [])
 
     def test_an_old_major_kept_for_installed_apps_keeps_them_working(self):
         broken = self.broken_real()
-        broken["info"]["version"] = "2.0.0"
-        errors, notes, _ = script.problems(broken, REAL, ("2.0.0", [1, 2]), self.CLIENTS)
+        broken["info"]["version"] = self.NEXT_MAJOR
+        errors, notes, _ = script.problems(broken, REAL, (self.NEXT_MAJOR, [self.MAJOR, self.MAJOR + 1]), self.CLIENTS)
         self.assertEqual(errors, [])
         self.assertTrue(any("android" in n for n in notes))
 
     def test_versions_that_disagree_fail(self):
-        errors, _, _ = script.problems(REAL, None, (self.NEXT_MINOR, [1]), self.CLIENTS)
+        errors, _, _ = script.problems(REAL, None, (self.NEXT_MINOR, [self.MAJOR]), self.CLIENTS)
         self.assertTrue(any("must agree" in e for e in errors))
-        errors, _, _ = script.problems(REAL, None, (self.VERSION, [2]), self.CLIENTS)
+        errors, _, _ = script.problems(REAL, None, (self.VERSION, [self.MAJOR + 1]), self.CLIENTS)
         self.assertTrue(errors)
 
     def test_an_addition_without_a_new_minor_is_a_note_not_a_failure(self):

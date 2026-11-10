@@ -9,6 +9,7 @@ import MobileQuickAccess from "./components/MobileQuickAccess";
 import MobileGridInput from "./components/MobileGridInput";
 import TopBarSearch from "./feature/shell/TopBarSearch";
 import { searchPlaces } from "./feature/places/usePlaceSearch";
+import { searchablePoints } from "./feature/localPoints/localPointSearch";
 import { placeZoom } from "./feature/places/placeWords";
 import SidebarCollapseToggle from "./components/SidebarCollapseToggle";
 import { useIsMobile } from "./feature/auth/useIsMobile";
@@ -20,6 +21,10 @@ import {
 import { useHelicopters } from "./feature/helicopters/useHelicopters";
 import { useSectorsOfFire } from "./feature/sectorsOfFire/useSectorsOfFire";
 import { useGoAround } from "./feature/goAround/useGoAround";
+import { useBackstops } from "./feature/backstops/useBackstops";
+import BackstopDrawBar from "./feature/backstops/BackstopDrawBar";
+import { useFlots } from "./feature/flot/useFlots";
+import { flotsFromData, setsWithFlots } from "./feature/flot/flots";
 import { useWeather } from "./feature/weather/useWeather";
 import { useUnit } from "./feature/unit/useUnit";
 import { usePzMarker } from "./feature/pzMarker/usePzMarker";
@@ -32,16 +37,25 @@ import { useMsnxImport } from "./feature/msnxImport/useMsnxImport";
 import { useAircraftProfiles } from "./feature/aircraft/useAircraftProfiles";
 import AircraftProfileModal from "./feature/aircraft/AircraftProfileModal";
 import { matchProfileToAircraft } from "./feature/aircraft/aircraftProfiles";
-import { useRouteSketch } from "./feature/msnxImport/useRouteSketch";
+import { isOpenedSetId, useRouteSketch } from "./feature/msnxImport/useRouteSketch";
+import { defaultRoutePlan } from "./feature/msnxImport/routeCalc";
+import { useOverlays } from "./feature/overlays/useOverlays";
+import PointDialog from "./feature/localPoints/PointDialog";
+import { exportPointsGpx, exportPointsLps } from "./feature/localPoints/exportPoints";
+import { newPointId } from "./feature/localPoints/customPoints";
 import ForeFlightModal from "./feature/msnxImport/ForeFlightModal";
 import { useSavedRoutes } from "./feature/msnxImport/useSavedRoutes";
 import { exportRouteSetFiles } from "./feature/msnxImport/exportRouteSet";
 import MapStyleSwitcher from "./feature/mapStyles/MapStyleSwitcher";
+import useVfrCharts from "./feature/vfrCharts/useVfrCharts";
+import { VFR_STYLE_ID } from "./feature/vfrCharts/vfrCharts";
 import useMgrsGrid from "./feature/mgrsGrid/useMgrsGrid";
 import useSlopeOpacity from "./feature/terrain/slopeOpacity";
 import UnitBadge from "./components/UnitBadge";
 import { useLocalPoints } from "./feature/localPoints/useLocalPoints";
 import { useThreats } from "./feature/threats/useThreats";
+import { parseThsFile } from "./feature/threats/parseThs";
+import { setNameFromFile } from "./feature/threats/threatSets";
 import ThreatDialog from "./feature/threats/ThreatDialog";
 import ThreatExportModal from "./feature/threats/ThreatExportModal";
 import UnitBuilder from "./feature/unit/UnitBuilder";
@@ -64,6 +78,9 @@ import useLzSaves from "./feature/saveDialog/useLzSaves";
 import useRouteSaves, { SKETCHES } from "./feature/saveDialog/useRouteSaves";
 import NameDialog from "./feature/ui/NameDialog";
 import { useToast } from "./feature/ui/Toast";
+import { nextStepSeq } from "./feature/undo/history";
+import { useUndo } from "./feature/undo/useUndo";
+import { whyPointStays } from "./feature/msnxImport/sketchOps";
 import useApiCompat from "./feature/apiCompat/useApiCompat";
 import useFilePicker from "./feature/imports/useFilePicker";
 import useImports, { movePointsToPack } from "./feature/imports/useImports";
@@ -106,6 +123,8 @@ const IGNORE_DROPS = {
   onDrop: (event) => event.preventDefault(),
 };
 
+const DRAWING_ALREADY = "Finish or cancel what you are drawing on the map first.";
+
 const EMPTY_LZ_GRAPHICS = Object.freeze({
   doghouses: Object.freeze([]),
   helicopters: Object.freeze([]),
@@ -125,8 +144,10 @@ function App() {
   const [gridInput, setGridInput] = useState("");
   const [isDrawingLZ, setIsDrawingLZ] = useState(false);
   const [drawingPoints, setDrawingPoints] = useState([]);
+  const boundaryVisit = useRef(null);
   const [clickedGrid, setClickedGrid] = useState("Loading...");
   const [mapStyle, setMapStyle] = useState("satellite");
+  const vfrCharts = useVfrCharts(mapStyle === VFR_STYLE_ID);
   // The MGRS grid over the map: this browser's preference, not the diagram's (unlike mapStyle).
   const { showMgrsGrid, setShowMgrsGrid } = useMgrsGrid();
   // How opaque the slope map is drawn: this browser's too.
@@ -193,7 +214,7 @@ function App() {
   const diagramStatus = activeDiagram?.status ?? "no_target";
 
   const updateActiveAnalysis = useCallback(
-    (key, nextValue) => {
+    (key, nextValue, step = null) => {
       const diagram = workspaceRef.current?.diagramsById?.[
         workspaceRef.current?.activeDiagramId
       ];
@@ -203,6 +224,7 @@ function App() {
           [key]: resolveStateUpdate(nextValue, diagram.analysis?.[key]),
         },
         diagram.id,
+        step,
       );
     },
     [setAnalysisDraft],
@@ -210,6 +232,11 @@ function App() {
 
   const setCustomLZ = useCallback(
     (nextValue) => updateActiveAnalysis("customLZ", nextValue),
+    [updateActiveAnalysis],
+  );
+  // The boundary a person draws or deletes, which undo can take back (setCustomLZ is the analysis's own).
+  const setDrawnLZ = useCallback(
+    (nextValue, step) => updateActiveAnalysis("customLZ", nextValue, step ?? {}),
     [updateActiveAnalysis],
   );
   const setDetectedLZ = useCallback(
@@ -275,6 +302,10 @@ function App() {
   );
   const setUnits = useCallback(
     (nextValue) => setActiveGraphicCollection("units", nextValue),
+    [setActiveGraphicCollection],
+  );
+  const setBackstops = useCallback(
+    (nextValue) => setActiveGraphicCollection("backstops", nextValue),
     [setActiveGraphicCollection],
   );
   const setExportBox = useCallback(
@@ -343,6 +374,7 @@ function App() {
       goAround: activeGraphics.goArounds ?? [],
       setGoAround,
     });
+  const backstopTools = useBackstops({ backstops: activeGraphics.backstops, setBackstops });
   const {
     sectorsOfFire,
     addSectorOfFire,
@@ -442,6 +474,7 @@ function App() {
             diagramId,
           ),
           diagramId,
+          { quiet: true },
         );
       }
     },
@@ -501,6 +534,9 @@ function App() {
   };
   // One name asked for at a time (a route being finished, a route point being named).
   const [nameAsk, setNameAsk] = useState(null);
+  // The point being made or changed ({ setId, group, point, at }), and the one being asked about deleting.
+  const [pointAsk, setPointAsk] = useState(null);
+  const [pointRemoval, setPointRemoval] = useState(null);
 
   const lzSaves = useLzSaves({
     getDiagram: (id) => workspaceRef.current?.diagramsById?.[id],
@@ -515,6 +551,10 @@ function App() {
 
   const {
     importedRoutes,
+    missionHistory,
+    undoMission,
+    redoMission,
+    closeMission,
     importMsnxFile,
     updatePointPosition,
     insertPoint,
@@ -549,13 +589,19 @@ function App() {
     draftPoints,
     sketchedRoutes,
     sketchSets,
+    sketchHistory,
+    undoSketch,
+    redoSketch,
     startSketch,
     cancelSketch,
     addDraftPoint,
+    removeLastDraftPoint,
     finishSketch,
     designateSketchPoint,
     updateSketchPointPosition,
     insertSketchPoint,
+    removeSketchPoint,
+    addRoutePoint,
     appendSketchPoint,
     loadSketchRoutes,
     openSavedRoutes,
@@ -571,8 +617,11 @@ function App() {
     refreshRouteElevations,
     applyForecastWinds,
   } = useRouteSketch({ aircraftProfile: activeProfile });
+  const flotTools = useFlots();
 
   const localPoints = useLocalPoints();
+  const overlayTools = useOverlays();
+  const threatSets = useThreats({ userId: user?.id ?? null, canSave: feat.threats && feat.cloud_save, notify: toast });
   const {
     threats,
     editingThreat,
@@ -586,7 +635,12 @@ function App() {
     importThsFile,
     exportThsFile,
     exportKmzFile,
-  } = useThreats();
+  } = threatSets;
+  // The last change to a set is written before the session ends, but a server that does not answer keeps nobody here.
+  const signOut = async () => {
+    await Promise.race([threatSets.flush(), new Promise((resolve) => setTimeout(resolve, 2000))]);
+    logout();
+  };
   const [mapCenter, setMapCenter] = useState([34.0522, -118.2437]);
   const [showThreatExport, setShowThreatExport] = useState(false);
   const [showUnitBuilder, setShowUnitBuilder] = useState(false);
@@ -608,7 +662,7 @@ function App() {
   // The route sets in this session: the sketched routes, each saved set opened beside them, then each
   // imported mission file.
   const routeSets = useMemo(() => {
-    const sets = sketchSets.map(({ setId, routes }) => ({ key: setId ?? SKETCHES, kind: "sketch", routes }));
+    const sets = setsWithFlots(sketchSets, flotTools.flots, isOpenedSetId).map(({ setId, routes, flots }) => ({ key: setId ?? SKETCHES, kind: "sketch", routes, flots }));
     const byFile = new Map();
     importedRoutes.forEach((route) => {
       if (!byFile.has(route.fileId)) {
@@ -619,7 +673,7 @@ function App() {
       byFile.get(route.fileId).routes.push(route);
     });
     return sets;
-  }, [importedRoutes, sketchSets]);
+  }, [importedRoutes, sketchSets, flotTools.flots]);
 
   const routeSaves = useRouteSaves({
     sets: routeSets,
@@ -651,16 +705,25 @@ function App() {
       setActiveDiagram,
       hydrateWorkspace: lzWorkspace.hydrateWorkspace,
     },
-    sketch: { sketchedRoutes, loadSketchRoutes, replaceRouteSet, removeRouteSet },
+    sketch: { sketchedRoutes, flots: flotTools.flots, setFlotsOf: flotTools.setFlotsOf, loadSketchRoutes, replaceRouteSet, removeRouteSet },
     points: { pointSets: localPoints.pointSets, setPointSets: localPoints.setPointSets },
+    threats: {
+      on: feat.threats,
+      packSets: threatSets.packSets,
+      setPackSets: threatSets.setPackSets,
+      fetchMasks: threatSets.fetchMissingPackMasks,
+    },
     library: {
       history,
       savedRoutes,
       savedPointSets: localPoints.savedPointSets,
+      // No tab for an account that cannot keep threats in a Library, or copy them into a pack.
+      savedThreatSets: threatSets.canSave ? threatSets.savedSets : undefined,
       refreshAll: () => {
         fetchHistory();
         fetchSavedRoutes();
         localPoints.fetchSavedPointSets();
+        if (threatSets.canSave) threatSets.fetchSavedSets();
       },
     },
     onOpenLibrary: () => openLibrary("lz"),
@@ -744,9 +807,11 @@ function App() {
       routeSaves.adopt(fileId, entry);
     } else {
       const record = await loadSavedRoute(entry.id);
-      const routes = record.route_data?.routes;
-      if (!routes?.length) throw new Error("This save contains no routes.");
-      routeSaves.adopt(openSavedRoutes(routes) ?? SKETCHES, entry);
+      const routes = record.route_data?.routes ?? [];
+      if (routes.length === 0 && flotsFromData(record.route_data).length === 0) throw new Error("This save contains no routes.");
+      const setId = openSavedRoutes(routes, { beside: flotTools.hasSessionFlots() });
+      flotTools.openSavedFlots(setId, record.route_data);
+      routeSaves.adopt(setId ?? SKETCHES, entry);
     }
   };
 
@@ -755,9 +820,17 @@ function App() {
     routeSaves.recordChanged(id, { deleted: true });
   };
 
+  const beginRouteSketch = () => {
+    if (backstopTools.isDrawing || flotTools.isDrawing) {
+      toast({ tone: "warn", message: DRAWING_ALREADY });
+      return;
+    }
+    startSketch();
+  };
+
   const toggleRouteSketch = () => {
     if (!isSketching) {
-      startSketch();
+      beginRouteSketch();
       return;
     }
     if (draftPoints.length < 2) {
@@ -809,8 +882,9 @@ function App() {
   // A route set being closed with unsaved changes asks first.
   const [closingSet, setClosingSet] = useState(null);
   const dropRouteSet = (set) => {
-    if (set.kind === "mission") set.routes.forEach((route) => removeRoute(route.id));
-    else set.routes.forEach((route) => removeSketchRoute(route.id));
+    if (set.kind === "mission") closeMission(set.routes[0]?.fileId);
+    else removeRouteSet(set.key === SKETCHES ? null : set.key);
+    flotTools.setFlotsOf(set.key === SKETCHES ? null : set.key, []);
   };
   const closeRouteSet = (set) => {
     if (routeSaves.stateOf(set.key).dirty) setClosingSet(set);
@@ -818,8 +892,12 @@ function App() {
   };
 
   const handleAddThreatHere = () => {
-    beginAddThreat(contextMenu.lat, contextMenu.lon);
     setContextMenu(null);
+    if (packs.open && packs.readOnly) {
+      toast({ tone: "warn", message: "This pack is read-only, so nothing new can be added to it." });
+      return;
+    }
+    beginAddThreat(contextMenu.lat, contextMenu.lon);
   };
 
   const handleSketchPointContextMenu = useCallback((routeId, pointId, x, y) => {
@@ -910,9 +988,27 @@ function App() {
     );
   };
 
+  const handleDeleteSketchPoint = () => {
+    removeSketchPoint(contextMenu.routeId, contextMenu.pointId);
+    setContextMenu(null);
+  };
+
+  // A named point on the line, in one step, rather than adding one and then designating it.
+  const handleInsertCheckpoint = () => {
+    const { routeId, lat, lon } = contextMenu;
+    askPointName("turn", POINT_NAMES.turn, (name) => insertSketchPoint(routeId, lat, lon, { ptType: "turn", name }));
+  };
+
+  const isSketchRoute = (routeId) => sketchedRoutes.some((route) => route.id === routeId);
+  const pointStays =
+    contextMenu?.type === "sketch-point"
+      ? whyPointStays(sketchedRoutes.find((route) => route.id === contextMenu.routeId), contextMenu.pointId)
+      : null;
+
   const handleInsertPointConfirm = () => {
     try {
-      if (contextMenu.routeId.startsWith("sketch-")) {
+      // Found by where it is, not by its id: a Mission Pack's routes keep whatever ids they came with.
+      if (isSketchRoute(contextMenu.routeId)) {
         insertSketchPoint(contextMenu.routeId, contextMenu.lat, contextMenu.lon);
       } else {
         insertPoint(contextMenu.routeId, contextMenu.lat, contextMenu.lon);
@@ -1015,11 +1111,15 @@ function App() {
       toast({ tone: "warn", message: "Set a target on the map before drawing an LZ/PZ boundary." });
       return;
     }
+    if (backstopTools.isDrawing || flotTools.isDrawing) {
+      toast({ tone: "warn", message: DRAWING_ALREADY });
+      return;
+    }
 
     if (isDrawingLZ) {
       // Finish drawing
       if (drawingPoints.length > 2) {
-        setCustomLZ(drawingPoints);
+        setDrawnLZ(drawingPoints, { key: boundaryVisit.current, label: "Draw boundary" });
       }
       setIsDrawingLZ(false);
       setDrawingPoints([]);
@@ -1027,14 +1127,61 @@ function App() {
       // Start drawing
       // Changing an already analyzed boundary makes the existing analysis
       // stale. Keep its graphics, but require analysis again before edits.
+      // Starting and finishing are one thing done: undoing it brings the analysis back.
+      boundaryVisit.current = `boundary-${nextStepSeq()}`;
       if (activeDiagram?.status === "analyzed") {
-        resetAnalysis(activeDiagram.id);
+        resetAnalysis(activeDiagram.id, { key: boundaryVisit.current, label: "Draw boundary" });
       }
-      setCustomLZ(null);
+      setDrawnLZ(null, { key: boundaryVisit.current, label: "Draw boundary" });
       setDrawingPoints([]);
       setIsDrawingLZ(true);
     }
   };
+
+  // A backstop is drawn with clicks on the map, as a boundary and a route are, so only one of them is under way at a time.
+  const toggleBackstopDrawing = () => {
+    if (backstopTools.isDrawing) {
+      if (backstopTools.draftPoints.length >= 2) backstopTools.finishDrawing();
+      else backstopTools.cancelDrawing();
+      return;
+    }
+    if (isDrawingLZ || isSketching || flotTools.isDrawing) {
+      toast({ tone: "warn", message: DRAWING_ALREADY });
+      return;
+    }
+    if (canEditGraphics && editable) backstopTools.startDrawing();
+  };
+  // A draft belongs to the LZ/PZ it was begun on, and one that can no longer be edited (a pack finished meanwhile) has none.
+  const canDrawBackstop = canEditGraphics && editable && !presented;
+  useEffect(() => {
+    backstopTools.cancelDrawing();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeDiagramId, canDrawBackstop]);
+
+  // A FLOT is drawn into the set new routes go into.
+  const startFlotDrawing = () => {
+    if (isDrawingLZ || isSketching || backstopTools.isDrawing) {
+      toast({ tone: "warn", message: DRAWING_ALREADY });
+      return;
+    }
+    if (editable) flotTools.startDrawing();
+  };
+  const finishFlotDrawing = () => {
+    if (!inPack) {
+      flotTools.finishDrawing();
+      return;
+    }
+    const target = packRouteSetFor() ?? packs.packRoutes.createItem();
+    if (target) {
+      setPackRouteTarget(target);
+      flotTools.finishDrawing(packs.packRoutes.setIdOf(target));
+    }
+  };
+  // A draft belongs to the workspace it was begun in, and a pack that can no longer be edited, or a brief being presented, has none.
+  useEffect(() => {
+    flotTools.cancelDrawing();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [packs.open, editable, Boolean(presented)]);
 
   // A place chosen in the target field (TargetField: a grid or a lat/long in any notation, read in the
   // browser with no call to the API) starts a new LZ/PZ there; startDiagramAtTarget writes its grid into
@@ -1124,38 +1271,101 @@ function App() {
 
   // --- The redesign's frame: top bar, dock, Library and imports (docs/MENU_REDESIGN.md) --------
 
+  // A flight plan or GPX says where a route goes and nothing of how it is flown: it starts from the
+  // mission aircraft's defaults, as a route sketched by hand does.
+  const plannedRoutes = (parsed) => parsed.routes.map((route) => ({ ...route, plan: defaultRoutePlan(activeProfile) }));
+
+  // Always a set of its own, named for the file: joined to this session's sketches it would be saved with them.
+  const openRouteFile = (parsed, { name } = {}) => {
+    if (!feat.routes) throw new Error("Routes are off for this account.");
+    const key = openSavedRoutes(plannedRoutes(parsed), { beside: true });
+    const label = name || parsed.name;
+    routeSaves.rename(key, label);
+    return { key, name: label };
+  };
+
+  const exportPoints = (format, name, points) => {
+    if (format === "gpx") {
+      exportPointsGpx(name, points);
+      return;
+    }
+    exportPointsLps(name, points).catch(() => toast({ tone: "error", message: `“${name}” could not be exported. Check the connection and try again.` }));
+  };
+
+  const savePointFromDialog = ({ setId, newSetName, point, pointId }) => {
+    setPointAsk(null);
+    if (setId && pointId) localPoints.updatePoint(setId, pointId, point);
+    else if (setId) localPoints.addPoint(setId, point);
+    else if (inPack) {
+      if (!packs.packPoints.createItem(newSetName, [{ id: newPointId(), ...point }])) toast({ tone: "error", message: "The pack did not take the point." });
+    } else localPoints.createPointSet(newSetName, [point]);
+    dock.show("imports");
+  };
+
+  const saveOverlay = (overlay) =>
+    overlayTools
+      .save(overlay)
+      .then(() => toast({ message: `Saved “${overlay.name}” to your Library`, action: { label: "Open Library", onClick: () => openLibrary("overlays") } }))
+      .catch((err) => toast({ tone: "error", message: `“${overlay.name}” could not be saved: ${err.response?.data?.error ?? err.message}` }));
+
   const imports = useImports({
     pack: packs.packForPanels,
+    threatsSaved: threatSets.canSave,
+    overlaysSaved: Boolean(feat.cloud_save),
     importers: {
       msnx: importMission,
       lps: (file, options) => localPoints.importLpsFile(file, options),
-      ths: async (file) => {
-        const count = await importThsFile(file);
+      ths: async (file, options) => {
+        const count = await importThsFile(file, options);
         if (!count) throw new Error("No threats found in this file.");
         return count;
       },
+      routefile: openRouteFile,
+      overlay: (file, options) => overlayTools.importFile(file, options),
     },
     destinations: {
       library: {
         msnx: (result, item) => routeSaves.queueSave(result.fileId, item.name),
         lps: (set) => localPoints.savePointSet(set),
+        routefile: (result) => routeSaves.queueSave(result.key, result.name),
+        overlay: async (overlay) => {
+          await saveOverlay(overlay);
+        },
       },
       pack: {
+        routefile: (parsed, { name } = {}) => {
+          const target = packs.packRoutes.createItem(name || parsed.name);
+          if (!target) throw new Error("The pack did not take them.");
+          setPackRouteTarget(target);
+          loadSketchRoutes(plannedRoutes(parsed), { setId: packs.packRoutes.setIdOf(target) });
+        },
         lps: async (set) => movePointsToPack(set, { createItem: packs.packPoints.createItem, removePointSet: localPoints.removePointSet }),
+        ths: async (file, { name } = {}) => {
+          const parsed = await parseThsFile(file);
+          if (!parsed.length) throw new Error("No threats found in this file.");
+          if (!packs.packThreats.createItem(name || setNameFromFile(file.name), parsed)) throw new Error("The pack did not take them.");
+          return parsed.length;
+        },
       },
     },
     onDone: (kinds, imported = []) => {
       // In a pack only the pack's own things are shown (docs/MISSION_PACKS.md §5a): say where a file that
       // went to the Library or stayed in this session is, and do not open an Imports panel that hides it.
-      const elsewhere = inPack ? imported.filter((item) => item.kind === "msnx" || (item.kind === "lps" && item.destination !== "pack")) : [];
+      const elsewhere = inPack ? imported.filter((item) => item.kind === "msnx" || (["lps", "ths", "routefile"].includes(item.kind) && item.destination !== "pack")) : [];
       if (elsewhere.some((item) => item.kind === "msnx")) {
         toast({ tone: "info", message: "The mission file is in your Library session; packs hold sketched routes only. Switch to Library to see it." });
       }
       if (elsewhere.some((item) => item.kind === "lps")) {
         toast({ tone: "info", message: "The local points are in your Library session, not the pack. Switch to Library to see them." });
       }
-      if (kinds.length === 1 && kinds[0] === "ths") dock.show("threats");
-      else if (kinds.includes("msnx")) dock.show("routes");
+      if (elsewhere.some((item) => item.kind === "routefile")) {
+        toast({ tone: "info", message: "The routes are in your Library session, not the pack. Switch to Library to see them." });
+      }
+      if (elsewhere.some((item) => item.kind === "ths")) {
+        toast({ tone: "info", message: "The threats are in your Library, not the pack. Switch to Library to see them." });
+      }
+      if (kinds.length === 1 && kinds[0] === "ths" && elsewhere.length === 0) dock.show("threats");
+      else if (kinds.includes("msnx") || kinds.includes("routefile")) dock.show("routes");
       else if (imported.some((item) => !elsewhere.includes(item))) dock.show("imports");
     },
   });
@@ -1163,7 +1373,9 @@ function App() {
     msnx: useFilePicker({ accept: ".msnx", onFiles: imports.begin }),
     lps: useFilePicker({ accept: ".lps,.LPS", multiple: true, onFiles: imports.begin }),
     ths: useFilePicker({ accept: ".ths,.THS", multiple: true, onFiles: imports.begin }),
-    any: useFilePicker({ accept: ".msnx,.lps,.LPS,.ths,.THS", multiple: true, onFiles: imports.begin }),
+    routefile: useFilePicker({ accept: ".fpl,.FPL,.gpx,.GPX", multiple: true, onFiles: imports.begin }),
+    overlay: useFilePicker({ accept: ".kmz,.KMZ,.kml,.KML", multiple: true, onFiles: imports.begin }),
+    any: useFilePicker({ accept: ".msnx,.lps,.LPS,.ths,.THS,.fpl,.FPL,.gpx,.GPX,.kmz,.KMZ,.kml,.KML", multiple: true, onFiles: imports.begin }),
   };
 
   // The Library's lists, loaded once signed in: the LZ/PZ panel offers the recent LZ/PZs, and the
@@ -1174,6 +1386,7 @@ function App() {
     fetchHistory();
     fetchSavedRoutes();
     localPoints.fetchSavedPointSets();
+    overlayTools.fetchSaved();
     // Once per sign-in.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [signedInId]);
@@ -1235,25 +1448,93 @@ function App() {
       onRenamed: (entry, name) =>
         localPoints.setPointSets((prev) => prev.map((set) => (set.savedId === entry.id ? { ...set, name } : set))),
     },
+    ...(feat.cloud_save
+      ? {
+          overlays: {
+            entries: overlayTools.savedOverlays,
+            loading: overlayTools.isLoadingSaved,
+            error: overlayTools.savedError,
+            openIds: new Set(overlayTools.overlays.map((overlay) => overlay.savedId).filter(Boolean)),
+            refresh: overlayTools.fetchSaved,
+            onOpen: async (entry) => {
+              await overlayTools.openSaved(entry);
+              dock.show("imports");
+            },
+            onDelete: (entry) => overlayTools.deleteSaved(entry.id),
+            onRenamed: (entry, name) => overlayTools.renamedInLibrary(entry.id, name),
+          },
+        }
+      : {}),
+    ...(threatSets.canSave
+      ? {
+          threats: {
+            entries: threatSets.savedSets,
+            loading: threatSets.isLoadingSaved,
+            error: threatSets.savedError,
+            openIds: threatSets.openSavedIds,
+            refresh: threatSets.fetchSavedSets,
+            onOpen: async (entry) => {
+              await threatSets.openSavedSet(entry);
+              dock.show("threats");
+            },
+            onDelete: (entry) => threatSets.deleteSavedSet(entry),
+            onRenamed: () => threatSets.pull(),
+          },
+        }
+      : {}),
   };
   const recentLz = history.filter((entry) => !sessionLzIds.has(entry.id)).slice(0, 3);
   // In a pack, opening something from the Library adds a copy of it to the pack.
-  const PACK_KIND = { lz: "lz", routes: "route", points: "pointset" };
+  const PACK_KIND = { lz: "lz", routes: "route", points: "pointset", threats: "threatset" };
   const libraryView = inPack
     ? Object.fromEntries(
         Object.entries(librarySources).map(([tab, source]) => [
           tab,
-          { ...source, openIds: new Set(), onOpen: (entry) => packs.copyIn(PACK_KIND[tab], entry) },
+          // An overlay never goes in a pack: it is this person's own, opened as it is anywhere else.
+          PACK_KIND[tab] ? { ...source, openIds: new Set(), onOpen: (entry) => packs.copyIn(PACK_KIND[tab], entry) } : { ...source, openLabel: "Open", openingLabel: "Opening" },
         ]),
       )
     : librarySources;
 
   // What is shown while a pack is open: its own route sets and point sets; the Library's stay loaded.
   const ofOpenPack = (localId) => Boolean(localId) && packLocalRef(localId)?.pack === packs.open;
+  const shownFlots = inPack ? flotTools.flots.filter((f) => ofOpenPack(f.setId)) : flotTools.flots.filter((f) => !f.setId || !packLocalRef(f.setId));
   const shownSketches = inPack ? sketchedRoutes.filter((r) => ofOpenPack(r.setId)) : sketchedRoutes.filter((r) => !r.setId || !packLocalRef(r.setId));
   const shownImported = inPack ? [] : importedRoutes;
+
+  // Undo and redo (feature/undo): the LZ/PZ showing and the route sets on the map, in this workspace.
+  const undoControls = useUndo({
+    sources: [
+      activeDiagramId && {
+        history: lzWorkspace.workspace.history?.[activeDiagramId],
+        undo: () => lzWorkspace.undoDiagram(activeDiagramId),
+        redo: () => lzWorkspace.redoDiagram(activeDiagramId),
+      },
+      ...Object.entries(sketchHistory)
+        .filter(([key]) => (inPack ? ofOpenPack(key) : !packLocalRef(key)))
+        .map(([key, history]) => ({ history, undo: () => undoSketch(key), redo: () => redoSketch(key) })),
+      ...(inPack
+        ? []
+        : Object.entries(missionHistory).map(([fileId, history]) => ({
+            history,
+            undo: () => undoMission(fileId),
+            redo: () => redoMission(fileId),
+          }))),
+    ],
+    draft: isSketching
+      ? { points: draftPoints.length, removeLast: removeLastDraftPoint }
+      : isDrawingLZ
+        ? { points: drawingPoints.length, removeLast: () => setDrawingPoints((prev) => prev.slice(0, -1)) }
+        : null,
+    lockedReason: packReadOnly ? "This Mission Pack is read-only." : null,
+    keysOff: presenting || is3DOpen || surveysOpen,
+    toast,
+  });
   const shownPointSets = (inPack ? localPoints.pointSets.filter((set) => ofOpenPack(set.id)) : localPoints.pointSets.filter((set) => !packLocalRef(set.id)))
     .map((set) => (packLocalRef(set.id) ? { ...set, packItemId: packLocalRef(set.id).item } : set));
+  // What the search fields can find by name: the sets here now and the person's Library (useLocalPoints fetches it once they go to search).
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- shownPointSets is made anew each render from these.
+  const searchPoints = useMemo(() => searchablePoints(shownPointSets, localPoints.libraryPointSets), [localPoints.pointSets, localPoints.libraryPointSets, inPack, packs.open]);
 
   // The LZ/PZ panel in a pack lists every LZ/PZ in it; one not open here is drawn from the pack's copy.
   const packItemsByUuid = new Map(packs.items.map((item) => [item.uuid, item]));
@@ -1308,6 +1589,7 @@ function App() {
           kind: "sketch",
           item,
           routes: sketchedRoutes.filter((r) => r.setId === setId),
+          flots: flotTools.flots.filter((flot) => flot.setId === setId),
           pack: {
             finished: packs.readOnly,
             target: packRouteSetFor() === uuid,
@@ -1330,7 +1612,7 @@ function App() {
 
   const lzUnsaved = diagrams.some((d) => d.status === "analyzed" && (d.savedId == null || d.dirty));
   const routesUnsaved = routeSets.some((set) => routeSaves.stateOf(set.key).dirty);
-  const importCount = shownPointSets.length + (inPack ? 0 : routeSets.filter((set) => set.kind === "mission").length) + imports.threatFiles.length;
+  const importCount = shownPointSets.length + (inPack ? 0 : routeSets.filter((set) => set.kind === "mission").length) + imports.threatFiles.length + overlayTools.overlays.length;
   const railItems = [
     ...(inPack
       ? [{ key: "pack", label: "Pack", icon: "layers", iconColor: "var(--pack)", dot: packs.newCount > 0 ? "pack" : null, dotLabel: "Changed since you looked" }]
@@ -1348,6 +1630,8 @@ function App() {
     updatePointName: updateSketchPointName,
     refreshRouteElevations,
     applyForecastWinds,
+    addPoint: addRoutePoint,
+    removePoint: removeSketchPoint,
   };
   const importedPlan = {
     updateRoutePlan: updateImportedRoutePlan,
@@ -1356,6 +1640,9 @@ function App() {
     updatePointName: updateImportedPointName,
     refreshRouteElevations: refreshImportedElevations,
     applyForecastWinds: applyImportedForecastWinds,
+    // A mission's point splits the leg nearest it, in its file; AMPS's legs leave no way to take one out here.
+    addPoint: (routeId, _after, { lat, lon, ...named }) => insertPoint(routeId, lat, lon, named),
+    addsOnNearestLeg: true,
   };
   const localPointNames = shownPointSets.flatMap((set) =>
     set.points.map((p) => ({ name: p.name, lat: p.lat, lon: p.lon, elevationFt: p.elevationFt })),
@@ -1404,10 +1691,11 @@ function App() {
       </button>
       {/* Across the whole window, over the control panel and the map alike (the dock and the panel sit under it). */}
       <TopBar
+        undo={undoControls}
         user={user}
         isAdmin={Boolean(user?.is_admin)}
         onOpenSurveys={user?.is_admin || feat.lz_surveys ? () => setSurveysOpen(true) : undefined}
-        onSignOut={logout}
+        onSignOut={signOut}
         onOpenLibrary={() => openLibrary("lz")}
         searchSlot={
           <TopBarSearch
@@ -1417,13 +1705,15 @@ function App() {
             onShare={(choice) => setShareGrid({ mgrs: choice.mgrs, lat: choice.lat, lon: choice.lon, label: choice.label })}
             near={targetNear}
             searchPlaces={feat.place_search ? searchPlaces : null}
+            localPoints={searchPoints}
+            onSearchStart={localPoints.askForLibraryPoints}
           />
         }
         briefSlot={feat.mission_brief ? (
           <BriefMenu packName={inPack ? packs.meta?.name ?? "the pack" : null} summary={brief.summary} onGenerate={() => setBriefOpen(true)} onPresent={presentBrief} />
         ) : null}
         onImport={(kind) => pickers[kind]?.open()}
-        canImport={{ msnx: feat.msnx_import && !inPack, ths: feat.threats }}
+        canImport={{ msnx: feat.msnx_import && !inPack, ths: feat.threats, routefile: feat.routes }}
         pack={packs.topPack}
         packStatus={packs.topStatus ?? "live"}
         people={packPeople}
@@ -1445,6 +1735,7 @@ function App() {
                     lz: history.length,
                     routes: savedRoutes.length,
                     points: localPoints.savedPointSets.length,
+                    threats: threatSets.canSave ? threatSets.savedSets.length : undefined,
                     unsaved: inPack ? packs.parkedUnsaved : diagrams.filter((d) => d.status === "analyzed" && (d.savedId == null || d.dirty)).length,
                   }}
                   onPick={packs.openPack}
@@ -1495,6 +1786,8 @@ function App() {
           showLZOutline={showLZOutline}
           setShowLZOutline={setShowLZOutline}
           addSector={addSectorOfFire}
+          isDrawingBackstop={backstopTools.isDrawing}
+          onToggleBackstop={toggleBackstopDrawing}
           exportBox={exportBox}
           enableExportMode={enableExportMode}
           setIsExporting={setIsExporting}
@@ -1558,6 +1851,9 @@ function App() {
           setMapStyle={setMapStyle}
           showMgrsGrid={showMgrsGrid}
           setShowMgrsGrid={setShowMgrsGrid}
+          vfrCharts={vfrCharts}
+          overlays={overlayTools.overlays}
+          onToggleOverlay={overlayTools.toggle}
         />
         <MobileGridInput
           gridInput={gridInput}
@@ -1566,12 +1862,17 @@ function App() {
           onShare={(choice) => setShareGrid({ mgrs: choice.mgrs, lat: choice.lat, lon: choice.lon, label: choice.label })}
           targetNear={targetNear}
           searchPlaces={feat.place_search ? searchPlaces : null}
+          localPoints={searchPoints}
+          onSearchStart={localPoints.askForLibraryPoints}
         />
         <MobileQuickAccess
+          undo={undoControls}
           features={feat}
           addHelo={addHelo}
           addPZMarker={addPZMarker}
           addSector={addSectorOfFire}
+          isDrawingBackstop={backstopTools.isDrawing}
+          onToggleBackstop={toggleBackstopDrawing}
           addUnit={addUnit}
           onOpenUnitBuilder={() => setShowUnitBuilder(true)}
           addGoAround={addGoAround}
@@ -1593,7 +1894,37 @@ function App() {
           diagramStatus={diagramStatus}
           diagramReadinessText={diagramReadinessText}
         />
+        {flotTools.isDrawing && (
+          <BackstopDrawBar
+            title="Drawing the FLOT."
+            hint="Click the map along the line, in order."
+            points={flotTools.draftPoints.length}
+            onUndo={flotTools.undoDraftPoint}
+            onCancel={flotTools.cancelDrawing}
+            onFinish={finishFlotDrawing}
+          />
+        )}
+        {backstopTools.isDrawing && (
+          <BackstopDrawBar
+            points={backstopTools.draftPoints.length}
+            onUndo={backstopTools.undoDraftPoint}
+            onCancel={backstopTools.cancelDrawing}
+            onFinish={backstopTools.finishDrawing}
+          />
+        )}
         <MapView
+          backstops={backstopTools.backstops}
+          updateBackstop={mapEdit(backstopTools.updateBackstop)}
+          onBackstopContextMenu={(id, x, y) => setContextMenu({ type: "backstop", id, x, y })}
+          isDrawingBackstop={backstopTools.isDrawing}
+          backstopDraftPoints={backstopTools.draftPoints}
+          addBackstopDraftPoint={backstopTools.addDraftPoint}
+          flots={shownFlots}
+          updateFlot={mapEdit(flotTools.updateFlot)}
+          onFlotContextMenu={(id, x, y) => setContextMenu({ type: "flot", id, x, y })}
+          isDrawingFlot={flotTools.isDrawing}
+          flotDraftPoints={flotTools.draftPoints}
+          addFlotDraftPoint={flotTools.addDraftPoint}
           flyTo={flyTo}
           importedRoutes={shownImported}
           onUpdateMsnxPointPosition={mapEdit(updatePointPosition)}
@@ -1653,12 +1984,15 @@ function App() {
           handleLZRightClick={editable ? handleLZRightClick : handleMapRightClick}
           setContextMenu={setContextMenu}
           mapStyle={mapStyle}
+          vfrCharts={vfrCharts}
           showMgrsGrid={showMgrsGrid}
+          mapOverlays={overlayTools.overlays}
+          overlayFit={overlayTools.fit}
           localPointSets={shownPointSets}
           onAddLocalPointToRoute={mapEdit(handleAddLocalPointToRoute)}
           threats={threats}
-          onThreatMove={moveThreat}
-          onThreatEdit={beginEditThreat}
+          onThreatMove={packReadOnly ? undefined : moveThreat}
+          onThreatEdit={packReadOnly ? undefined : beginEditThreat}
           onMapMove={setMapCenter}
           presence={inPack ? packs.others : undefined}
           onPoint={inPack ? packs.pointAt : undefined}
@@ -1682,7 +2016,7 @@ function App() {
               pack={packs.meta}
               members={packs.session?.members ?? []}
               audience={packs.packForPanels?.memberCount}
-              items={packs.items}
+              items={feat.threats ? packs.items : packs.items.filter((item) => item.kind !== "threatset")}
               openIds={packs.openIds}
               people={packs.others}
               me={user?.id}
@@ -1759,7 +2093,7 @@ function App() {
                 sketchInto: inPack
                   ? (set) => {
                       setPackRouteTarget(set.key);
-                      if (!isSketching) startSketch();
+                      if (!isSketching) beginRouteSketch();
                     }
                   : undefined,
                 addToPack:
@@ -1768,18 +2102,27 @@ function App() {
                 share: setForeFlightRoute,
                 toggleVisibility: (set, id) => (set.kind === "mission" ? toggleRouteVisibility(id) : toggleSketchVisibility(id)),
                 removeRoute: (set, id) => (set.kind === "mission" ? removeRoute(id) : removeSketchRoute(id)),
+                flipFlot: flotTools.flipFlot,
+                removeFlot: flotTools.deleteFlot,
               }}
               plan={(set) => (set.kind === "mission" ? importedPlan : sketchedPlan)}
               localPointNames={localPointNames}
+              pointSearch={{
+                near: targetNear,
+                searchPlaces: feat.place_search ? searchPlaces : null,
+                localPoints: searchPoints,
+                onSearchStart: localPoints.askForLibraryPoints,
+              }}
               sketch={{
                 active: isSketching,
                 name: `ROUTE ${sketchedRoutes.length + 1}`,
                 points: draftPoints.length,
                 enabled: feat.routes && editable,
-                onStart: startSketch,
+                onStart: beginRouteSketch,
                 onCancel: cancelSketch,
                 onFinish: toggleRouteSketch,
               }}
+              flot={{ active: flotTools.isDrawing, enabled: feat.routes && editable, onStart: startFlotDrawing, onCancel: flotTools.cancelDrawing }}
               onImportMsnx={pickers.msnx.open}
               canImportMsnx={feat.msnx_import}
               onCollapse={() => dock.setCollapsed(true)}
@@ -1792,7 +2135,15 @@ function App() {
               onImport={pickers.ths.open}
               onEdit={beginEditThreat}
               onRemove={removeThreat}
-              onRemoveAll={() => threats.forEach((threat) => removeThreat(threat.id))}
+              onRemoveAll={threatSets.removeAllThreats}
+              sets={threatSets.sets}
+              activeId={threatSets.activeId}
+              saveStates={threatSets.saveStates}
+              canSave={threatSets.canSave}
+              pack={inPack ? { name: packs.meta?.name ?? "the pack", readOnly: packs.readOnly } : null}
+              onRenameSet={inPack ? (id, name) => packs.packThreats.renameSet(packLocalRef(id).item, name) : threatSets.renameSet}
+              onCloseSet={inPack ? (id) => packItemOf(id) && packs.actions.close(packItemOf(id)) : threatSets.closeSet}
+              onMakeActive={threatSets.setActiveSet}
               onToggleVisibility={toggleThreatVisibility}
               onExportThs={() =>
                 Promise.resolve(exportThsFile("threats")).catch((err) => toast({ tone: "error", message: `The .ths could not be made: ${err.message}` }))
@@ -1809,8 +2160,21 @@ function App() {
                 .filter((set) => set.kind === "mission")
                 .map((set) => ({ key: set.key, fileName: set.fileName, summary: setSummary(set.routes), saved: Boolean(routeSaves.stateOf(set.key).link) }))}
               threatFiles={imports.threatFiles}
+              threatsSaved={threatSets.canSave}
               onImport={pickers.any.open}
               onTogglePoints={localPoints.togglePointSetVisibility}
+              canEditPoints={!packReadOnly}
+              canExportPoints={Boolean(feat.exports)}
+              onNewPoint={(setId, group) => setPointAsk({ setId, group })}
+              onEditPoint={(set, point) => setPointAsk({ setId: set.id, point })}
+              onRemovePoint={(set, point) => setPointRemoval({ set, point })}
+              onExportPoints={exportPoints}
+              onRenamePoints={localPoints.renamePointSet}
+              overlays={overlayTools.overlays}
+              onToggleOverlay={overlayTools.toggle}
+              onSaveOverlay={feat.cloud_save ? saveOverlay : undefined}
+              onZoomOverlay={overlayTools.zoomTo}
+              onRemoveOverlay={overlayTools.remove}
               onSavePoints={
                 feat.cloud_save
                   ? (set) =>
@@ -1875,6 +2239,17 @@ function App() {
               >
                 Set as Target
               </button>
+              {!packReadOnly && (
+                <button
+                  className="ctx-btn"
+                  onClick={() => {
+                    setPointAsk({ at: { lat: contextMenu.lat, lon: contextMenu.lon } });
+                    setContextMenu(null);
+                  }}
+                >
+                  Add Local Point Here
+                </button>
+              )}
               <button
                 className="ctx-btn ctx-btn--danger"
                 onClick={handleAddThreatHere}
@@ -1882,6 +2257,37 @@ function App() {
                 Add Threat Here
               </button>
             </>
+          ) : contextMenu.type === "flot" ? (
+            <>
+              <button
+                className="ctx-btn"
+                onClick={() => {
+                  flotTools.flipFlot(contextMenu.id);
+                  setContextMenu(null);
+                }}
+              >
+                Flip the scallops
+              </button>
+              <button
+                className="ctx-btn ctx-btn--danger"
+                onClick={() => {
+                  flotTools.deleteFlot(contextMenu.id);
+                  setContextMenu(null);
+                }}
+              >
+                Delete FLOT
+              </button>
+            </>
+          ) : contextMenu.type === "backstop" ? (
+            <button
+              className="ctx-btn ctx-btn--danger"
+              onClick={() => {
+                backstopTools.deleteBackstop(contextMenu.id);
+                setContextMenu(null);
+              }}
+            >
+              Delete backstop
+            </button>
           ) : contextMenu.type === "lz" ? (
             // --- THE LZ CONTEXT MENU ---
             <>
@@ -1927,7 +2333,7 @@ function App() {
               <button
                 className="ctx-btn ctx-btn--danger"
                 onClick={() => {
-                  setCustomLZ(null);
+                  setDrawnLZ(null);
                   setDrawingPoints([]);
                   setContextMenu(null);
                 }}
@@ -1975,8 +2381,13 @@ function App() {
                 className="ctx-btn ctx-btn--success"
                 onClick={handleInsertPointConfirm}
               >
-                Insert Point Here
+                + Add point here
               </button>
+              {isSketchRoute(contextMenu.routeId) && (
+                <button className="ctx-btn ctx-btn--primary" onClick={handleInsertCheckpoint}>
+                  ● Add checkpoint here
+                </button>
+              )}
               <button
                 className="ctx-btn ctx-btn--ghost"
                 onClick={() => setContextMenu(null)}
@@ -2010,6 +2421,14 @@ function App() {
               >
                 Rename
               </button>
+              <button
+                className="ctx-btn ctx-btn--danger"
+                onClick={handleDeleteSketchPoint}
+                disabled={Boolean(pointStays)}
+              >
+                ✕ Delete point
+              </button>
+              {pointStays && <div className="ctx-label">{pointStays}</div>}
               <button
                 className="ctx-btn ctx-btn--ghost"
                 onClick={() => setContextMenu(null)}
@@ -2047,7 +2466,7 @@ function App() {
       {editingThreat && (
         <ThreatDialog
           editing={editingThreat}
-          onSave={saveThreat}
+          onSave={(threat) => saveThreat(threat, { createSet: inPack ? (first) => packs.packThreats.createItem("", [first]) : undefined })}
           onCancel={cancelThreatEdit}
         />
       )}
@@ -2105,6 +2524,21 @@ function App() {
       {routeSaves.dialogs}
       {imports.dialog}
       {nameAsk && <NameDialog {...nameAsk} onCancel={() => setNameAsk(null)} />}
+      {pointAsk && <PointDialog ask={pointAsk} sets={shownPointSets} near={targetNear} onCancel={() => setPointAsk(null)} onSave={savePointFromDialog} />}
+      {pointRemoval && (
+        <ConfirmDialog
+          title={`Delete ${pointRemoval.point.name || "this point"}?`}
+          confirmLabel="Delete point"
+          confirmTone="danger"
+          onCancel={() => setPointRemoval(null)}
+          onConfirm={() => {
+            localPoints.removePoint(pointRemoval.set.id, pointRemoval.point.id);
+            setPointRemoval(null);
+          }}
+        >
+          It is taken out of {pointRemoval.set.name}.{pointRemoval.set.savedId ? " The Library copy changes when you next update it." : ""}
+        </ConfirmDialog>
+      )}
       {closingSet && closingState && (
         <ConfirmDialog
           title={`Save changes to ${closingState.name}?`}
@@ -2157,6 +2591,8 @@ function App() {
       {pickers.msnx.element}
       {pickers.lps.element}
       {pickers.ths.element}
+      {pickers.routefile.element}
+      {pickers.overlay.element}
       {pickers.any.element}
 
       {exportSuccess && (

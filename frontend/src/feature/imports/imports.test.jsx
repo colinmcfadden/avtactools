@@ -48,7 +48,7 @@ describe("working out what a file is", () => {
 
     const overlay = await detectImport(fakeFile(Buffer.from("not really a tiff"), "KJZP_CHART.tif"));
     expect(overlay.kind).toBeNull();
-    expect(overlay.error).toMatch(/Map overlays are not supported yet/);
+    expect(overlay.error).toMatch(/Image overlays are not supported yet/);
 
     const empty = await detectImport(fixture("sqlite/threats-empty.ths"));
     expect(empty.kind).toBeNull();
@@ -62,6 +62,71 @@ describe("working out what a file is", () => {
   });
 });
 
+describe("telling route files and map overlays apart", () => {
+  const encoded = (text) => new TextEncoder().encode(text);
+  const textFile = (text, name) => fakeFile(encoded(text), name);
+  const KML = '<kml xmlns="http://www.opengis.net/kml/2.2"><Document><name>obj peach</name><Placemark><Point><coordinates>-84,34</coordinates></Point></Placemark><NetworkLink/></Document></kml>';
+  const GPX = '<gpx version="1.1" xmlns="http://www.topografix.com/GPX/1/1"><rte><name>ALPHA</name><rtept lat="34" lon="-84"><name>SP</name></rtept><rtept lat="34.1" lon="-84.1"><name>RP</name></rtept></rte></gpx>';
+  const FPL = '<flight-plan xmlns="http://www8.garmin.com/xmlschemas/FlightPlan/v1"><waypoint-table><waypoint><identifier>SP</identifier><lat>34</lat><lon>-84</lon></waypoint><waypoint><identifier>RP</identifier><lat>34.1</lat><lon>-84.1</lon></waypoint></waypoint-table><route><route-name>ALPHA</route-name><route-point><waypoint-identifier>SP</waypoint-identifier></route-point><route-point><waypoint-identifier>RP</waypoint-identifier></route-point></route></flight-plan>';
+  const zipOf = async (entries, name) => {
+    const JSZip = (await import("jszip")).default;
+    const zip = new JSZip();
+    Object.entries(entries).forEach(([entry, content]) => zip.file(entry, content));
+    return fakeFile(await zip.generateAsync({ type: "uint8array" }), name);
+  };
+
+  it("takes a zip holding a KML for an overlay, whatever it is called", async () => {
+    const found = await detectImport(await zipOf({ "doc.kml": KML }, "overlay.zip"));
+    expect(found).toMatchObject({ kind: "overlay", name: "OBJ PEACH", notes: ["1 network link"] });
+  });
+
+  it("takes an AMPS mission for a mission though it holds XML, and is called .kmz", async () => {
+    const found = await detectImport(fixture("msnx/sketch-two-routes.msnx", "renamed.kmz"));
+    expect(found.kind).toBe("msnx");
+  });
+
+  it("reads a zip that is neither as a mission, and says what is wrong", async () => {
+    const found = await detectImport(await zipOf({ "a.txt": "hello" }, "a.kmz"));
+    expect(found.kind).toBeNull();
+    expect(found.error).toMatch(/could not be read/);
+  });
+
+  it("takes XML by its root element, whatever it is called", async () => {
+    expect((await detectImport(textFile(KML, "a.xml"))).kind).toBe("overlay");
+    expect((await detectImport(textFile(GPX, "a.xml"))).kind).toBe("routefile");
+    expect((await detectImport(textFile(FPL, "a.txt"))).kind).toBe("routefile");
+  });
+
+  it("reads past an XML declaration and a comment to the root", async () => {
+    expect((await detectImport(textFile(`<?xml version="1.0"?><!-- kml --> ${GPX}`, "a"))).kind).toBe("routefile");
+  });
+
+  it("takes a GPX of waypoints alone for local points", async () => {
+    const found = await detectImport(textFile('<gpx version="1.1"><wpt lat="34" lon="-84"><name>HAWK</name></wpt></gpx>', "pts.gpx"));
+    expect(found).toMatchObject({ kind: "lps", name: "PTS", count: 1 });
+    expect(found.parsed.points[0].name).toBe("HAWK");
+  });
+
+  it("refuses a file named as one of these that is not", async () => {
+    expect(await detectImport(textFile("just words", "a.gpx"))).toMatchObject({ kind: null, error: expect.stringMatching(/could not be read/) });
+    expect(await detectImport(textFile("just words", "a.kml"))).toMatchObject({ kind: null, error: expect.stringMatching(/could not be read/) });
+  });
+
+  it("refuses a document type in any of them", async () => {
+    const hostile = `<!DOCTYPE gpx [<!ENTITY a "a">]>${GPX}`;
+    expect(await detectImport(textFile(hostile, "a.gpx"))).toMatchObject({ kind: null, error: expect.stringMatching(/document type/) });
+  });
+
+  it("says plainly that an image is no overlay yet", async () => {
+    expect((await detectImport(textFile("x", "chart.png"))).error).toMatch(/Image overlays are not supported yet/);
+  });
+
+  it("saves an overlay to the Library where it can be, else keeps it for the session", () => {
+    expect(defaultDestination("overlay", null, false, true)).toBe("library");
+    expect(defaultDestination("overlay", null, false, false)).toBe("session");
+  });
+});
+
 describe("the import review", () => {
   const pack = { name: "OP DK", memberCount: 4 };
   const items = (inPack) => [
@@ -71,17 +136,20 @@ describe("the import review", () => {
     { file: { name: "notes.docx" }, kind: null, error: "Not supported. Nothing will be imported from this file." },
   ];
 
-  it("sends points to the open pack by default, never a mission, and threats only to this session", async () => {
+  it("sends points and threats to the open pack by default, never a mission", async () => {
     const onImport = vi.fn().mockResolvedValue();
     render(<ToastProvider><ImportReviewDialog items={items(pack)} pack={pack} onCancel={() => {}} onImport={onImport} /></ToastProvider>);
 
     expect(screen.getByText("Everyone in OP DK (4 members) will see these points.")).toBeInTheDocument();
-    expect(screen.getByText("Threats are never saved or shared with a pack.")).toBeInTheDocument();
-    expect(screen.getByText("Session only")).toBeInTheDocument();
+    expect(screen.getByText("Everyone in OP DK (4 members) will see these threats and can change them.")).toBeInTheDocument();
+    const threatsWhere = within(screen.getByRole("radiogroup", { name: "Where THREATS.ths goes" }));
+    expect(threatsWhere.getByRole("radio", { name: "OP DK" })).toBeChecked();
+    expect(threatsWhere.getByRole("radio", { name: "Session" })).not.toBeChecked();
+    expect(threatsWhere.queryByRole("radio", { name: "Library" })).toBeNull();
     const missionWhere = within(screen.getByRole("radiogroup", { name: "Where GOAT.msnx goes" }));
     expect(missionWhere.getByRole("radio", { name: "Session" })).toBeChecked();
-    expect(screen.getAllByRole("radio", { name: "OP DK" })[1]).toBeDisabled();
-    expect(screen.getByText("1 to OP DK · 2 stay in this session")).toBeInTheDocument();
+    expect(missionWhere.getByRole("radio", { name: "OP DK" })).toBeDisabled();
+    expect(screen.getByText("2 to OP DK · 1 stays in this session")).toBeInTheDocument();
 
     // The unsupported file is left out, and can be taken off the list.
     fireEvent.click(screen.getByLabelText("Remove notes.docx from the list"));
@@ -91,9 +159,17 @@ describe("the import review", () => {
     await waitFor(() => expect(onImport).toHaveBeenCalledTimes(1));
     expect(onImport.mock.calls[0][0].map((item) => [item.kind, item.destination])).toEqual([
       ["lps", "pack"],
-      ["ths", "session"],
+      ["ths", "pack"],
       ["msnx", "session"],
     ]);
+  });
+
+  it("offers threats the Library beside the pack for an account that saves them, and says where they will be", () => {
+    render(<ToastProvider><ImportReviewDialog items={items(pack)} pack={pack} threatsSaved onCancel={() => {}} onImport={() => {}} /></ToastProvider>);
+    const threatsWhere = within(screen.getByRole("radiogroup", { name: "Where THREATS.ths goes" }));
+    fireEvent.click(threatsWhere.getByRole("radio", { name: "Library" }));
+    expect(threatsWhere.getByRole("radio", { name: "Library" })).toBeChecked();
+    expect(screen.getAllByText("Saved to your Library. Shown when you switch back to Library.").length).toBeGreaterThan(0);
   });
 
   it("outside a pack, offers the Library or this session", () => {

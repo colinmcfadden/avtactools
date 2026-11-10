@@ -289,6 +289,39 @@ const BRIEF_CASES = [
   ["a brief's content cannot be replaced by a list", brief, { type: "item.replace", item: "br-1", data: [] }],
 ];
 
+// The threatset kind (docs/MISSION_PACKS.md §2) has a file of its own for the same reason.
+const THREAT_SET = {
+  kind: "threatset",
+  name: "THREATS",
+  deleted: false,
+  data: {
+    version: 1,
+    threats: [
+      { id: "t-1", name: "SA-6", milstdId: "SHAPMFG--------", lat: 34.5, lon: -84.1, radars: [{ type: 1, rangeNmi: 25, bands: [] }] },
+      { id: "t-2", name: "SA-8", milstdId: "SHAPMFG--------", lat: 34.6, lon: -84.2, radars: [] },
+    ],
+  },
+};
+const threatSets = { "ts-1": THREAT_SET };
+const THREAT = (id) => ["threats", { id }];
+
+const THREAT_SET_CASES = [
+  ["a set of threats is created", {}, { type: "item.create", item: "ts-2", kind: "threatset", name: "OP DK THREATS", data: { version: 1, threats: [] } }],
+  ["a set of threats whose content is a list is malformed", {}, { type: "item.create", item: "ts-2", kind: "threatset", name: "X", data: [] }],
+  ["a set of threats with no content is malformed", {}, { type: "item.create", item: "ts-2", kind: "threatset", name: "X" }],
+  ["a threat is added", threatSets, insert("ts-1", ["threats"], "t-2", { id: "t-3", name: "ZSU", lat: 34.7, lon: -84.3, radars: [] })],
+  ["a threat is added first", threatSets, insert("ts-1", ["threats"], null, { id: "t-3", name: "ZSU", lat: 34.7, lon: -84.3, radars: [] })],
+  ["a threat with an id the set has is skipped", threatSets, insert("ts-1", ["threats"], null, { id: "t-1", name: "AGAIN", lat: 0, lon: 0, radars: [] })],
+  ["a threat is moved, both coordinates together", threatSets, patch("ts-1", THREAT("t-1"), { lat: 34.55, lon: -84.15 })],
+  ["a threat's radars are replaced whole", threatSets, patch("ts-1", THREAT("t-1"), { radars: [{ type: 1, rangeNmi: 30, bands: [] }] })],
+  ["a threat someone removed cannot be moved", threatSets, patch("ts-1", THREAT("t-9"), { lat: 1, lon: 1 })],
+  ["a threat is removed", threatSets, remove("ts-1", THREAT("t-2"))],
+  ["a set of threats is renamed", threatSets, { type: "item.rename", item: "ts-1", name: "OP DK AIR DEFENCE" }],
+  ["a set of threats is removed", threatSets, { type: "item.delete", item: "ts-1" }],
+  ["a set of threats is replaced from its original", threatSets, { type: "item.replace", item: "ts-1", data: { version: 1, threats: [] } }],
+  ["a set of threats cannot be replaced by a list", threatSets, { type: "item.replace", item: "ts-1", data: [] }],
+];
+
 const fixtureOf = (cases) => cases.map(([name, items, op]) => {
   const result = applyPackOp(items, op);
   return { name, items, op, status: result.status, reason: result.reason, expected: result.items };
@@ -310,13 +343,23 @@ const briefFixture = () => ({
   cases: fixtureOf(BRIEF_CASES),
 });
 
+const threatSetFixture = () => ({
+  description: "packs/ops.json's cases for the threatset item kind, in the same shape. A set of threats holds an object, "
+    + "{version, threats: [...]}, each threat addressed by its id. Apart so a client that has not ported the kind yet is still "
+    + "held to every case of ops.json; the server is held to both.",
+  generatedBy: GENERATED_BY,
+  cases: fixtureOf(THREAT_SET_CASES),
+});
+
 describe("mission pack operations fixture", () => {
   it("packs/ops.json", () => settle("packs/ops.json", opsFixture()));
   it("packs/ops-brief.json", () => settle("packs/ops-brief.json", briefFixture()));
+  it("packs/ops-threatset.json", () => settle("packs/ops-threatset.json", threatSetFixture()));
 
   it("keeps the brief kind out of ops.json and in ops-brief.json", () => {
     const kinds = (fixture) => new Set(fixture.cases.flatMap((c) => [c.op && c.op.kind, ...Object.values(c.items).map((i) => i.kind)]));
     expect(kinds(opsFixture()).has("brief")).toBe(false);
+    expect(kinds(opsFixture()).has("threatset")).toBe(false);
     const { cases } = briefFixture();
     expect(cases.filter((c) => c.status === "applied").length).toBeGreaterThanOrEqual(7);
     expect(cases.find((c) => c.name === "a brief whose content is a list is malformed").reason).toBe("bad_data");
@@ -349,7 +392,7 @@ describe("mission pack operations fixture", () => {
   });
 
   it("validates exactly what it refuses as malformed", () => {
-    [...opsFixture().cases, ...briefFixture().cases].forEach((c) => {
+    [...opsFixture().cases, ...briefFixture().cases, ...threatSetFixture().cases].forEach((c) => {
       expect(validatePackOp(c.op)).toBe(c.status === "invalid" ? c.reason : null);
     });
   });

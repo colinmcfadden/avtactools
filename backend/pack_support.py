@@ -16,7 +16,8 @@ The rules (docs/MISSION_PACKS.md has the reasons):
   reopens it. Reading, exporting and copying out still work.
 * **Nothing reaches back into the library.** Items are copies; a pack never edits
   or reveals someone's one-off records.
-* **Threats are never part of a pack.** There is no item kind for them.
+* **Threats are not part of a pack yet.** There is no item kind for them; they are saved in the
+  person's library (``SavedThreatSet``), and step T of docs/ANDROID_SCREENS_PLAN.md adds the kind.
 """
 
 import hashlib
@@ -33,7 +34,7 @@ from sqlalchemy.orm import Session
 import notify
 from models import (
     MissionPack, MissionPackEvent, MissionPackInvite, MissionPackItem, MissionPackMember, MissionPackSeen,
-    SavedLZ, SavedPointSet, SavedRoute, SurveyBook, Team, TeamMember, User, db,
+    SavedLZ, SavedPointSet, SavedRoute, SavedThreatSet, SurveyBook, Team, TeamMember, User, db,
 )
 
 ROLES = ('owner', 'editor', 'viewer')
@@ -51,7 +52,7 @@ MAX_DESCRIPTION = 2000
 MAX_SUMMARY = 300
 SYSTEM_ACTOR = 'EZ-PZ'
 
-LIBRARY_MODELS = {'lz': SavedLZ, 'route': SavedRoute, 'pointset': SavedPointSet}
+LIBRARY_MODELS = {'lz': SavedLZ, 'route': SavedRoute, 'pointset': SavedPointSet, 'threatset': SavedThreatSet}
 # Everything a pack holds, which goes when the pack does (a deleted pack keeps only its tombstone row).
 PACK_CONTENT = (MissionPackEvent, MissionPackItem, MissionPackInvite, MissionPackMember, MissionPackSeen)
 

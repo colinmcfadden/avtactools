@@ -1,0 +1,18 @@
+{
+  "generatedBy": "frontend/src/contracts/backstopFixtures.test.js (UPDATE_CONTRACTS=1)",
+  "description": "A backstop keeps its line ({id, points: [{lat, lon}, ...]}), which stays where it was sketched, and once its arrow has moved {arrow: {tail, tip?}}. With no arrow the tail is the line's middle by distance; with no tip (or a null one) the tip is on the LZ/PZ's target [lat, lon] and follows it (onTarget). azimuth is the initial great-circle bearing from tail to tip in whole degrees true, 360 written as 0; text is the label: three digits, \"°T · \", the arrow's length in km to one decimal, \" km\". A move adds to both ends and always leaves a tip of its own. A tip dragged within 20 screen pixels of the target goes back onto it (no tip), and one that would leave the arrow under 24 pixels long is refused.",
+  "target": [34.7838,-84.0822],
+  "readings": [
+    {"name":"twoPoints","points":[{"lat":34.8,"lon":-84.09},{"lat":34.8,"lon":-84.07}],"tail":{"lat":34.8,"lon":-84.08},"tip":{"lat":34.7838,"lon":-84.0822},"onTarget":true,"azimuth":186,"distanceKm":1.812526,"text":"186°T · 1.8 km"},
+    {"name":"uneven","points":[{"lat":34.8,"lon":-84.09},{"lat":34.801,"lon":-84.089},{"lat":34.81,"lon":-84.06}],"tail":{"lat":34.805271262,"lon":-84.075237046},"tip":{"lat":34.7838,"lon":-84.0822},"onTarget":true,"azimuth":195,"distanceKm":2.470707,"text":"195°T · 2.5 km"},
+    {"name":"southOfTheLz","points":[{"lat":34.75,"lon":-84.0822},{"lat":34.75,"lon":-84.0822}],"tail":{"lat":34.75,"lon":-84.0822},"tip":{"lat":34.7838,"lon":-84.0822},"onTarget":true,"azimuth":0,"distanceKm":3.758388,"text":"000°T · 3.8 km"},
+    {"name":"noLength","points":[{"lat":34.8,"lon":-84.09},{"lat":34.8,"lon":-84.09}],"tail":{"lat":34.8,"lon":-84.09},"tip":{"lat":34.7838,"lon":-84.0822},"onTarget":true,"azimuth":158,"distanceKm":1.937064,"text":"158°T · 1.9 km"},
+    {"name":"tipOnTheTarget","points":[{"lat":34.8,"lon":-84.09},{"lat":34.8,"lon":-84.07}],"arrow":{"tail":{"lat":34.82,"lon":-84.1}},"tail":{"lat":34.82,"lon":-84.1},"tip":{"lat":34.7838,"lon":-84.0822},"onTarget":true,"azimuth":158,"distanceKm":4.340978,"text":"158°T · 4.3 km"},
+    {"name":"movedWhole","points":[{"lat":34.8,"lon":-84.09},{"lat":34.8,"lon":-84.07}],"arrow":{"tail":{"lat":34.82,"lon":-84.1},"tip":{"lat":34.8,"lon":-84.05}},"tail":{"lat":34.82,"lon":-84.1},"tip":{"lat":34.8,"lon":-84.05},"onTarget":false,"azimuth":116,"distanceKm":5.077733,"text":"116°T · 5.1 km"},
+    {"name":"tipTakenBackInAPack","points":[{"lat":34.8,"lon":-84.09},{"lat":34.8,"lon":-84.07}],"arrow":{"tail":{"lat":34.82,"lon":-84.1},"tip":null},"tail":{"lat":34.82,"lon":-84.1},"tip":{"lat":34.7838,"lon":-84.0822},"onTarget":true,"azimuth":158,"distanceKm":4.340978,"text":"158°T · 4.3 km"}
+  ],
+  "moves": [
+    {"points":[{"lat":34.8,"lon":-84.09},{"lat":34.801,"lon":-84.089},{"lat":34.81,"lon":-84.06}],"dLat":0.01,"dLon":-0.02,"result":{"tail":{"lat":34.815271262,"lon":-84.095237046},"tip":{"lat":34.7938,"lon":-84.1022}}},
+    {"points":[{"lat":34.8,"lon":-84.09},{"lat":34.8,"lon":-84.07}],"arrow":{"tail":{"lat":34.82,"lon":-84.1},"tip":{"lat":34.8,"lon":-84.05}},"dLat":-0.005,"dLon":0.003,"result":{"tail":{"lat":34.815,"lon":-84.097},"tip":{"lat":34.795,"lon":-84.047}}}
+  ]
+}

@@ -9,8 +9,8 @@ import { usePackItemSync } from "./usePackItemSync";
  * The point sets of an open mission pack, on the map beside this person's own (useLocalPoints),
  * kept in step with the pack; usePackItemSync has the rules. A set's data is the list of points the
  * library saves; its colour and whether it is shown are each person's own, as they are for their own
- * sets. Points are not edited on the web, so what changes here is a set's name; what arrives is
- * whatever anyone else did, a set someone removed leaving the map.
+ * sets. What changes here is a set's name or its points (the Imports panel makes and edits them); what
+ * arrives is whatever anyone else did, a set someone removed leaving the map.
  */
 
 const copy = (value) => JSON.parse(JSON.stringify(value ?? []));

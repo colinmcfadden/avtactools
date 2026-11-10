@@ -1,0 +1,72 @@
+.backstop-head-anchor,
+.backstop-label-anchor {
+  background: none;
+  border: none;
+  pointer-events: none;
+}
+
+.backstop-head {
+  display: block;
+  overflow: visible;
+  transform-origin: 100% 50%;
+}
+
+.backstop-head polygon {
+  stroke: #fff;
+  stroke-width: 2;
+  paint-order: stroke;
+}
+
+.backstop-grip,
+.backstop-grip-handle {
+  position: absolute;
+  top: 0;
+  left: 0;
+}
+
+.backstop-grip {
+  height: 24px;
+  cursor: move;
+}
+
+.backstop-grip-handle {
+  transform: translate(-50%, -50%);
+}
+
+.backstop-label {
+  position: absolute;
+  width: max-content;
+  padding: 2px 7px;
+  border-radius: 4px;
+  background: rgba(0, 0, 0, 0.82);
+  color: #fff;
+  font: 600 12px/1.3 sans-serif;
+  white-space: nowrap;
+}
+
+.backstop-draw-bar {
+  position: absolute;
+  z-index: 1100;
+  left: 50%;
+  bottom: 28px;
+  transform: translateX(-50%);
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 8px 14px;
+  width: max-content;
+  max-width: calc(100% - 24px);
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: var(--surface-2);
+  color: var(--ff-text-main);
+  border: 1px solid var(--hairline-strong);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.35);
+  font-size: 13px;
+}
+
+.backstop-draw-bar__actions {
+  display: flex;
+  gap: 6px;
+}

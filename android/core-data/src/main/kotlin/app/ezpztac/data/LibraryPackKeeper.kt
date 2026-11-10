@@ -33,6 +33,8 @@ internal class LibraryPackKeeper(
      * would wait in the outbox for good, unseen (no Library tab lists briefs yet). Without it a brief is not kept, and the person is told.
      */
     private val keepsBriefs: () -> Boolean = { false },
+    /** The same for a set of threats: `/api/threatsets` needs `threats` and `cloud_save`. */
+    private val keepsThreats: () -> Boolean = { false },
     /** When a kept version is noted as made ([LocalRecord.updatedAt]), as SyncRepository.create notes every record made here. */
     private val clock: () -> String = { java.time.Instant.now().toString() },
 ) : PackKeeper {
@@ -56,6 +58,7 @@ internal class LibraryPackKeeper(
     private suspend fun keepOne(version: KeptVersion): KeptOutcome {
         val kind = KINDS[version.kind] ?: return KeptOutcome.NothingToKeep(version.key, "unknown_kind")
         if (kind == RecordKind.BRIEF && !keepsBriefs()) return KeptOutcome.NothingToKeep(version.key, "mission_brief_off")
+        if (kind == RecordKind.THREAT_SET && !keepsThreats()) return KeptOutcome.NothingToKeep(version.key, "threats_off")
         val document = documentOf(kind, version)
             ?: return KeptOutcome.NothingToKeep(version.key, if (kind == RecordKind.POINT_SET) "empty_point_set" else "unreadable")
         val uuid = uuidFor(version.key)
@@ -84,7 +87,7 @@ internal class LibraryPackKeeper(
     }
 
     companion object {
-        private val KINDS = mapOf("lz" to RecordKind.LZ, "route" to RecordKind.ROUTE, "pointset" to RecordKind.POINT_SET, "brief" to RecordKind.BRIEF)
+        private val KINDS = mapOf("lz" to RecordKind.LZ, "route" to RecordKind.ROUTE, "pointset" to RecordKind.POINT_SET, "brief" to RecordKind.BRIEF, "threatset" to RecordKind.THREAT_SET)
 
         /** The library record a kept version is saved as, named by its key so that keeping it twice makes one record. */
         fun uuidFor(key: String): String = UUID.nameUUIDFromBytes("ezpz-pack-kept:$key".toByteArray(Charsets.UTF_8)).toString()

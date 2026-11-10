@@ -1,19 +1,25 @@
-import { useCallback, useMemo, useRef, useState } from "react";
+import { useCallback, useMemo, useReducer, useRef, useState } from "react";
 import { nextRouteColor, ROUTE_COLORS } from "./colorPalette";
 import { buildSketchMsnx } from "./createMsnx";
 import { defaultRoutePlan, ensureRoutePlan, fetchPointElevationsFt } from "./routeCalc";
 import { fetchForecastWinds, mergeWindsIntoPlan } from "./routeWinds";
 import {
   appendAmpsPoint,
-  buildSketchRoute,
   designatePoint,
+  insertNamedPoint,
   insertShapingPoint,
   movePoint,
+  nextCheckpointName,
+  removePoint,
   renamePoint,
+  sketchRouteVersions,
   withPlanPatch,
   withPointClock,
   withPointOverride,
 } from "./sketchOps";
+import { INITIAL_SKETCH_STATE, routeSketchReducer, setKeyOf, SKETCHES } from "./routeSketchReducer";
+import { currentFieldVisit } from "../undo/fieldVisit";
+import { nextStepSeq } from "../undo/history";
 
 const generateId = (prefix) => `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2)}`;
 
@@ -55,7 +61,16 @@ export const isOpenedSetId = (setId) => String(setId ?? "").startsWith(`${OPENED
 export const useRouteSketch = ({ aircraftProfile = null } = {}) => {
   const [isSketching, setIsSketching] = useState(false);
   const [draftPoints, setDraftPoints] = useState([]);
-  const [sketchedRoutes, setSketchedRoutes] = useState([]);
+  const [{ routes: sketchedRoutes, history: sketchHistory }, dispatch] = useReducer(routeSketchReducer, INITIAL_SKETCH_STATE);
+  // One thing a person did to one route: `op` is route -> route, and a typed field's keystrokes share `key`.
+  const editRoute = useCallback((routeId, label, op, key = null) => {
+    dispatch({
+      type: "edit",
+      routeId,
+      update: (routes) => routes.map((route) => (route.id === routeId ? op(route) : route)),
+      step: { seq: nextStepSeq(), label, key },
+    });
+  }, []);
   const sessionRoutes = useMemo(() => sketchedRoutes.filter((route) => !route.setId), [sketchedRoutes]);
   // What is here now, not when the caller's render began: opening a saved set waits on the network.
   const routesRef = useRef(sketchedRoutes);
@@ -92,6 +107,10 @@ export const useRouteSketch = ({ aircraftProfile = null } = {}) => {
     setDraftPoints((prev) => [...prev, { lat, lon, designation }]);
   };
 
+  const removeLastDraftPoint = () => {
+    setDraftPoints((prev) => prev.slice(0, -1));
+  };
+
   /** Returns true if a route was created (needs >= 2 points). `setId`: the set it goes in (none: this session's). */
   const finishSketch = (name, setId = null) => {
     setIsSketching(false);
@@ -105,15 +124,24 @@ export const useRouteSketch = ({ aircraftProfile = null } = {}) => {
     // between them. Points designated during drawing keep their type/name;
     // otherwise the standard attack profile is applied automatically (see
     // sketchOps.autoDesignation).
-    const route = buildSketchRoute(draftPoints, {
+    const versions = sketchRouteVersions(draftPoints, {
       name,
       id: generateId("sketch"),
       color: nextRouteColor(),
       plan: defaultRoutePlan(aircraftProfile),
       newPointId: () => crypto.randomUUID(),
-    });
+    }).map((route) => (setId ? { ...route, setId } : route));
 
-    setSketchedRoutes((prev) => [...prev, setId ? { ...route, setId } : route]);
+    // A step for each point, so undo takes the route back as it was drawn. Two points are the least
+    // that is a route: the first step is both of them.
+    versions.forEach((route, index) => {
+      dispatch({
+        type: "edit",
+        setKey: setKeyOf(route),
+        update: (routes) => (index === 0 ? [...routes, route] : routes.map((r) => (r.id === route.id ? route : r))),
+        step: { seq: nextStepSeq(), label: index === 0 ? "Draw route" : "Add point" },
+      });
+    });
     setDraftPoints([]);
     return true;
   };
@@ -123,38 +151,42 @@ export const useRouteSketch = ({ aircraftProfile = null } = {}) => {
    * AMPS points to shaping is refused — legs need at least two endpoints.
    */
   const designateSketchPoint = (routeId, pointId, designation) => {
-    setSketchedRoutes((prev) =>
-      prev.map((route) => (route.id === routeId ? designatePoint(route, pointId, designation) : route)),
-    );
+    editRoute(routeId, "Change point type", (route) => designatePoint(route, pointId, designation));
   };
 
   // `chartElevationFt` is set when a drag snaps onto a local point (its charted
   // elevation) and cleared (undefined) on any normal drag, so the point reverts
   // to the DEM elevation when moved off a known point.
   const updateSketchPointPosition = useCallback((routeId, pointId, lat, lon, chartElevationFt) => {
-    setSketchedRoutes((prev) =>
-      prev.map((route) =>
-        route.id === routeId ? movePoint(route, pointId, lat, lon, chartElevationFt) : route,
-      ),
-    );
-  }, []);
+    editRoute(routeId, "Move point", (route) => movePoint(route, pointId, lat, lon, chartElevationFt));
+  }, [editRoute]);
 
-  const insertSketchPoint = (routeId, lat, lon) => {
-    setSketchedRoutes((prev) =>
-      prev.map((route) =>
-        route.id === routeId ? insertShapingPoint(route, lat, lon, () => crypto.randomUUID()) : route,
-      ),
-    );
+  /** A point on the line. With a `designation` it is a named point; without, one that only bends the line. */
+  const insertSketchPoint = (routeId, lat, lon, designation = null) => {
+    const pointId = crypto.randomUUID();
+    editRoute(routeId, "Add point", (route) => {
+      const added = insertShapingPoint(route, lat, lon, () => pointId);
+      return designation ? designatePoint(added, pointId, { kind: "amps", ...designation }) : added;
+    });
+  };
+
+  /** A named point typed or chosen in the route's plan, after `afterPointId` (null: at the end). Answers its id. */
+  const addRoutePoint = (routeId, afterPointId, { lat, lon, name, chartElevationFt }) => {
+    const pointId = crypto.randomUUID();
+    editRoute(routeId, "Add point", (route) =>
+      insertNamedPoint(route, afterPointId, lat, lon, { name: name || nextCheckpointName(route), chartElevationFt }, () => pointId));
+    return pointId;
+  };
+
+  const removeSketchPoint = (routeId, pointId) => {
+    editRoute(routeId, "Delete point", (route) => removePoint(route, pointId));
   };
 
   /** Appends a designated AMPS point to the end of a route (used to snap the
    *  route line onto a named local point, carrying its charted elevation). */
   const appendSketchPoint = (routeId, lat, lon, options = {}) => {
-    setSketchedRoutes((prev) =>
-      prev.map((route) =>
-        route.id === routeId ? appendAmpsPoint(route, lat, lon, options, () => crypto.randomUUID()) : route,
-      ),
-    );
+    const pointId = crypto.randomUUID();
+    editRoute(routeId, "Add point", (route) => appendAmpsPoint(route, lat, lon, options, () => pointId));
   };
 
   /**
@@ -165,7 +197,7 @@ export const useRouteSketch = ({ aircraftProfile = null } = {}) => {
    */
   const loadSketchRoutes = (routes, { setId = null } = {}) => {
     const restored = routes.map((route) => restoreSketchRoute(route, setId));
-    setSketchedRoutes((prev) => [...prev, ...restored]);
+    dispatch({ type: "append", routes: restored });
   };
 
   /**
@@ -173,17 +205,18 @@ export const useRouteSketch = ({ aircraftProfile = null } = {}) => {
    * they become them, so new sketches join the set just opened. Otherwise they come in as a set of
    * their own: merged in, the sketches already here would be written into the record just opened, or
    * cut loose from the one they came from (docs/MENU_REDESIGN.md §5: opening never replaces unsaved
-   * work). Returns the set's id, null for this session's own sketches.
+   * work). Returns the set's id, null for this session's own sketches. `beside`: this session already
+   * has something of its own that is not a route (a FLOT), so the set goes beside it too.
    */
-  const openSavedRoutes = (routes) => {
-    const setId = routesRef.current.some((route) => !route.setId) ? generateId(OPENED) : null;
+  const openSavedRoutes = (routes, { beside = false } = {}) => {
+    const setId = beside || routesRef.current.some((route) => !route.setId) ? generateId(OPENED) : null;
     // New route ids either way: a record and its copy (Save as…) can be open side by side. Where a
     // route is filed is this session's business, never the record's.
     const restored = routes.map(({ setId: _filed, ...route }) => ({ ...restoreSketchRoute(route), ...(setId ? { setId } : {}) }));
     // Two opens can resolve before the next render; the second must see the first's routes, or both
     // become the sketches and the second's record takes the first's routes with it.
     routesRef.current = [...routesRef.current, ...restored];
-    setSketchedRoutes((prev) => [...prev, ...restored]);
+    dispatch({ type: "append", routes: restored });
     return setId;
   };
 
@@ -191,37 +224,31 @@ export const useRouteSketch = ({ aircraftProfile = null } = {}) => {
    * Puts a set's routes in place of the ones it has (`routes`: the set's routes as it now has them),
    * keeping where the set sits in the list and which of its routes this person has hidden.
    */
-  const replaceRouteSet = useCallback((setId, routes) => {
-    setSketchedRoutes((prev) => {
-      const hidden = new Set(prev.filter((r) => r.setId === setId && r.visible === false).map((r) => r.id));
-      const next = routes.map((route) => {
-        const restored = restoreSketchRoute(route, setId);
-        return hidden.has(restored.id) ? { ...restored, visible: false } : restored;
-      });
-      const at = prev.findIndex((r) => r.setId === setId);
-      const others = prev.filter((r) => r.setId !== setId);
-      if (at < 0) return [...others, ...next];
-      const before = prev.slice(0, at).filter((r) => r.setId !== setId).length;
-      return [...others.slice(0, before), ...next, ...others.slice(before)];
-    });
+  const replaceRouteSet = useCallback((setId, routes, { rebase, dropHistory } = {}) => {
+    dispatch({ type: "place", setId, routes: routes.map((route) => restoreSketchRoute(route, setId)), rebase, dropHistory });
   }, []);
 
+  /** Closes a set (`setId` null: this session's own sketches). Not something to undo. */
   const removeRouteSet = useCallback((setId) => {
-    setSketchedRoutes((prev) => prev.filter((r) => r.setId !== setId));
+    dispatch({ type: "removeSet", setKey: setId ?? SKETCHES });
+  }, []);
+
+  const undoSketch = useCallback((setKey) => {
+    dispatch({ type: "undo", setKey, seq: nextStepSeq() });
+  }, []);
+
+  const redoSketch = useCallback((setKey) => {
+    dispatch({ type: "redo", setKey, seq: nextStepSeq() });
   }, []);
 
   /** Merges plan settings (airspeed, altitude, wind, TOT, ...) into a route. */
   const updateRoutePlan = (routeId, patch) => {
-    setSketchedRoutes((prev) =>
-      prev.map((route) => (route.id === routeId ? withPlanPatch(route, patch) : route)),
-    );
+    editRoute(routeId, "Edit route plan", (route) => withPlanPatch(route, patch), currentFieldVisit());
   };
 
   /** Merges a per-point "to" override (altitude/airspeed/wind). Pass null to clear the point. */
   const updatePointPlanOverride = (routeId, pointId, patch) => {
-    setSketchedRoutes((prev) =>
-      prev.map((route) => (route.id === routeId ? withPointOverride(route, pointId, patch) : route)),
-    );
+    editRoute(routeId, "Edit point plan", (route) => withPointOverride(route, pointId, patch), currentFieldVisit());
   };
 
   /**
@@ -229,19 +256,13 @@ export const useRouteSketch = ({ aircraftProfile = null } = {}) => {
    * point anchors the clock at a time, so setting one clears the others.
    */
   const setSketchPointClock = (routeId, pointId, clock) => {
-    setSketchedRoutes((prev) =>
-      prev.map((route) => (route.id === routeId ? withPointClock(route, pointId, clock) : route)),
-    );
+    editRoute(routeId, "Set clock", (route) => withPointClock(route, pointId, clock));
   };
 
   /** Renames a sketch point, optionally snapping it to a known local point's
    *  coords + charted elevation. */
   const updateSketchPointName = (routeId, pointId, name, coords, chartElevationFt) => {
-    setSketchedRoutes((prev) =>
-      prev.map((route) =>
-        route.id === routeId ? renamePoint(route, pointId, name, coords, chartElevationFt) : route,
-      ),
-    );
+    editRoute(routeId, "Rename point", (route) => renamePoint(route, pointId, name, coords, chartElevationFt), currentFieldVisit());
   };
 
   /**
@@ -258,11 +279,7 @@ export const useRouteSketch = ({ aircraftProfile = null } = {}) => {
     const { winds, amps, error } = await fetchForecastWinds(route);
     if (error) return { error };
 
-    setSketchedRoutes((prev) =>
-      prev.map((r) =>
-        r.id === routeId ? { ...r, plan: mergeWindsIntoPlan(r.plan, amps, winds) } : r,
-      ),
-    );
+    dispatch({ type: "quiet", routeId, change: (r) => ({ ...r, plan: mergeWindsIntoPlan(r.plan, amps, winds) }) });
     return { winds };
   };
 
@@ -271,26 +288,21 @@ export const useRouteSketch = ({ aircraftProfile = null } = {}) => {
     const route = sketchedRoutes.find((r) => r.id === routeId);
     if (!route) return;
     const elevations = await fetchPointElevationsFt(route);
-    setSketchedRoutes((prev) =>
-      prev.map((r) =>
-        r.id === routeId
-          ? { ...r, elevations: { ...r.elevations, ...elevations } }
-          : r,
-      ),
-    );
+    dispatch({ type: "quiet", routeId, change: (r) => ({ ...r, elevations: { ...r.elevations, ...elevations } }) });
     return elevations;
   };
 
   const removeSketchRoute = (routeId) => {
-    setSketchedRoutes((prev) => prev.filter((route) => route.id !== routeId));
+    dispatch({
+      type: "edit",
+      routeId,
+      update: (routes) => routes.filter((route) => route.id !== routeId),
+      step: { seq: nextStepSeq(), label: "Delete route" },
+    });
   };
 
   const toggleSketchVisibility = (routeId) => {
-    setSketchedRoutes((prev) =>
-      prev.map((route) =>
-        route.id === routeId ? { ...route, visible: !route.visible } : route,
-      ),
-    );
+    dispatch({ type: "visible", routeId });
   };
 
   /**
@@ -310,15 +322,21 @@ export const useRouteSketch = ({ aircraftProfile = null } = {}) => {
     sketchedRoutes,
     sessionRoutes,
     sketchSets,
+    sketchHistory,
+    undoSketch,
+    redoSketch,
     replaceRouteSet,
     removeRouteSet,
     startSketch,
     cancelSketch,
     addDraftPoint,
+    removeLastDraftPoint,
     finishSketch,
     designateSketchPoint,
     updateSketchPointPosition,
     insertSketchPoint,
+    removeSketchPoint,
+    addRoutePoint,
     appendSketchPoint,
     loadSketchRoutes,
     openSavedRoutes,

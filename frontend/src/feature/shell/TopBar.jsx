@@ -23,12 +23,14 @@ const STATUS = {
 
 export const IMPORT_KINDS = [
   { kind: "msnx", icon: "route", title: "Mission file", text: ".msnx · AMPS routes and points" },
+  { kind: "routefile", icon: "route", title: "Flight plan or GPX", text: ".fpl, .gpx · opens as sketched routes" },
   { kind: "lps", icon: "mapPin", title: "Local points", text: ".LPS · AMPS point sets" },
-  { kind: "ths", icon: "diamond", title: "Threats", text: ".ths · stays in this session" },
-  { kind: "overlay", icon: "image", title: "Map or overlay", text: "KMZ, GeoTIFF, image with world file · not available yet", disabled: true },
+  { kind: "ths", icon: "diamond", title: "Threats", text: ".ths · AMPS threats, saved to your Library" },
+  { kind: "overlay", icon: "image", title: "Map overlay", text: ".kmz, .kml · drawn over the map" },
 ];
 
 const TopBar = ({
+  undo,
   pack = null,
   packStatus = "live",
   people = [],
@@ -107,6 +109,16 @@ const TopBar = ({
       {searchSlot && <div className="shell-topbar__search">{searchSlot}</div>}
 
       <div className="shell-topbar__end">
+        {undo && (
+          <div className="shell-topbar__undo">
+            <button type="button" className="shell-topbar__button" onClick={undo.undo} disabled={!undo.canUndo} title={undo.undoTitle} aria-label={undo.undoTitle}>
+              <Icon name="undo" size={15} />
+            </button>
+            <button type="button" className="shell-topbar__button" onClick={undo.redo} disabled={!undo.canRedo} title={undo.redoTitle} aria-label={undo.redoTitle}>
+              <Icon name="redo" size={15} />
+            </button>
+          </div>
+        )}
         {briefSlot}
         <button type="button" className="shell-topbar__button" {...imports.buttonProps}>
           <Icon name="download" size={15} />

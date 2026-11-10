@@ -56,7 +56,10 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.repeatOnLifecycle
 import app.ezpztac.android.export.ShareExport
 import app.ezpztac.android.frame.AccountButton
 import app.ezpztac.android.frame.MapFrame
@@ -112,6 +115,7 @@ import app.ezpztac.map.MapChromeBoxes
 import app.ezpztac.map.MapCommand
 import app.ezpztac.map.MapProjection
 import app.ezpztac.map.MapScreen
+import app.ezpztac.map.MapStyles
 import app.ezpztac.map.MapSearchSpotlight
 import app.ezpztac.map.MapViewModel
 import app.ezpztac.map.MgrsGridLayer
@@ -257,6 +261,12 @@ fun MapHome(
     display: DisplayViewModel = hiltViewModel(),
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
+    // While the VFR map shows and the app is in front, which build of the FAA's charts draws it is asked again from time to time (docs/VFR_CHARTS.md §8).
+    val showingCharts = state.style.id == MapStyles.VFR_ID
+    val chartsLifecycle = LocalLifecycleOwner.current.lifecycle
+    LaunchedEffect(showingCharts, chartsLifecycle) {
+        if (showingCharts) chartsLifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) { viewModel.watchCharts() }
+    }
     val scene by home.scene.collectAsStateWithLifecycle()
     val routeScene by home.routes.collectAsStateWithLifecycle()
     val pointScene by home.points.collectAsStateWithLifecycle()
@@ -327,6 +337,7 @@ fun MapHome(
     LaunchedEffect(tablet) { if (tablet) frameState.open() }
     // Threats are drawn, held and taken in only while the account has them, which is while their panel is offered.
     val threatsOn = Panel.Threats in panels
+    val threatsSaved = threatsOn && user.hasFeature("cloud_save")          // an account that cannot save them has none to list
     // How tall whatever floats above the readout is now (a drawing toolbar, the held object's bar), in pixels: the toasts go above it.
     var floating by remember { mutableIntStateOf(0) }
     var switcherOpen by rememberSaveable { mutableStateOf(false) }
@@ -440,7 +451,7 @@ fun MapHome(
         when (CopyRules.libraryAfter(wanted, openPack?.uuid)) {
             CopyRules.LibraryAfter.WAIT -> Unit                                                    // still on its way
             CopyRules.LibraryAfter.OPEN_LIBRARY -> {
-                libraryTab = libraryTabsFor(panels).firstOrNull() ?: LibraryTab.LZ
+                libraryTab = libraryTabsFor(panels, threatsSaved).firstOrNull() ?: LibraryTab.LZ
                 libraryAfter = null
             }
             CopyRules.LibraryAfter.LET_GO -> libraryAfter = null
@@ -491,7 +502,17 @@ fun MapHome(
     LaunchedEffect(mapCovered) { home.mapCovered(mapCovered) }
     LaunchedEffect(packPanel) { packPanel.notices.collect { snackbars.showSnackbar(it, withDismissAction = true) } }
     // An item opened from the Pack panel is shown in its own panel (an LZ/PZ in LZ/PZ, a route set in Routes), as the web's dock does.
-    LaunchedEffect(packPanel) { packPanel.opened.collect { kind -> frameState.choose(if (kind == "route") Panel.Routes else Panel.Lz) } }
+    LaunchedEffect(packPanel) {
+        packPanel.opened.collect { kind ->
+            frameState.choose(
+                when (kind) {
+                    "route" -> Panel.Routes
+                    "threatset" -> Panel.Threats
+                    else -> Panel.Lz
+                },
+            )
+        }
+    }
     // The sheet goes with what holds it (packs stopping, the frame turning into a tablet's): when they come back it is not open by itself.
     LaunchedEffect(tablet, packsHere) { if (tablet || !packsHere) switcherOpen = false }
     LaunchedEffect(workspace) { workspace.notices.collect { snackbars.showSnackbar(it, withDismissAction = true) } }
@@ -518,7 +539,7 @@ fun MapHome(
     LaunchedEffect(lz.page) { if (tablet && lz.page == LzPage.AIRCRAFT) tabletState.showList() }
     // A toast from a panel; the Saved one offers its Library tab (the design's Saved: Open Library), if the account has it when the toast is shown: the collectors
     // below outlive a change of features, so they read the tabs as they are now.
-    val libraryTabs by rememberUpdatedState(libraryTabsFor(panels))
+    val libraryTabs by rememberUpdatedState(libraryTabsFor(panels, threatsSaved))
     LaunchedEffect(packPanel) {
         packPanel.kept.collect { notice ->
             val tab = notice.library?.let(CopyRules::libraryTabOf)
@@ -587,7 +608,7 @@ fun MapHome(
     // Not over a brief being presented: a file opened with the app meanwhile waits for it to end (**not like the web**, which ignores a file dropped on the map then:
     // here another app handed it over, and it is kept for after).
     if (!presenting) ImportReviewHost(threatsAllowed = threatsOn, large = tablet, viewModel = incoming)
-    if (importMenu) ImportSheet(threatsAllowed = threatsOn, onChoose = importFiles, onDismiss = { importMenu = false })            // the phone's, and a panel's own Import
+    if (importMenu) ImportSheet(threatsAllowed = threatsOn, threatsSaved = threatsSaved, onChoose = importFiles, onDismiss = { importMenu = false })            // the phone's, and a panel's own Import
     LaunchedEffect(incoming) { incoming.notices.collect { snackbars.showSnackbar(it, withDismissAction = true) } }
     LaunchedEffect(importsModel) { importsModel.notices.collect { toast(it, LibraryTab.POINTS) } }
     // An invitation link: said above the sheet, in the frame's own toasts.
@@ -595,7 +616,7 @@ fun MapHome(
     // What the LZ/PZ panel says once it has happened (an LZ/PZ named), in the same toasts.
     LaunchedEffect(diagrams) { diagrams.notices.collect { toast(it, LibraryTab.LZ) } }
     LaunchedEffect(routesModel) { routesModel.notices.collect { toast(it, LibraryTab.ROUTES) } }
-    LaunchedEffect(threatsModel) { threatsModel.notices.collect { snackbars.showSnackbar(it, withDismissAction = true) } }
+    LaunchedEffect(threatsModel) { threatsModel.notices.collect { toast(it, LibraryTab.THREATS) } }
     LaunchedEffect(home) { home.notices.collect { snackbars.showSnackbar(it, withDismissAction = true) } }
     // A page inside the LZ/PZ panel (an LZ/PZ's plan, every LZ/PZ, the aircraft): Back goes back up it, as its arrow does.
     BackHandler(enabled = current == Panel.Lz && (if (tablet) lz.page == LzPage.AIRCRAFT else lz.page != LzPage.HOME)) { diagrams.showPage(lzBack(lz)) }
@@ -679,7 +700,7 @@ fun MapHome(
                         )
                         Panel.Threats -> ThreatsHost(
                             onExport = { ShareExport.share(context, it) }, onImport = importFiles, crosshair = state.center, crosshairGrid = state.readout?.mgrs,
-                            viewModel = threatsModel,
+                            onBrowseLibrary = { libraryTab = LibraryTab.THREATS }, viewModel = threatsModel,
                         )
                         // A mission opens in Routes and a threat file's threats are in Threats: each panel, shown at the height the sheet is.
                         Panel.Imports -> ImportsHost(
@@ -715,7 +736,7 @@ fun MapHome(
                                 openPack, packsHere, onSwitcher = { switcherOpen = true }, onImport = { importMenu = true },
                                 onLibrary = {
                                     focus.clearFocus()
-                                    libraryTab = libraryTabFor(current)
+                                    libraryTab = libraryTabFor(current, threatsSaved)
                                 },
                             )
                         }
@@ -749,7 +770,14 @@ fun MapHome(
                                             // A point of a route: its plan, a page of its own, opened at that point; only for an account offered routes, as on the web.
                                             if (Panel.Routes in panels) routesModel.openHeldPlan()
                                         } else if (panel == Panel.Threats) {
-                                            threatsModel.editHeld()                                   // a threat: its form, over everything
+                                            // A threat: its form, over everything; a read-only pack's has none, so its row, with its mask, is what the panel shows.
+                                            if (lz.pack?.off != null) {
+                                                frameState.choose(panel)
+                                                frameState.show()
+                                                frameState.open()
+                                            } else {
+                                                threatsModel.editHeld()
+                                            }
                                         } else {
                                             panel?.let {
                                                 frameState.choose(it)
@@ -835,6 +863,7 @@ fun MapHome(
                             newLz = if (Panel.Lz in panels) ({ diagrams.newAt(open.place.at); frameState.choose(Panel.Lz) }) else null,
                             newLzOff = lz.pack?.off,
                             addThreat = if (threatsOn) ({ threatsModel.beginAdd(open.place.at) }) else null,
+                            addThreatOff = lz.pack?.off,
                             routePoint = if (Panel.Routes in panels) open.routePoint to { routesModel.addPointAt(open.place.at); frameState.choose(Panel.Routes) } else null,
                             addObject = lz.current?.takeIf { Panel.Lz in panels }?.let { current ->
                                 AddObjectChoice(current.name, off = addObjectOff(graphicsState.canEdit, graphicsState.locked)) { kind -> placeObject(graphics, kind, open.place.at) }
@@ -907,7 +936,7 @@ fun MapHome(
                         },
                         onLibrary = {
                             focus.clearFocus()
-                            libraryTab = libraryTabFor(current)
+                            libraryTab = libraryTabFor(current, threatsSaved)
                         },
                         account = { account(false) },
                         onBrief = if (briefsHere) ({
@@ -1025,7 +1054,7 @@ fun MapHome(
             // conflict are that panel's own, so an item open now is renamed and closed where its unsaved edits are.
             LibraryHost(
                 tab = libraryTab,
-                tabs = libraryTabsFor(panels),
+                tabs = libraryTabsFor(panels, threatsSaved),
                 actions = LibraryActions(
                     close = { libraryTab = null },
                     open = { row ->
@@ -1036,6 +1065,7 @@ fun MapHome(
                             }
                             LibraryTab.ROUTES -> Panel.Routes.also { routesModel.openSet(row.uuid) }
                             LibraryTab.POINTS -> Panel.Imports.also { importsModel.show(row.uuid) }
+                            LibraryTab.THREATS -> Panel.Threats.also { threatsModel.openSaved(row.uuid) }
                         }
                         libraryTab = null
                         if (panel in panels) {
@@ -1048,6 +1078,7 @@ fun MapHome(
                             LibraryTab.LZ -> diagrams.rename(row.uuid, name, replacing)
                             LibraryTab.ROUTES -> routesModel.renameSet(row.uuid, name, replacing)
                             LibraryTab.POINTS -> importsModel.rename(row.uuid, name, replacing)
+                            LibraryTab.THREATS -> threatsModel.renameSaved(row.uuid, name, replacing)
                         }
                     },
                     delete = { row ->
@@ -1055,6 +1086,7 @@ fun MapHome(
                             LibraryTab.LZ -> diagrams.delete(row.uuid)
                             LibraryTab.ROUTES -> routesModel.deleteSet(row.uuid)
                             LibraryTab.POINTS -> importsModel.delete(row.uuid)
+                            LibraryTab.THREATS -> threatsModel.deleteSaved(row.uuid)
                         }
                     },
                     resolve = { row, how ->
@@ -1062,6 +1094,7 @@ fun MapHome(
                             LibraryTab.LZ -> diagrams.resolve(row.uuid, how)
                             LibraryTab.ROUTES -> routesModel.resolve(row.uuid, how)
                             LibraryTab.POINTS -> importsModel.resolve(row.uuid, how)
+                            LibraryTab.THREATS -> threatsModel.resolve(row.uuid, how)
                         }
                     },
                     addToPack = askCopy?.let { ask -> { row -> ask(CopyRules.recordKindOf(row.tab))(row.uuid, row.name) } },
@@ -1213,17 +1246,19 @@ private fun routesHead(routes: RoutesUiState): PanelHead = when (routes.page) {
 }
 
 /** The Library tab a panel's items are on, which the Library chip opens at: the panel's own, the LZ/PZs otherwise. */
-internal fun libraryTabFor(panel: Panel): LibraryTab = when (panel) {
+internal fun libraryTabFor(panel: Panel, threatsSaved: Boolean = false): LibraryTab = when (panel) {
     Panel.Routes -> LibraryTab.ROUTES
     Panel.Imports -> LibraryTab.POINTS
+    Panel.Threats -> if (threatsSaved) LibraryTab.THREATS else LibraryTab.LZ
     else -> LibraryTab.LZ
 }
 
 /** The Library's tabs an account has: those of the panels it is offered (an administrator can turn routes off, as on the web). */
-internal fun libraryTabsFor(panels: List<Panel>): List<LibraryTab> = listOfNotNull(
+internal fun libraryTabsFor(panels: List<Panel>, threatsSaved: Boolean = false): List<LibraryTab> = listOfNotNull(
     LibraryTab.LZ.takeIf { Panel.Lz in panels },
     LibraryTab.ROUTES.takeIf { Panel.Routes in panels },
     LibraryTab.POINTS.takeIf { Panel.Imports in panels },
+    LibraryTab.THREATS.takeIf { threatsSaved && Panel.Threats in panels },
 )
 
 /** Where Back goes from the LZ/PZ panel's page: the aircraft back to the plan they were opened from, the rest to the open LZ/PZs. */

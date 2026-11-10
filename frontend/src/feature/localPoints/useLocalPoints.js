@@ -1,13 +1,14 @@
-import { useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import api from "../auth/api";
 import { parseLpsFile } from "./parseLps";
 import { nextRouteColor } from "../msnxImport/colorPalette";
+import { newPointId } from "./customPoints";
 
 const generateId = (prefix) =>
   `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2)}`;
 
 /**
- * Local point sets (.LPS imports) shown on the map, with cloud persistence in
+ * Local point sets (.LPS imports and points made by hand) shown on the map, with cloud persistence in
  * the save menu. `savedId` links a loaded set to its cloud record so Save can
  * offer to overwrite instead of always creating a new entry.
  */
@@ -17,9 +18,45 @@ export const useLocalPoints = () => {
   const [isLoadingSavedSets, setIsLoadingSavedSets] = useState(false);
   const [savedSetsError, setSavedSetsError] = useState(null);
 
-  /** `name` names the set (the review dialog lets the person change it); else the file's own name. */
-  const importLpsFile = async (file, { name } = {}) => {
-    const parsed = await parseLpsFile(file);
+  // The Library's points, for the search fields. Its list has only each set's name, so the points are fetched, a set
+  // at a time, once someone goes to search; a set changed since (its updated_at) is fetched again, one deleted is
+  // no longer listed. Each focus asks again, which is also what retries a fetch that failed.
+  const [searchAsked, setSearchAsked] = useState(0);
+  const [heldSets, setHeldSets] = useState({});
+  const fetchingSets = useRef(new Set());
+  const askForLibraryPoints = useCallback(() => setSearchAsked((n) => n + 1), []);
+
+  useEffect(() => {
+    if (!searchAsked) return;
+    savedPointSets.forEach(async (entry) => {
+      const key = `${entry.id}@${entry.updated_at}`;
+      if (heldSets[entry.id]?.stamp === entry.updated_at || fetchingSets.current.has(key)) return;
+      fetchingSets.current.add(key);
+      try {
+        const { data } = await api.get(`/pointsets/${entry.id}`);
+        setHeldSets((prev) => ({ ...prev, [entry.id]: { stamp: entry.updated_at, points: data.points || [] } }));
+      } catch {
+        // Not searchable for now: the map and every other field still work, and the next focus asks again.
+      } finally {
+        fetchingSets.current.delete(key);
+      }
+    });
+  }, [searchAsked, savedPointSets, heldSets]);
+
+  const libraryPointSets = useMemo(
+    () => savedPointSets.flatMap((entry) => {
+      const held = heldSets[entry.id];
+      return held?.stamp === entry.updated_at ? [{ savedId: entry.id, name: entry.name, points: held.points }] : [];
+    }),
+    [savedPointSets, heldSets],
+  );
+
+  /**
+   * `name` names the set (the review dialog lets the person change it); else the file's own name.
+   * `parsed`: points the review already read (a GPX of waypoints, which is no .LPS).
+   */
+  const importLpsFile = async (file, { name, parsed: alreadyRead } = {}) => {
+    const parsed = alreadyRead ?? (await parseLpsFile(file));
     const set = {
       id: generateId("lps"),
       name: name || parsed.name,
@@ -40,6 +77,36 @@ export const useLocalPoints = () => {
 
   const removePointSet = (setId) => {
     setPointSets((prev) => prev.filter((set) => set.id !== setId));
+  };
+
+  // --- points made by hand ---
+
+  /** A new set of points, shown on the map. */
+  const createPointSet = (name, points = []) => {
+    const set = {
+      id: generateId("lps"),
+      name,
+      color: nextRouteColor(),
+      visible: true,
+      savedId: null,
+      dirty: true,
+      points: points.map((point) => ({ id: newPointId(), ...point })),
+    };
+    setPointSets((prev) => [...prev, set]);
+    return set;
+  };
+
+  // `dirty` is the Library copy being behind what is on the map: Save is then offered again.
+  const changePoints = (setId, change) => {
+    setPointSets((prev) => prev.map((set) => (set.id === setId ? { ...set, dirty: true, points: change(set.points ?? []) } : set)));
+  };
+
+  const addPoint = (setId, point) => changePoints(setId, (points) => [...points, { id: newPointId(), ...point }]);
+  const updatePoint = (setId, pointId, patch) =>
+    changePoints(setId, (points) => points.map((point) => (point.id === pointId ? { ...point, ...patch } : point)));
+  const removePoint = (setId, pointId) => changePoints(setId, (points) => points.filter((point) => point.id !== pointId));
+  const renamePointSet = (setId, name) => {
+    setPointSets((prev) => prev.map((set) => (set.id === setId ? { ...set, name, dirty: true } : set)));
   };
 
   // --- cloud persistence ---
@@ -66,17 +133,20 @@ export const useLocalPoints = () => {
     const setId = typeof setOrId === "object" ? setOrId?.id : setOrId;
     const set = typeof setOrId === "object" ? setOrId : pointSets.find((s) => s.id === setId);
     if (!set) return null;
+    // The server refuses a set with no points, so one that is empty stays unsaved.
+    if (!set.points?.length) throw new Error("A set with no points cannot be saved.");
 
     const payload = { name: set.name, points: set.points };
     let saved;
     if (set.savedId) {
       const res = await api.put(`/pointsets/${set.savedId}`, payload);
       saved = res.data;
+      setPointSets((prev) => prev.map((s) => (s.id === setId ? { ...s, dirty: false } : s)));
     } else {
       const res = await api.post("/pointsets", payload);
       saved = res.data;
       setPointSets((prev) =>
-        prev.map((s) => (s.id === setId ? { ...s, savedId: saved.id } : s)),
+        prev.map((s) => (s.id === setId ? { ...s, savedId: saved.id, dirty: false } : s)),
       );
     }
     await fetchSavedPointSets();
@@ -118,11 +188,18 @@ export const useLocalPoints = () => {
     pointSets,
     setPointSets,
     importLpsFile,
+    createPointSet,
+    addPoint,
+    updatePoint,
+    removePoint,
+    renamePointSet,
     togglePointSetVisibility,
     removePointSet,
     savedPointSets,
     isLoadingSavedSets,
     savedSetsError,
+    libraryPointSets,
+    askForLibraryPoints,
     fetchSavedPointSets,
     savePointSet,
     loadSavedPointSet,

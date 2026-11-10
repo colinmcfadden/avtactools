@@ -7,7 +7,10 @@ import {
 } from "./routeCalc";
 import { AIRSPEED_TYPES, FALLBACK_PROFILE } from "../aircraft/aircraftProfiles";
 import { indexLocalPointsByName, matchLocalPointName } from "../localPoints/localPointMatch";
+import AddRoutePoint from "./AddRoutePoint";
+import { whyPointStays } from "./sketchOps";
 import Icon from "../ui/Icon";
+import { beginFieldVisit } from "../undo/fieldVisit";
 import "../shell/shell.css";
 
 const num = (value, fallback = 0) => {
@@ -48,6 +51,10 @@ const Field = ({ label, width, htmlFor, children }) => (
  * wind flown TO that point (the arriving leg), a clock to set the TOT anchor, and an editable name
  * with autocomplete from loaded local points. Rolling ("stopwatch") elapsed times and anchored clock
  * times recompute live. Backed by the UH-60L profile from the vidx.
+ *
+ * With `addPoint` a point can be added, after any point or at the end, by grid, lat/long, place or local point
+ * (`near`, `searchPlaces`, `localPoints`, `onSearchStart` are the search's); with `removePoint`, taken off.
+ * `addsOnNearestLeg`: the route places a new point itself (an imported mission), so it is added only from the foot.
  */
 const RoutePlanSection = ({
   route,
@@ -59,6 +66,13 @@ const RoutePlanSection = ({
   updatePointName,
   refreshRouteElevations,
   applyForecastWinds,
+  addPoint = null,
+  removePoint = null,
+  addsOnNearestLeg = false,
+  near = null,
+  searchPlaces = null,
+  localPoints = null,
+  onSearchStart,
 }) => {
   const plan = useMemo(() => ({ ...defaultRoutePlan(), ...route.plan }), [route.plan]);
   const result = useMemo(
@@ -72,6 +86,11 @@ const RoutePlanSection = ({
   const [windStatus, setWindStatus] = useState(null);
   // The point whose clock is being typed, and what is typed: the clock is set on Enter or Set.
   const [clockEdit, setClockEdit] = useState(null);
+  // Where a point is being added: `{ after: pointId }`, or `{ after: null }` at the end of the route.
+  const [addingAt, setAddingAt] = useState(null);
+  const [addFailed, setAddFailed] = useState("");
+  // Why a point the person tried to delete has to stay: `{ pointId, text }`.
+  const [stays, setStays] = useState(null);
   const id = useId();
   const datalistId = `${id}-points`;
 
@@ -97,6 +116,46 @@ const RoutePlanSection = ({
     const { name, coords, chartElevationFt } = matchLocalPointName(localByName, raw);
     updatePointName(route.id, pointId, name, coords, chartElevationFt);
   };
+
+  const canAdd = !readOnly && Boolean(addPoint);
+  const canRemove = !readOnly && Boolean(removePoint);
+  // A point being added after has gone (undone, or deleted by someone else in a pack): so has the form.
+  const adding = canAdd && addingAt && (addingAt.after === null || result.points.some((p) => p.id === addingAt.after)) ? addingAt : null;
+
+  const toggleAdding = (after) => {
+    setAddFailed("");
+    setAddingAt(adding?.after === after ? null : { after });
+  };
+
+  const handleAdd = (point) => {
+    setAddFailed("");
+    try {
+      const added = addPoint(route.id, adding.after, point);
+      // The next point goes after this one, so several can be added in the order they are flown.
+      if (adding.after !== null && added) setAddingAt({ after: added });
+    } catch (err) {
+      setAddFailed(`The point could not be added: ${err.message}`);
+    }
+  };
+
+  const handleRemove = (pointId) => {
+    const reason = whyPointStays(route, pointId);
+    setStays(reason ? { pointId, text: reason } : null);
+    if (!reason) removePoint(route.id, pointId);
+  };
+
+  const addForm = (where) => (
+    <AddRoutePoint
+      where={where}
+      near={near}
+      searchPlaces={searchPlaces}
+      localPoints={localPoints}
+      onSearchStart={onSearchStart}
+      onAdd={handleAdd}
+      onClose={() => setAddingAt(null)}
+      failed={addFailed}
+    />
+  );
 
   const commitClock = (event) => {
     event?.preventDefault();
@@ -141,7 +200,14 @@ const RoutePlanSection = ({
   };
 
   return (
-    <div className="plan">
+    <div
+      className="plan"
+      onFocusCapture={beginFieldVisit}
+      onChangeCapture={(event) => {
+        // A choice is its own step, even with the focus still on it.
+        if (event.target.tagName === "SELECT") beginFieldVisit();
+      }}
+    >
       <datalist id={datalistId}>
         {localPointNames.map((lp, i) => (
           <option key={`${lp.name}-${i}`} value={lp.name} />
@@ -218,7 +284,26 @@ const RoutePlanSection = ({
                   <span className={`plan__time${rp.hasClock ? " plan__time--set" : ""}`} title="Clock time at this point">
                     {rp.clockTime ? formatClock(rp.clockTime) : "--:--:--"}
                   </span>
+                  {canRemove && (
+                    <button
+                      type="button"
+                      className="ui-btn ui-btn--ghost ui-btn--26 ui-btn--square"
+                      aria-label={`Delete ${pointName}`}
+                      aria-disabled={whyPointStays(route, rp.id) !== null}
+                      title={whyPointStays(route, rp.id) ?? `Delete ${pointName}`}
+                      onClick={() => handleRemove(rp.id)}
+                    >
+                      <Icon name="trash" size={14} />
+                    </button>
+                  )}
                 </div>
+
+                {stays?.pointId === rp.id && (
+                  <div className="plan__warning" role="status">
+                    <Icon name="alertTriangle" size={13} />
+                    <span>{stays.text}</span>
+                  </div>
+                )}
 
                 {editingClock && (
                   <form className="plan__clock" onSubmit={commitClock}>
@@ -370,10 +455,39 @@ const RoutePlanSection = ({
                   </span>
                   <span>{formatDuration(rp.elapsedSec)}</span>
                 </div>
+
+                {canAdd && !addsOnNearestLeg && i < result.points.length - 1 && (
+                  <button
+                    type="button"
+                    className="plan__add-after"
+                    aria-expanded={adding?.after === rp.id}
+                    aria-label={`Add a point after ${pointName}`}
+                    onClick={() => toggleAdding(rp.id)}
+                  >
+                    <Icon name="plus" size={12} />
+                    <span>Add point here</span>
+                  </button>
+                )}
+                {adding?.after === rp.id && addForm(`After ${pointName}`)}
               </div>
             );
           })}
         </div>
+
+        {canAdd && (adding?.after === null
+          ? addForm(addsOnNearestLeg
+            ? "On the nearest leg. A point added to an imported mission can't be undone."
+            : "At the end of the route")
+          : (
+            <button
+              type="button"
+              className="ui-btn ui-btn--ghost ui-btn--28 plan__add-end"
+              onClick={() => toggleAdding(null)}
+            >
+              <Icon name="plus" size={14} />
+              <span>Add point</span>
+            </button>
+          ))}
 
         {result.totals && (
           <div className="plan__totals">

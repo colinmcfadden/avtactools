@@ -4,6 +4,7 @@ from flask import Blueprint, jsonify
 
 import lidar_builder
 from app_config import build_config
+from charts import serve as chart_serve, state as chart_state
 
 try:
     from version import __version__
@@ -25,13 +26,15 @@ def app_config():
 
     The same answer for everyone, so a short shared cache is safe (and spares the
     single gunicorn worker a request per app launch). ``public`` is deliberate
-    here and nowhere near user data: auth-gated responses use ``private``.
+    here and nowhere near user data: auth-gated responses use ``private``. A chart switch reaches it
+    within the minute (docs/VFR_CHARTS.md §4.5).
     """
     payload = build_config(
         os.environ,
         server_version=__version__,
         lidar_builds=lidar_builder.configured(),
         mapbox_default=_default_mapbox_token(),
+        charts=chart_serve.config(chart_state.root()),
     )
     response = jsonify(payload)
     response.headers['Cache-Control'] = 'public, max-age=60'
