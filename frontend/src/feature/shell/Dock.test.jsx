@@ -102,6 +102,58 @@ describe("the bottom sheet on a narrow window", () => {
     expect(mapBottom()).toBe("369px");
   });
 
+  // A phone's frame put away by a tap on the map (feature/phoneFrame): the sheet goes, the map takes its room.
+  it("goes down out of sight and out of reach when put away, and comes back at the height it had", () => {
+    vi.useFakeTimers();
+    const Away = ({ away }) => {
+      const dock = useDock("lz");
+      return (
+        <div data-testid="map-area">
+          <div className="shell-map" />
+          <Dock items={items} dock={dock} away={away}>
+            <div>panel {dock.panel}</div>
+          </Dock>
+        </div>
+      );
+    };
+    const { rerender } = render(<Away away={false} />);
+    const sheet = screen.getByRole("complementary", { name: "Panels" });
+    expect(sheetHeight()).toBe("369px");
+    expect(sheet).not.toHaveAttribute("inert");
+
+    rerender(<Away away />);
+    expect(sheetHeight()).toBe("0px");
+    expect(mapBottom()).toBe("0px"); // at once: the map grows under the sheet as it goes
+    expect(sheet).toHaveAttribute("inert");
+    expect(sheet).toHaveClass("shell-dock--away");
+
+    rerender(<Away away={false} />);
+    expect(sheetHeight()).toBe("369px");
+    expect(mapBottom()).toBe("0px"); // the sheet rises over the map, which follows once it has settled
+    act(() => vi.advanceTimersByTime(200));
+    expect(mapBottom()).toBe("369px");
+    expect(sheet).not.toHaveAttribute("inert");
+  });
+
+  it("is never put away on a wide window, which has no sheet", () => {
+    narrow = false;
+    const Wide = () => {
+      const dock = useDock("lz");
+      return (
+        <div data-testid="map-area">
+          <div className="shell-map" />
+          <Dock items={items} dock={dock} away>
+            <div>panel</div>
+          </Dock>
+        </div>
+      );
+    };
+    render(<Wide />);
+    const dock = document.querySelector(".shell-dock");
+    expect(dock).not.toHaveAttribute("inert");
+    expect(dock).not.toHaveClass("shell-dock--away");
+  });
+
   it("puts the map back beside the dock when the window widens", () => {
     render(<Harness />);
     widen();

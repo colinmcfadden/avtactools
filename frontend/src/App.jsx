@@ -6,7 +6,11 @@ import { convertToLatLongString } from "./utils/Helpers";
 import { toMgrs } from "./utils/mgrs";
 import ExportModal from "./feature/export/ExportModal";
 import MobileQuickAccess from "./components/MobileQuickAccess";
-import MobileGridInput from "./components/MobileGridInput";
+import PhoneBar from "./feature/phoneFrame/PhoneBar";
+import { railStage } from "./feature/phoneFrame/phoneFrame";
+import usePhoneFrame from "./feature/phoneFrame/usePhoneFrame";
+import useElementHeight from "./feature/phoneFrame/useElementHeight";
+import MapZoom from "./feature/mapZoom/MapZoom";
 import TopBarSearch from "./feature/shell/TopBarSearch";
 import { searchPlaces } from "./feature/places/usePlaceSearch";
 import { searchablePoints } from "./feature/localPoints/localPointSearch";
@@ -51,7 +55,6 @@ import useVfrCharts from "./feature/vfrCharts/useVfrCharts";
 import { VFR_STYLE_ID } from "./feature/vfrCharts/vfrCharts";
 import useMgrsGrid from "./feature/mgrsGrid/useMgrsGrid";
 import useSlopeOpacity from "./feature/terrain/slopeOpacity";
-import UnitBadge from "./components/UnitBadge";
 import { useLocalPoints } from "./feature/localPoints/useLocalPoints";
 import { useThreats } from "./feature/threats/useThreats";
 import { parseThsFile } from "./feature/threats/parseThs";
@@ -530,8 +533,11 @@ function App() {
   // The top bar's workspace switcher, held here so the Library's footer can open it.
   const workspaceSwitcher = useMenu();
   const openWorkspaceSwitcher = () => {
+    // On a phone its button is in the menu under the search bar, which opens first.
+    phoneFrameRef.current?.openMenu();
     if (!workspaceSwitcher.open) workspaceSwitcher.toggle();
   };
+  const phoneFrameRef = useRef(null);
   // One name asked for at a time (a route being finished, a route point being named).
   const [nameAsk, setNameAsk] = useState(null);
   // The point being made or changed ({ setId, group, point, at }), and the one being asked about deleting.
@@ -771,6 +777,21 @@ function App() {
   const packReadOnly = inPack && packs.readOnly;
   const editable = !packReadOnly;
   const diagramReadinessText = diagramReadiness({ hasTarget: hasActiveTarget, analyzed: canEditGraphics, editable });
+
+  // --- The phone's frame (feature/phoneFrame; 850 px and below): the search is the top of the screen, the tools over
+  // the map come in the order the app is used, and a tap on the map puts everything but the search away. -------------
+  // The Leaflet map once it is made: the zoom buttons work it, and Set Target reads its middle, where the crosshair is.
+  const [map, setMap] = useState(null);
+  const shellMapRef = useRef(null);
+  const mapHeight = useElementHeight(shellMapRef, isMobile);
+  const drawingOnMap = isDrawingLZ || isSketching || backstopTools.isDrawing || flotTools.isDrawing;
+  const phoneFrame = usePhoneFrame({
+    phone: isMobile,
+    drawing: drawingOnMap,
+    presenting,
+    step: `${activeDiagramId ?? ""}:${railStage({ hasTarget: hasActiveTarget, analyzed: canEditGraphics, drawingBoundary: isDrawingLZ })}`,
+  });
+  phoneFrameRef.current = phoneFrame;
   // Set up here, once it is known whether this person may change the pack: where they may not, an LZ
   // card's capture area is theirs alone (useCaptureArea).
   const captureArea = useCaptureArea({
@@ -1097,6 +1118,22 @@ function App() {
   const handleSetAsTarget = () => {
     if (!contextMenu) return;
     startDiagramAtTarget([contextMenu.lat, contextMenu.lon], clickedGrid);
+  };
+
+  // The phone's Set Target: the target goes where the crosshair is, the middle of the map that shows (read from the
+  // map as it is now, not from its last settled move).
+  const setTargetAtCrosshair = () => {
+    const middle = map?.getCenter?.().wrap();
+    const [lat, lon] = middle ? [middle.lat, middle.lng] : mapCenter;
+    gridLinkShown.current = false;
+    startDiagramAtTarget([lat, lon], gridAt(lat, lon));
+  };
+
+  // A phone has no room for a line of instructions beside the tool: starting to draw says how, once.
+  const togglePhoneDrawing = () => {
+    const starting = !isDrawingLZ && hasActiveTarget && !backstopTools.isDrawing && !flotTools.isDrawing;
+    toggleDrawingMode();
+    if (starting) toast({ tone: "info", message: "Tap the map at each corner of the LZ/PZ, then Finish LZ." });
   };
 
   // 2. LZ Right-Click Handler
@@ -1680,15 +1717,36 @@ function App() {
     if (!inPack && dock.panel === "pack") dock.show("lz");
   }, [inPack, dock]);
 
+  // The search: in the top bar on a wide window, the top of the screen on a phone (PhoneBar).
+  const search = (
+    <TopBarSearch
+      value={gridInput}
+      onChange={setGridInput}
+      onChoose={chooseTarget}
+      onShare={(choice) => setShareGrid({ mgrs: choice.mgrs, lat: choice.lat, lon: choice.lon, label: choice.label })}
+      near={targetNear}
+      searchPlaces={feat.place_search ? searchPlaces : null}
+      localPoints={searchPoints}
+      onSearchStart={localPoints.askForLibraryPoints}
+      phone={isMobile}
+    />
+  );
+
   return (
     // Files dropped anywhere in the window are imported (the bar and its open search lie over the map), but not while a brief is presented.
     <div className={`app-container${presenting ? " app-container--presenting" : ""}`} {...(presenting ? IGNORE_DROPS : imports.dragProps)}>
-      <button
-        className="mobile-hamburger-btn"
-        onClick={() => setIsMobileMenuOpen(true)}
-      >
-        ☰
-      </button>
+      {/* A phone's top: the search across the screen, and the button for the menu the top bar is put away in. */}
+      {isMobile && !presenting && (
+        <PhoneBar
+          search={search}
+          menuOpen={phoneFrame.menuOpen}
+          onToggleMenu={phoneFrame.toggleMenu}
+          onSearchStart={phoneFrame.closeMenu}
+          pack={packs.topPack}
+          packStatus={packs.topStatus ?? "live"}
+        />
+      )}
+      <div className="phone-frame__status" aria-live="polite">{isMobile ? phoneFrame.status : ""}</div>
       {/* Across the whole window, over the control panel and the map alike (the dock and the panel sit under it). */}
       <TopBar
         undo={undoControls}
@@ -1697,18 +1755,8 @@ function App() {
         onOpenSurveys={user?.is_admin || feat.lz_surveys ? () => setSurveysOpen(true) : undefined}
         onSignOut={signOut}
         onOpenLibrary={() => openLibrary("lz")}
-        searchSlot={
-          <TopBarSearch
-            value={gridInput}
-            onChange={setGridInput}
-            onChoose={chooseTarget}
-            onShare={(choice) => setShareGrid({ mgrs: choice.mgrs, lat: choice.lat, lon: choice.lon, label: choice.label })}
-            near={targetNear}
-            searchPlaces={feat.place_search ? searchPlaces : null}
-            localPoints={searchPoints}
-            onSearchStart={localPoints.askForLibraryPoints}
-          />
-        }
+        searchSlot={isMobile ? null : search}
+        phone={isMobile ? { open: phoneFrame.menuOpen, onDone: phoneFrame.closeMenu } : null}
         briefSlot={feat.mission_brief ? (
           <BriefMenu packName={inPack ? packs.meta?.name ?? "the pack" : null} summary={brief.summary} onGenerate={() => setBriefOpen(true)} onPresent={presentBrief} />
         ) : null}
@@ -1738,9 +1786,18 @@ function App() {
                     threats: threatSets.canSave ? threatSets.savedSets.length : undefined,
                     unsaved: inPack ? packs.parkedUnsaved : diagrams.filter((d) => d.status === "analyzed" && (d.savedId == null || d.dirty)).length,
                   }}
-                  onPick={packs.openPack}
-                  onNewPack={packs.newPack}
-                  onManageTeams={packs.manageTeams}
+                  onPick={(...args) => {
+                    phoneFrame.closeMenu();
+                    return packs.openPack(...args);
+                  }}
+                  onNewPack={(...args) => {
+                    phoneFrame.closeMenu();
+                    return packs.newPack(...args);
+                  }}
+                  onManageTeams={(...args) => {
+                    phoneFrame.closeMenu();
+                    return packs.manageTeams(...args);
+                  }}
                   onAccept={(invite) => packs.answerInvite(invite, true)}
                   onDecline={(invite) => packs.answerInvite(invite, false)}
                 />
@@ -1753,6 +1810,8 @@ function App() {
         className={`sidebar ${isMobileMenuOpen ? "mobile-open" : ""} ${
           sidebarCompact ? "sidebar-compact" : ""
         }`}
+        // On a phone it is a full-screen menu, off the screen until opened: out of the keyboard's and a screen reader's reach too.
+        inert={isMobile && !isMobileMenuOpen}
       >
         <div className="sidebar-header">
           <button
@@ -1834,9 +1893,17 @@ function App() {
       )}
       <div className="map-area">
         <div
-          className={`shell-map${dock.collapsed ? " shell-map--dock-collapsed" : ""}${inPack && packs.meta?.status === "finished" ? " shell-map--banner" : ""}`}
+          ref={shellMapRef}
+          className={`shell-map${dock.collapsed ? " shell-map--dock-collapsed" : ""}${inPack && packs.meta?.status === "finished" ? " shell-map--banner" : ""}${phoneFrame.hidden ? " shell-map--bare" : ""}`}
         >
-        <UnitBadge />
+        <MapZoom map={map} />
+        {/* A phone's crosshair: the middle of the map that shows, where Set Target puts the target (phoneFrame.css). */}
+        <div className="map-crosshair" aria-hidden="true">
+          <svg viewBox="0 0 44 44" fill="none" stroke="#ffffff" strokeWidth="1.6" strokeLinecap="round">
+            <path d="M22 3v13M22 28v13M3 22h13M28 22h13" />
+            <circle cx="22" cy="22" r="1.2" fill="#ffffff" stroke="none" />
+          </svg>
+        </div>
         {inPack && packs.meta?.status === "finished" && (
           <FinishedBanner
             pack={packs.meta}
@@ -1855,45 +1922,40 @@ function App() {
           overlays={overlayTools.overlays}
           onToggleOverlay={overlayTools.toggle}
         />
-        <MobileGridInput
-          gridInput={gridInput}
-          setGridInput={setGridInput}
-          onChooseTarget={chooseTarget}
-          onShare={(choice) => setShareGrid({ mgrs: choice.mgrs, lat: choice.lat, lon: choice.lon, label: choice.label })}
-          targetNear={targetNear}
-          searchPlaces={feat.place_search ? searchPlaces : null}
-          localPoints={searchPoints}
-          onSearchStart={localPoints.askForLibraryPoints}
-        />
-        <MobileQuickAccess
-          undo={undoControls}
-          features={feat}
-          addHelo={addHelo}
-          addPZMarker={addPZMarker}
-          addSector={addSectorOfFire}
-          isDrawingBackstop={backstopTools.isDrawing}
-          onToggleBackstop={toggleBackstopDrawing}
-          addUnit={addUnit}
-          onOpenUnitBuilder={() => setShowUnitBuilder(true)}
-          addGoAround={addGoAround}
-          enableExportMode={enableExportMode}
-          onDownloadClick={() => setIsExporting(true)}
-          exportBox={exportBox}
-          isExporting={isExporting}
-          exportProgress={exportProgress}
-          isSketching={isSketching}
-          toggleRouteSketch={toggleRouteSketch}
-          onAnalyze={performTerrainAnalysis}
-          onToggleDrawing={toggleDrawingMode}
-          isDrawingLZ={isDrawingLZ}
-          canAnalyze={canAnalyze && editable}
-          canDrawBoundary={hasActiveTarget && editable}
-          canUseDiagramTools={canEditGraphics && editable}
-          canSaveDiagram={canEditGraphics && editable}
-          canExport={canEditGraphics}
-          diagramStatus={diagramStatus}
-          diagramReadinessText={diagramReadinessText}
-        />
+        {isMobile && (
+          <MobileQuickAccess
+            undo={undoControls}
+            features={feat}
+            hasTarget={hasActiveTarget}
+            analyzed={canEditGraphics}
+            editable={editable}
+            isDrawingLZ={isDrawingLZ}
+            isSketching={isSketching}
+            isDrawingBackstop={backstopTools.isDrawing}
+            isDrawingFlot={flotTools.isDrawing}
+            mapHeight={mapHeight}
+            folded={phoneFrame.toolsFolded}
+            onToggleFolded={phoneFrame.toggleTools}
+            hidden={phoneFrame.hidden}
+            onSetTarget={setTargetAtCrosshair}
+            toggleRouteSketch={toggleRouteSketch}
+            onAnalyze={performTerrainAnalysis}
+            onToggleDrawing={togglePhoneDrawing}
+            addHelo={addHelo}
+            addPZMarker={addPZMarker}
+            addSector={addSectorOfFire}
+            onToggleBackstop={toggleBackstopDrawing}
+            addUnit={addUnit}
+            onOpenUnitBuilder={() => setShowUnitBuilder(true)}
+            addGoAround={addGoAround}
+            canExport={canEditGraphics}
+            enableExportMode={enableExportMode}
+            onDownloadClick={() => setIsExporting(true)}
+            exportBox={exportBox}
+            isExporting={isExporting}
+            exportProgress={exportProgress}
+          />
+        )}
         {flotTools.isDrawing && (
           <BackstopDrawBar
             title="Drawing the FLOT."
@@ -1994,6 +2056,8 @@ function App() {
           onThreatMove={packReadOnly ? undefined : moveThreat}
           onThreatEdit={packReadOnly ? undefined : beginEditThreat}
           onMapMove={setMapCenter}
+          onMap={setMap}
+          frameTap={isMobile ? phoneFrame : null}
           presence={inPack ? packs.others : undefined}
           onPoint={inPack ? packs.pointAt : undefined}
           presentation={presenting ? sandtable.presentation : null}
@@ -2010,7 +2074,7 @@ function App() {
         {imports.overlay}
         </div>
 
-        <Dock items={railItems} dock={dock}>
+        <Dock items={railItems} dock={dock} away={phoneFrame.hidden}>
           {dock.panel === "pack" && inPack && packs.meta && (
             <PackPanel
               pack={packs.meta}

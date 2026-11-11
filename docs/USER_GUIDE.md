@@ -8,14 +8,14 @@ The interface has four parts:
 
 - **Left panel** — MGRS search, LZ/PZ analysis data, placement tools, export, and route tools.
 - **Top bar** — where your work is saved (**Library**, your own; Mission Packs come later), **Import**, the **Library** button, and your account (sign out is in its menu).
-- **Map** — the working area, with the unit badge and zoom controls at its top-left.
+- **Map** — the working area, with the zoom buttons at its top-left.
 - **Dock** (right) — one panel at a time, picked from the icons on its right edge: **LZ/PZ**, **Routes**, **Threats** and **Imports**. Click the open panel's icon again to fold it away. A small amber dot on an icon means something there has unsaved changes. On a narrow window the dock is a sheet along the bottom: drag its handle up or down, or tap a tab.
 
 ---
 
 ## 1. Getting started: set a target
 
-Type an MGRS grid, or a latitude and longitude in any common form (`34.5457, -84.1234`, `34°32'44.4"N 84°07'24.4"W`, `3432.740N 08407.407W`), in the search box in the top bar (on a phone, the box over the map). On a computer it opens wider over the map when you click it. As you type, a list under the box shows the grid and the lat/long it reads; choose either (or press **GO** or Enter) to go there. A local point can be found the same way by its name, whether its set is on the map or kept in your Library. The share button on each row, or beside **GO**, sends that grid to someone: by your device's share sheet, a copy, a link or a QR code. If what you typed could mean two places, such as `34 84` with no minus sign or N/S/E/W, the list offers both, nearest the map first, and you choose. The map flies to the location, drops a gold star on the target, and automatically generates two **doghouses** (SP/RP flight-data cards) beside it.
+Type an MGRS grid, or a latitude and longitude in any common form (`34.5457, -84.1234`, `34°32'44.4"N 84°07'24.4"W`, `3432.740N 08407.407W`), in the search box in the top bar (on a phone it is the top of the screen: see [On a phone](#7-on-a-phone)). It opens wider over the map when you click or tap it. As you type, a list under the box shows the grid and the lat/long it reads; choose either (or press **GO** or Enter) to go there. A local point can be found the same way by its name, whether its set is on the map or kept in your Library. The share button on each row, or beside **GO**, sends that grid to someone: by your device's share sheet, a copy, a link or a QR code. If what you typed could mean two places, such as `34 84` with no minus sign or N/S/E/W, the list offers both, nearest the map first, and you choose. The map flies to the location, drops a gold star on the target, and automatically generates two **doghouses** (SP/RP flight-data cards) beside it.
 
 ![Search result with doghouses](images/02-search.png)
 
@@ -145,7 +145,7 @@ Exported files deliberately contain geometry only — after opening one in AMPS,
 
 **Save is on the thing you are working on.** The open LZ/PZ's card in the **LZ/PZ** panel has a **Save** button, and so does each route set in **Routes**. The first save asks for a name (a name already in your Library offers *Keep both* or *Replace*); every later save happens without asking and shows a short note at the bottom of the screen. **Ctrl S** (**⌘ S** on a Mac) saves whatever the dock is showing.
 
-**Undo and Redo** are in the top bar and on the map's tools on a phone, and on **Ctrl Z** and **Ctrl Shift Z** (**⌘ Z** and **⇧⌘ Z** on a Mac). They take back the last thing you did on the map, wherever you did it: moving or changing an object, a route or its plan, a boundary. An analysis and fetched winds are not taken back, and neither is anything someone else did in a Mission Pack. While you are drawing a route or a boundary, Ctrl Z removes the last point. A route you have finished comes back the same way, one point at a time, until its last two points go together.
+**Undo and Redo** are in the top bar (on a phone, at the foot of the map beside the tools, once there is something to undo), and on **Ctrl Z** and **Ctrl Shift Z** (**⌘ Z** and **⇧⌘ Z** on a Mac). They take back the last thing you did on the map, wherever you did it: moving or changing an object, a route or its plan, a boundary. An analysis and fetched winds are not taken back, and neither is anything someone else did in a Mission Pack. While you are drawing a route or a boundary, Ctrl Z removes the last point. A route you have finished comes back the same way, one point at a time, until its last two points go together.
 
 - An LZ/PZ must be analyzed before it can be saved. Saving captures the target, boundary, analysis, everything placed on it and the doghouse edits. Threats and routes are not part of it.
 - **Close** (in an LZ/PZ's **⋯** menu) takes it out of this session; with unsaved changes it asks *Cancel / Don't save / Save*.
@@ -183,11 +183,30 @@ Threats have their own panel. They are kept in your Library as you work, with no
 
 While a Mission Pack is open the threats on the map are the pack's, and anyone who can edit it can add, move or remove them; yours are put aside and come back when you leave it. Copy a set in from the Library's **Threats** tab. Whether you have hidden a threat stays yours, and a terrain mask is worked out on each person's own screen rather than sent to the others.
 
-## 7. The unit badge
+## 7. On a phone
 
-The A Co. 1-171st GSAB Falcons patch sits next to the zoom controls. Give it a click.
+On a phone (a window 850 px wide or narrower) the app is laid out for one hand, and shows you only what you can use next.
 
-![Falcons](images/15-falcon.png)
+| Nothing set | Target set | Drawing | Analysed |
+|---|---|---|---|
+| ![Nothing set](images/16-phone-start.jpg) | ![Target set](images/18-phone-target.jpg) | ![Drawing the boundary](images/19-phone-drawing.jpg) | ![Analysed](images/20-phone-analysed.jpg) |
+
+- **Search** is the top of the screen. Tap it and it opens across the whole width with its list under it; **GO** is at its end. A grid is spaced for you as you type it.
+- **Menu** (☰, beside GO) holds everything else from the top bar: the workspace, your account, **Tools** (the left panel: aircraft, analysis data, the slope map and LZ box switches), **Brief**, **Import** and the **Library**. Tap ☰ again, or the map, to put it away.
+- **The crosshair** marks the middle of the map you can see. **Set Target** puts the target there: move the map until the crosshair is on the spot, then tap it. (Searching a grid, or a long press on the map → **Set as Target**, still work.)
+- **The tools come in the order you use them**, at the bottom right where your thumb is:
+  1. With no target: the route tool and **Set Target**.
+  2. With a target: **Analyze** and **Draw LZ** appear.
+  3. While you draw a boundary, **Analyze** is greyed out until you tap **Finish LZ**.
+  4. Once the LZ is analysed, the planning tools appear (helicopter, PZ marker, sector, backstop, unit, go-around). Set Target, Re-analyze and Draw LZ stay, as icons.
+- **Capture** appears at the left once the LZ is analysed, and **Export** once you have set a capture area.
+- **Undo and redo** appear beside the tools while there is something to undo.
+- **Hide and show**: the **⌄** button under the tools folds them away (it then reads **Tools ⌃**). A tap on the map hides everything except the search bar, and the next tap brings it all back; so does ☰. A tap never hides anything while you are drawing, and a tap that closed a menu or folded the search does only that.
+- On a short screen (a phone on its side, or with the bottom sheet raised) the tools that do not fit are behind **⋯ More**.
+
+| Search open | Everything hidden | Menu |
+|---|---|---|
+| ![Search open](images/17-phone-search.jpg) | ![Hidden](images/21-phone-hidden.jpg) | ![Menu](images/22-phone-menu.jpg) |
 
 ---
 
@@ -196,4 +215,4 @@ The A Co. 1-171st GSAB Falcons patch sits next to the zoom controls. Give it a c
 - **First action after idle is slow** — the backend spins down when unused; the first analysis/search after a while can take up to a minute while it wakes. Subsequent requests are fast.
 - **Sign-in button does nothing / login popup blocked** — make sure your browser allows popups for the site, and give a slow backend a moment to respond after choosing an account.
 - **Imported route looks like a straight line between two named points** — that's correct: the serpentine shaping points still exist (small dots). If a route is cluttering the view, hide it with the eye toggle instead of deleting.
-- **On mobile**, the left panel is behind the ☰ button at the left of the top bar, quick-access tool buttons appear along the map edge, and the dock is a sheet along the bottom.
+- **On mobile**, the search is the top of the screen, the rest of the top bar and the left panel are behind the ☰ button beside it, the tools appear on the map as you need them, and the dock is a sheet along the bottom. See [On a phone](#7-on-a-phone).

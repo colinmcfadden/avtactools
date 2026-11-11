@@ -123,7 +123,9 @@ export const DockRail = ({ items, active, collapsed, onPick }) => (
   </nav>
 );
 
-const Dock = ({ items, dock, children }) => {
+// `away`: a phone's frame put away by a tap on the map (feature/phoneFrame). The sheet goes down out of sight and
+// out of reach, and the map takes its room; it comes back as it was, at the height it had.
+const Dock = ({ items, dock, away = false, children }) => {
   const narrow = useNarrow();
   // A phone starts with the sheet lowered, so the map is usable; a tablet has room for half.
   const [sheet, setSheet] = useState(() => (typeof window !== "undefined" && window.innerWidth < 700 ? "peek" : "half"));
@@ -140,8 +142,11 @@ const Dock = ({ items, dock, children }) => {
     return () => window.removeEventListener("resize", onResize);
   }, [narrow]);
 
-  const sheetHeight = narrow ? dragHeight ?? sheetHeights()[sheet] : null;
-  const dragging = dragHeight !== null;
+  const gone = narrow && away;
+  // Put away, the sheet has no height: the map's bottom follows it down at once and back up once it has settled, as
+  // it does for any other height.
+  const sheetHeight = narrow ? (gone ? 0 : dragHeight ?? sheetHeights()[sheet]) : null;
+  const dragging = dragHeight !== null && !gone;
   useMapAboveSheet(asideRef, sheetHeight, dragging);
 
   const pick = (key) => {
@@ -182,9 +187,10 @@ const Dock = ({ items, dock, children }) => {
   return (
     <aside
       ref={asideRef}
-      className={`shell-dock${collapsed ? " shell-dock--collapsed" : ""}`}
+      className={`shell-dock${collapsed ? " shell-dock--collapsed" : ""}${gone ? " shell-dock--away" : ""}`}
       style={dragging ? { transition: "none" } : undefined}
       aria-label="Panels"
+      inert={gone}
     >
       {narrow && (
         <button

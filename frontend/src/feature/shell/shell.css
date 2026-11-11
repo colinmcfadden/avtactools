@@ -173,7 +173,7 @@
 .topbar-spotlight--open .target-field__option { min-height: 54px; padding: 8px 12px 8px 18px; }
 .topbar-spotlight--open .target-field__main { font-size: 16px; }
 .topbar-spotlight--open .target-field__note { font-size: 12px; }
-/* Open, the bar is over what floats over the map (the unit badge, the proximity alerts), which its field and list now lie on, and still under
+/* Open, the bar is over what floats over the map (the proximity alerts), which its field and list now lie on, and still under
    the floating windows (2500) and the dialogs. */
 .shell-topbar:has(.topbar-spotlight--open) { z-index: 2450; }
 /* The map, the panel and the dock dim a little behind the open field; a click there still reaches them (and folds it). */
@@ -596,35 +596,15 @@
   .shell-dock__collapse { display: none; }
 }
 
-.shell-topbar__menu { display: none; }
+/* -- A phone (850 px and below) -------------------------------------------------------------------- */
 
+/* A phone has no top bar: its search is the top of the screen (PhoneBar) and the rest of the bar a menu under it
+   (TopBar's `phone`; both in feature/phoneFrame/phoneFrame.css). Its room at the top of the window is that bar's. */
 @media (max-width: 850px) {
-  .shell-topbar { left: 0; padding: 0 8px; gap: 6px; }
-  .shell-topbar__menu {
-    display: flex;
-    flex: none;
-    align-items: center;
-    justify-content: center;
-    width: 34px;
-    height: 34px;
-    margin: 0;
-    padding: 0;
-    border: 1px solid var(--hairline-strong);
-    border-radius: 8px;
-    background: var(--surface-2);
-    color: var(--ff-text-main);
-    cursor: pointer;
-  }
-  /* The menu button lives in the top bar now. */
-  .mobile-hamburger-btn { display: none !important; }
-  .shell-topbar__context { display: none; }
-  /* A phone's are on the map's tool rail (MobileQuickAccess). */
-  .shell-topbar__undo { display: none; }
-  .shell-topbar__button-label,
-  .shell-topbar__account-name { display: none; }
-  .shell-topbar__switcher { max-width: 46vw; }
-  /* A phone's search is its own, over the map (MobileGridInput). */
-  .shell-topbar__search { display: none; }
+  .app-container:not(.app-container--presenting) { padding-top: calc(56px + env(safe-area-inset-top, 0px)); }
+
+  /* The sheet put away by a tap on the map (Dock's `away`): no height, and nothing of it left at the screen's foot. */
+  .shell-dock--away { box-shadow: none; visibility: hidden; transition: height 0.2s ease, visibility 0s linear 0.2s; }
 }
 
 @media (prefers-reduced-motion: reduce) {

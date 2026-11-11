@@ -172,14 +172,14 @@ select.brief-kind { cursor: pointer; padding: 0 4px; }
    bar's place across the window, its steps the sidebar's, and the map has the rest. */
 .app-container--presenting { box-sizing: border-box; padding-top: 56px; }
 .app-container--presenting > .sidebar,
-.app-container--presenting > .mobile-hamburger-btn,
 .app-container--presenting > .sidebar-collapse-toggle,
 .app-container--presenting .shell-topbar,
+.app-container--presenting .phone-menu,
 .app-container--presenting .shell-dock { display: none; }
 .app-container--presenting .shell-map { top: 0; right: 0; bottom: 0; left: 0; }
-/* Over the map only the sandtable's own boxes: no planning tools, banners or badges; and none of the planning windows (a
-   unit, a threat, an aircraft, an export), kept as they were for after the brief. */
-.app-container--presenting .shell-map > :not(.leaflet-container):not(.sandtable-constants):not(.sandtable-card),
+/* Over the map only the sandtable's own boxes and the zoom buttons: no planning tools or banners; and none of the planning
+   windows (a unit, a threat, an aircraft, an export), kept as they were for after the brief. */
+.app-container--presenting .shell-map > :not(.leaflet-container):not(.sandtable-constants):not(.sandtable-card):not(.map-zoom),
 .app-container--presenting > .export-modal-container { display: none; }
 /* Toasts go to the top, clear of the card's arrows, and offer nothing to do: their actions open planning flows. */
 body:has(.app-container--presenting) .ui-toasts { top: 68px; bottom: auto; }
