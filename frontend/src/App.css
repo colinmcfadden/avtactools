@@ -789,37 +789,8 @@ body.export-mode-active .leaflet-control-container {
 }
 
 /* =========================================================
-   MOBILE RESPONSIVENESS (Hamburger Menu)
+   MOBILE RESPONSIVENESS (the planning tools' full-screen menu)
    ========================================================= */
-
-/* Hamburger Button Settings */
-.mobile-hamburger-btn {
-    display: none; /* Hidden by default on desktop */
-}
-
-@media (max-width: 850px) {
-    .mobile-hamburger-btn {
-        display: flex; /* Show the hamburger */
-        align-items: center;
-        justify-content: center;
-        position: absolute;
-        top: 15px;
-        right: 15px; /* MOVED TO THE RIGHT */
-        width: 50px;
-        height: 50px;
-        z-index: 1000;
-        background: rgba(30, 30, 35, 0.95);
-        backdrop-filter: blur(5px);
-        color: white;
-        border: 1px solid rgba(255, 255, 255, 0.2);
-        border-radius: 8px; /* Matches QA buttons */
-        font-weight: bold;
-        font-size: 1.5rem;
-        cursor: pointer;
-        box-shadow: 0 4px 12px rgba(0,0,0,0.5);
-        padding: 0;
-    }
-} 
 
 .close-menu-btn.mobile-only {
     display: none;
@@ -831,72 +802,8 @@ body.export-mode-active .leaflet-control-container {
     align-items: center;
 }
 
-/* Unit badge next to the map zoom controls */
-.unit-badge {
-    position: absolute;
-    top: 12px;
-    left: 56px;
-    z-index: 1100;
-    width: 48px;
-    height: 48px;
-    padding: 0;
-    border: none;
-    background: none;
-    cursor: pointer;
-    filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.5));
-    transition: transform 0.15s ease, filter 0.15s ease;
-}
-
-.unit-badge img {
-    width: 100%;
-    height: 100%;
-    object-fit: contain;
-}
-
-.unit-badge:hover {
-    transform: scale(1.15);
-    filter: drop-shadow(0 8px 16px rgba(0, 0, 0, 0.75));
-}
-
-.unit-badge.spinning {
-    animation: unit-badge-spin 0.9s ease-in-out;
-}
-
-@keyframes unit-badge-spin {
-    from { transform: rotate(0deg); }
-    to { transform: rotate(360deg); }
-}
-
-/* Falcon flyby easter egg */
-.falcon-flyby {
-    position: fixed;
-    top: 16vh;
-    left: 0;
-    z-index: 99999;
-    pointer-events: none;
-    font-size: 30vh;
-    line-height: 1;
-    animation: falcon-fly 2.6s cubic-bezier(0.3, 0, 0.7, 1) forwards;
-}
-
-@keyframes falcon-fly {
-    0% {
-        transform: translateX(-45vw) translateY(6vh) scaleX(-1) rotate(5deg);
-    }
-    45% {
-        transform: translateX(30vw) translateY(16vh) scaleX(-1) rotate(-8deg);
-    }
-    100% {
-        transform: translateX(115vw) translateY(-4vh) scaleX(-1) rotate(4deg);
-    }
-}
-
 /* Tablet / Phone Layout */
 @media (max-width: 850px) {
-    .mobile-hamburger-btn {
-        display: block; /* Show the hamburger */
-    }
-
     /* Target the parent sidebar to slide in and out */
     .sidebar {
         position: fixed;
@@ -905,6 +812,7 @@ body.export-mode-active .leaflet-control-container {
         width: 100vw !important; /* Force full width on mobile */
         max-width: none !important;
         height: 100vh;
+        height: 100dvh; /* a phone's browser bars: 100vh reaches under them (index.css) */
         z-index: 2000; /* Float high above Leaflet */
         background: #1e1e23; /* Dark background so map doesn't peek through */
         transition: left 0.3s ease-in-out;
@@ -1542,13 +1450,6 @@ input:checked + .slider:before {
   color: var(--ff-accent-hover);
 }
 
-.unit-badge {
-  top: 13px;
-  left: 62px;
-  width: 44px;
-  height: 44px;
-}
-
 .export-modal-container.glass-panel {
   border-color: var(--hairline-strong);
   border-radius: 10px;
@@ -1585,14 +1486,13 @@ input:checked + .slider:before {
   font-size: 9px;
 }
 
-.leaflet-control-zoom a,
+/* Any Leaflet bar: the zoom buttons are the app's own now (feature/mapZoom). */
 .leaflet-bar a {
   border-bottom-color: var(--hairline-strong) !important;
   background: var(--glass) !important;
   color: var(--ff-text-main) !important;
 }
 
-.leaflet-control-zoom a:hover,
 .leaflet-bar a:hover {
   background: var(--surface-3) !important;
   color: #ffffff !important;

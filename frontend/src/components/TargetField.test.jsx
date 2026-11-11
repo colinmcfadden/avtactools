@@ -1,6 +1,6 @@
 import React, { useState } from "react";
 import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
-import TargetField from "./TargetField";
+import TargetField, { terseSearchWords } from "./TargetField";
 import { formatMGRS } from "../utils/Helpers";
 
 // A field as the app holds it: the text in state, every choice recorded.
@@ -430,5 +430,22 @@ describe("TargetField with local points", () => {
   it("keeps its placeholder when none are held", () => {
     localSetup({ localPoints: [] });
     expect(screen.getByRole("combobox")).toHaveAttribute("placeholder", "Search by grid or lat/long");
+  });
+});
+
+// A phone's field is narrow: its placeholder is cut to what fits, its name is not.
+describe("a narrow field's placeholder", () => {
+  it("names the first three things it takes, without Search by", () => {
+    expect(terseSearchWords(["grid", "lat/long"])).toBe("Grid or lat/long");
+    expect(terseSearchWords(["grid", "lat/long", "place"])).toBe("Grid, lat/long or place");
+    expect(terseSearchWords(["grid", "lat/long", "place", "local point"])).toBe("Grid, lat/long or place");
+    expect(terseSearchWords(["grid", "lat/long", "local point"])).toBe("Grid, lat/long or local point");
+  });
+
+  it("is drawn in place of the sentence, which stays the field's name", () => {
+    render(<TargetField value="" onChange={() => {}} onChoose={() => {}} terse />);
+    const input = screen.getByRole("combobox");
+    expect(input).toHaveAttribute("placeholder", "Grid or lat/long");
+    expect(input).toHaveAccessibleName("Search by grid or lat/long");
   });
 });

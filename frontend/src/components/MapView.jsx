@@ -46,6 +46,7 @@ import { SLOPE_OPACITY } from "../feature/terrain/slopeOpacity";
 import PresenceLayer from "../feature/missionPacks/ui/PresenceLayer";
 import SandtableLayer from "../feature/brief/SandtableLayer";
 import StartAtLocation from "../feature/startLocation/StartAtLocation";
+import MapTap from "../feature/phoneFrame/MapTap";
 
 // Fix for default Leaflet marker icons in React
 delete L.Icon.Default.prototype._getIconUrl;
@@ -259,6 +260,11 @@ const MapView = ({
   // layers, and takes no edit. They are drawn again, as they were, when it ends.
   presentation = null,
   vfrCharts = NO_CHARTS,
+  // Given the Leaflet map once it is made: the zoom buttons beside the map work it (feature/mapZoom), and a phone's
+  // Set Target reads its middle.
+  onMap,
+  // A phone's frame (usePhoneFrame): told of a single tap on the map, which hides it and shows it again.
+  frameTap = null,
 }) => {
   // Default Center (somewhere neutral)
   const defaultCenter = [34.0522, -118.2437];
@@ -274,9 +280,12 @@ const MapView = ({
   );
   return (
     <MapContainer
+      ref={onMap}
       id="map-to-export"
       center={defaultCenter}
       zoom={11}
+      // The app's own zoom buttons stand beside the map (feature/mapZoom), in place of Leaflet's.
+      zoomControl={false}
       style={{ height: "100%", width: "100%" }}
       preserveDrawingBuffer={true}
       preferCanvas={true}
@@ -333,6 +342,7 @@ const MapView = ({
         onMapMove={onMapMove}
         presenting={Boolean(presentation)}
       />
+      {frameTap && <MapTap before={frameTap.beforeTap} onTap={frameTap.onTap} />}
 
       {presentation && <SandtableLayer presentation={presentation} />}
 

@@ -1,5 +1,12 @@
-/* By default (Desktop), hide this component */
-.mobile-quick-access-container {
+/* The phone's tools on the map (MobileQuickAccess.jsx). A wide window has none of them: its tools are the
+   sidebar's, its undo the top bar's. */
+.phone-rail,
+.phone-foot {
+    display: none;
+}
+
+/* Wide windows export from the sidebar. */
+.mobile-export-container {
     display: none;
 }
 
@@ -8,9 +15,9 @@
     border-color: #4d95c4 !important;
 }
 
-/* Optional: If you want the icon inside to turn white/pop more when blue */
+/* The icon inside turns white on the blue. */
 .qa-btn.active-qa-btn .qa-icon-img {
-    filter: brightness(0) invert(1); 
+    filter: brightness(0) invert(1);
 }
 
 .qa-btn:disabled {
@@ -19,109 +26,147 @@
     box-shadow: none;
 }
 
-.flyout-btn {
-    margin-top: 5px;
+/* A tool's picture in the More list, the size the list's other icons are. */
+.qa-more-glyph {
+    display: flex;
+    flex: none;
+    align-items: center;
+    justify-content: center;
+    width: 24px;
+    height: 24px;
+}
+
+.qa-more-glyph .qa-icon-img,
+.qa-more-glyph svg {
+    width: 22px;
+    height: 22px;
+    object-fit: contain;
 }
 
 /* --- Mobile/Tablet Breakpoint --- */
 @media (max-width: 850px) {
-    /* Level with the search box: the floating menu button it once sat under is in the top bar now. The
-       gap is tight so the whole rail stays above a phone's lowered sheet (about 530 px of a 660 px
-       window). */
-    .mobile-quick-access-container {
+    /* The row the rail stands on, at the map's bottom right where a thumb reaches: undo and redo while there is
+       something to take back, and the button that hides and shows the tools. Level with the Layers button at the
+       left (MapStyleSwitcher.css), clear of the map's credit under it. */
+    .phone-foot {
+        display: flex;
+        align-items: center;
+        gap: var(--rail-gap, 6px);
+        position: absolute;
+        right: 12px;
+        bottom: calc(28px + env(safe-area-inset-bottom, 0px));
+        z-index: 1000;
+    }
+
+    /* The tools, in the order the app is used, growing up from that row: the latest step is nearest the thumb.
+       Its top is kept under the search bar by what it is given to draw (phoneFrame.js: railCapacity), which is why
+       its bottom is RAIL.foot there: 28 px, a button and 8 px. */
+    .phone-rail {
         display: flex;
         flex-direction: column;
-        align-items: flex-end; /* the labelled buttons reach left, over the map */
-        gap: 8px;
+        align-items: flex-end; /* a step said in words reaches left, over the map */
+        gap: var(--rail-gap, 6px);
         position: absolute;
-        right: 15px;
-        top: 15px;
+        right: 12px;
+        bottom: calc(28px + var(--rail-size, 48px) + 8px + env(safe-area-inset-bottom, 0px));
         z-index: 1000;
-        /* As wide as its widest button, so its empty corner lies over the search box's GO: only the
-           buttons take a tap. */
+        /* As wide as its widest row: only the buttons take a tap, the map has the rest. */
         pointer-events: none;
     }
 
-    .mobile-quick-access-container > * {
+    .phone-rail[hidden] {
+        display: none;
+    }
+
+    .phone-rail__row {
+        display: flex;
+        gap: var(--rail-gap, 6px);
+        justify-content: flex-end;
+        pointer-events: none;
+    }
+
+    .phone-rail__row > * {
         pointer-events: auto;
     }
 
     .qa-btn {
-        width: 50px;
-        height: 50px;
-        background: var(--glass); 
+        box-sizing: border-box;
+        width: var(--rail-size, 48px);
+        height: var(--rail-size, 48px);
+        flex: none;
+        margin: 0;
+        background: var(--glass);
         backdrop-filter: blur(4px);
+        -webkit-backdrop-filter: blur(4px);
         border: 1px solid var(--hairline-strong);
-        border-radius: 8px;
+        border-radius: 10px;
         display: flex;
         align-items: center;
         justify-content: center;
+        color: var(--ff-text-main);
+        font-family: inherit;
         cursor: pointer;
         box-shadow: 0 4px 8px rgba(0,0,0,0.4);
-        transition: all 0.2s ease;
+        transition: background 0.15s ease, border-color 0.15s ease, transform 0.1s ease;
         padding: 0;
+        /* A quick second press is a second press, never the browser zooming the page. */
+        touch-action: manipulation;
     }
 
-    .qa-btn:active {
+    .qa-btn:active:not(:disabled) {
         transform: scale(0.95);
         background: var(--surface-3);
     }
 
+    .qa-btn:focus-visible {
+        outline: 2px solid var(--ff-accent);
+        outline-offset: 2px;
+    }
+
     .qa-icon-img {
-        width: 28px;
-        height: 28px;
+        width: 26px;
+        height: 26px;
         object-fit: contain;
     }
 
-    .qa-btn svg {
-        width: 28px;
-        height: 28px;
+    .qa-btn > svg {
+        width: 24px;
+        height: 24px;
     }
 
-    /* Analyze and Draw LZ say what they do: they are the next step once a target is set. */
+    /* A step said in words: the next thing to do (Set Target, Analyze, Draw LZ), and the folded rail's own button. */
     .qa-btn.qa-pill {
         width: auto;
-        gap: 7px;
+        gap: 8px;
         padding: 0 14px;
-        color: var(--ff-text-main);
-        font-size: 0.9rem;
+        font-size: 0.92rem;
         font-weight: 700;
         white-space: nowrap;
     }
 
-    .qa-btn.qa-pill svg {
-        width: 18px;
-        height: 18px;
-    }
-
-    /* Without Sketch Route above it, the first button would sit beside the search box, which it is wider than. */
-    .qa-btn.qa-pill:first-child {
-        margin-top: 58px;
+    .qa-btn.qa-pill > svg {
+        width: 20px;
+        height: 20px;
     }
 
     .qa-btn.qa-pill--primary {
-        background: #3f6fa3; /* the redesign's primary fill: white on it is 5.2:1 */
+        background: var(--primary-fill, #3f6fa3); /* white on it is 5.2:1 */
         border-color: rgba(255, 255, 255, 0.28);
         color: #ffffff;
+    }
+
+    .qa-btn.qa-pill--primary:active:not(:disabled) {
+        background: #4a7db3;
     }
 
     .qa-btn.qa-pill--drawing {
         border-color: #FFC107;
         color: #FFC107;
     }
-}
 
-/* --- Mobile Export Controls (LZ card Capture / Export) --- */
-/* Wide windows export from the sidebar. */
-.mobile-export-container {
-    display: none;
-}
-
-@media (max-width: 850px) {
-    /* In the map, as the Layers button is (MapStyleSwitcher.css), so they end where the bottom sheet
-       begins: the map's bottom follows the sheet (Dock.jsx). Stacked above Layers (its 28 px offset and
-       64 px button, then 10 px), clear of the attribution at the bottom right and, as a column at the
-       left, of the rail on the right however wide its labelled buttons are. Under the Layers menu
+    /* The LZ card's Capture and Export. In the map, as the Layers button is (MapStyleSwitcher.css), so they end
+       where the bottom sheet begins: the map's bottom follows the sheet (Dock.jsx). Stacked above Layers (its 28 px
+       offset and 64 px button, then 10 px), at the left, clear of the rail at the right. Under the Layers menu
        (z-index 1000), which opens over them, and under the sheet while it moves. */
     .mobile-export-container {
         position: absolute;
@@ -138,6 +183,30 @@
         flex-direction: column; /* one width for both: the wider pill's */
         gap: 8px;
     }
+
+    /* The frame put away by a tap on the map (usePhoneFrame): everything over the map but the crosshair goes, and
+       comes back with the next tap. Not display: none, so it fades; hidden from a screen reader and the keyboard
+       all the same (visibility). */
+    .phone-rail,
+    .phone-foot,
+    .mobile-export-container,
+    .shell-map .map-style-switcher,
+    .shell-map .map-zoom,
+    .shell-map .packs-banner {
+        transition: opacity 0.18s ease, visibility 0s linear 0s;
+    }
+
+    .shell-map--bare .phone-rail,
+    .shell-map--bare .phone-foot,
+    .shell-map--bare .mobile-export-container,
+    .shell-map--bare .map-style-switcher,
+    .shell-map--bare .map-zoom,
+    .shell-map--bare .packs-banner {
+        opacity: 0;
+        visibility: hidden;
+        pointer-events: none;
+        transition: opacity 0.18s ease, visibility 0s linear 0.18s;
+    }
 }
 
 /* A phone on its side has a map too short for the column (it would reach the zoom buttons): a row
@@ -153,11 +222,24 @@
     }
 }
 
+@media (max-width: 850px) and (prefers-reduced-motion: reduce) {
+    .phone-rail,
+    .phone-foot,
+    .mobile-export-container,
+    .shell-map .map-style-switcher,
+    .shell-map .map-zoom,
+    .shell-map .packs-banner,
+    .qa-btn {
+        transition: none;
+    }
+}
+
 .mobile-pill-btn {
     display: flex;
     align-items: center;
     justify-content: center;
     gap: 6px;
+    min-height: 44px;
     padding: 10px 16px;
     border-radius: 30px; /* Makes them pill-shaped */
     border: none;
@@ -211,17 +293,4 @@
     cursor: not-allowed;
     opacity: 0.58;
     box-shadow: none;
-}
-
-.mobile-diagram-readiness {
-    max-width: 210px;
-    color: #d9e3ee;
-    background: rgba(14, 25, 43, 0.9);
-    border: 1px solid rgba(100, 210, 255, 0.28);
-    border-radius: 7px;
-    box-shadow: 0 3px 10px rgba(0, 0, 0, 0.28);
-    font-size: 0.72rem;
-    line-height: 1.3;
-    padding: 7px 9px;
-    text-align: right;
 }

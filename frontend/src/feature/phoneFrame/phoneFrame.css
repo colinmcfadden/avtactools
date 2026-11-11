@@ -1,0 +1,189 @@
+/*
+ * The phone's frame (850 px wide and below; the owner, 2026-11-11): the search is the top of the screen, across
+ * its whole width, with GO at its end and a menu button beside it; the rest of the top bar is a menu under it;
+ * and a crosshair marks the middle of the map that shows. The tools over the map are MobileQuickAccess.css's.
+ * A wide window has none of this: its top bar is shell.css's.
+ */
+
+.phone-bar,
+.phone-menu,
+.map-crosshair { display: none; }
+
+/* Said to a screen reader as the frame goes and comes back; never drawn. */
+.phone-frame__status {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+@media (max-width: 850px) {
+  /* Its room at the top of the window (56 px, in place of the top bar's 48) is kept by shell.css. */
+  .phone-bar {
+    position: absolute;
+    left: 0;
+    top: 0;
+    right: 0;
+    z-index: 1100;
+    box-sizing: border-box;
+    height: calc(56px + env(safe-area-inset-top, 0px));
+    padding: calc(6px + env(safe-area-inset-top, 0px)) calc(8px + env(safe-area-inset-right, 0px)) 6px calc(8px + env(safe-area-inset-left, 0px));
+    display: flex;
+    align-items: stretch;
+    gap: 6px;
+    background: rgba(18, 21, 25, 0.97);
+    border-bottom: 1px solid var(--hairline);
+    color: var(--ff-text-main);
+  }
+  /* Open, the search lies over what floats over the map, as the desktop's does (shell.css). */
+  .phone-bar:has(.topbar-spotlight--open) { z-index: 2450; }
+
+  .phone-bar__search { position: relative; flex: 1 1 auto; min-width: 0; height: 44px; }
+
+  /* The field: 44 px tall, its text 16 px (smaller, and iOS zooms the page as it takes the focus). */
+  .phone-bar .topbar-search {
+    height: 44px;
+    padding: 0 0 0 12px;
+    gap: 6px;
+    border-radius: 10px;
+    overflow: hidden; /* GO's corners are the field's */
+  }
+  .phone-bar .topbar-search__input { font-size: 16px; text-overflow: ellipsis; }
+  .phone-bar .topbar-search__input::placeholder { font-size: 15px; }
+  .phone-bar .topbar-search .target-field__share { width: 44px; height: 44px; margin-right: -4px; }
+  /* The share button is the open field's (and each row's): folded, or with nothing to share, the room is the
+     text's, so a whole grid can be read in the bar. */
+  .phone-bar .topbar-search .target-field__share:disabled,
+  .phone-bar .topbar-spotlight:not(.topbar-spotlight--open) .target-field__share { display: none; }
+
+  /* GO, fixed at the field's end, as tall and as wide as its place there. */
+  .phone-bar .topbar-search__go {
+    align-self: stretch;
+    width: 56px;
+    height: auto;
+    padding: 0;
+    border-radius: 0;
+    font-size: 15px;
+    letter-spacing: 0.08em;
+    touch-action: manipulation;
+  }
+  .phone-bar .topbar-search__go:active { background: #4a7db3; }
+
+  /* Open: over the menu button, across the screen (TopBarSearch's box), a little taller, its list under it. */
+  .phone-bar .topbar-spotlight--open { top: -3px; }
+  .phone-bar .topbar-spotlight--open .topbar-search { height: 52px; padding: 0 0 0 14px; gap: 6px; border-radius: 13px; }
+  .phone-bar .topbar-spotlight--open .topbar-search__input { font-size: 17px; }
+  .phone-bar .topbar-spotlight--open .topbar-search__input::placeholder { font-size: 15px; }
+  .phone-bar .topbar-spotlight--open .topbar-search .target-field__share { width: 44px; height: 44px; }
+  .phone-bar .topbar-spotlight--open .topbar-search__go { height: auto; padding: 0; border-radius: 0; font-size: 15px; }
+  .phone-bar .target-field__drop { left: 0; right: 0; width: auto; }
+  .phone-bar .topbar-spotlight--open .target-field__drop { top: calc(100% + 6px); }
+  .phone-bar .topbar-spotlight--open .target-field__option { min-height: 52px; padding: 8px 6px 8px 14px; }
+  .phone-bar .topbar-spotlight--open .target-field__message { padding: 10px 14px; }
+  .phone-bar .topbar-spotlight-scrim { inset: calc(56px + env(safe-area-inset-top, 0px)) 0 0 0; }
+
+  .phone-bar__menu {
+    position: relative;
+    flex: none;
+    box-sizing: border-box;
+    width: 44px;
+    height: 44px;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border: 1px solid var(--hairline-strong);
+    border-radius: 10px;
+    background: var(--surface-2);
+    color: var(--ff-text-main);
+    cursor: pointer;
+    touch-action: manipulation;
+  }
+  .phone-bar__menu[aria-expanded="true"] { background: var(--surface-3); border-color: var(--ff-accent); }
+  .phone-bar__menu:focus-visible { outline: 2px solid var(--ff-accent); outline-offset: 2px; }
+  /* A pack's state, where the bar's words are put away: green synced, amber on its way, grey offline or finished. */
+  .phone-bar__dot {
+    position: absolute;
+    top: 6px;
+    right: 6px;
+    width: 9px;
+    height: 9px;
+    border-radius: 5px;
+    background: var(--ff-success);
+    box-shadow: 0 0 0 2px var(--surface-2);
+  }
+  .phone-bar__dot--queued { background: #f0b429; }
+  .phone-bar__dot--offline,
+  .phone-bar__dot--finished { background: #6f7885; }
+
+  /* The rest of the top bar, as a menu under the search bar (TopBar's `phone`). Over the map's tools and the
+     sheet, under the search bar it drops from. It fades and does not slide: a menu opened from one of its
+     buttons is placed by where that button is. */
+  .phone-menu {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    position: absolute;
+    left: 0;
+    right: 0;
+    top: calc(56px + env(safe-area-inset-top, 0px));
+    z-index: 1090;
+    box-sizing: border-box;
+    padding: 10px calc(8px + env(safe-area-inset-right, 0px)) 10px calc(8px + env(safe-area-inset-left, 0px));
+    background: rgba(18, 21, 25, 0.98);
+    border-bottom: 1px solid var(--hairline-strong);
+    box-shadow: 0 14px 30px rgba(0, 0, 0, 0.5);
+    color: var(--ff-text-main);
+    font-size: 12px;
+    opacity: 0;
+    visibility: hidden;
+    transition: opacity 0.16s ease, visibility 0s linear 0.16s;
+  }
+  .phone-menu--open { opacity: 1; visibility: visible; transition: opacity 0.16s ease, visibility 0s linear 0s; }
+  .phone-menu--pack { border-bottom-color: rgba(168, 154, 230, 0.45); }
+  .phone-menu__row { display: flex; align-items: center; gap: 8px; min-width: 0; }
+  .phone-menu__row--status { padding: 0 2px; }
+  .phone-menu__row--actions { flex-wrap: wrap; }
+
+  /* Every button in it a finger's height, and its words back: there is room for them here. */
+  .phone-menu .shell-topbar__switcher,
+  .phone-menu .shell-topbar__button,
+  .phone-menu .shell-topbar__account { height: 44px; touch-action: manipulation; }
+  .phone-menu .shell-topbar__switcher { flex: 1 1 auto; min-width: 0; max-width: none; padding: 0 12px; }
+  .phone-menu .shell-topbar__switcher-name { flex: 1 1 auto; text-align: left; }
+  .phone-menu__kind { flex: none; font-size: 11px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: var(--ff-text-muted); }
+  .phone-menu .shell-topbar__account { flex: none; padding: 0 8px 0 6px; border-color: var(--hairline-strong); background: var(--surface-2); }
+  .phone-menu .shell-topbar__button { flex: 1 1 auto; justify-content: center; padding: 0 12px; font-size: 13px; }
+  .phone-menu .shell-topbar__button-label { display: inline; }
+  .phone-menu .shell-topbar__status { font-size: 12.5px; }
+
+  /* The crosshair: the middle of the map that shows, which is where Set Target puts the target. The map ends at the
+     sheet's top and starts under the search bar (shell.css), so its middle is the middle of what can be seen. Over
+     the map's own layers and under its markers and controls; it takes no touch, and is on no LZ card (it is beside
+     the map's element, not in it). */
+  .map-crosshair {
+    display: block;
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    width: 44px;
+    height: 44px;
+    margin: -22px 0 0 -22px;
+    z-index: 450;
+    pointer-events: none;
+    /* Dark under light, so it reads over imagery, the charts and the topographic map alike. */
+    filter: drop-shadow(0 0 1.5px rgba(0, 0, 0, 0.95)) drop-shadow(0 0 1px rgba(0, 0, 0, 0.9));
+  }
+  .map-crosshair svg { display: block; width: 100%; height: 100%; }
+  body.export-mode-active .map-crosshair { display: none; }
+}
+
+@media (max-width: 850px) and (prefers-reduced-motion: reduce) {
+  .phone-menu { transition: none; }
+}

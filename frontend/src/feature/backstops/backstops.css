@@ -70,3 +70,18 @@
   display: flex;
   gap: 6px;
 }
+
+/* On a phone the map's foot is its tools' (Layers, undo and redo, the rail): the bar goes to the top of the map,
+   beside the zoom buttons, under the search bar. */
+@media (max-width: 850px) {
+  .backstop-draw-bar {
+    left: 72px;
+    right: 12px;
+    top: 12px;
+    bottom: auto;
+    transform: none;
+    width: auto;
+    max-width: none;
+    box-sizing: border-box;
+  }
+}
