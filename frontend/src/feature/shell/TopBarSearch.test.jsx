@@ -1,6 +1,6 @@
 import React, { useState } from "react";
 import { fireEvent, render, screen } from "@testing-library/react";
-import TopBarSearch, { OPEN_WIDTH, openBox } from "./TopBarSearch";
+import TopBarSearch, { OPEN_WIDTH, PHONE_EDGE, openBox, spacedAsTyped } from "./TopBarSearch";
 
 const setup = () => {
   const onChoose = vi.fn();
@@ -128,5 +128,43 @@ describe("openBox", () => {
   it("is never wider than the window allows, nor narrower than the slot", () => {
     expect(openBox({ left: 200, width: 300 }, 600)).toEqual({ left: -184, width: 568 });
     expect(openBox({ left: 0, width: 900 }, 920)).toEqual({ left: 0, width: 900 });
+  });
+  // The slot ends at the menu button (8 + 309 + 6 + 44 + 8 = 375): open, the field lies over it.
+  it("takes a phone's whole width but its 8 px edge, over the menu button beside it", () => {
+    expect(openBox({ left: 8, width: 309 }, 375, PHONE_EDGE)).toEqual({ left: 0, width: 359 });
+  });
+});
+
+// The phone's search (PhoneBar): the same field, across the top of the screen.
+describe("TopBarSearch on a phone", () => {
+  const phone = (props = {}) => {
+    const Harness = () => {
+      const [value, setValue] = useState("");
+      return <TopBarSearch value={value} onChange={setValue} onChoose={() => {}} onShare={() => {}} phone {...props} />;
+    };
+    render(<Harness />);
+    return screen.getByRole("combobox");
+  };
+
+  it("says what it takes in few words, and keeps the whole sentence as its name", () => {
+    const input = phone({ searchPlaces: async () => ({ places: [] }) });
+    expect(input).toHaveAttribute("placeholder", "Grid, lat/long or place");
+    expect(input).toHaveAccessibleName("Search by grid, lat/long or place");
+  });
+
+  it("opens as the desktop's does, and spaces a grid as it is typed", () => {
+    const input = phone();
+    fireEvent.focus(input);
+    expect(document.querySelector(".topbar-spotlight")).toHaveClass("topbar-spotlight--open");
+    fireEvent.change(input, { target: { value: "16SGC2886455349" } });
+    expect(input).toHaveValue("16S GC 28864 55349");
+  });
+
+  it("leaves a place's name, and a local point's, as typed", () => {
+    expect(spacedAsTyped("16sgc2886455349")).toBe("16S GC 28864 55349");
+    expect(spacedAsTyped("dobbins", { places: true })).toBe("dobbins");
+    expect(spacedAsTyped(".cp1", { localPoints: true })).toBe(".cp1");
+    // A grid starts with its zone's digits, whatever else can be searched.
+    expect(spacedAsTyped("16sgc2886455349", { places: true, localPoints: true })).toBe("16S GC 28864 55349");
   });
 });

@@ -57,6 +57,13 @@ const textWidth = (text, input) => {
     return null;
   }
 };
+/** What a narrow field's placeholder says: the first three things it takes, with no "Search by" (its icon says that). */
+export const terseSearchWords = (what) => {
+  const few = what.slice(0, 3);
+  const words = `${few.slice(0, -1).join(", ")} or ${few.at(-1)}`;
+  return words.charAt(0).toUpperCase() + words.slice(1);
+};
+
 const TargetField = ({
   value,
   onChange,
@@ -76,10 +83,14 @@ const TargetField = ({
   inputProps = {},
   // Drawn in the row before the input (a search icon).
   leading = null,
+  // A narrow field (a phone's): the placeholder says what it takes in as few words as it can. The field's name, for a
+  // screen reader, is still the whole sentence.
+  terse = false,
 }) => {
   const searchWhat = ["grid", "lat/long", ...(searchPlaces ? ["place"] : []), ...(localPoints?.length ? ["local point"] : [])];
   const searchWords = `Search by ${searchWhat.slice(0, -1).join(", ")} or ${searchWhat.at(-1)}`;
   const narrowWords = placeholder ?? searchWords;
+  const terseWords = terse ? terseSearchWords(searchWhat) : null;
   const wideWords = widePlaceholder ?? (searchPlaces
     ? `${searchWords}, e.g. 16S GC 28864 55349, 34.54, -84.12 or DZJ`
     : `${searchWords}, e.g. 16S GC 28864 55349 or 34.54, -84.12`);
@@ -279,7 +290,7 @@ const TargetField = ({
           {...inputProps}
           ref={inputRef}
           className={inputClassName}
-          placeholder={wide && wideWords ? wideWords : narrowWords}
+          placeholder={wide && wideWords ? wideWords : terseWords ?? narrowWords}
           autoFocus={autoFocus}
           autoComplete="off"
           spellCheck={false}

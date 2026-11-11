@@ -28,15 +28,16 @@ const KINDS = ["minor", "major", "zone"];
 const WEIGHTS = { minor: 1, major: 1.75, zone: 2.5 }; // drawn widths are set in mgrsGrid.css
 
 // Map overlays the labels keep clear of: Leaflet's own controls, and what the app floats over
-// the map beside it (the unit badge, the base map picker, a finished pack's banner, the phone
-// layout's search and buttons, and a brief's sandtable: its constants and script card).
+// the map beside it (the zoom buttons, the base map picker, a finished pack's banner, a phone's
+// tools, and a brief's sandtable: its constants and script card).
 const OVERLAYS_INSIDE = ".leaflet-control";
 const OVERLAYS_BESIDE = [
-  ".unit-badge",
+  ".map-zoom",
   ".map-style-switcher",
   ".packs-banner",
-  ".mobile-top-search-container",
-  ".mobile-quick-access-container",
+  ".phone-rail__row > *",
+  ".phone-foot",
+  ".mobile-export-container",
   ".sandtable-constants",
   ".sandtable-card",
 ].join(", ");

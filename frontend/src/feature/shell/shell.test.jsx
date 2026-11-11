@@ -148,6 +148,75 @@ describe("the top bar's workspace switcher", () => {
   });
 });
 
+// On a phone the search is the top of the screen and the rest of the bar a menu under it (feature/phoneFrame).
+describe("the top bar as a phone's menu", () => {
+  const menu = (props = {}) =>
+    render(
+      <TopBar
+        user={{ name: "Dev Pilot", email: "pilot@example.mil" }}
+        renderSwitcher={() => null}
+        searchSlot={null}
+        phone={{ open: true, onDone: () => {} }}
+        {...props}
+      />,
+    );
+
+  it("holds the workspace, the planning tools, Import, the Library and the account, each by name", () => {
+    menu({ onOpenMenu: () => {} });
+    const region = screen.getByRole("region", { name: "Menu" });
+    expect(region).toHaveAttribute("id", "phone-menu");
+    expect(region).not.toHaveAttribute("inert");
+    for (const name of [/Change workspace/, "Account: Dev Pilot", "Planning tools", /Import/, "Library"]) {
+      expect(within(region).getByRole("button", { name })).toBeInTheDocument();
+    }
+    // The map's own undo and redo are on the map on a phone, and the search is above.
+    expect(within(region).queryByRole("button", { name: /Undo|Redo/ })).toBeNull();
+    expect(document.querySelector(".shell-topbar")).toBeNull();
+  });
+
+  it("is out of reach while it is closed, and still there for a menu opened from elsewhere to find its button", () => {
+    menu({ phone: { open: false, onDone: () => {} } });
+    const region = document.getElementById("phone-menu");
+    expect(region).toHaveAttribute("inert");
+    expect(region).not.toHaveClass("phone-menu--open");
+    expect(region.querySelector(".shell-topbar__switcher")).not.toBeNull();
+  });
+
+  it("closes once something in it is chosen", () => {
+    const onDone = vi.fn();
+    const onOpenLibrary = vi.fn();
+    const onOpenMenu = vi.fn();
+    const onImport = vi.fn();
+    menu({ phone: { open: true, onDone }, onOpenLibrary, onOpenMenu, onImport });
+    fireEvent.click(screen.getByRole("button", { name: "Library" }));
+    expect(onOpenLibrary).toHaveBeenCalledTimes(1);
+    fireEvent.click(screen.getByRole("button", { name: "Planning tools" }));
+    expect(onOpenMenu).toHaveBeenCalledTimes(1);
+    expect(onDone).toHaveBeenCalledTimes(2);
+    // A menu opened from it leaves it open until one of its items is chosen.
+    fireEvent.click(screen.getByRole("button", { name: /Import/ }));
+    expect(onDone).toHaveBeenCalledTimes(2);
+    fireEvent.click(screen.getByRole("menuitem", { name: /Mission file/ }));
+    expect(onImport).toHaveBeenCalledWith("msnx");
+    expect(onDone).toHaveBeenCalledTimes(3);
+  });
+
+  it("says how a Mission Pack stands, in words", () => {
+    menu({ pack: { name: "OP DK", status: "active" }, packStatus: "sending", people: [{ id: 2, name: "Sam B." }] });
+    const region = screen.getByRole("region", { name: "Menu" });
+    expect(within(region).getByText("Saving changes…")).toBeInTheDocument();
+    expect(region).toHaveClass("phone-menu--pack");
+  });
+
+  it("leaves the wide window's bar as it was", () => {
+    render(<TopBar user={{ name: "Dev Pilot" }} renderSwitcher={() => null} undo={{ canUndo: false, canRedo: false, undoTitle: "Nothing to undo", redoTitle: "Nothing to redo" }} />);
+    expect(document.querySelector(".shell-topbar")).not.toBeNull();
+    expect(document.getElementById("phone-menu")).toBeNull();
+    expect(screen.getByRole("button", { name: "Nothing to undo" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Planning tools" })).toBeNull();
+  });
+});
+
 describe("an imported mission's card in the Routes panel", () => {
   const mission = {
     key: "msnxfile-1",

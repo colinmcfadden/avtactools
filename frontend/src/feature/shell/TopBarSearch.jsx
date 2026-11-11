@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import TargetField from "../../components/TargetField";
+import { formatMGRS } from "../../utils/Helpers";
 import Icon from "../ui/Icon";
 
 /*
@@ -7,34 +8,49 @@ import Icon from "../ui/Icon";
  * it grows out of its place in the bar into a larger field over the map, with its list under it, and the map dims a
  * little behind it. It folds back into the bar when the focus leaves it, on Escape (once the list is closed), and once
  * a place is chosen or shared. The bar keeps its room, so nothing beside it moves.
+ *
+ * On a phone (`phone`) it is the top of the screen (PhoneBar): it opens the same way, across the whole width and over
+ * the menu button beside it, and a grid is spaced as it is typed.
  */
 
 // How wide it grows when it opens, and how far it keeps from the window's edges.
 export const OPEN_WIDTH = 760;
 const EDGE = 16;
+// A phone has no width to spare: the open field takes all of it but this.
+export const PHONE_EDGE = 8;
 
 /**
  * Where the open field goes, as `left` (from the slot's own left) and `width`: as wide as OPEN_WIDTH or the window
- * allows (never narrower than the slot), centred on the slot, and kept inside the window.
+ * allows (never narrower than the slot), centred on the slot, and kept `edge` inside the window.
  */
-export const openBox = (slot, viewportWidth) => {
-  const width = Math.max(slot.width, Math.min(OPEN_WIDTH, viewportWidth - 2 * EDGE));
+export const openBox = (slot, viewportWidth, edge = EDGE) => {
+  const width = Math.max(slot.width, Math.min(OPEN_WIDTH, viewportWidth - 2 * edge));
   // A window with no room to grow: it stays where it is.
   if (width <= slot.width) return { left: 0, width: Math.round(slot.width) };
   const centre = slot.left + slot.width / 2;
-  const left = Math.max(EDGE, Math.min(centre - width / 2, viewportWidth - EDGE - width));
+  const left = Math.max(edge, Math.min(centre - width / 2, viewportWidth - edge - width));
   return { left: Math.round(left - slot.left), width: Math.round(width) };
 };
 
-const TopBarSearch = ({ value, onChange, onChoose, onShare, near, searchPlaces = null, localPoints = null, onSearchStart }) => {
+/**
+ * What a phone's field holds for what was typed: a grid spaced as it is typed (a phone's keyboard makes the spaces a
+ * chore). Text that starts with a letter is a place's name (no grid does) and is left as typed; so is a local point's,
+ * which can also start with a dot (.CP1).
+ */
+export const spacedAsTyped = (text, { places = false, localPoints = false } = {}) => {
+  const name = localPoints ? /^\s*[.\p{L}]/u : places ? /^\s*\p{L}/u : null;
+  return name?.test(text) ? text : formatMGRS(text);
+};
+
+const TopBarSearch = ({ value, onChange, onChoose, onShare, near, searchPlaces = null, localPoints = null, onSearchStart, phone = false }) => {
   const slotRef = useRef(null);
   const [open, setOpen] = useState(false);
   const [box, setBox] = useState(null);
 
   const measure = useCallback(() => {
     const slot = slotRef.current?.getBoundingClientRect();
-    if (slot) setBox(openBox(slot, window.innerWidth));
-  }, []);
+    if (slot) setBox(openBox(slot, window.innerWidth, phone ? PHONE_EDGE : EDGE));
+  }, [phone]);
 
   // Measured as it opens, in the same render, so it grows from where it is to where it goes.
   const expand = useCallback(() => {
@@ -84,7 +100,7 @@ const TopBarSearch = ({ value, onChange, onChoose, onShare, near, searchPlaces =
         <TargetField
           value={value}
           onChange={(next) => {
-            onChange(next);
+            onChange(phone ? spacedAsTyped(next, { places: Boolean(searchPlaces), localPoints: Boolean(localPoints?.length) }) : next);
             // Typing again in a field folded by Escape or a choice opens it again.
             if (!open) expand();
           }}
@@ -99,8 +115,20 @@ const TopBarSearch = ({ value, onChange, onChoose, onShare, near, searchPlaces =
           near={near}
           searchPlaces={searchPlaces}
           localPoints={localPoints}
-          inputProps={{ onFocus: onSearchStart }}
-          leading={<Icon name="search" size={16} className="topbar-search__lead" />}
+          inputProps={
+            phone
+              ? {
+                  type: "text",
+                  // What is there is typed over: the last search's grid is rarely the start of the next.
+                  onFocus: (event) => {
+                    event.target.select();
+                    onSearchStart?.();
+                  },
+                }
+              : { onFocus: onSearchStart }
+          }
+          terse={phone}
+          leading={<Icon name="search" size={phone ? 18 : 16} className="topbar-search__lead" />}
           rowClassName="topbar-search"
           inputClassName="topbar-search__input"
           buttonClassName="topbar-search__go"
