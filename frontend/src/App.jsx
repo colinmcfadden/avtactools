@@ -565,6 +565,7 @@ function App() {
     updatePointPosition,
     insertPoint,
     removeRoute,
+    setRouteColor,
     exportFile,
     serializeFile,
     toggleRouteVisibility,
@@ -616,6 +617,10 @@ function App() {
     removeRouteSet,
     removeSketchRoute,
     toggleSketchVisibility,
+    setSketchRouteColor,
+    combineSketchRoutes,
+    moveSketchRoute,
+    newRouteSet,
     exportSketches,
     updateRoutePlan,
     updatePointPlanOverride,
@@ -668,8 +673,18 @@ function App() {
 
   // The route sets in this session: the sketched routes, each saved set opened beside them, then each
   // imported mission file.
+  // The set this session's new sketches go into (null: its own sketches), once there is more than one to choose from.
+  const [sketchTarget, setSketchTarget] = useState(null);
+  const sketchTargetId = sketchSets.some((set) => set.setId === sketchTarget) ? sketchTarget : null;
   const routeSets = useMemo(() => {
-    const sets = setsWithFlots(sketchSets, flotTools.flots, isOpenedSetId).map(({ setId, routes, flots }) => ({ key: setId ?? SKETCHES, kind: "sketch", routes, flots }));
+    const sketched = setsWithFlots(sketchSets, flotTools.flots, isOpenedSetId);
+    const sets = sketched.map(({ setId, routes, flots }) => ({
+      key: setId ?? SKETCHES,
+      kind: "sketch",
+      routes,
+      flots,
+      target: sketched.length > 1 && (setId ?? null) === sketchTargetId,
+    }));
     const byFile = new Map();
     importedRoutes.forEach((route) => {
       if (!byFile.has(route.fileId)) {
@@ -680,7 +695,7 @@ function App() {
       byFile.get(route.fileId).routes.push(route);
     });
     return sets;
-  }, [importedRoutes, sketchSets, flotTools.flots]);
+  }, [importedRoutes, sketchSets, flotTools.flots, sketchTargetId]);
 
   const routeSaves = useRouteSaves({
     sets: routeSets,
@@ -877,7 +892,7 @@ function App() {
             finishSketch(label, packs.packRoutes.setIdOf(target));
           }
         } else {
-          finishSketch(label);
+          finishSketch(label, sketchTargetId);
         }
         setNameAsk(null);
       },
@@ -909,8 +924,75 @@ function App() {
     flotTools.setFlotsOf(set.key === SKETCHES ? null : set.key, []);
   };
   const closeRouteSet = (set) => {
-    if (routeSaves.stateOf(set.key).dirty) setClosingSet(set);
+    // A set with nothing in it has nothing to lose.
+    const holdsSomething = set.routes.length > 0 || set.flots?.length > 0;
+    if (holdsSomething && routeSaves.stateOf(set.key).dirty) setClosingSet(set);
     else dropRouteSet(set);
+  };
+
+  // -- Arranging routes: a new set, a route moved to another set, two routes made one, a route's colour --
+  /** The id the sketch files a set's routes under (useRouteSketch's `setId`). */
+  const setIdOfRouteSet = (set) => (set.pack ? packs.packRoutes.setIdOf(set.key) : set.key === SKETCHES ? null : set.key);
+  const PACK_REFUSED = "The pack did not take the new set.";
+
+  /** A new, empty route set, which new sketches then go into. Asks its name first. */
+  const askNewRouteSet = (suggested) => {
+    setNameAsk({
+      title: "New route set",
+      subtitle: "Routes you sketch next go into it. You can also move routes here from another set.",
+      icon: "route",
+      initialName: suggested,
+      confirmLabel: "Make the set",
+      upperCase: true,
+      onConfirm: (name) => {
+        if (inPack) {
+          const uuid = packs.packRoutes.createItem(name);
+          if (!uuid) throw new Error(PACK_REFUSED);
+          setPackRouteTarget(uuid);
+        } else {
+          const setId = newRouteSet();
+          routeSaves.rename(setId, name);
+          setSketchTarget(setId);
+        }
+        setNameAsk(null);
+      },
+    });
+  };
+
+  /** `destination`: `{ key }` for a set that is here, `{ newName }` for one made now. */
+  const moveRouteToSet = (from, routeId, destination) => {
+    const route = from.routes.find((r) => r.id === routeId);
+    if (!route) return;
+    let toSetId;
+    let toName;
+    if (destination.newName) {
+      toName = destination.newName;
+      if (inPack) {
+        const uuid = packs.packRoutes.createItem(toName);
+        if (!uuid) {
+          toast({ tone: "error", message: PACK_REFUSED });
+          return;
+        }
+        toSetId = packs.packRoutes.setIdOf(uuid);
+      } else {
+        toSetId = newRouteSet();
+        routeSaves.rename(toSetId, toName);
+      }
+    } else {
+      const to = routePanelSets.find((set) => set.key === destination.key);
+      if (!to || to.kind === "mission") return;
+      toSetId = setIdOfRouteSet(to);
+      toName = routePanelState(to.key).name;
+    }
+    moveSketchRoute(routeId, toSetId, setIdOfRouteSet(from));
+    toast({ message: `Moved ${route.name} to ${toName}.` });
+  };
+
+  const combineRoutesOfSet = (set, firstId, secondId) => {
+    const first = set.routes.find((r) => r.id === firstId);
+    const second = set.routes.find((r) => r.id === secondId);
+    if (!first || !second) return;
+    if (combineSketchRoutes(firstId, secondId)) toast({ message: `Added ${second.name} to the end of ${first.name}.` });
   };
 
   const handleAddThreatHere = () => {
@@ -2155,12 +2237,20 @@ function App() {
                 saveAs: (set) => (set.pack ? set.item && packs.actions.saveCopy(set.item) : routeSaves.saveAs(set.key)),
                 rename: (set, name) => (set.pack ? packs.packRoutes.renameSet(set.key, name) : routeSaves.rename(set.key, name)),
                 close: (set) => (set.pack ? set.item && packs.actions.close(set.item) : closeRouteSet(set)),
-                sketchInto: inPack
-                  ? (set) => {
-                      setPackRouteTarget(set.key);
-                      if (!isSketching) beginRouteSketch();
+                sketchInto: (set) => {
+                  if (set.pack) setPackRouteTarget(set.key);
+                  else setSketchTarget(set.key === SKETCHES ? null : set.key);
+                  if (!isSketching) beginRouteSketch();
+                },
+                // Arranging routes is editing them: none of it in a read-only pack, or without the routes feature.
+                ...(feat.routes && editable
+                  ? {
+                      newSet: askNewRouteSet,
+                      moveRoute: moveRouteToSet,
+                      combineRoutes: combineRoutesOfSet,
+                      recolor: (set, id, color) => (set.kind === "mission" ? setRouteColor(id, color) : setSketchRouteColor(id, color)),
                     }
-                  : undefined,
+                  : {}),
                 addToPack:
                   feat.mission_packs && !inPack ? (set, link) => link && packs.addToPack("route", { id: link.id, name: link.name }) : undefined,
                 export: (set, { withThreats }) => exportRouteSet(set, withThreats),

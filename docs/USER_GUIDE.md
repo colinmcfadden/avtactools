@@ -134,9 +134,31 @@ Routes are listed in the dock's **Routes** panel, one card per *route set*: the 
 - **Save** — the first time, asks for a name; after that it saves without asking. The card says *Not saved yet*, *Unsaved changes* or *Saved · 14:02*.
 - **Export .msnx** — sketched routes export as a new mission file; an imported file re-exports with your edits. Tick **Include threats as a .ths file** to get the threats beside it.
 - On each route: the **arrow** opens its plan (date, temperature, fuel flow, and the altitude, speed and wind *to* each point; **Get winds** and **Get elevations** fill them in), the **paper plane** sends it to ForeFlight, the **eye** hides it, and **⋯** removes it.
+- The **coloured dot** beside a route's name changes its colour.
+- **⋯** on a route also has **Combine with…** and **Move to another set…** (below).
 - Beside the set's name: the **pencil** renames it, and the **paper plane** sends the whole set to ForeFlight (below).
-- **⋯** on a set: **Send to ForeFlight**, **Save as…** (a copy under a new name) and **Close** (asks first if there are unsaved changes).
-- **Sketch a route** and **Import .msnx** are at the foot of the panel.
+- **⋯** on a set: **Send to ForeFlight**, **Sketch a route into this set**, **Save as…** (a copy under a new name) and **Close** (asks first if there are unsaved changes).
+- **Sketch a route**, **Import .msnx**, **New route set** and **Draw FLOT** are at the foot of the panel.
+
+### Arranging routes: sets, moving, combining and colours
+
+| A route's menu | Its colours |
+|---|---|
+| ![A route's menu](images/28-route-menu.jpg) | ![The colours a route can take](images/29-route-colours.jpg) |
+
+- **New route set**, at the foot of the panel, makes an empty set under the name you give it. The routes you sketch next go into it, and its card says so. To sketch into another set, use that set's **⋯** → **Sketch a route into this set**. A set with no routes yet cannot be saved.
+- **Move to another set…**, in a route's **⋯**, moves the route to another of your sets, or to a new one you name there. It keeps its points, its plan and its colour.
+
+  ![Moving a route](images/30-route-move.jpg)
+
+- **Combine with…**, in a route's **⋯**, joins another route of the same set onto the end of this one. The one route keeps this route's name and colour, and the other is no longer a route of its own. The route that begins where this one ends is offered first, and where the two meet on the same point, that point is kept once.
+
+  ![Combining two routes](images/31-route-combine.jpg)
+
+  Every point keeps its type and name, so look at the points where the two were joined: a target in the middle of the longer route is probably not what you want, and its type is changed in the plan as for any point. The plan is this route's; the legs that came from the other route keep the altitude, speed and wind they were planned with. To join routes of two sets, move one first. To put the other route first, start from that route.
+- **Colour**: click the dot beside a route's name, or **⋯** → **Colour…**, and pick one of twelve.
+
+Each of these is one **Undo**. In a Mission Pack they are shared like any other change and appear in the pack's history. The routes of an imported `.msnx` can change colour but cannot be moved or combined: which routes a mission has is its file's.
 
 ### Sending routes to ForeFlight and other apps
 

@@ -52,6 +52,27 @@ export const describeRouteChange = (before, after, { name, actor }) => {
   const phrases = [];
   const was = byId(before?.routes);
   const now = byId(after?.routes);
+  // A route that is gone, with its points now another route's, was not removed: it was joined onto
+  // that route (routeSetOps.combineRoutes), all of its points or all but the first, where the two met.
+  const taken = new Map(); // the route that grew -> { route: the one joined onto it, points: the ids that came over }
+  const joined = new Set(); // the routes joined onto another
+  was.forEach((gone, goneId) => {
+    if (now.has(goneId)) return;
+    const goneIds = [...byId(gone.points).keys()];
+    if (goneIds.length === 0) return;
+    for (const [id, route] of now) {
+      const old = was.get(id);
+      if (!old || taken.has(id)) continue;
+      const oldPoints = byId(old.points);
+      const newPoints = byId(route.points);
+      const carried = goneIds.filter((pointId) => newPoints.has(pointId) && !oldPoints.has(pointId));
+      if (carried.length > 0 && carried.length >= goneIds.length - 1) {
+        taken.set(id, { route: gone, points: new Set(carried) });
+        joined.add(goneId);
+        break;
+      }
+    }
+  });
   now.forEach((route, id) => {
     const label = route.name || "a route";
     const old = was.get(id);
@@ -59,13 +80,17 @@ export const describeRouteChange = (before, after, { name, actor }) => {
       phrases.push(`added the route ${label} to ${set}`);
       return;
     }
+    const onto = taken.get(id);
+    if (onto) phrases.push(`combined ${onto.route.name ? `the route ${onto.route.name}` : "a route"} into ${label}`);
     if (old.name !== route.name) phrases.push(old.name ? `renamed the route ${old.name} to ${label}` : `named a route ${label}`);
+    if (old.color !== route.color) phrases.push(`changed the colour of ${label}`);
     const oldPoints = byId(old.points);
     const newPoints = byId(route.points);
     newPoints.forEach((point, pointId) => {
       const previous = oldPoints.get(pointId);
-      if (!previous) phrases.push(`added ${pointName(point)} to ${label}`);
-      else if (previous.lat !== point.lat || previous.lon !== point.lon) phrases.push(`moved ${pointName(point)} on ${label}`);
+      if (!previous) {
+        if (!onto?.points.has(pointId)) phrases.push(`added ${pointName(point)} to ${label}`);
+      } else if (previous.lat !== point.lat || previous.lon !== point.lon) phrases.push(`moved ${pointName(point)} on ${label}`);
       else if (!sameData(previous, point)) phrases.push(`changed ${pointName(point)} on ${label}`);
     });
     oldPoints.forEach((point, pointId) => {
@@ -75,7 +100,7 @@ export const describeRouteChange = (before, after, { name, actor }) => {
     if (!sameData(old.elevations, route.elevations)) phrases.push(`updated the ground elevations of ${label}`);
   });
   was.forEach((route, id) => {
-    if (!now.has(id)) phrases.push(route.name ? `removed the route ${route.name} from ${set}` : `removed a route from ${set}`);
+    if (!now.has(id) && !joined.has(id)) phrases.push(route.name ? `removed the route ${route.name} from ${set}` : `removed a route from ${set}`);
   });
   const flotsBefore = byId(before?.flots);
   const flotsAfter = byId(after?.flots);

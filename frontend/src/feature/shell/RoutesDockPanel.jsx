@@ -1,15 +1,18 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { exportableRoutes } from "../msnxImport/foreflight";
 import RoutePlanSection from "../msnxImport/RoutePlanSection";
+import { ROUTE_COLOR_CHOICES, routeColorName } from "../msnxImport/routeSetOps";
 import { formatDuration } from "../msnxImport/routeCalc";
 import { flotLengthKm } from "../flot/flots";
 import { defaultSetName, routeTotals, setSummary } from "../saveDialog/useRouteSaves";
 import Avatar, { shortName } from "../ui/Avatar";
 import Chip from "../ui/Chip";
 import Icon from "../ui/Icon";
+import Menu, { useMenu } from "../ui/Menu";
 import MoreMenu from "../ui/MoreMenu";
 import { whenShort } from "../ui/time";
 import { PanelHead, PanelSection } from "./Dock";
+import { CombineRoutesDialog, MoveRouteDialog } from "./RouteSetDialogs";
 import "./shell.css";
 
 /*
@@ -20,13 +23,26 @@ import "./shell.css";
  *
  * A route is sent to ForeFlight from its row, and a whole set from its title row, beside the pencil:
  * the same export screen for both. Sending changes nothing, so both stay in a read-only pack.
+ *
+ * A route's colour is changed from its dot; from its menu it is joined onto another route of its set
+ * (Combine with…) or moved to another set, or a new one (Move to another set…). New route set, at the
+ * foot, makes an empty set that the next sketches go into. None of these in a read-only pack, and an
+ * imported mission's routes only change colour: which routes it has is its file's.
  */
 
-const RouteRow = ({ route, expanded, onToggle, onShare, onToggleVisibility, onRemove, readOnly }) => {
-  const totals = useMemo(() => routeTotals(route), [route]);
-  const meta = totals
+const routeMeta = (route) => {
+  const totals = routeTotals(route);
+  return totals
     ? `${totals.distNm.toFixed(1)} nm · ${formatDuration(totals.timeSec)}${totals.fuelLb != null ? ` · ${Math.round(totals.fuelLb)} lb` : ""}`
     : `${route.points?.length ?? 0} points`;
+};
+
+const sameColor = (a, b) => String(a ?? "").toLowerCase() === String(b ?? "").toLowerCase();
+
+const RouteRow = ({ route, expanded, onToggle, onShare, onToggleVisibility, onRemove, onColor, onCombine, onMove, readOnly }) => {
+  const meta = useMemo(() => routeMeta(route), [route]);
+  const colors = useMenu();
+  const colorName = routeColorName(route.color);
   const hidden = route.visible === false;
   return (
     <div className={`shell-route${hidden ? " shell-route--hidden" : ""}`}>
@@ -39,7 +55,40 @@ const RouteRow = ({ route, expanded, onToggle, onShare, onToggleVisibility, onRe
       >
         <Icon name={expanded ? "chevronDown" : "chevronRight"} size={15} />
       </button>
-      <span className="shell-route__swatch" style={{ background: route.color }} />
+      {onColor ? (
+        <>
+          <button
+            type="button"
+            className="ui-btn ui-btn--ghost ui-btn--26 ui-btn--square shell-route__color"
+            aria-label={`Colour of ${route.name}${colorName ? `: ${colorName}` : ""}. Change it`}
+            {...colors.buttonProps}
+          >
+            <span className="shell-route__swatch" style={{ background: route.color }} />
+          </button>
+          <Menu open={colors.open} onClose={colors.close} anchorRef={colors.anchorRef} label={`Colour of ${route.name}`} width={172}>
+            <div className="shell-swatches">
+              {ROUTE_COLOR_CHOICES.map((choice) => (
+                <button
+                  key={choice.color}
+                  type="button"
+                  role="menuitemradio"
+                  aria-checked={sameColor(choice.color, route.color)}
+                  aria-label={choice.name}
+                  title={choice.name}
+                  className="shell-swatch"
+                  style={{ background: choice.color }}
+                  onClick={() => {
+                    colors.close();
+                    onColor(route.id, choice.color);
+                  }}
+                />
+              ))}
+            </div>
+          </Menu>
+        </>
+      ) : (
+        <span className="shell-route__swatch" style={{ background: route.color }} />
+      )}
       <div className="shell-route__main">
         <div className="shell-route__name">{route.name}</div>
         <div className="shell-route__meta">{meta}</div>
@@ -62,6 +111,10 @@ const RouteRow = ({ route, expanded, onToggle, onShare, onToggleVisibility, onRe
         label={`More actions for ${route.name}`}
         items={[
           { icon: "send", title: "Send to ForeFlight", onSelect: () => onShare?.(route), hidden: !onShare },
+          { icon: "dot", title: "Colour…", onSelect: colors.toggle, hidden: !onColor },
+          { icon: "route", title: "Combine with…", onSelect: () => onCombine?.(route), hidden: !onCombine },
+          { icon: "layers", title: "Move to another set…", onSelect: () => onMove?.(route), hidden: !onMove },
+          { divider: true },
           { icon: "trash", title: "Remove route", danger: true, onSelect: () => onRemove(route.id), hidden: readOnly || !onRemove },
         ]}
       />
@@ -100,13 +153,18 @@ const stateChip = (set, state) => {
   return <Chip tone="ok" icon="check">{state.savedAt ? `Saved · ${whenShort(state.savedAt)}` : "Saved"}</Chip>;
 };
 
-const SetCard = ({ set, state, threatCount, expanded, onToggleRoute, actions, plan, localPointNames, pointSearch }) => {
+const SetCard = ({ set, state, threatCount, expanded, onToggleRoute, actions, plan, localPointNames, pointSearch, canChooseForSketches, onAsk }) => {
   const [withThreats, setWithThreats] = useState(true);
   const [renaming, setRenaming] = useState(false);
   const [draft, setDraft] = useState("");
   const [saidWhy, setSaidWhy] = useState(false);
   const readOnly = Boolean(set.pack?.finished);
   const clean = !set.pack && state.link && !state.dirty;
+  // A mission's routes are its file's: none joins, leaves or arrives. Their colours are this app's.
+  const sketched = set.kind !== "mission";
+  const empty = set.routes.length === 0 && !(set.flots?.length > 0);
+  // Where the next sketched route goes: the pack's own say, or this session's with more than one set to choose from.
+  const target = set.pack ? set.pack.target : Boolean(set.target);
   const name = state.name;
   // An imported mission goes by its file ("GOAT SUCKER.msnx") until it is given a name of its own.
   const byFile = set.kind === "mission" && !set.pack && Boolean(set.fileName) && name === defaultSetName(set);
@@ -188,7 +246,7 @@ const SetCard = ({ set, state, threatCount, expanded, onToggleRoute, actions, pl
               hidden: !actions.shareSet,
               disabled: Boolean(sendOff),
             },
-            { icon: "route", title: "Sketch a route into this set", onSelect: () => actions.sketchInto?.(set), hidden: !set.pack || readOnly || !actions.sketchInto },
+            { icon: "route", title: "Sketch a route into this set", onSelect: () => actions.sketchInto?.(set), hidden: readOnly || !sketched || !actions.sketchInto || !(set.pack || canChooseForSketches) },
             { icon: "copy", title: set.pack ? "Save a copy to Library…" : "Save as…", onSelect: () => actions.saveAs(set) },
             { icon: "layers", title: "Add to Mission Pack…", onSelect: () => actions.addToPack?.(set, state.link), hidden: Boolean(set.pack) || !actions.addToPack || set.kind === "mission", disabled: !state.link, text: state.link ? undefined : "Save it first" },
             { divider: true },
@@ -207,9 +265,9 @@ const SetCard = ({ set, state, threatCount, expanded, onToggleRoute, actions, pl
         {stateChip(set, state)}
         <span className="shell-card__meta">{setSummary(set.routes, set.flots)}</span>
       </div>
-      {set.pack?.target && !readOnly && (
-        <div className="shell-card__people">
-          <Icon name="route" size={13} color="var(--pack)" />
+      {target && !readOnly && (
+        <div className="shell-card__people" style={set.pack ? undefined : { color: "#9fb0bf" }}>
+          <Icon name="route" size={13} color={set.pack ? "var(--pack)" : "#9fb0bf"} />
           <span>New routes you sketch go into this set.</span>
         </div>
       )}
@@ -224,7 +282,7 @@ const SetCard = ({ set, state, threatCount, expanded, onToggleRoute, actions, pl
           <button
             type="button"
             className={`ui-btn ui-btn--grow${clean ? "" : " ui-btn--primary"}`}
-            disabled={clean || state.saving}
+            disabled={clean || state.saving || empty}
             onClick={() => actions.save(set)}
           >
             <Icon name={clean ? "check" : "save"} size={15} />
@@ -246,6 +304,11 @@ const SetCard = ({ set, state, threatCount, expanded, onToggleRoute, actions, pl
         </label>
       )}
       <div className="shell-set__divider" />
+      {empty && (
+        <div className="shell-set__empty">
+          {readOnly ? "No routes in this set." : "No routes in this set yet. Sketch one, or move one here from another set."}
+        </div>
+      )}
       {set.routes.map((route) => (
         <React.Fragment key={route.id}>
           <RouteRow
@@ -256,6 +319,9 @@ const SetCard = ({ set, state, threatCount, expanded, onToggleRoute, actions, pl
             onShare={actions.share}
             onToggleVisibility={(id) => actions.toggleVisibility(set, id)}
             onRemove={(id) => actions.removeRoute(set, id)}
+            onColor={!readOnly && actions.recolor ? (id, color) => actions.recolor(set, id, color) : undefined}
+            onCombine={!readOnly && sketched && actions.combineRoutes && set.routes.length > 1 ? (r) => onAsk({ type: "combine", setKey: set.key, routeId: r.id }) : undefined}
+            onMove={!readOnly && sketched && actions.moveRoute ? (r) => onAsk({ type: "move", setKey: set.key, routeId: r.id }) : undefined}
           />
           {expanded.has(route.id) && (
             <RoutePlanSection route={route} readOnly={readOnly} localPointNames={localPointNames} {...pointSearch} {...plan(set)} />
@@ -272,7 +338,10 @@ const SetCard = ({ set, state, threatCount, expanded, onToggleRoute, actions, pl
 /**
  * `sets`: [{ key, kind, fileName, routes, flots?, pack? }]; `stateOf(key)` from useRouteSaves (in a pack: a
  * stand-in with the name). `actions`: save, saveAs, rename, close, export, share (a route), shareSet
- * (`(set, name)`, the whole set), toggleVisibility, removeRoute, addToPack, flipFlot, removeFlot. `plan(set)`: the plan-editing calls for that set's routes. `pointSearch`: what the plan's add-a-point field searches.
+ * (`(set, name)`, the whole set), toggleVisibility, removeRoute, addToPack, flipFlot, removeFlot, and for
+ * arranging routes: recolor `(set, routeId, color)`, combineRoutes `(set, firstId, secondId)`, moveRoute
+ * `(set, routeId, { key } | { newName })`, newSet `()`, sketchInto `(set)`. A set of this session
+ * with `target: true` is where new sketches go. `plan(set)`: the plan-editing calls for that set's routes. `pointSearch`: what the plan's add-a-point field searches.
  */
 const RoutesDockPanel = ({
   sets,
@@ -299,6 +368,21 @@ const RoutesDockPanel = ({
     });
   // A viewer is as read-only as everyone in a finished pack: no sketching into it.
   const readOnly = Boolean(pack?.readOnly || pack?.finished);
+  // What is being asked about a route: { type: "move" | "combine", setKey, routeId }. It is asked of the
+  // route and set as they are now, and put away if either has gone (someone else's change in a pack).
+  const [asking, setAsking] = useState(null);
+  const askedSet = asking ? sets.find((set) => set.key === asking.setKey) : null;
+  const askedRoute = askedSet?.routes.find((route) => route.id === asking.routeId) ?? null;
+  const takesRoutes = (set) => set.kind !== "mission" && !set.pack?.finished;
+  const sketchSetCount = sets.filter((set) => set.kind !== "mission").length;
+  // The foot's buttons, two to a row once there are more than three of them (one left over takes its row).
+  const twoToARow = actions.newSet ? { flexBasis: "calc(50% - 4px)" } : undefined;
+  const suggestedSetName = () => {
+    const taken = new Set(sets.map((set) => stateOf(set.key).name));
+    let n = sets.length + 1;
+    while (taken.has(`ROUTES ${n}`)) n += 1;
+    return `ROUTES ${n}`;
+  };
 
   return (
     <>
@@ -340,12 +424,39 @@ const RoutesDockPanel = ({
                   plan={plan}
                   localPointNames={localPointNames}
                   pointSearch={pointSearch}
+                  canChooseForSketches={sketchSetCount > 1}
+                  onAsk={setAsking}
                 />
               ))}
             </div>
           </PanelSection>
         )}
       </div>
+      {asking?.type === "move" && askedRoute && (
+        <MoveRouteDialog
+          route={askedRoute}
+          fromName={stateOf(askedSet.key).name}
+          destinations={sets.filter((set) => set.key !== askedSet.key && takesRoutes(set)).map((set) => ({ key: set.key, name: stateOf(set.key).name, routes: set.routes, flots: set.flots }))}
+          suggestedName={suggestedSetName()}
+          onCancel={() => setAsking(null)}
+          onMove={(destination) => {
+            setAsking(null);
+            actions.moveRoute(askedSet, askedRoute.id, destination);
+          }}
+        />
+      )}
+      {asking?.type === "combine" && askedRoute && askedSet.routes.length > 1 && (
+        <CombineRoutesDialog
+          route={askedRoute}
+          others={askedSet.routes.filter((route) => route.id !== askedRoute.id)}
+          describe={routeMeta}
+          onCancel={() => setAsking(null)}
+          onCombine={(otherId) => {
+            setAsking(null);
+            actions.combineRoutes(askedSet, askedRoute.id, otherId);
+          }}
+        />
+      )}
       {!readOnly && (
         <div className="shell-dock__foot" style={{ flexWrap: "wrap" }}>
           {sketch.active ? (
@@ -358,21 +469,27 @@ const RoutesDockPanel = ({
             </>
           ) : (
             <>
-              <button type="button" className="ui-btn ui-btn--38 ui-btn--grow" onClick={sketch.onStart} disabled={!sketch.enabled}>
+              <button type="button" className="ui-btn ui-btn--38 ui-btn--grow" style={twoToARow} onClick={sketch.onStart} disabled={!sketch.enabled}>
                 <Icon name="route" size={15} />
                 <span>Sketch a route</span>
               </button>
               {!pack && (
-                <button type="button" className="ui-btn ui-btn--38 ui-btn--grow" onClick={onImportMsnx} disabled={!canImportMsnx}>
+                <button type="button" className="ui-btn ui-btn--38 ui-btn--grow" style={twoToARow} onClick={onImportMsnx} disabled={!canImportMsnx}>
                   <Icon name="download" size={15} />
                   <span>Import .msnx</span>
+                </button>
+              )}
+              {actions.newSet && (
+                <button type="button" className="ui-btn ui-btn--38 ui-btn--grow" style={twoToARow} onClick={() => actions.newSet(suggestedSetName())}>
+                  <Icon name="plus" size={15} />
+                  <span>New route set</span>
                 </button>
               )}
               {flot && (
                 <button
                   type="button"
                   className="ui-btn ui-btn--38 ui-btn--grow"
-                  style={{ flexBasis: "100%" }}
+                  style={twoToARow ?? { flexBasis: "100%" }}
                   aria-pressed={flot.active}
                   onClick={flot.active ? flot.onCancel : flot.onStart}
                   disabled={!flot.enabled}

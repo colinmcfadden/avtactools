@@ -423,6 +423,13 @@
 .shell-set__check input { width: 15px; height: 15px; margin: 0; accent-color: var(--ff-accent); }
 .shell-set__why { display: flex; align-items: flex-start; gap: 6px; margin-top: 7px; font-size: 11.5px; color: #f0c56f; }
 .shell-set__why svg { flex: none; }
+.shell-set__empty { padding: 10px 2px 4px; font-size: 12px; line-height: 1.45; color: var(--ff-text-muted); }
+/* A route's dot as the button that changes its colour, and the colours it can take. */
+.shell-route__color { padding: 0; margin: 0 -8px; }
+.shell-swatches { display: grid; grid-template-columns: repeat(4, 30px); gap: 8px; padding: 8px 10px; justify-content: center; }
+.shell-swatch { width: 30px; height: 30px; padding: 0; border-radius: 15px; border: 2px solid rgba(0, 0, 0, 0.55); cursor: pointer; box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.18); }
+.shell-swatch:hover, .shell-swatch:focus-visible { box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.7); outline: none; }
+.shell-swatch[aria-checked="true"] { box-shadow: 0 0 0 2px var(--ff-accent); }
 .shell-set__divider { height: 1px; background: var(--hairline); margin: 10px 0 2px; }
 .shell-route { display: flex; align-items: center; gap: 6px; height: 42px; box-sizing: border-box; padding: 0 2px 0 0; }
 .shell-route--hidden { opacity: 0.55; }
