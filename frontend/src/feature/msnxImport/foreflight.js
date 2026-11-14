@@ -26,6 +26,8 @@ export const buildForeFlightUrl = (route) =>
 const xmlEscape = (s) =>
   s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 
+const safeFileName = (name, fallback) => String(name ?? "").replace(/[^\w-]+/g, "_") || fallback;
+
 /**
  * Waypoint identifiers: uppercase alphanumerics, max 10 chars (Garmin FPL
  * convention), deduplicated with numeric suffixes.
@@ -94,16 +96,11 @@ ${routePoints}
 
 export const downloadFpl = (route) => {
   const xml = buildFplXml(route);
-  const safeName = route.name.replace(/[^\w-]+/g, "_") || "route";
-  downloadBlob(new Blob([xml], { type: "application/xml" }), `${safeName}.fpl`);
+  downloadBlob(new Blob([xml], { type: "application/xml" }), `${safeFileName(route.name, "route")}.fpl`);
 };
 
-/**
- * GPX 1.1 route — the most widely-recognized ForeFlight import for a route of
- * user waypoints. A single <rte> with named <rtept>s imports as one route
- * (rather than scattering loose user waypoints).
- */
-export const buildGpxXml = (route) => {
+/** One route as a GPX `<rte>`, every point of it a named `<rtept>`. */
+const gpxRoute = (route) => {
   const points = foreflightPoints(route);
   const ids = buildIdentifiers(points);
 
@@ -115,18 +112,53 @@ export const buildGpxXml = (route) => {
     )
     .join("\n");
 
-  return `<?xml version="1.0" encoding="UTF-8"?>
-<gpx version="1.1" creator="AV Tac Tools" xmlns="http://www.topografix.com/GPX/1/1">
-  <rte>
+  return `  <rte>
     <name>${xmlEscape(route.name.toUpperCase().slice(0, 25))}</name>
 ${rtepts}
-  </rte>
+  </rte>`;
+};
+
+const gpxDocument = (rtes) => `<?xml version="1.0" encoding="UTF-8"?>
+<gpx version="1.1" creator="AV Tac Tools" xmlns="http://www.topografix.com/GPX/1/1">
+${rtes.join("\n")}
 </gpx>
 `;
-};
+
+/**
+ * GPX 1.1 route — the most widely-recognized ForeFlight import for a route of
+ * user waypoints. A single <rte> with named <rtept>s imports as one route
+ * (rather than scattering loose user waypoints).
+ */
+export const buildGpxXml = (route) => gpxDocument([gpxRoute(route)]);
 
 export const downloadGpx = (route) => {
   const xml = buildGpxXml(route);
-  const safeName = route.name.replace(/[^\w-]+/g, "_") || "route";
-  downloadBlob(new Blob([xml], { type: "application/gpx+xml" }), `${safeName}.gpx`);
+  downloadBlob(new Blob([xml], { type: "application/gpx+xml" }), `${safeFileName(route.name, "route")}.gpx`);
+};
+
+// ---- A set of routes ---------------------------------------------------------------------------
+
+/**
+ * The routes of a set that a file can hold, in the set's order: a route is a line, so one of fewer
+ * than two points is left out. Whether a route is hidden on the map does not come into it.
+ */
+export const exportableRoutes = (routes) =>
+  (routes ?? []).filter((route) => (route?.points?.length ?? 0) >= 2);
+
+/**
+ * A set of routes as ONE GPX 1.1 file: a `<rte>` for each of its routes, in the order given, each
+ * exactly what buildGpxXml writes for that route alone (so a set of one route is that route's file,
+ * byte for byte). Identifiers are numbered within a route, never across the file: the same name in
+ * two routes stays the same name in both, which is what comes back when the file is opened again.
+ *
+ * GPX is the one of these formats that holds more than one route: Garmin's flight plan schema has
+ * one `<route>` in a file and ForeFlight's URL is one route, so a set has neither, and those are
+ * made a route at a time. A FLOT is not a route and is in no export.
+ */
+export const buildSetGpxXml = (routes) => gpxDocument(exportableRoutes(routes).map(gpxRoute));
+
+/** `set`: `{ name, routes }`. The file is named for the set. */
+export const downloadSetGpx = (set) => {
+  const xml = buildSetGpxXml(set.routes);
+  downloadBlob(new Blob([xml], { type: "application/gpx+xml" }), `${safeFileName(set.name, "routes")}.gpx`);
 };

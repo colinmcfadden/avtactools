@@ -134,8 +134,35 @@ Routes are listed in the dock's **Routes** panel, one card per *route set*: the 
 - **Save** — the first time, asks for a name; after that it saves without asking. The card says *Not saved yet*, *Unsaved changes* or *Saved · 14:02*.
 - **Export .msnx** — sketched routes export as a new mission file; an imported file re-exports with your edits. Tick **Include threats as a .ths file** to get the threats beside it.
 - On each route: the **arrow** opens its plan (date, temperature, fuel flow, and the altitude, speed and wind *to* each point; **Get winds** and **Get elevations** fill them in), the **paper plane** sends it to ForeFlight, the **eye** hides it, and **⋯** removes it.
-- **⋯** on a set: **Save as…** (a copy under a new name) and **Close** (asks first if there are unsaved changes).
+- Beside the set's name: the **pencil** renames it, and the **paper plane** sends the whole set to ForeFlight (below).
+- **⋯** on a set: **Send to ForeFlight**, **Save as…** (a copy under a new name) and **Close** (asks first if there are unsaved changes).
 - **Sketch a route** and **Import .msnx** are at the foot of the panel.
+
+### Sending routes to ForeFlight and other apps
+
+The **paper plane** on a route opens its export screen:
+
+- a **QR code** to scan with the iPad's camera, which opens the route in ForeFlight directly. A route with too many points for that gets a code to a download page instead (the link lasts 30 minutes);
+- **Download GPX** and **Download .fpl** (Garmin's flight plan format), to open on the iPad and share into ForeFlight, or into any other app that reads them;
+- the route as text, to paste into ForeFlight's search.
+
+**A whole route set** has the same screen: the paper plane beside the set's name, next to the pencil.
+
+| The set's card | Its export screen |
+|---|---|
+| ![The paper plane beside a set's name](images/24-route-set-send.jpg) | ![The export screen showing a set](images/25-route-set-foreflight.jpg) |
+
+- **Download GPX** is **one file with every route of the set**, in the order the panel lists them and with every point of each. Routes you have hidden on the map are in it too. A route with fewer than two points is left out, and the screen says which. A FLOT is not a route and is never exported.
+- The **QR code** opens a page to download that same file (you need to be signed in and online to make it; the link lasts 30 minutes).
+- A Garmin `.fpl`, the route text and ForeFlight's direct QR code hold **one route each**, by their formats. For those, choose a route under **Send** at the top of the screen; the first choice there, all the routes as one file, goes back to the set. A set with a single route is offered all of them straight away.
+- Apps differ in what they do with several routes in one file. If one shows only the first, choose each route under **Send** and send them one at a time.
+- Opened again with **Import**, the file comes back as a route set with the same routes, in the same order, named for the file. As with any GPX, a point's name comes back as letters and digits (`.TGT` as `TGT`).
+
+The paper plane is greyed out while the set has no route of two points, and says why. It is there in a finished Mission Pack too: sending changes nothing. On a phone it is in the Routes sheet:
+
+| The Routes sheet | The export screen |
+|---|---|
+| ![The set's card on a phone](images/26-phone-route-set-send.jpg) | ![The export screen on a phone](images/27-phone-route-set-foreflight.jpg) |
 
 ### Opening exports in AMPS
 

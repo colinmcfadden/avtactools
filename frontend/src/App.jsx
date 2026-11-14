@@ -588,7 +588,8 @@ function App() {
     return result;
   };
 
-  const [foreFlightRoute, setForeFlightRoute] = useState(null);
+  // What the export screen is showing: `{ route }`, or `{ set: { name, routes } }` for a whole route set.
+  const [foreFlightShare, setForeFlightShare] = useState(null);
 
   const {
     isSketching,
@@ -2163,7 +2164,9 @@ function App() {
                 addToPack:
                   feat.mission_packs && !inPack ? (set, link) => link && packs.addToPack("route", { id: link.id, name: link.name }) : undefined,
                 export: (set, { withThreats }) => exportRouteSet(set, withThreats),
-                share: setForeFlightRoute,
+                share: (route) => setForeFlightShare({ route }),
+                // Every route of the set, hidden on the map or not; its FLOTs are in no export.
+                shareSet: (set, name) => setForeFlightShare({ set: { name, routes: set.routes } }),
                 toggleVisibility: (set, id) => (set.kind === "mission" ? toggleRouteVisibility(id) : toggleSketchVisibility(id)),
                 removeRoute: (set, id) => (set.kind === "mission" ? removeRoute(id) : removeSketchRoute(id)),
                 flipFlot: flotTools.flipFlot,
@@ -2523,8 +2526,9 @@ function App() {
       />
 
       <ForeFlightModal
-        route={foreFlightRoute}
-        onClose={() => setForeFlightRoute(null)}
+        route={foreFlightShare?.route ?? null}
+        set={foreFlightShare?.set ?? null}
+        onClose={() => setForeFlightShare(null)}
       />
 
       {editingThreat && (

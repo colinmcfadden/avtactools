@@ -1,4 +1,5 @@
-import React, { useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
+import { exportableRoutes } from "../msnxImport/foreflight";
 import RoutePlanSection from "../msnxImport/RoutePlanSection";
 import { formatDuration } from "../msnxImport/routeCalc";
 import { flotLengthKm } from "../flot/flots";
@@ -16,6 +17,9 @@ import "./shell.css";
  * routes, each imported .msnx, and in a Mission Pack each of the pack's route sets), with its save
  * state, Save, Export .msnx (with the threats as a .ths beside it if wanted), and its routes; a
  * route opens into its plan editor. Sketch a route and Import .msnx sit at the foot.
+ *
+ * A route is sent to ForeFlight from its row, and a whole set from its title row, beside the pencil:
+ * the same export screen for both. Sending changes nothing, so both stay in a read-only pack.
  */
 
 const RouteRow = ({ route, expanded, onToggle, onShare, onToggleVisibility, onRemove, readOnly }) => {
@@ -100,12 +104,20 @@ const SetCard = ({ set, state, threatCount, expanded, onToggleRoute, actions, pl
   const [withThreats, setWithThreats] = useState(true);
   const [renaming, setRenaming] = useState(false);
   const [draft, setDraft] = useState("");
+  const [saidWhy, setSaidWhy] = useState(false);
   const readOnly = Boolean(set.pack?.finished);
   const clean = !set.pack && state.link && !state.dirty;
   const name = state.name;
   // An imported mission goes by its file ("GOAT SUCKER.msnx") until it is given a name of its own.
   const byFile = set.kind === "mission" && !set.pack && Boolean(set.fileName) && name === defaultSetName(set);
   const title = byFile ? set.fileName : name;
+  // A set is sent as its routes: with none of two points there is nothing to send, and the button says so.
+  const sendable = exportableRoutes(set.routes).length;
+  const sendOff = sendable > 0 ? null : set.routes.length > 0 ? "No route of this set has two points yet" : "No routes in this set to send";
+  // What a tap was told is put away once there is something to send, so it is not said again unasked.
+  useEffect(() => {
+    if (!sendOff) setSaidWhy(false);
+  }, [sendOff]);
 
   const commitRename = () => {
     setRenaming(false);
@@ -152,9 +164,30 @@ const SetCard = ({ set, state, threatCount, expanded, onToggleRoute, actions, pl
             <Icon name="pencil" size={15} />
           </button>
         )}
+        {!renaming && actions.shareSet && (
+          <button
+            type="button"
+            className="ui-btn ui-btn--ghost ui-btn--26 ui-btn--square"
+            aria-label={`Send ${title} to ForeFlight`}
+            // Off, never gone: it says why to a pointer and a screen reader (the title, which is its description) and to a tap (below).
+            aria-disabled={Boolean(sendOff)}
+            title={sendOff ?? undefined}
+            onClick={() => (sendOff ? setSaidWhy(true) : actions.shareSet(set, name))}
+          >
+            <Icon name="send" size={15} />
+          </button>
+        )}
         <MoreMenu
           label={`More actions for ${title}`}
           items={[
+            {
+              icon: "send",
+              title: "Send to ForeFlight",
+              text: sendOff ?? undefined,
+              onSelect: () => actions.shareSet?.(set, name),
+              hidden: !actions.shareSet,
+              disabled: Boolean(sendOff),
+            },
             { icon: "route", title: "Sketch a route into this set", onSelect: () => actions.sketchInto?.(set), hidden: !set.pack || readOnly || !actions.sketchInto },
             { icon: "copy", title: set.pack ? "Save a copy to Library…" : "Save as…", onSelect: () => actions.saveAs(set) },
             { icon: "layers", title: "Add to Mission Pack…", onSelect: () => actions.addToPack?.(set, state.link), hidden: Boolean(set.pack) || !actions.addToPack || set.kind === "mission", disabled: !state.link, text: state.link ? undefined : "Save it first" },
@@ -163,6 +196,12 @@ const SetCard = ({ set, state, threatCount, expanded, onToggleRoute, actions, pl
           ]}
         />
       </div>
+      {saidWhy && sendOff && (
+        <div className="shell-set__why" role="status">
+          <Icon name="alertTriangle" size={13} />
+          <span>{sendOff}, so there is nothing to send.</span>
+        </div>
+      )}
       <div className="shell-card__chips" style={{ marginTop: 7 }}>
         {set.kind === "mission" && !set.pack && <Chip tone="info" icon="download">Imported</Chip>}
         {stateChip(set, state)}
@@ -232,8 +271,8 @@ const SetCard = ({ set, state, threatCount, expanded, onToggleRoute, actions, pl
 
 /**
  * `sets`: [{ key, kind, fileName, routes, flots?, pack? }]; `stateOf(key)` from useRouteSaves (in a pack: a
- * stand-in with the name). `actions`: save, saveAs, rename, close, export, share, toggleVisibility,
- * removeRoute, addToPack, flipFlot, removeFlot. `plan(set)`: the plan-editing calls for that set's routes. `pointSearch`: what the plan's add-a-point field searches.
+ * stand-in with the name). `actions`: save, saveAs, rename, close, export, share (a route), shareSet
+ * (`(set, name)`, the whole set), toggleVisibility, removeRoute, addToPack, flipFlot, removeFlot. `plan(set)`: the plan-editing calls for that set's routes. `pointSearch`: what the plan's add-a-point field searches.
  */
 const RoutesDockPanel = ({
   sets,
