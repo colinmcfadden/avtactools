@@ -51,39 +51,45 @@ export const useLineEditing = ({ data, onChange, editable }) => {
 /**
  * The handles of a line being changed (`editing`: useLineEditing's): an unseen wide line over it, which is what a finger or the
  * mouse finds (a line this thin would be nearly impossible to hit), and a vertex to drag at each of its points.
+ *
+ * The line's menu opens from a vertex as it does from the line between two: a vertex lies over the line, so a right-click
+ * (a long press) on one never reaches the line under it, and the ends, where the pointer goes first, are vertices.
  */
-const LineHandles = ({ id, editing, icon, onContextMenu }) => (
-  <>
-    <Polyline
-      positions={editing.points.map((p) => [p.lat, p.lon])}
-      pathOptions={{ opacity: 0, weight: 26 }}
-      eventHandlers={{
-        ...editing.hover,
-        click: (e) => {
-          L.DomEvent.stopPropagation(e);
-          editing.toggle();
-        },
-        contextmenu: (e) => {
-          if (!onContextMenu) return;
-          L.DomEvent.stop(e);
-          e.originalEvent.preventDefault();
-          onContextMenu(id, e.originalEvent.clientX, e.originalEvent.clientY);
-        },
-      }}
-    />
-    {editing.saved.map((point, i) => (
-      <Marker
-        // eslint-disable-next-line react/no-array-index-key
-        key={i}
-        position={[point.lat, point.lon]}
-        icon={icon}
-        draggable
-        eventHandlers={editing.handlesFor(i)}
-        opacity={editing.active ? 1 : 0}
-        zIndexOffset={1000}
+const LineHandles = ({ id, editing, icon, onContextMenu }) => {
+  const openMenu = (e) => {
+    if (!onContextMenu) return;
+    L.DomEvent.stop(e);
+    e.originalEvent.preventDefault();
+    onContextMenu(id, e.originalEvent.clientX, e.originalEvent.clientY);
+  };
+  return (
+    <>
+      <Polyline
+        positions={editing.points.map((p) => [p.lat, p.lon])}
+        pathOptions={{ opacity: 0, weight: 26 }}
+        eventHandlers={{
+          ...editing.hover,
+          click: (e) => {
+            L.DomEvent.stopPropagation(e);
+            editing.toggle();
+          },
+          contextmenu: openMenu,
+        }}
       />
-    ))}
-  </>
-);
+      {editing.saved.map((point, i) => (
+        <Marker
+          // eslint-disable-next-line react/no-array-index-key
+          key={i}
+          position={[point.lat, point.lon]}
+          icon={icon}
+          draggable
+          eventHandlers={{ ...editing.handlesFor(i), contextmenu: openMenu }}
+          opacity={editing.active ? 1 : 0}
+          zIndexOffset={1000}
+        />
+      ))}
+    </>
+  );
+};
 
 export default LineHandles;

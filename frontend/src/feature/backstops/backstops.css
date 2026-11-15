@@ -84,4 +84,31 @@
     max-width: none;
     box-sizing: border-box;
   }
+
+  /* The three buttons are wider than a phone's bar (381 px of them in the 265 px a 375 px phone leaves), and ran
+     past both of its sides: over the zoom buttons, and off the screen. Here they keep to it, on one row: Undo and
+     Cancel as wide as their words while there is room, the finish button in what is left, its words on two lines
+     where they must be ("Add two points"). On a wider window they are as wide as their words, as before. */
+  .backstop-draw-bar__actions {
+    display: grid;
+    grid-template-columns: auto auto minmax(min-content, 1fr);
+    min-width: 0;
+    max-width: 100%;
+  }
+
+  .backstop-draw-bar__actions .ui-btn {
+    min-width: 0;
+    height: auto;
+    min-height: 38px;
+    padding: 4px 6px;
+    line-height: 1.15;
+    white-space: normal;
+    text-align: center;
+  }
+
+  /* The tick is Finish's: while the button only says what is still needed, its room goes to the words (on a
+     360 px phone they would otherwise take three lines). An icon sets its own display inline, hence !important. */
+  .backstop-draw-bar__actions .ui-btn:disabled > svg {
+    display: none !important;
+  }
 }
