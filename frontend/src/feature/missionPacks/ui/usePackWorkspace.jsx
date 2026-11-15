@@ -257,6 +257,8 @@ export const usePackWorkspace = ({
     sketchedRoutes: sketch.sketchedRoutes,
     flots: sketch.flots,
     setFlotsOf: sketch.setFlotsOf,
+    phaseLines: sketch.phaseLines,
+    setPhaseLinesOf: sketch.setPhaseLinesOf,
     loadSketchRoutes: sketch.loadSketchRoutes,
     replaceRouteSet: sketch.replaceRouteSet,
     removeRouteSet: sketch.removeRouteSet,

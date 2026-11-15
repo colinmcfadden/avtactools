@@ -250,6 +250,60 @@ describe("an imported mission's card in the Routes panel", () => {
   });
 });
 
+describe("a set's FLOT and phase lines in the Routes panel", () => {
+  const set = (extra = {}) => ({
+    key: "sketches",
+    kind: "sketch",
+    routes: [{ id: "r1", name: "ROUTE 1", color: "#e85", points: [{ id: "p1", lat: 34, lon: -84 }], plan: {} }],
+    flots: [{ id: "flot-1", points: [{ lat: 34, lon: -84 }, { lat: 34.009, lon: -84 }] }],
+    phaseLines: [{ id: "pl-1", name: "RED", points: [{ lat: 34, lon: -84 }, { lat: 34.018, lon: -84 }] }],
+    ...extra,
+  });
+  const panel = (sets, actions = {}) => (
+    <RoutesDockPanel
+      sets={sets}
+      stateOf={() => ({ name: "SKETCHED ROUTES", link: null, dirty: true, saving: false, savedAt: null })}
+      actions={{ save: () => {}, saveAs: () => {}, rename: () => {}, close: () => {}, export: () => {}, toggleVisibility: () => {}, removeRoute: () => {}, ...actions }}
+      plan={() => ({})}
+      sketch={{ active: false, name: "ROUTE 2", points: 0, enabled: true, onStart: () => {}, onCancel: () => {}, onFinish: () => {} }}
+    />
+  );
+
+  it("lists a phase line by its label and length under the routes, and counts it on the card", () => {
+    render(panel([set()]));
+    const card = screen.getByRole("region", { name: "SKETCHED ROUTES" });
+    expect(within(card).getByText("1 route · 1 point · 1 FLOT · 1 phase line")).toBeInTheDocument();
+    expect(within(card).getByText("PL RED")).toBeInTheDocument();
+    expect(within(card).getByText("Phase line · 2.0 km")).toBeInTheDocument();
+  });
+
+  it("renames and removes a phase line from its row", () => {
+    const renamePhaseLine = vi.fn();
+    const removePhaseLine = vi.fn();
+    render(panel([set()], { renamePhaseLine, removePhaseLine }));
+    fireEvent.click(screen.getByRole("button", { name: "Rename PL RED" }));
+    expect(renamePhaseLine).toHaveBeenCalledWith("pl-1");
+    fireEvent.click(screen.getByRole("button", { name: "Remove PL RED" }));
+    expect(removePhaseLine).toHaveBeenCalledWith("pl-1");
+  });
+
+  it("only shows them in a finished pack", () => {
+    render(panel([set({ pack: { finished: true } })]));
+    expect(screen.getByText("PL RED")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Rename PL RED" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Remove PL RED" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Remove this FLOT" })).toBeNull();
+  });
+
+  it("offers no export for a set of lines alone, and draws none of them from its foot: they are the sidebar's", () => {
+    render(panel([set({ routes: [] })]));
+    expect(screen.getByText("1 FLOT · 1 phase line")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Export .msnx" })).toBeNull();
+    expect(screen.queryByRole("button", { name: /^(Draw|Cancel) FLOT$/ })).toBeNull();
+    expect(screen.getByRole("button", { name: "Sketch a route" })).toBeInTheDocument();
+  });
+});
+
 describe("the dock", () => {
   const items = [
     { key: "lz", label: "LZ/PZ", icon: "hexagon", dot: "warn" },
@@ -304,7 +358,7 @@ describe("whether a route set is saved", () => {
     render(<ToastProvider>{result.current.dialogs}</ToastProvider>);
     fireEvent.change(screen.getByLabelText("Name"), { target: { value: "RED" } });
     fireEvent.click(screen.getByRole("button", { name: /^Save$/ }));
-    await waitFor(() => expect(library.saveSketch).toHaveBeenCalledWith("RED", routes, []));
+    await waitFor(() => expect(library.saveSketch).toHaveBeenCalledWith("RED", routes, [], []));
     await waitFor(() => expect(result.current.stateOf("sketches")).toMatchObject({ link: { id: 31, name: "RED" }, dirty: false }));
 
     routes = [route("a", { plan: { tempC: 21 } })];
@@ -314,7 +368,7 @@ describe("whether a route set is saved", () => {
     await act(async () => {
       await result.current.save("sketches");
     });
-    expect(library.updateSketch).toHaveBeenCalledWith(31, routes, "RED", []);
+    expect(library.updateSketch).toHaveBeenCalledWith(31, routes, "RED", [], []);
     expect(result.current.stateOf("sketches").dirty).toBe(false);
   });
 });

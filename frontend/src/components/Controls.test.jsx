@@ -19,7 +19,7 @@ const renderControls = (props = {}) =>
   );
 
 describe("the sidebar's Routes card", () => {
-  it("holds the Route tool only: mission files come in through the Import menu and its review", () => {
+  it("holds the Route tool and no import: mission files come in through the Import menu and its review", () => {
     const toggleRouteSketch = vi.fn();
     const { container } = renderControls({ toggleRouteSketch });
     expect(screen.getByText("Routes", { selector: ".ff-card-header" })).toBeInTheDocument();
@@ -29,6 +29,50 @@ describe("the sidebar's Routes card", () => {
 
     fireEvent.click(screen.getByTitle("Sketch a route (click the map to add points)"));
     expect(toggleRouteSketch).toHaveBeenCalledTimes(1);
+  });
+
+  // The owner, 2026-11-14: FLOT and PL are options next to Route.
+  it("holds FLOT and PL beside Route, each starting its line, and ending it once it is being drawn", () => {
+    const onToggleFlot = vi.fn();
+    const onTogglePhaseLine = vi.fn();
+    const { rerender } = renderControls({ onToggleFlot, onTogglePhaseLine });
+    const labels = () => [...document.querySelectorAll(".ff-card-routes .btn-label")].map((label) => label.textContent);
+    expect(labels()).toEqual(["Route", "FLOT", "PL"]);
+    const flot = screen.getByText("FLOT", { selector: ".btn-label" }).closest("button");
+    const pl = screen.getByRole("button", { name: "Phase line" });
+    expect(flot).toHaveAttribute("aria-pressed", "false");
+    expect(pl).toHaveAttribute("aria-pressed", "false");
+    fireEvent.click(flot);
+    fireEvent.click(pl);
+    expect([onToggleFlot.mock.calls.length, onTogglePhaseLine.mock.calls.length]).toEqual([1, 1]);
+
+    rerender(
+      <Controls
+        aircraftProfiles={[]}
+        onSelectAircraft={() => {}}
+        onManageAircraft={() => {}}
+        isSketching={false}
+        toggleRouteSketch={() => {}}
+        features={NO_LZ_TOOLS}
+        onToggleFlot={onToggleFlot}
+        onTogglePhaseLine={onTogglePhaseLine}
+        isDrawingFlot
+        isDrawingPhaseLine
+      />,
+    );
+    expect(labels()).toEqual(["Route", "End FLOT", "End PL"]);
+    expect(screen.getByRole("button", { name: "End phase line" })).toHaveAttribute("aria-pressed", "true");
+  });
+
+  it("turns FLOT and PL off, and says why, where nothing may be changed", () => {
+    const onToggleFlot = vi.fn();
+    renderControls({ onToggleFlot, onTogglePhaseLine: () => {}, canDrawLines: false });
+    const flot = screen.getByText("FLOT", { selector: ".btn-label" }).closest("button");
+    expect(flot).toBeDisabled();
+    expect(flot).toHaveAttribute("title", expect.stringMatching(/Read-only/));
+    expect(screen.getByRole("button", { name: "Phase line" })).toBeDisabled();
+    fireEvent.click(flot);
+    expect(onToggleFlot).not.toHaveBeenCalled();
   });
 
   it("is not shown when routes are turned off, whether or not mission import is on", () => {

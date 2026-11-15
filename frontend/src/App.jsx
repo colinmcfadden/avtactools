@@ -28,7 +28,10 @@ import { useGoAround } from "./feature/goAround/useGoAround";
 import { useBackstops } from "./feature/backstops/useBackstops";
 import BackstopDrawBar from "./feature/backstops/BackstopDrawBar";
 import { useFlots } from "./feature/flot/useFlots";
-import { flotsFromData, setsWithFlots } from "./feature/flot/flots";
+import { flotsFromData } from "./feature/flot/flots";
+import { usePhaseLines } from "./feature/phaseLines/usePhaseLines";
+import { PHASE_LINE_NAME_MAX, cleanPhaseLineName, nextPhaseLineName, phaseLinesFromData } from "./feature/phaseLines/phaseLines";
+import { setsWithLines } from "./feature/setLines/setLines";
 import { useWeather } from "./feature/weather/useWeather";
 import { useUnit } from "./feature/unit/useUnit";
 import { usePzMarker } from "./feature/pzMarker/usePzMarker";
@@ -624,6 +627,9 @@ function App() {
     applyForecastWinds,
   } = useRouteSketch({ aircraftProfile: activeProfile });
   const flotTools = useFlots();
+  const phaseLineTools = usePhaseLines();
+  // A FLOT or a phase line being drawn: a line of clicks on the map, as a route, a boundary and a backstop are.
+  const drawingLine = flotTools.isDrawing || phaseLineTools.isDrawing;
 
   const localPoints = useLocalPoints();
   const overlayTools = useOverlays();
@@ -668,7 +674,9 @@ function App() {
   // The route sets in this session: the sketched routes, each saved set opened beside them, then each
   // imported mission file.
   const routeSets = useMemo(() => {
-    const sets = setsWithFlots(sketchSets, flotTools.flots, isOpenedSetId).map(({ setId, routes, flots }) => ({ key: setId ?? SKETCHES, kind: "sketch", routes, flots }));
+    const sets = setsWithLines(sketchSets, { flots: flotTools.flots, phaseLines: phaseLineTools.phaseLines }, isOpenedSetId).map(
+      ({ setId, routes, flots, phaseLines }) => ({ key: setId ?? SKETCHES, kind: "sketch", routes, flots, phaseLines }),
+    );
     const byFile = new Map();
     importedRoutes.forEach((route) => {
       if (!byFile.has(route.fileId)) {
@@ -679,7 +687,7 @@ function App() {
       byFile.get(route.fileId).routes.push(route);
     });
     return sets;
-  }, [importedRoutes, sketchSets, flotTools.flots]);
+  }, [importedRoutes, sketchSets, flotTools.flots, phaseLineTools.phaseLines]);
 
   const routeSaves = useRouteSaves({
     sets: routeSets,
@@ -711,7 +719,16 @@ function App() {
       setActiveDiagram,
       hydrateWorkspace: lzWorkspace.hydrateWorkspace,
     },
-    sketch: { sketchedRoutes, flots: flotTools.flots, setFlotsOf: flotTools.setFlotsOf, loadSketchRoutes, replaceRouteSet, removeRouteSet },
+    sketch: {
+      sketchedRoutes,
+      flots: flotTools.flots,
+      setFlotsOf: flotTools.setFlotsOf,
+      phaseLines: phaseLineTools.phaseLines,
+      setPhaseLinesOf: phaseLineTools.setPhaseLinesOf,
+      loadSketchRoutes,
+      replaceRouteSet,
+      removeRouteSet,
+    },
     points: { pointSets: localPoints.pointSets, setPointSets: localPoints.setPointSets },
     threats: {
       on: feat.threats,
@@ -784,7 +801,7 @@ function App() {
   const [map, setMap] = useState(null);
   const shellMapRef = useRef(null);
   const mapHeight = useElementHeight(shellMapRef, isMobile);
-  const drawingOnMap = isDrawingLZ || isSketching || backstopTools.isDrawing || flotTools.isDrawing;
+  const drawingOnMap = isDrawingLZ || isSketching || backstopTools.isDrawing || drawingLine;
   const phoneFrame = usePhoneFrame({
     phone: isMobile,
     drawing: drawingOnMap,
@@ -829,9 +846,11 @@ function App() {
     } else {
       const record = await loadSavedRoute(entry.id);
       const routes = record.route_data?.routes ?? [];
-      if (routes.length === 0 && flotsFromData(record.route_data).length === 0) throw new Error("This save contains no routes.");
-      const setId = openSavedRoutes(routes, { beside: flotTools.hasSessionFlots() });
+      const lines = flotsFromData(record.route_data).length + phaseLinesFromData(record.route_data).length;
+      if (routes.length === 0 && lines === 0) throw new Error("This save contains no routes.");
+      const setId = openSavedRoutes(routes, { beside: flotTools.hasSessionFlots() || phaseLineTools.hasSessionPhaseLines() });
       flotTools.openSavedFlots(setId, record.route_data);
+      phaseLineTools.openSavedPhaseLines(setId, record.route_data);
       routeSaves.adopt(setId ?? SKETCHES, entry);
     }
   };
@@ -842,7 +861,7 @@ function App() {
   };
 
   const beginRouteSketch = () => {
-    if (backstopTools.isDrawing || flotTools.isDrawing) {
+    if (backstopTools.isDrawing || drawingLine) {
       toast({ tone: "warn", message: DRAWING_ALREADY });
       return;
     }
@@ -906,6 +925,7 @@ function App() {
     if (set.kind === "mission") closeMission(set.routes[0]?.fileId);
     else removeRouteSet(set.key === SKETCHES ? null : set.key);
     flotTools.setFlotsOf(set.key === SKETCHES ? null : set.key, []);
+    phaseLineTools.setPhaseLinesOf(set.key === SKETCHES ? null : set.key, []);
   };
   const closeRouteSet = (set) => {
     if (routeSaves.stateOf(set.key).dirty) setClosingSet(set);
@@ -1131,7 +1151,7 @@ function App() {
 
   // A phone has no room for a line of instructions beside the tool: starting to draw says how, once.
   const togglePhoneDrawing = () => {
-    const starting = !isDrawingLZ && hasActiveTarget && !backstopTools.isDrawing && !flotTools.isDrawing;
+    const starting = !isDrawingLZ && hasActiveTarget && !backstopTools.isDrawing && !drawingLine;
     toggleDrawingMode();
     if (starting) toast({ tone: "info", message: "Tap the map at each corner of the LZ/PZ, then Finish LZ." });
   };
@@ -1148,7 +1168,7 @@ function App() {
       toast({ tone: "warn", message: "Set a target on the map before drawing an LZ/PZ boundary." });
       return;
     }
-    if (backstopTools.isDrawing || flotTools.isDrawing) {
+    if (backstopTools.isDrawing || drawingLine) {
       toast({ tone: "warn", message: DRAWING_ALREADY });
       return;
     }
@@ -1182,7 +1202,7 @@ function App() {
       else backstopTools.cancelDrawing();
       return;
     }
-    if (isDrawingLZ || isSketching || flotTools.isDrawing) {
+    if (isDrawingLZ || isSketching || drawingLine) {
       toast({ tone: "warn", message: DRAWING_ALREADY });
       return;
     }
@@ -1195,28 +1215,85 @@ function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeDiagramId, canDrawBackstop]);
 
-  // A FLOT is drawn into the set new routes go into.
-  const startFlotDrawing = () => {
-    if (isDrawingLZ || isSketching || backstopTools.isDrawing) {
-      toast({ tone: "warn", message: DRAWING_ALREADY });
-      return;
-    }
-    if (editable) flotTools.startDrawing();
-  };
-  const finishFlotDrawing = () => {
+  // A FLOT and a phase line are drawn into the set new routes go into: `finish(setId)`, with none for this session's own.
+  const finishIntoRouteSet = (finish) => {
     if (!inPack) {
-      flotTools.finishDrawing();
+      finish(null);
       return;
     }
     const target = packRouteSetFor() ?? packs.packRoutes.createItem();
     if (target) {
       setPackRouteTarget(target);
-      flotTools.finishDrawing(packs.packRoutes.setIdOf(target));
+      finish(packs.packRoutes.setIdOf(target));
     }
+  };
+  const startFlotDrawing = () => {
+    if (isDrawingLZ || isSketching || backstopTools.isDrawing || phaseLineTools.isDrawing) {
+      toast({ tone: "warn", message: DRAWING_ALREADY });
+      return;
+    }
+    if (editable) flotTools.startDrawing();
+  };
+  const finishFlotDrawing = () => finishIntoRouteSet((setId) => flotTools.finishDrawing(setId));
+  // The sidebar's FLOT button, as its Route button is: on again it finishes the line, or drops one too short to be a line.
+  const toggleFlotDrawing = () => {
+    if (!flotTools.isDrawing) startFlotDrawing();
+    else if (flotTools.draftPoints.length >= 2) finishFlotDrawing();
+    else flotTools.cancelDrawing();
+  };
+
+  const startPhaseLineDrawing = () => {
+    if (isDrawingLZ || isSketching || backstopTools.isDrawing || flotTools.isDrawing) {
+      toast({ tone: "warn", message: DRAWING_ALREADY });
+      return;
+    }
+    if (editable) phaseLineTools.startDrawing();
+  };
+  // A phase line is finished under a name, as a route is. Cancelling the name keeps the line going.
+  const finishPhaseLineDrawing = () => {
+    if (phaseLineTools.draftPoints.length < 2) return;
+    const suggested = nextPhaseLineName(shownPhaseLines);
+    setNameAsk({
+      title: "Name the phase line",
+      subtitle: "It is drawn with PL and this name at each end. You can rename it later.",
+      icon: "pencil",
+      initialName: suggested,
+      confirmLabel: "Finish phase line",
+      upperCase: true,
+      maxLength: PHASE_LINE_NAME_MAX,
+      onConfirm: (name) => {
+        finishIntoRouteSet((setId) => phaseLineTools.finishDrawing(cleanPhaseLineName(name) || suggested, setId));
+        setNameAsk(null);
+      },
+    });
+  };
+  const togglePhaseLineDrawing = () => {
+    if (!phaseLineTools.isDrawing) startPhaseLineDrawing();
+    else if (phaseLineTools.draftPoints.length >= 2) finishPhaseLineDrawing();
+    else phaseLineTools.cancelDrawing();
+  };
+  const askPhaseLineName = (id) => {
+    const line = phaseLineTools.phaseLines.find((candidate) => candidate.id === id);
+    if (!line) return;
+    setContextMenu(null);
+    setNameAsk({
+      title: "Rename the phase line",
+      subtitle: "It is drawn with PL and this name at each end.",
+      icon: "pencil",
+      initialName: line.name ?? "",
+      confirmLabel: "Rename",
+      upperCase: true,
+      maxLength: PHASE_LINE_NAME_MAX,
+      onConfirm: (name) => {
+        phaseLineTools.renamePhaseLine(id, name);
+        setNameAsk(null);
+      },
+    });
   };
   // A draft belongs to the workspace it was begun in, and a pack that can no longer be edited, or a brief being presented, has none.
   useEffect(() => {
     flotTools.cancelDrawing();
+    phaseLineTools.cancelDrawing();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [packs.open, editable, Boolean(presented)]);
 
@@ -1536,6 +1613,9 @@ function App() {
   // What is shown while a pack is open: its own route sets and point sets; the Library's stay loaded.
   const ofOpenPack = (localId) => Boolean(localId) && packLocalRef(localId)?.pack === packs.open;
   const shownFlots = inPack ? flotTools.flots.filter((f) => ofOpenPack(f.setId)) : flotTools.flots.filter((f) => !f.setId || !packLocalRef(f.setId));
+  const shownPhaseLines = inPack
+    ? phaseLineTools.phaseLines.filter((line) => ofOpenPack(line.setId))
+    : phaseLineTools.phaseLines.filter((line) => !line.setId || !packLocalRef(line.setId));
   const shownSketches = inPack ? sketchedRoutes.filter((r) => ofOpenPack(r.setId)) : sketchedRoutes.filter((r) => !r.setId || !packLocalRef(r.setId));
   const shownImported = inPack ? [] : importedRoutes;
 
@@ -1627,6 +1707,7 @@ function App() {
           item,
           routes: sketchedRoutes.filter((r) => r.setId === setId),
           flots: flotTools.flots.filter((flot) => flot.setId === setId),
+          phaseLines: phaseLineTools.phaseLines.filter((line) => line.setId === setId),
           pack: {
             finished: packs.readOnly,
             target: packRouteSetFor() === uuid,
@@ -1847,6 +1928,11 @@ function App() {
           addSector={addSectorOfFire}
           isDrawingBackstop={backstopTools.isDrawing}
           onToggleBackstop={toggleBackstopDrawing}
+          isDrawingFlot={flotTools.isDrawing}
+          onToggleFlot={toggleFlotDrawing}
+          isDrawingPhaseLine={phaseLineTools.isDrawing}
+          onTogglePhaseLine={togglePhaseLineDrawing}
+          canDrawLines={editable}
           exportBox={exportBox}
           enableExportMode={enableExportMode}
           setIsExporting={setIsExporting}
@@ -1933,6 +2019,9 @@ function App() {
             isSketching={isSketching}
             isDrawingBackstop={backstopTools.isDrawing}
             isDrawingFlot={flotTools.isDrawing}
+            isDrawingPhaseLine={phaseLineTools.isDrawing}
+            onStartFlot={startFlotDrawing}
+            onStartPhaseLine={startPhaseLineDrawing}
             mapHeight={mapHeight}
             folded={phoneFrame.toolsFolded}
             onToggleFolded={phoneFrame.toggleTools}
@@ -1966,6 +2055,16 @@ function App() {
             onFinish={finishFlotDrawing}
           />
         )}
+        {phaseLineTools.isDrawing && (
+          <BackstopDrawBar
+            title="Drawing a phase line."
+            hint="Click the map along the line, in order."
+            points={phaseLineTools.draftPoints.length}
+            onUndo={phaseLineTools.undoDraftPoint}
+            onCancel={phaseLineTools.cancelDrawing}
+            onFinish={finishPhaseLineDrawing}
+          />
+        )}
         {backstopTools.isDrawing && (
           <BackstopDrawBar
             points={backstopTools.draftPoints.length}
@@ -1987,6 +2086,12 @@ function App() {
           isDrawingFlot={flotTools.isDrawing}
           flotDraftPoints={flotTools.draftPoints}
           addFlotDraftPoint={flotTools.addDraftPoint}
+          phaseLines={shownPhaseLines}
+          updatePhaseLine={mapEdit(phaseLineTools.updatePhaseLine)}
+          onPhaseLineContextMenu={(id, x, y) => setContextMenu({ type: "phaseLine", id, x, y })}
+          isDrawingPhaseLine={phaseLineTools.isDrawing}
+          phaseLineDraftPoints={phaseLineTools.draftPoints}
+          addPhaseLineDraftPoint={phaseLineTools.addDraftPoint}
           flyTo={flyTo}
           importedRoutes={shownImported}
           onUpdateMsnxPointPosition={mapEdit(updatePointPosition)}
@@ -2168,6 +2273,8 @@ function App() {
                 removeRoute: (set, id) => (set.kind === "mission" ? removeRoute(id) : removeSketchRoute(id)),
                 flipFlot: flotTools.flipFlot,
                 removeFlot: flotTools.deleteFlot,
+                renamePhaseLine: askPhaseLineName,
+                removePhaseLine: phaseLineTools.deletePhaseLine,
               }}
               plan={(set) => (set.kind === "mission" ? importedPlan : sketchedPlan)}
               localPointNames={localPointNames}
@@ -2186,7 +2293,6 @@ function App() {
                 onCancel: cancelSketch,
                 onFinish: toggleRouteSketch,
               }}
-              flot={{ active: flotTools.isDrawing, enabled: feat.routes && editable, onStart: startFlotDrawing, onCancel: flotTools.cancelDrawing }}
               onImportMsnx={pickers.msnx.open}
               canImportMsnx={feat.msnx_import}
               onCollapse={() => dock.setCollapsed(true)}
@@ -2340,6 +2446,21 @@ function App() {
                 }}
               >
                 Delete FLOT
+              </button>
+            </>
+          ) : contextMenu.type === "phaseLine" ? (
+            <>
+              <button className="ctx-btn" onClick={() => askPhaseLineName(contextMenu.id)}>
+                Rename…
+              </button>
+              <button
+                className="ctx-btn ctx-btn--danger"
+                onClick={() => {
+                  phaseLineTools.deletePhaseLine(contextMenu.id);
+                  setContextMenu(null);
+                }}
+              >
+                Delete phase line
               </button>
             </>
           ) : contextMenu.type === "backstop" ? (

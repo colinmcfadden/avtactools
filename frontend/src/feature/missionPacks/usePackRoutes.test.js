@@ -1,6 +1,7 @@
 import { act, renderHook } from "@testing-library/react";
 import { useState } from "react";
 import { useFlots } from "../flot/useFlots";
+import { usePhaseLines } from "../phaseLines/usePhaseLines";
 import { restoreSketchRoute, useRouteSketch } from "../msnxImport/useRouteSketch";
 import { useFakePack } from "./fakePack";
 import { routeSetData } from "./packRoutes";
@@ -20,15 +21,17 @@ const SET_ID = "pack:p-1:rt-1";
 const useHarness = (initial = [SET], options = {}) => {
   const sketch = useRouteSketch();
   const flotTools = useFlots();
+  const phaseLineTools = usePhaseLines();
   const pack = useFakePack(initial, options);
   const [gone, setGone] = useState([]);
   const routes = usePackRoutes({
     packUuid: "p-1", items: pack.items, edit: pack.edit, actor: "Colin M.",
-    sketchedRoutes: sketch.sketchedRoutes, flots: flotTools.flots, setFlotsOf: flotTools.setFlotsOf, loadSketchRoutes: sketch.loadSketchRoutes,
+    sketchedRoutes: sketch.sketchedRoutes, flots: flotTools.flots, setFlotsOf: flotTools.setFlotsOf,
+    phaseLines: phaseLineTools.phaseLines, setPhaseLinesOf: phaseLineTools.setPhaseLinesOf, loadSketchRoutes: sketch.loadSketchRoutes,
     replaceRouteSet: sketch.replaceRouteSet, removeRouteSet: sketch.removeRouteSet,
     onGone: (_uuid, name) => setGone((g) => [...g, name]), newId: () => "new",
   });
-  return { sketch, flotTools, pack, routes, gone };
+  return { sketch, flotTools, phaseLineTools, pack, routes, gone };
 };
 
 const settleTimers = () => act(() => { vi.advanceTimersByTime(1000); });
@@ -54,6 +57,61 @@ const opened = (...args) => {
 };
 
 describe("usePackRoutes", () => {
+  describe("a set's phase lines", () => {
+    const RED = { id: "pl-1", name: "RED", points: [{ lat: 34.7, lon: -84.1 }, { lat: 34.8, lon: -84.05 }] };
+    const FLOT = { id: "flot-1", points: [{ lat: 34.6, lon: -84.1 }, { lat: 34.6, lon: -84.0 }] };
+    const WITH_LINES = { ...SET, data: { ...SET.data, flots: [FLOT], phaseLines: [RED] } };
+    const shown = (result) => result.current.phaseLineTools.phaseLines.filter((line) => line.setId === SET_ID);
+    const inPack = (result) => result.current.pack.items.find((item) => item.uuid === "rt-1").data;
+
+    it("come to the map with the set and its FLOTs, keep their ids and names and send nothing", () => {
+      const { result } = opened([WITH_LINES]);
+      expect(shown(result)).toEqual([{ ...RED, setId: SET_ID }]);
+      expect(result.current.flotTools.flots).toEqual([{ ...FLOT, setId: SET_ID }]);
+      expect(result.current.pack.sent.current).toEqual([]);
+    });
+
+    it("a phase line drawn into the set goes to the pack as one change, by name", () => {
+      const { result } = opened();
+      act(() => result.current.phaseLineTools.startDrawing());
+      act(() => {
+        result.current.phaseLineTools.addDraftPoint(34.7, -84.1);
+        result.current.phaseLineTools.addDraftPoint(34.8, -84.05);
+      });
+      act(() => result.current.phaseLineTools.finishDrawing("red", SET_ID));
+      settleTimers();
+      const sent = result.current.pack.sent.current.flat();
+      expect(sent).toHaveLength(1);
+      expect(sent[0].summary).toBe("Colin M. added PL RED to OP DK INGRESS.");
+      const { phaseLines } = inPack(result);
+      expect(phaseLines).toHaveLength(1);
+      expect(phaseLines[0]).toMatchObject({ name: "RED" });
+      expect(phaseLines[0]).not.toHaveProperty("setId");
+    });
+
+    it("a rename goes to the pack in words, a FLOT beside it is untouched, and someone else's change reaches the map", () => {
+      const { result } = opened([WITH_LINES]);
+      act(() => result.current.phaseLineTools.renamePhaseLine("pl-1", "blue"));
+      settleTimers();
+      const sent = result.current.pack.sent.current.flat();
+      expect(sent.map((op) => op.summary)).toEqual(["Colin M. renamed PL RED to PL BLUE on OP DK INGRESS."]);
+      expect(inPack(result).phaseLines[0].name).toBe("BLUE");
+      expect(inPack(result).flots).toEqual([FLOT]);
+      const sentBefore = result.current.pack.sent.current.length;
+      act(() => result.current.pack.remote([{ type: "patch", item: "rt-1", path: ["phaseLines", { id: "pl-1" }], value: { name: "DOG", points: [{ lat: 35, lon: -84 }, { lat: 35.1, lon: -84 }] } }]));
+      settleTimers();
+      expect(shown(result)[0]).toMatchObject({ name: "DOG", points: [{ lat: 35, lon: -84 }, { lat: 35.1, lon: -84 }] });
+      expect(result.current.pack.sent.current).toHaveLength(sentBefore);
+    });
+
+    it("go from the map when the set is closed, and stay in the pack", () => {
+      const { result } = opened([WITH_LINES]);
+      act(() => result.current.routes.closeItem("rt-1"));
+      expect(result.current.phaseLineTools.phaseLines).toEqual([]);
+      expect(inPack(result).phaseLines).toHaveLength(1);
+    });
+  });
+
   describe("a set's FLOTs", () => {
     const FLOT = { id: "flot-1", points: [{ lat: 34.7, lon: -84.1 }, { lat: 34.8, lon: -84.05 }] };
     const WITH_FLOT = { ...SET, data: { ...SET.data, flots: [FLOT] } };

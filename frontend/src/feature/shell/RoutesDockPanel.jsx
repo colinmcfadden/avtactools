@@ -2,6 +2,8 @@ import React, { useMemo, useState } from "react";
 import RoutePlanSection from "../msnxImport/RoutePlanSection";
 import { formatDuration } from "../msnxImport/routeCalc";
 import { flotLengthKm } from "../flot/flots";
+import { phaseLineLabel, phaseLineLengthKm } from "../phaseLines/phaseLines";
+import { PHASE_LINE_CASING, PHASE_LINE_COLOR } from "../phaseLines/phaseLineStyle";
 import { defaultSetName, routeTotals, setSummary } from "../saveDialog/useRouteSaves";
 import Avatar, { shortName } from "../ui/Avatar";
 import Chip from "../ui/Chip";
@@ -16,6 +18,9 @@ import "./shell.css";
  * routes, each imported .msnx, and in a Mission Pack each of the pack's route sets), with its save
  * state, Save, Export .msnx (with the threats as a .ths beside it if wanted), and its routes; a
  * route opens into its plan editor. Sketch a route and Import .msnx sit at the foot.
+ *
+ * A set's FLOTs and phase lines are listed under its routes. They are drawn from the sidebar's Routes tools
+ * (Route, FLOT, PL), and on a phone from the map's route tool.
  */
 
 const RouteRow = ({ route, expanded, onToggle, onShare, onToggleVisibility, onRemove, readOnly }) => {
@@ -85,6 +90,29 @@ const FlotRow = ({ flot, readOnly, onFlip, onRemove }) => (
     )}
   </div>
 );
+
+const PhaseLineRow = ({ line, readOnly, onRename, onRemove }) => {
+  const label = phaseLineLabel(line);
+  return (
+    <div className="shell-route">
+      <span className="shell-route__swatch" style={{ background: PHASE_LINE_COLOR, boxShadow: `0 0 0 1.5px ${PHASE_LINE_CASING}` }} />
+      <div className="shell-route__main">
+        <div className="shell-route__name">{label}</div>
+        <div className="shell-route__meta">Phase line · {phaseLineLengthKm(line).toFixed(1)} km</div>
+      </div>
+      {!readOnly && (
+        <>
+          <button type="button" className="ui-btn ui-btn--ghost ui-btn--28 ui-btn--square" aria-label={`Rename ${label}`} onClick={() => onRename(line.id)}>
+            <Icon name="pencil" size={15} />
+          </button>
+          <button type="button" className="ui-btn ui-btn--ghost ui-btn--28 ui-btn--square" aria-label={`Remove ${label}`} onClick={() => onRemove(line.id)}>
+            <Icon name="trash" size={15} />
+          </button>
+        </>
+      )}
+    </div>
+  );
+};
 
 const stateChip = (set, state) => {
   if (set.pack) {
@@ -166,7 +194,7 @@ const SetCard = ({ set, state, threatCount, expanded, onToggleRoute, actions, pl
       <div className="shell-card__chips" style={{ marginTop: 7 }}>
         {set.kind === "mission" && !set.pack && <Chip tone="info" icon="download">Imported</Chip>}
         {stateChip(set, state)}
-        <span className="shell-card__meta">{setSummary(set.routes, set.flots)}</span>
+        <span className="shell-card__meta">{setSummary(set.routes, set.flots, set.phaseLines)}</span>
       </div>
       {set.pack?.target && !readOnly && (
         <div className="shell-card__people">
@@ -192,7 +220,7 @@ const SetCard = ({ set, state, threatCount, expanded, onToggleRoute, actions, pl
             <span>{state.saving ? "Saving" : clean ? "Saved" : "Save"}</span>
           </button>
         )}
-        {/* A FLOT is not written to AMPS: with no routes there is nothing to export. */}
+        {/* A FLOT and a phase line are not written to AMPS: with no routes there is nothing to export. */}
         {set.routes.length > 0 && (
           <button type="button" className={`ui-btn${set.pack ? " ui-btn--grow" : ""}`} onClick={() => actions.export(set, { withThreats: withThreats && threatCount > 0 })}>
             <Icon name="upload" size={15} />
@@ -226,14 +254,17 @@ const SetCard = ({ set, state, threatCount, expanded, onToggleRoute, actions, pl
       {(set.flots ?? []).map((flot) => (
         <FlotRow key={flot.id} flot={flot} readOnly={readOnly} onFlip={actions.flipFlot} onRemove={actions.removeFlot} />
       ))}
+      {(set.phaseLines ?? []).map((line) => (
+        <PhaseLineRow key={line.id} line={line} readOnly={readOnly} onRename={actions.renamePhaseLine} onRemove={actions.removePhaseLine} />
+      ))}
     </section>
   );
 };
 
 /**
- * `sets`: [{ key, kind, fileName, routes, flots?, pack? }]; `stateOf(key)` from useRouteSaves (in a pack: a
+ * `sets`: [{ key, kind, fileName, routes, flots?, phaseLines?, pack? }]; `stateOf(key)` from useRouteSaves (in a pack: a
  * stand-in with the name). `actions`: save, saveAs, rename, close, export, share, toggleVisibility,
- * removeRoute, addToPack, flipFlot, removeFlot. `plan(set)`: the plan-editing calls for that set's routes. `pointSearch`: what the plan's add-a-point field searches.
+ * removeRoute, addToPack, flipFlot, removeFlot, renamePhaseLine `(id)`, removePhaseLine `(id)`. `plan(set)`: the plan-editing calls for that set's routes. `pointSearch`: what the plan's add-a-point field searches.
  */
 const RoutesDockPanel = ({
   sets,
@@ -244,7 +275,6 @@ const RoutesDockPanel = ({
   localPointNames,
   pointSearch,
   sketch,
-  flot = null,
   pack = null,
   onImportMsnx,
   canImportMsnx = true,
@@ -327,19 +357,6 @@ const RoutesDockPanel = ({
                 <button type="button" className="ui-btn ui-btn--38 ui-btn--grow" onClick={onImportMsnx} disabled={!canImportMsnx}>
                   <Icon name="download" size={15} />
                   <span>Import .msnx</span>
-                </button>
-              )}
-              {flot && (
-                <button
-                  type="button"
-                  className="ui-btn ui-btn--38 ui-btn--grow"
-                  style={{ flexBasis: "100%" }}
-                  aria-pressed={flot.active}
-                  onClick={flot.active ? flot.onCancel : flot.onStart}
-                  disabled={!flot.enabled}
-                >
-                  <Icon name={flot.active ? "x" : "flag"} size={15} />
-                  <span>{flot.active ? "Cancel FLOT" : "Draw FLOT"}</span>
                 </button>
               )}
             </>

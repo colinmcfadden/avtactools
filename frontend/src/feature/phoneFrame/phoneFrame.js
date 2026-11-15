@@ -5,6 +5,9 @@
  * The order is the order the app is used in (the owner, 2026-11-11): the route tool and Set Target; then, with a
  * target, Analyze and Draw LZ; then, analysed, the planning tools. The gate itself is the app's own (planning tools
  * are off until an LZ/PZ is analysed, the route tool never is); the rail only leaves out what cannot be used yet.
+ *
+ * The route tool is the place of all three lines drawn across the map (a route, the FLOT, a phase line): it opens a
+ * choice of them, so the first screen keeps its two buttons, and while a route is sketched it ends the route.
  * AGENTS.md §17 has the Android app's answers to the same questions (the LZ tool rail, the phone's frame hidden).
  */
 
@@ -18,6 +21,13 @@ export const STAGE = Object.freeze({
   ANALYZED: "analyzed",
 });
 
+/** What the route tool offers, in order: the lines drawn across the map with taps. */
+export const LINE_CHOICES = Object.freeze([
+  Object.freeze({ key: "route", label: "Sketch a route" }),
+  Object.freeze({ key: "flot", label: "Draw the FLOT" }),
+  Object.freeze({ key: "phaseLine", label: "Draw a phase line (PL)" }),
+]);
+
 /** How far along the active LZ/PZ is, as the rail sees it. */
 export const railStage = ({ hasTarget = false, analyzed = false, drawingBoundary = false } = {}) => {
   if (!hasTarget) return STAGE.NONE;
@@ -26,10 +36,10 @@ export const railStage = ({ hasTarget = false, analyzed = false, drawingBoundary
 };
 
 /**
- * The rail's tools, in order. Each is { key, label, hint, enabled, pressed?, wide?, tone? }:
+ * The rail's tools, in order. Each is { key, label, hint, enabled, pressed?, wide?, tone?, choices? }:
  * `label` is its name (and its words where it is `wide`), `hint` what it does or why it is off, `pressed` a mode
  * that is on, `wide` a step said in words (the next thing to do), `tone` "primary" for that next step and
- * "drawing" for the boundary being drawn.
+ * "drawing" for the boundary being drawn, `choices` what it opens a list of instead of doing one thing.
  *
  * Nothing at all where nothing may be changed (a finished Mission Pack, or a viewer of one), as on Android: the
  * pack's banner and panels say why.
@@ -43,11 +53,12 @@ export const railTools = ({
   sketchingRoute = false,
   drawingBackstop = false,
   drawingFlot = false,
+  drawingPhaseLine = false,
 } = {}) => {
   if (!editable) return [];
   const can = (key) => features[key] !== false;
   const stage = railStage({ hasTarget, analyzed, drawingBoundary });
-  const drawing = drawingBoundary || sketchingRoute || drawingBackstop || drawingFlot;
+  const drawing = drawingBoundary || sketchingRoute || drawingBackstop || drawingFlot || drawingPhaseLine;
   // Once analysed the steps are behind the person: they stay, as icons, beside the tools they opened.
   const wide = stage !== STAGE.ANALYZED;
   const tools = [];
@@ -56,10 +67,11 @@ export const railTools = ({
     const free = sketchingRoute || !drawing;
     tools.push({
       key: "route",
-      label: sketchingRoute ? "End route" : "Sketch route",
-      hint: sketchingRoute ? "End the route" : free ? "Sketch a route on the map" : DRAWING_ALREADY,
+      label: sketchingRoute ? "End route" : "Route, FLOT or phase line",
+      hint: sketchingRoute ? "End the route" : free ? "Sketch a route, or draw the FLOT or a phase line" : DRAWING_ALREADY,
       enabled: free,
       pressed: sketchingRoute,
+      ...(sketchingRoute ? {} : { choices: LINE_CHOICES }),
     });
   }
   if (!can("lz_pz_tools")) return tools;

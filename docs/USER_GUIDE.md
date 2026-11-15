@@ -75,10 +75,15 @@ Everything is draggable; most markers can be deleted from their own controls or 
 
 ## 5. Routes (.msnx)
 
-The **Routes (.msnx)** card has two tools:
+The **Routes** card in the left panel has the three lines you draw across the map:
 
 - **Route** — sketch a new route by clicking on the map.
-- **Upload** — import an existing AMPS/Mission X `.msnx` file.
+- **FLOT** — draw the forward line of own troops (see *The FLOT* below).
+- **PL** — draw a phase line and name it (see *Phase lines* below).
+
+![Route, FLOT and PL in the left panel](images/36-routes-tools.jpg)
+
+None of them needs an LZ/PZ. An existing AMPS/Mission X `.msnx` file comes in through **Import** (see *Importing a .msnx* below).
 
 ### Sketching a route
 
@@ -120,12 +125,27 @@ Imported routes are fully editable: drag points (serpentine geometry updates too
 
 ### The FLOT
 
-**Draw FLOT** at the foot of the Routes panel marks the forward line of troops. Click along the line in order, then **Finish**. It draws as a scalloped blue line labelled FLOT.
+**FLOT**, beside **Route** in the left panel's Routes card, marks the forward line of troops. Click along the line in order, then **Finish** in the bar over the map (or **End FLOT** in the left panel). It draws as a scalloped blue line labelled FLOT.
 
 - **Flip** beside it in the Routes panel, or **Flip the scallops** on its right-click menu, chooses which side the scallops face.
 - Hover the line and drag a point to move it. **Delete FLOT** is on the right-click menu, and the panel has a remove button beside it.
 
 It is saved with the sketched routes, and shared with them in a Mission Pack. It never goes into an exported `.msnx`, and it can't be added to an imported mission: it goes with your sketched routes instead.
+
+### Phase lines
+
+**PL**, beside **Route** and **FLOT**, draws a phase line. Click along the line in order, then **Finish** (or **End PL**), and give it a name. The name is what follows PL: type `RED` and the line reads **PL RED**. A name is suggested (ALPHA, BRAVO, …) that you can type over, and it is kept in capitals.
+
+![A route, a FLOT and a phase line](images/33-lines-after.jpg)
+
+It draws as a solid black line on a white edge, with **PL** and its name beyond each end, so it reads over the satellite, topo and VFR maps alike:
+
+![A phase line over satellite, topo and the VFR chart](images/34-phase-line-base-maps.jpg)
+
+- **Rename**: the pencil beside it in the Routes panel, or **Rename…** on its right-click menu.
+- Hover the line and drag a point to move it. **Delete phase line** is on the right-click menu, and the panel has a remove button beside it.
+
+A phase line is kept exactly as a FLOT is: saved with the sketched routes, shared with them in a Mission Pack (the pack's history names it, e.g. *added PL RED*), never part of an exported `.msnx` or a route sent to ForeFlight, and not something an imported mission can hold.
 
 ### The Routes panel
 
@@ -195,7 +215,7 @@ On a phone (a window 850 px wide or narrower) the app is laid out for one hand, 
 - **Menu** (☰, beside GO) holds everything else from the top bar: the workspace, your account, **Tools** (the left panel: aircraft, analysis data, the slope map and LZ box switches), **Brief**, **Import** and the **Library**. Tap ☰ again, or the map, to put it away.
 - **The crosshair** marks the middle of the map you can see. **Set Target** puts the target there: move the map until the crosshair is on the spot, then tap it. (Searching a grid, or a long press on the map → **Set as Target**, still work.)
 - **The tools come in the order you use them**, at the bottom right where your thumb is:
-  1. With no target: the route tool and **Set Target**.
+  1. With no target: the route tool and **Set Target**. The route tool opens a short list: **Sketch a route**, **Draw the FLOT** or **Draw a phase line (PL)**. While you sketch a route, the same button ends it.
   2. With a target: **Analyze** and **Draw LZ** appear.
   3. While you draw a boundary, **Analyze** is greyed out until you tap **Finish LZ**.
   4. Once the LZ is analysed, the planning tools appear (helicopter, PZ marker, sector, backstop, unit, go-around). Set Target, Re-analyze and Draw LZ stay, as icons.
@@ -203,6 +223,10 @@ On a phone (a window 850 px wide or narrower) the app is laid out for one hand, 
 - **Undo and redo** appear beside the tools while there is something to undo.
 - **Hide and show**: the **⌄** button under the tools folds them away (it then reads **Tools ⌃**). A tap on the map hides everything except the search bar, and the next tap brings it all back; so does ☰. A tap never hides anything while you are drawing, and a tap that closed a menu or folded the search does only that.
 - On a short screen (a phone on its side, or with the bottom sheet raised) the tools that do not fit are behind **⋯ More**.
+
+The route tool's choice, naming a phase line, and the phase line on the map:
+
+![The route tool's choice of lines, naming a phase line, and the line drawn](images/35-phone-lines.jpg)
 
 | Search open | Everything hidden | Menu |
 |---|---|---|

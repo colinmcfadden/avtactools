@@ -5,7 +5,7 @@ import { sameData } from "../feature/missionPacks/packDiff";
 import { composeEdit } from "../feature/missionPacks/packEdit";
 import { describeLzChange, lzDiagramFromItem, lzItemData, sharedLzData } from "../feature/missionPacks/packLz";
 import { packLocalId } from "../feature/missionPacks/packRef";
-import { describeRouteChange, flotsFromItem, routeSetData, routesFromItem, sharedRouteData } from "../feature/missionPacks/packRoutes";
+import { describeRouteChange, flotsFromItem, phaseLinesFromItem, routeSetData, routesFromItem, sharedRouteData } from "../feature/missionPacks/packRoutes";
 import { actorName, createSummary, newItemOp, updateFromOriginalSummary } from "../feature/missionPacks/packSentences";
 import { describePointsChange, newPointSetOp, pointsForPack } from "../feature/missionPacks/usePackPoints";
 import { ROUTE_COLORS } from "../feature/msnxImport/colorPalette";
@@ -185,6 +185,12 @@ const FLOTS = [
   { id: "flot-2", flipped: true, points: [{ lat: 35.1, lon: -84.2 }, { lat: 35.2, lon: -84.1 }] },
 ];
 
+// Phase lines as a set of routes holds them, each under the name that follows PL.
+const PHASE_LINES = [
+  { id: "pl-1", name: "RED", points: [{ lat: 34.6, lon: -84.2 }, { lat: 34.62, lon: -84.1 }, { lat: 34.6, lon: -84.0 }] },
+  { id: "pl-2", name: "BLUE", points: [{ lat: 34.9, lon: -84.2 }, { lat: 34.9, lon: -84.0 }] },
+];
+
 const ROUTES_SHARED = [
   ["each route loses whether it is hidden and the set it is filed under", { version: 1, routes: [SKETCH_RED, SKETCH_BLUE] }],
   ["a route without them is unchanged", { version: 1, routes: [RED_SHARED] }],
@@ -196,6 +202,7 @@ const ROUTES_SHARED = [
     version: 1, futureSetField: "kept", routes: [{ id: "r-1", visible: true, futureField: { keep: [1, null] } }],
   }],
   ["a set's FLOTs are kept beside its routes", { version: 1, flots: FLOTS, routes: [{ id: "r-1", visible: true }] }],
+  ["a set's phase lines are kept beside its routes and its FLOTs", { version: 1, flots: FLOTS, phaseLines: PHASE_LINES, routes: [{ id: "r-1", visible: true }] }],
   ["a version other than 1 is kept as it is", { version: 2, routes: [{ id: "r-1", setId: "s" }] }],
   ["routes that are not objects are kept as they are", {
     version: 1, routes: [null, 7, "RED 1", true, { id: "r-1", visible: false, setId: "s" }],
@@ -268,6 +275,11 @@ const LIBRARY = [
   ["a route set's other fields are not saved", "route", { version: 1, futureSetField: "dropped", routes: [] }],
   ["a route set's FLOTs are saved with it", "route", { version: 1, flots: FLOTS, routes: [{ id: "r-1", name: "RED 1", points: [] }] }],
   ["a route set with no FLOTs has no key for them", "route", { version: 1, flots: [], routes: [] }],
+  ["a route set's phase lines are saved with it, after its FLOTs", "route", { version: 1, phaseLines: PHASE_LINES, flots: FLOTS, routes: [{ id: "r-1", name: "RED 1", points: [] }] }],
+  ["a route set's phase lines are saved with no FLOTs beside them", "route", { version: 1, phaseLines: PHASE_LINES, routes: [] }],
+  ["a route set with no phase lines has no key for them", "route", { version: 1, phaseLines: [], routes: [] }],
+  ["what is not an object with an id is no phase line", "route", { version: 1, phaseLines: [null, 7, { name: "GHOST", points: [] }, PHASE_LINES[0]], routes: [] }],
+  ["phase lines that are not a list are none", "route", { version: 1, phaseLines: { "pl-1": PHASE_LINES[0] }, routes: [] }],
   ["a route set of another version is saved as version 1", "route", { version: 2, routes: [{ id: "r-1" }] }],
   ["routes that are not a list are saved as none", "route", { version: 1, routes: { "r-1": { id: "r-1" } } }],
   ["a route set with no routes is saved with none", "route", { version: 1 }],
@@ -280,7 +292,7 @@ const LIBRARY = [
 // field, or disagrees with its own editor, the case is marked webBug for a port not to copy.
 const PACK_UUID = "6f1c2a9e-3b7d-4c55-9a10-2d8e5f7b4c31";
 const lzShapeOf = (it) => lzItemData(lzDiagramFromItem(PACK_UUID, it));
-const routeShapeOf = (it) => routeSetData(routesFromItem(it, packLocalId(PACK_UUID, it.uuid)), flotsFromItem(it));
+const routeShapeOf = (it) => routeSetData(routesFromItem(it, packLocalId(PACK_UUID, it.uuid)), flotsFromItem(it), phaseLinesFromItem(it));
 
 // An LZ/PZ as an old library save copied into a pack may hold it: no mapData, no PZ markers or other graphics lists,
 // an analysis without its boundaries. The editor works on today's shape of it.
@@ -459,7 +471,7 @@ const SHAPING_FIRST = [RED_TODAY.points[1], RED_TODAY.points[0], RED_TODAY.point
 // or fails on). Each is a case marked webBug.
 const routeSetQuirks = (data) => {
   if (!isPlainObject(data)) return [];
-  const own = Object.keys(data).filter((key) => key !== "routes" && key !== "flots" && !(key === "version" && data.version === 1));
+  const own = Object.keys(data).filter((key) => key !== "routes" && key !== "flots" && key !== "phaseLines" && !(key === "version" && data.version === 1));
   const routes = Array.isArray(data.routes) ? data.routes : [];
   return [...own, ...routes.filter((route) => !isPlainObject(route) || !("id" in route)).map(() => "route without an id")];
 };
@@ -469,6 +481,8 @@ const ROUTE_SHAPES = [
   ["a set already in today's shape is its own shape", { version: 1, routes: [RED_TODAY] }],
   ["a set's FLOTs stay beside its routes", { version: 1, flots: FLOTS, routes: [RED_TODAY] }],
   ["a set with FLOTs and no routes is its own shape", { version: 1, flots: FLOTS, routes: [] }],
+  ["a set's phase lines stay beside its routes, after its FLOTs", { version: 1, flots: FLOTS, phaseLines: PHASE_LINES, routes: [RED_TODAY] }],
+  ["a set with phase lines and no routes is its own shape", { version: 1, phaseLines: PHASE_LINES, routes: [] }],
   ["each route loses whether it is hidden and the set it is filed under, and its plan gains the defaults", { version: 1, routes: [SKETCH_RED, SKETCH_BLUE] }],
   ["routes with no id are left out of the shape (the web's editor keeps them)", { version: 1, routes: [{ name: "GHOST", points: [] }, RED_TODAY] }, true],
   ["a route whose id is null is kept, and coloured as the text null", { version: 1, routes: [BARE(null)] }],
@@ -624,7 +638,7 @@ const sharedCases = () => withoutClockOrRandomness(() => ({
     + "Inside mapData, flightData, results, exportBox and each graphic nothing is dropped. Data null, missing or not an object "
     + "(a list, text) is an empty draft. The normaliser stamps a time on a diagram that has none and the shape drops it again: "
     + "these cases are built at two instants and must come out the same. "
-    + "`routeShape`: packRoutes.routeSetData(packRoutes.routesFromItem(item, packRef.packLocalId(pack, item.uuid)), packRoutes.flotsFromItem(item)) -> `shape`. "
+    + "`routeShape`: packRoutes.routeSetData(packRoutes.routesFromItem(item, packRef.packLocalId(pack, item.uuid)), packRoutes.flotsFromItem(item), packRoutes.phaseLinesFromItem(item)) -> `shape`. "
     + "It is exactly {version: 1, routes}: the set's other fields are dropped and any version is 1 (webBug, above, where that "
     + "loses something). Its routes are data.routes when that is a list (else there are none), in their order, less every "
     + "element that is not an object with an `id` (null, numbers, text, booleans, lists and a route with no id are left out: "
@@ -1071,6 +1085,20 @@ const ROUTE_CASES = [
   rt("a FLOT removed", (d) => { d.flots.pop(); }, { before: { version: 1, flots: FLOTS, routes: [RED, BLUE] } }),
   rt("the last FLOT removed leaves null, as a pack leaves a key that went", (d) => { d.flots = null; }, { before: { version: 1, flots: FLOTS, routes: [RED, BLUE] } }),
   rt("a route's change is told before a FLOT's", (d) => { red(d).name = "RED 2"; d.flots = FLOTS.slice(0, 1); }),
+
+  rt("a phase line added is told by its name", (d) => { d.phaseLines = PHASE_LINES.slice(0, 1); }),
+  rt("a phase line's point moved", (d) => { d.phaseLines[0].points[1].lat = 34.63; }, { before: { version: 1, phaseLines: PHASE_LINES, routes: [RED, BLUE] } }),
+  rt("a phase line renamed", (d) => { d.phaseLines[1].name = "DOG"; }, { before: { version: 1, phaseLines: PHASE_LINES, routes: [RED, BLUE] } }),
+  rt("a rename is told before a move of the same phase line", (d) => { d.phaseLines[0].name = "GOLD"; d.phaseLines[0].points[0].lat = 34.61; }, { before: { version: 1, phaseLines: PHASE_LINES, routes: [RED, BLUE] } }),
+  rt("a phase line removed", (d) => { d.phaseLines.pop(); }, { before: { version: 1, phaseLines: PHASE_LINES, routes: [RED, BLUE] } }),
+  rt("the last phase line removed leaves null, as a pack leaves a key that went", (d) => { d.phaseLines = null; }, { before: { version: 1, phaseLines: PHASE_LINES.slice(0, 1), routes: [RED, BLUE] } }),
+  rt("a phase line with no name, an empty one or one that is not words is a phase line", (d) => { d.phaseLines = [{ id: "pl-3", points: [] }]; }),
+  rt("a name of spaces is no name", (d) => { d.phaseLines[0].name = "  "; }, { before: { version: 1, phaseLines: PHASE_LINES, routes: [RED, BLUE] } }),
+  rt("a name that is a number is no name", (d) => { d.phaseLines[0].name = 7; }, { before: { version: 1, phaseLines: PHASE_LINES, routes: [RED, BLUE] } }),
+  rt("a name is told trimmed", (d) => { d.phaseLines[0].name = " RED\u00a0"; }, { before: { version: 1, phaseLines: PHASE_LINES, routes: [RED, BLUE] } }),
+  rt("a phase line named for the first time", (d) => { d.phaseLines[0].name = "RED"; }, { before: { version: 1, phaseLines: [{ id: "pl-1", points: PHASE_LINES[0].points }], routes: [RED, BLUE] } }),
+  rt("a FLOT's change is told before a phase line's", (d) => { d.flots = FLOTS.slice(0, 1); d.phaseLines = PHASE_LINES.slice(0, 1); }),
+  rt("a route's change is told before a phase line's", (d) => { red(d).name = "RED 2"; d.phaseLines = PHASE_LINES.slice(0, 1); }),
   rt("a sentence over 300 is cut to 300", () => {}, { itemName: "X".repeat(296) }),
   // A web bug (webBug): the server cannot store the lone surrogate this leaves, so it answers the batch with 500.
   rt("an emoji across the cut leaves its first half", () => {}, { itemName: `${"X".repeat(285)}${HELI}X`, webBug: true }),
@@ -1508,7 +1536,7 @@ describe("mission pack shared-data and history fixtures", () => {
       expect([c.name, keys(c.shape.graphics)]).toEqual([c.name, [...COLLECTIONS.filter((name) => name !== "backstops"), "exportBox"].sort()]);
     });
     routeShape.forEach((c) => {
-      expect([c.name, keys(c.shape).filter((key) => key !== "flots")]).toEqual([c.name, ["routes", "version"]]);
+      expect([c.name, keys(c.shape).filter((key) => key !== "flots" && key !== "phaseLines")]).toEqual([c.name, ["routes", "version"]]);
       expect([c.name, c.shape.version]).toEqual([c.name, 1]);
       c.shape.routes.forEach((route) => {
         expect([c.name, ["id", "color", "elevations", "plan"].filter((key) => !(key in route))]).toEqual([c.name, []]);
