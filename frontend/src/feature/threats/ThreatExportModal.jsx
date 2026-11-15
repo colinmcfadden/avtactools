@@ -1,31 +1,41 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import Draggable from "react-draggable";
+import React, { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
 import QRCode from "qrcode";
 import api from "../auth/api";
-import { threatToPayload } from "./threatModel";
-import "../export/ExportModal.css";
+import Dialog from "../ui/Dialog";
+import { BusyButton } from "../ui/Spinner";
+import { blobError } from "../../utils/fileDownload";
+import { exportBody, exportGroups, threatCount } from "./threatExport";
 
 /**
- * Export dialog for threats — offers a KMZ download (ForeFlight / ATAK / Aero
- * App), a .ths download (AMPS), or a short-lived QR download link for loading
- * the KMZ into an EFB app on an iPad or phone.
+ * Exporting threats for another app: one file of every open set's threats (each set a folder in it) or of one
+ * set, as a KMZ for ForeFlight, ATAK and Aero App (or the same unzipped as KML), a .ths for AMPS, or a short-lived
+ * link to the KMZ as a QR code, to scan on the iPad or phone that will open it.
+ *
+ * `sets` are the open sets as the Threats panel shows them; `initialSetId` the one asked for, or null for all.
+ * `onDownload({ setId, format })` and `onDownloadThs({ setId })` make and save the file.
  */
-const ThreatExportModal = ({ threats, onDownload, onDownloadThs, onClose }) => {
-  const nodeRef = useRef(null);
+const ThreatExportModal = ({ sets, initialSetId = null, onDownload, onDownloadThs, onClose }) => {
+  const groupsAll = useMemo(() => exportGroups(sets), [sets]);
+  const [setId, setSetId] = useState(initialSetId);
+  // A set emptied or closed while the dialog is open: the file is of everything that is left.
+  const scope = setId && groupsAll.some((set) => set.id === setId) ? setId : null;
+  const groups = useMemo(() => exportGroups(sets, scope), [sets, scope]);
+  const count = threatCount(groups);
+  const [format, setFormat] = useState("kmz");
+  const [busy, setBusy] = useState(null);
+  const [error, setError] = useState(null);
+  const scopeId = useId();
+
   const canvasRef = useRef(null);
   const qrRequestRef = useRef(0);
-  const [downloading, setDownloading] = useState(false);
-  const [downloadingThs, setDownloadingThs] = useState(false);
   const [qrLoading, setQrLoading] = useState(true);
   const [qrLink, setQrLink] = useState(null);
   const [qrError, setQrError] = useState(null);
   const [qrExpired, setQrExpired] = useState(false);
 
-  const fileName = "threats.kmz";
-  const qrPayload = useMemo(() => ({
-    fileName,
-    threats: threats.map(threatToPayload),
-  }), [threats]);
+  // What the QR code's file holds, as text, so a set's threat moved under the dialog asks for a new link and
+  // a pointer moving (a new array of the same threats) does not.
+  const qrBody = useMemo(() => JSON.stringify(exportBody(groups, "threats.kmz", "kmz")), [groups]);
 
   const requestQrLink = useCallback(async () => {
     const requestId = ++qrRequestRef.current;
@@ -34,12 +44,11 @@ const ThreatExportModal = ({ threats, onDownload, onDownloadThs, onClose }) => {
     setQrError(null);
     setQrExpired(false);
     try {
-      const response = await api.post("/threats-kmz-link", qrPayload);
+      const response = await api.post("/threats-kmz-link", JSON.parse(qrBody));
       if (requestId !== qrRequestRef.current) return;
       if (typeof response.data?.downloadPath !== "string") {
         throw new Error("The server did not return a download link");
       }
-
       const apiBase = new URL(api.defaults.baseURL || "/", window.location.origin);
       const downloadUrl = new URL(response.data.downloadPath, apiBase.origin).toString();
       const expiresInSeconds = Number(response.data.expiresInSeconds) || 600;
@@ -51,33 +60,25 @@ const ThreatExportModal = ({ threats, onDownload, onDownloadThs, onClose }) => {
       });
     } catch (err) {
       if (requestId !== qrRequestRef.current) return;
-      setQrError(
-        err.response?.data?.error ||
-          "Couldn't create a secure QR download link. Please try again.",
-      );
+      setQrError(err.response?.data?.error || "The QR code's download link could not be made. Try again.");
     } finally {
       if (requestId === qrRequestRef.current) setQrLoading(false);
     }
-  }, [qrPayload]);
+  }, [qrBody]);
 
   useEffect(() => {
+    if (count === 0) return undefined;
     requestQrLink();
     return () => {
       qrRequestRef.current += 1;
     };
-  }, [requestQrLink]);
+  }, [requestQrLink, count]);
 
   useEffect(() => {
     if (!canvasRef.current || !qrLink || qrExpired) return;
-    QRCode.toCanvas(canvasRef.current, qrLink.url, {
-      width: 320,
-      margin: 2,
-      errorCorrectionLevel: "M",
-    })
-      .catch((err) => {
-        setQrError("Couldn't render the QR code. Please generate a new link.");
-        console.error("Threat QR generation failed:", err);
-      });
+    QRCode.toCanvas(canvasRef.current, qrLink.url, { width: 240, margin: 2, errorCorrectionLevel: "M" }).catch(() => {
+      setQrError("The QR code could not be drawn. Make a new one.");
+    });
   }, [qrLink, qrExpired]);
 
   useEffect(() => {
@@ -91,106 +92,125 @@ const ThreatExportModal = ({ threats, onDownload, onDownloadThs, onClose }) => {
     return () => window.clearTimeout(timer);
   }, [qrLink]);
 
-  const handleDownload = async () => {
-    setDownloading(true);
+  const download = async (kind) => {
+    setBusy(kind);
+    setError(null);
     try {
-      await onDownload();
+      if (kind === "ths") await onDownloadThs({ setId: scope });
+      else await onDownload({ setId: scope, format });
     } catch (err) {
-      alert("Error exporting KMZ: " + err.message);
+      setError(await blobError(err, kind === "ths" ? "The .ths could not be made. Try again." : `The .${format} could not be made. Try again.`));
     } finally {
-      setDownloading(false);
+      setBusy(null);
     }
   };
 
-  const handleDownloadThs = async () => {
-    setDownloadingThs(true);
-    try {
-      await onDownloadThs();
-    } catch (err) {
-      alert("Error exporting .ths: " + err.message);
-    } finally {
-      setDownloadingThs(false);
-    }
-  };
+  const setsWord = (n) => `${n} ${n === 1 ? "set" : "sets"}`;
+  const threatsWord = (n) => `${n} ${n === 1 ? "threat" : "threats"}`;
+  const only = groupsAll.length === 1 ? groupsAll[0] : null;
 
   return (
-    <Draggable nodeRef={nodeRef} handle=".modal-header">
-      <div ref={nodeRef} className="export-modal-container glass-panel" style={{ width: "min(380px, 94vw)" }}>
-        <div className="modal-header">
-          <h3>Export Threats</h3>
-          <button className="close-btn" onClick={onClose}>
-            ×
-          </button>
-        </div>
-
-        <div className="modal-body">
-          <p style={{ fontSize: "0.8rem", opacity: 0.75, marginTop: 0 }}>
-            Export {threats.length} threat{threats.length === 1 ? "" : "s"} — KMZ for
-            ForeFlight / ATAK / Aero App, or .ths for AMPS.
-          </p>
-
-          <div className="form-divider">Download</div>
-          <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
-            <button className="export-btn" onClick={handleDownload} disabled={downloading}>
-              {downloading ? "Building KMZ…" : "Download .kmz (ForeFlight / ATAK / Aero App)"}
-            </button>
-            {onDownloadThs && (
-              <button
-                className="export-btn"
-                onClick={handleDownloadThs}
-                disabled={downloadingThs}
-                style={{ background: "#00b5e2" }}
-              >
-                {downloadingThs ? "Building .ths…" : "Download .ths (AMPS)"}
-              </button>
-            )}
-          </div>
-          <p style={{ fontSize: "0.7rem", opacity: 0.6 }}>
-            Open the file on the device and share it to the target app.
-          </p>
-
-          <div className="form-divider">QR code — KMZ (scan on the device)</div>
-          <div style={{ display: "flex", justifyContent: "center", padding: "6px 0" }}>
-            {qrLoading ? (
-              <p style={{ maxWidth: "320px", fontSize: "0.8rem", opacity: 0.75 }}>
-                Creating a secure, short-lived download link…
-              </p>
-            ) : qrExpired ? (
-              <div style={{ maxWidth: "320px", textAlign: "center" }}>
-                <p style={{ color: "#f59e0b", fontSize: "0.8rem" }}>
-                  This QR download link has expired.
-                </p>
-                <button className="export-btn" onClick={requestQrLink}>
-                  Generate a new QR code
-                </button>
+    <Dialog
+      title="Export threats"
+      subtitle={
+        count === 0
+          ? "No threats are open."
+          : groups.length > 1
+            ? `${threatsWord(count)} in ${setsWord(groups.length)}, each set a folder in the file.`
+            : `${threatsWord(count)} from ${groups[0].name}.`
+      }
+      icon="send"
+      width="wide"
+      onClose={onClose}
+      note="Threat positions go to the server once, to make the file. Nothing is kept."
+      footer={<button type="button" className="ui-btn" onClick={onClose}>Close</button>}
+    >
+      {count === 0 ? (
+        <p style={{ margin: 0 }}>Add or import threats first.</p>
+      ) : (
+        <>
+          {groupsAll.length > 1 ? (
+            <div className="ui-field">
+              <label htmlFor={scopeId} className="ui-field__label">Send</label>
+              <select id={scopeId} className="ui-input" value={scope ?? ""} onChange={(event) => setSetId(event.target.value || null)}>
+                <option value="">All {threatsWord(threatCount(groupsAll))} in {setsWord(groupsAll.length)}, as one file</option>
+                {groupsAll.map((set) => (
+                  <option key={set.id} value={set.id}>
+                    {set.name} only · {threatsWord(set.threats.length)}
+                  </option>
+                ))}
+              </select>
+            </div>
+          ) : (
+            <div className="ui-field">
+              <div className="ui-field__label">Send</div>
+              <div style={{ fontSize: 13 }}>
+                <b>{only.name}</b> · {threatsWord(only.threats.length)}
               </div>
-            ) : qrError ? (
-              <div style={{ maxWidth: "320px", textAlign: "center" }}>
-                <p style={{ color: "#f59e0b", fontSize: "0.8rem" }}>{qrError}</p>
-                <button className="export-btn" onClick={requestQrLink}>
-                  Try again
-                </button>
-              </div>
-            ) : (
-              <canvas ref={canvasRef} style={{ borderRadius: "8px", background: "white" }} />
-            )}
-          </div>
-          {qrLink && !qrLoading && !qrError && !qrExpired && (
-            <p style={{ fontSize: "0.7rem", opacity: 0.6 }}>
-              Scan with the device camera — it opens a browser download of the .kmz to
-              share into your EFB app. The link expires in {Math.round(qrLink.expiresInSeconds / 60)}
-              {" "}minutes and permits up to {qrLink.maxDownloads} downloads.
-            </p>
+            </div>
           )}
-        </div>
 
-        <div className="modal-footer">
-          <button className="cancel-btn" onClick={onClose}>
-            Close
-          </button>
-        </div>
-      </div>
-    </Draggable>
+          <div className="ui-field" style={{ marginTop: 14 }}>
+            <div className="ui-field__label" id={`${scopeId}-format`}>For ForeFlight, ATAK or Aero App</div>
+            <div role="radiogroup" aria-labelledby={`${scopeId}-format`} style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+              <label className={`ui-choice${format === "kmz" ? " ui-choice--selected" : ""}`}>
+                <input type="radio" name="threat-format" checked={format === "kmz"} onChange={() => setFormat("kmz")} />
+                <span>
+                  <span className="ui-choice__title">KMZ</span>
+                  <span className="ui-choice__text">Zipped. What ForeFlight, ATAK and Aero App expect.</span>
+                </span>
+              </label>
+              <label className={`ui-choice${format === "kml" ? " ui-choice--selected" : ""}`}>
+                <input type="radio" name="threat-format" checked={format === "kml"} onChange={() => setFormat("kml")} />
+                <span>
+                  <span className="ui-choice__title">KML</span>
+                  <span className="ui-choice__text">The same file, unzipped, for an app that takes only KML.</span>
+                </span>
+              </label>
+            </div>
+          </div>
+
+          <div style={{ display: "flex", gap: 8, marginTop: 14, flexWrap: "wrap" }}>
+            <BusyButton className="ui-btn ui-btn--primary ui-btn--grow" icon="download" busy={busy === "kmz"} disabled={Boolean(busy)} onClick={() => download("kmz")}>
+              <span>Download .{format}</span>
+            </BusyButton>
+            {onDownloadThs && (
+              <BusyButton className="ui-btn ui-btn--grow" icon="upload" busy={busy === "ths"} disabled={Boolean(busy)} onClick={() => download("ths")}>
+                <span>Download .ths for AMPS</span>
+              </BusyButton>
+            )}
+          </div>
+          {error && <div role="alert" className="ui-field__hint ui-field__hint--error">{error}</div>}
+          <div className="ui-field__hint">Open the file on the device and share it to the app. AMPS keeps no folders: the .ths is one list.</div>
+
+          <div className="ui-label" style={{ marginTop: 18, marginBottom: 8 }}>QR code · the KMZ, to scan on the device</div>
+          <div style={{ display: "flex", gap: 14, alignItems: "center", flexWrap: "wrap" }}>
+            <div style={{ width: 240, minHeight: 120, display: "flex", alignItems: "center", justifyContent: "center" }}>
+              {qrLoading ? (
+                <span style={{ color: "var(--ff-text-muted)" }}>Making a short-lived download link…</span>
+              ) : qrExpired || qrError ? (
+                <div style={{ textAlign: "center" }}>
+                  <p role={qrError ? "alert" : undefined} style={{ color: "#f0c56f", margin: "0 0 8px" }}>
+                    {qrError || "This QR code's link has expired."}
+                  </p>
+                  <button type="button" className="ui-btn" onClick={requestQrLink}>
+                    {qrError ? "Try again" : "Make a new QR code"}
+                  </button>
+                </div>
+              ) : (
+                <canvas ref={canvasRef} aria-label="QR code of a link to the KMZ" style={{ borderRadius: 8, background: "white" }} />
+              )}
+            </div>
+            {qrLink && !qrLoading && !qrError && !qrExpired && (
+              <p style={{ flex: "1 1 180px", margin: 0, color: "var(--ff-text-muted)", lineHeight: 1.45 }}>
+                Scan it with the device's camera: the browser downloads the .kmz, to share into the app. The link lasts{" "}
+                {Math.round(qrLink.expiresInSeconds / 60)} minutes and works {qrLink.maxDownloads === 1 ? "once" : `${qrLink.maxDownloads} times`}.
+              </p>
+            )}
+          </div>
+        </>
+      )}
+    </Dialog>
   );
 };
 

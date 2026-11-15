@@ -43,6 +43,9 @@ const TopBar = ({
   switcher: heldSwitcher,
   onImport,
   canImport = {},
+  // The Export menu: [{ kind, icon, title, text, disabled }], none for an account that may export nothing.
+  exportKinds = [],
+  onExport,
   onOpenLibrary,
   // What goes before Import: the mission brief's button, for an account that has it.
   briefSlot = null,
@@ -61,6 +64,7 @@ const TopBar = ({
   const ownSwitcher = useMenu();
   const switcher = heldSwitcher ?? ownSwitcher;
   const imports = useMenu();
+  const exports = useMenu();
   const account = useMenu();
   const status = PACK_STATUS[packStatus] ?? PACK_STATUS.live;
   const name = user?.name || user?.email || "Account";
@@ -142,6 +146,31 @@ const TopBar = ({
     </>
   );
 
+  const exportButton = exportKinds.length > 0 ? (
+    <>
+      <button type="button" className="shell-topbar__button" {...exports.buttonProps}>
+        <Icon name="upload" size={15} />
+        <span className="shell-topbar__button-label">Export</span>
+        <Icon name="chevronDown" size={13} />
+      </button>
+      <Menu open={exports.open} onClose={exports.close} anchorRef={exports.anchorRef} label="Export" width={340} align="end">
+        <div className="ui-menu__heading"><div className="ui-label">Export</div></div>
+        {exportKinds.map((entry) => (
+          <MenuItem
+            key={entry.kind}
+            rich
+            icon={<Icon name={entry.icon} size={18} />}
+            title={entry.title}
+            text={entry.text}
+            disabled={entry.disabled}
+            onClose={exports.close}
+            onSelect={then(() => onExport?.(entry.kind))}
+          />
+        ))}
+      </Menu>
+    </>
+  ) : null;
+
   const libraryButton = (
     <button type="button" className="shell-topbar__button" onClick={then(onOpenLibrary)} style={{ paddingRight: 11 }}>
       <Icon name="folder" size={15} />
@@ -205,6 +234,7 @@ const TopBar = ({
           )}
           {briefSlot}
           {importButton}
+          {exportButton}
           {libraryButton}
         </div>
       </div>
@@ -233,6 +263,7 @@ const TopBar = ({
         )}
         {briefSlot}
         {importButton}
+        {exportButton}
         {libraryButton}
         <div className="shell-topbar__divider" />
         {accountButton}

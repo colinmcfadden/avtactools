@@ -68,7 +68,7 @@ describe("how the shared layers stack", () => {
     const windowFiles = files.filter(
       (file) => /\.jsx?$/.test(file) && fs.readFileSync(file, "utf8").includes("export-modal-container"),
     );
-    expect(windowFiles.length).toBeGreaterThanOrEqual(7);
+    expect(windowFiles.length).toBeGreaterThanOrEqual(6);
     for (const file of windowFiles) expect([file, /zIndex/.test(fs.readFileSync(file, "utf8"))]).toEqual([file, false]);
 
     // A rule whose subject is a window (`.lz3d-window`, `.export-modal-container.glass-panel`) sets no other.

@@ -50,6 +50,7 @@ public object PriorityPaths {
         "/export-package",
         "/generate-excel",
         "/brief/pdf",
+        "/overlay-image",       // a mission overlay cut into tiles (web only so far)
     )
 
     /** Whether a request to [url] (a path, or a whole URL) is heavy. A query string is ignored. */

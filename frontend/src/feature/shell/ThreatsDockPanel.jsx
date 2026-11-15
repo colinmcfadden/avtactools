@@ -137,14 +137,16 @@ const ThreatsDockPanel = ({
                 <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
                   {canSave && !pack && saveChip(set, saveStates[set.id])}
                   {many && !readOnly && set.id === activeId && <Chip tone="info" dot={false}>New threats go here</Chip>}
-                  {keeps && (
+                  {(keeps || set.threats.length > 0) && (
                     <MoreMenu
                       label={`More actions for ${set.name}`}
                       size={30}
                       items={[
+                        { icon: "send", title: "Export for ForeFlight / ATAK", text: "This set only, as KMZ or KML", onSelect: () => onExportKmz(set.id), hidden: set.threats.length === 0 },
+                        { icon: "upload", title: "Export .ths for AMPS", text: "This set only", onSelect: () => onExportThs(set.id), hidden: set.threats.length === 0 },
                         { icon: "pencil", title: "Rename", onSelect: () => setRenaming(set), hidden: !canRename },
                         { icon: "plus", title: "Put new threats here", onSelect: () => onMakeActive(set.id), hidden: readOnly || !many || set.id === activeId },
-                        { icon: "x", title: "Close", text: pack ? "It stays in the pack" : "It stays in your Library", onSelect: () => onCloseSet(set.id) },
+                        { icon: "x", title: "Close", text: pack ? "It stays in the pack" : "It stays in your Library", onSelect: () => onCloseSet(set.id), hidden: !keeps },
                       ]}
                     />
                   )}
@@ -164,19 +166,20 @@ const ThreatsDockPanel = ({
           <>
             <div style={{ height: 16 }} />
             <div className="shell-box">
-              <div className="ui-label" style={{ marginBottom: 10 }}>Export</div>
+              <div className="ui-label" style={{ marginBottom: 10 }}>{many ? `Export all ${count}` : "Export"}</div>
               <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-                <button type="button" className="ui-btn" onClick={onExportThs}>
+                <button type="button" className="ui-btn" onClick={() => onExportThs(null)}>
                   <Icon name="upload" size={15} />
                   <span>Export .ths for AMPS</span>
                 </button>
                 {/* "/ Aero app" does not fit at the 11 px floor; the dialog this opens names all three. */}
-                <button type="button" className="ui-btn" onClick={onExportKmz}>
+                <button type="button" className="ui-btn" onClick={() => onExportKmz(null)}>
                   <Icon name="send" size={15} />
                   <span>Export for ForeFlight / ATAK</span>
                 </button>
               </div>
               <div style={{ marginTop: 10, fontSize: 11.5, lineHeight: 1.45, color: "#8a94a1" }}>
+                {many ? "Every open set goes in one file, a folder each; a set's own menu exports it alone. " : ""}
                 Building a file sends threat positions to the server once, to make the file. The file is not kept.
               </div>
             </div>

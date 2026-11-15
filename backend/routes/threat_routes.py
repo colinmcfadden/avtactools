@@ -16,6 +16,7 @@ memory for no more than ten minutes; they are never written to the database or U
 import os
 import io
 import math
+import re
 import base64
 
 import numpy as np
@@ -262,93 +263,137 @@ def _coords_str(coords):
     return ' '.join('%.6f,%.6f,0' % (lon, lat) for lon, lat in coords)
 
 
-def build_threats_kmz(threats):
-    """
-    Builds a KMZ overlay from the threats: a marker, range rings, and the
-    terrain mask as filled vector polygons (per radar / altitude band). Uses the
-    same viewshed as the on-screen mask. Returns KMZ bytes.
-    """
-    folders = []
-    for i, threat in enumerate(threats, start=1):
-        lat = float(threat['lat']); lon = float(threat['lon'])
-        name = _xml_escape(threat.get('name') or f'Threat {i}')
-        radars = threat.get('radars', [])
+MAX_EXPORT_THREATS = 1000  # each one is a viewshed per band; Android refuses a .ths with more (AGENTS.md §17)
 
-        max_range_m = max((float(r.get('rangeNmi', 0)) for r in radars), default=0) * NMI_TO_M
-        placemarks = []
 
-        if max_range_m > 0:
-            dem, meta = fetch_dem(lat, lon, max_range_m)
-            if dem is not None:
-                H, W = dem.shape
-                for radar in radars:
-                    if not radar.get('showMask', True):
+def _threat_folder(threat, i):
+    """One threat's KML Folder: the terrain mask as filled vector polygons (per radar / altitude band, the same
+    viewshed as the on-screen mask), its range rings and its marker."""
+    lat = float(threat['lat']); lon = float(threat['lon'])
+    name = _xml_escape(threat.get('name') or f'Threat {i}')
+    radars = threat.get('radars', [])
+
+    max_range_m = max((float(r.get('rangeNmi', 0)) for r in radars), default=0) * NMI_TO_M
+    placemarks = []
+
+    if max_range_m > 0:
+        dem, meta = fetch_dem(lat, lon, max_range_m)
+        if dem is not None:
+            H, W = dem.shape
+            for radar in radars:
+                if not radar.get('showMask', True):
+                    continue
+                r_elev = radar_elev_m(dem, meta, radar.get('antennaHeightFt', 0),
+                                      radar.get('aglNotMsl'))
+                range_px = min(int(round(float(radar.get('rangeNmi', 0)) * NMI_TO_M / meta['mpp'])),
+                               max(dem.shape))
+                label = 'Engagement' if radar.get('type') == 1 else 'Detection'
+                # Highest band first so lower (more restrictive) bands draw on top.
+                for band in sorted([b for b in radar.get('bands', []) if b.get('viewable', True)],
+                                   key=lambda b: -float(b.get('altFt', 0))):
+                    vis = viewshed(dem, meta['radar_row'], meta['radar_col'], r_elev,
+                                   float(band['altFt']) * FT_TO_M, range_px, meta['mpp'])
+                    rings = _viewshed_rings(vis, meta, H, W)
+                    if not rings:
                         continue
-                    r_elev = radar_elev_m(dem, meta, radar.get('antennaHeightFt', 0),
-                                          radar.get('aglNotMsl'))
-                    range_px = min(int(round(float(radar.get('rangeNmi', 0)) * NMI_TO_M / meta['mpp'])),
-                                   max(dem.shape))
-                    label = 'Engagement' if radar.get('type') == 1 else 'Detection'
-                    # Highest band first so lower (more restrictive) bands draw on top.
-                    for band in sorted([b for b in radar.get('bands', []) if b.get('viewable', True)],
-                                       key=lambda b: -float(b.get('altFt', 0))):
-                        vis = viewshed(dem, meta['radar_row'], meta['radar_col'], r_elev,
-                                       float(band['altFt']) * FT_TO_M, range_px, meta['mpp'])
-                        rings = _viewshed_rings(vis, meta, H, W)
-                        if not rings:
-                            continue
-                        fill = _kml_color(band.get('color'), band.get('alpha', 0.35))
-                        polys = ''.join(
-                            f'<Polygon><outerBoundaryIs><LinearRing><coordinates>'
-                            f'{_coords_str(r)}</coordinates></LinearRing></outerBoundaryIs></Polygon>'
-                            for r in rings)
-                        placemarks.append(
-                            f'<Placemark><name>{name} — {label} mask {int(band["altFt"])} ft</name>'
-                            f'<Style><LineStyle><color>{fill}</color><width>1</width></LineStyle>'
-                            f'<PolyStyle><color>{fill}</color></PolyStyle></Style>'
-                            f'<MultiGeometry>{polys}</MultiGeometry></Placemark>')
+                    fill = _kml_color(band.get('color'), band.get('alpha', 0.35))
+                    polys = ''.join(
+                        f'<Polygon><outerBoundaryIs><LinearRing><coordinates>'
+                        f'{_coords_str(r)}</coordinates></LinearRing></outerBoundaryIs></Polygon>'
+                        for r in rings)
+                    placemarks.append(
+                        f'<Placemark><name>{name} — {label} mask {int(band["altFt"])} ft</name>'
+                        f'<Style><LineStyle><color>{fill}</color><width>1</width></LineStyle>'
+                        f'<PolyStyle><color>{fill}</color></PolyStyle></Style>'
+                        f'<MultiGeometry>{polys}</MultiGeometry></Placemark>')
 
-        # Range rings (always vector).
-        for radar in radars:
-            if not radar.get('showRangeRings', True):
-                continue
-            rng_m = float(radar.get('rangeNmi', 0)) * NMI_TO_M
-            if rng_m <= 0:
-                continue
-            label = 'Engagement' if radar.get('type') == 1 else 'Detection'
-            line = _kml_color('#ef4444' if radar.get('type') == 1 else '#fbbf24', 1.0)
-            placemarks.append(
-                f'<Placemark><name>{name} — {label} {radar.get("rangeNmi")} nmi</name>'
-                f'<Style><LineStyle><color>{line}</color><width>2</width></LineStyle>'
-                f'<PolyStyle><fill>0</fill></PolyStyle></Style>'
-                f'<LineString><tessellate>1</tessellate><coordinates>'
-                f'{_coords_str(_circle_coords(lat, lon, rng_m))}</coordinates></LineString></Placemark>')
-
-        # Threat marker.
-        desc = _xml_escape(
-            f"{threat.get('milstdId', '')}  {threat.get('information', '')}".strip())
+    # Range rings (always vector).
+    for radar in radars:
+        if not radar.get('showRangeRings', True):
+            continue
+        rng_m = float(radar.get('rangeNmi', 0)) * NMI_TO_M
+        if rng_m <= 0:
+            continue
+        label = 'Engagement' if radar.get('type') == 1 else 'Detection'
+        line = _kml_color('#ef4444' if radar.get('type') == 1 else '#fbbf24', 1.0)
         placemarks.append(
-            f'<Placemark><name>{name}</name><description>{desc}</description>'
-            f'<Style><IconStyle><color>ff0000ff</color><scale>1.2</scale></IconStyle></Style>'
-            f'<Point><coordinates>{lon:.6f},{lat:.6f},0</coordinates></Point></Placemark>')
+            f'<Placemark><name>{name} — {label} {radar.get("rangeNmi")} nmi</name>'
+            f'<Style><LineStyle><color>{line}</color><width>2</width></LineStyle>'
+            f'<PolyStyle><fill>0</fill></PolyStyle></Style>'
+            f'<LineString><tessellate>1</tessellate><coordinates>'
+            f'{_coords_str(_circle_coords(lat, lon, rng_m))}</coordinates></LineString></Placemark>')
 
-        folders.append(f'<Folder><name>{name}</name>{"".join(placemarks)}</Folder>')
+    # Threat marker.
+    desc = _xml_escape(
+        f"{threat.get('milstdId', '')}  {threat.get('information', '')}".strip())
+    placemarks.append(
+        f'<Placemark><name>{name}</name><description>{desc}</description>'
+        f'<Style><IconStyle><color>ff0000ff</color><scale>1.2</scale></IconStyle></Style>'
+        f'<Point><coordinates>{lon:.6f},{lat:.6f},0</coordinates></Point></Placemark>')
 
-    kml = ('<?xml version="1.0" encoding="UTF-8"?>'
-           '<kml xmlns="http://www.opengis.net/kml/2.2"><Document>'
-           '<name>Threats</name>' + ''.join(folders) + '</Document></kml>')
+    return f'<Folder><name>{name}</name>{"".join(placemarks)}</Folder>'
 
+
+def build_threats_kml(threats, sets=None, title='Threats'):
+    """
+    The threats as KML text: a Folder for each threat, inside a Folder for each set when `sets` is given
+    ([{name, threats}], the open sets of the Threats panel), else at the top. Numbered across the whole file.
+    """
+    counter = iter(range(1, 1 << 30))
+    if sets:
+        body = ''.join(
+            f'<Folder><name>{_xml_escape(group.get("name") or "Threats")}</name>'
+            + ''.join(_threat_folder(threat, next(counter)) for threat in group['threats'])
+            + '</Folder>'
+            for group in sets)
+    else:
+        body = ''.join(_threat_folder(threat, next(counter)) for threat in threats)
+    return ('<?xml version="1.0" encoding="UTF-8"?>'
+            '<kml xmlns="http://www.opengis.net/kml/2.2"><Document>'
+            f'<name>{_xml_escape(title)}</name>' + body + '</Document></kml>')
+
+
+def build_threats_kmz(threats, sets=None, title='Threats'):
+    """The KML above, zipped as `doc.kml`. Returns KMZ bytes."""
     buf = io.BytesIO()
     import zipfile
     with zipfile.ZipFile(buf, 'w', zipfile.ZIP_DEFLATED) as z:
-        z.writestr('doc.kml', kml)
+        z.writestr('doc.kml', build_threats_kml(threats, sets, title))
     return buf.getvalue()
 
 
-def _kmz_name(body):
+def _export_threats(body):
+    """The threats a request asks for, and its sets if it gave any, checked: (threats, sets, error)."""
+    raw_sets = body.get('sets')
+    if raw_sets is not None:
+        if not isinstance(raw_sets, list) or not all(
+                isinstance(g, dict) and isinstance(g.get('threats'), list) for g in raw_sets):
+            return None, None, 'Each set needs a list of threats'
+        sets = [g for g in raw_sets if g['threats']]
+        threats = [t for g in sets for t in g['threats']]
+    else:
+        threats = body.get('threats', [])
+        sets = None
+        if not isinstance(threats, list):
+            return None, None, 'No threats supplied'
+    if not threats:
+        return None, None, 'No threats supplied'
+    if not all(isinstance(t, dict) for t in threats):
+        return None, None, 'Each threat must be an object'
+    if len(threats) > MAX_EXPORT_THREATS:
+        return None, None, f'At most {MAX_EXPORT_THREATS} threats can go in one file'
+    return threats, sets, None
+
+
+def _file_title(file_name):
+    """The Document's name: the file's, without its extension."""
+    stem = re.sub(r'\.(kmz|kml)$', '', str(file_name), flags=re.IGNORECASE).strip()
+    return stem or 'Threats'
+
+
+def _kmz_name(body, extension='.kmz'):
     name = str(body.get('fileName') or 'threats.kmz')
-    if not name.lower().endswith('.kmz'):
-        name += '.kmz'
+    name = re.sub(r'\.(kmz|kml)$', '', name, flags=re.IGNORECASE) + extension
     return name
 
 
@@ -372,11 +417,11 @@ def create_threats_kmz_link():
     """
     try:
         body = request.get_json(silent=True) or {}
-        threats = body.get('threats', [])
-        if not threats:
-            return jsonify({'error': 'No threats supplied'}), 400
+        threats, sets, problem = _export_threats(body)
+        if problem:
+            return jsonify({'error': problem}), 400
 
-        data = build_threats_kmz(threats)
+        data = build_threats_kmz(threats, sets, _file_title(_kmz_name(body)))
         try:
             token = _threat_download_store.create(data, _kmz_name(body))
         except ValueError:
@@ -438,16 +483,19 @@ def threats_kmz():
             return _no_store(response)
 
         body = request.get_json(silent=True) or {}
-        threats = body.get('threats', [])
-        if not threats:
-            return jsonify({'error': 'No threats supplied'}), 400
-        data = build_threats_kmz(threats)
-        response = send_file(
-            io.BytesIO(data),
-            mimetype='application/vnd.google-earth.kmz',
-            as_attachment=True,
-            download_name=_kmz_name(body),
-        )
+        threats, sets, problem = _export_threats(body)
+        if problem:
+            return jsonify({'error': problem}), 400
+        # `format: "kml"` for the plain KML: ATAK and Google Earth take either, and some EFB apps only KML.
+        if body.get('format') == 'kml':
+            name = _kmz_name(body, '.kml')
+            data = build_threats_kml(threats, sets, _file_title(name)).encode('utf-8')
+            mimetype = 'application/vnd.google-earth.kml+xml'
+        else:
+            name = _kmz_name(body)
+            data = build_threats_kmz(threats, sets, _file_title(name))
+            mimetype = 'application/vnd.google-earth.kmz'
+        response = send_file(io.BytesIO(data), mimetype=mimetype, as_attachment=True, download_name=name)
         return _no_store(response)
     except Exception as e:  # noqa: BLE001
         import traceback; traceback.print_exc()

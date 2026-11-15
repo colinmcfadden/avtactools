@@ -17,10 +17,31 @@ describe("the Threats panel", () => {
     expect(screen.getByText("Not saved yet")).toBeInTheDocument();
   });
 
-  it("says so where the account cannot save, and offers no set's menu", () => {
-    show({ canSave: false, sets: [set({ savedId: null })] });
+  it("says so where the account cannot save, and offers a set only its exports", () => {
+    const onExportKmz = vi.fn();
+    const onExportThs = vi.fn();
+    show({ canSave: false, sets: [set({ savedId: null })], onExportKmz, onExportThs });
     expect(screen.getByText("Session only.")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "More actions for NORTH" }));
+    expect(screen.queryByRole("menuitem", { name: /Close/ })).toBeNull();
+    expect(screen.queryByRole("menuitem", { name: /Rename/ })).toBeNull();
+    fireEvent.click(screen.getByRole("menuitem", { name: /Export for ForeFlight/ }));
+    expect(onExportKmz).toHaveBeenCalledWith("a");
+  });
+
+  it("offers an empty set nothing to export, and one with nothing else no menu", () => {
+    show({ canSave: false, sets: [set({ savedId: null, threats: [] })] });
     expect(screen.queryByRole("button", { name: "More actions for NORTH" })).toBeNull();
+  });
+
+  it("exports every open set from the foot, or one set from its menu", () => {
+    const onExportKmz = vi.fn();
+    const onExportThs = vi.fn();
+    show({ onExportKmz, onExportThs, threats: [threat, threat], sets: [set(), set({ id: "b", savedId: 4, name: "SOUTH" })] });
+    expect(screen.getByText(/Every open set goes in one file/)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "More actions for SOUTH" }));
+    fireEvent.click(screen.getByRole("menuitem", { name: /Export \.ths for AMPS/ }));
+    expect(onExportThs).toHaveBeenCalledWith("b");
   });
 
   it("closes a set from its menu, and says which takes new threats when more than one is open", () => {

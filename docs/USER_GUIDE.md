@@ -7,7 +7,7 @@ EZ-PZ is a map-based planning tool for helicopter landing zone / pickup zone (LZ
 The interface has four parts:
 
 - **Left panel** — MGRS search, LZ/PZ analysis data, placement tools, export, and route tools.
-- **Top bar** — where your work is saved (**Library**, your own; Mission Packs come later), **Import**, the **Library** button, and your account (sign out is in its menu).
+- **Top bar** — where your work is saved (**Library**, your own; Mission Packs come later), **Import**, **Export** (a mission overlay, or every open threat as one file), the **Library** button, and your account (sign out is in its menu).
 - **Map** — the working area, with the zoom buttons at its top-left.
 - **Dock** (right) — one panel at a time, picked from the icons on its right edge: **LZ/PZ**, **Routes**, **Threats** and **Imports**. Click the open panel's icon again to fold it away. A small amber dot on an icon means something there has unsaved changes. On a narrow window the dock is a sheet along the bottom: drag its handle up or down, or tap a tab.
 
@@ -231,6 +231,26 @@ A Mission Pack is a shared space for one operation: everyone in it edits the sam
 Threats have their own panel. They are kept in your Library as you work, with no Save to press, in named sets: the first threat starts a set called THREATS, and an imported `.ths` becomes a set named for its file. The sets you had open come back when you next sign in, terrain masks included. Several can be open at once: each is a section of the panel with its own **⋯** menu (rename, put new threats here, close), and closing one leaves it in the Library's **Threats** tab. Add one in the middle of the map (or right-click the map → **Add Threat Here**), import a `.ths`, and export them as a `.ths` for AMPS or a KMZ for ForeFlight, ATAK or Aero App. **Remove all threats** asks first; the sets stay, empty. If cloud save is off for your account, the panel says **Session only** and threats stay in that browser tab.
 
 While a Mission Pack is open the threats on the map are the pack's, and anyone who can edit it can add, move or remove them; yours are put aside and come back when you leave it. Copy a set in from the Library's **Threats** tab. Whether you have hidden a threat stays yours, and a terrain mask is worked out on each person's own screen rather than sent to the others.
+
+**Exporting threats.** The foot of the Threats panel exports **every open set as one file** (it says **Export all** and the count when more than one set is open), and so does **Export → All threats** in the top bar. A set's own **⋯** menu exports that set alone. The export screen asks:
+
+- **Send**: all the open sets, or one of them. In a KMZ or KML each set is a folder of its own, named for the set, so ForeFlight and ATAK list them apart. Threats you have hidden on the map are in the file too.
+- **KMZ** (what ForeFlight, ATAK and Aero App expect) or **KML** (the same, unzipped, for an app that takes only KML).
+- **Download .ths for AMPS**: the same threats as one list (AMPS keeps no folders).
+- A **QR code** of the KMZ, to scan on the iPad or phone that will open it. The link lasts 10 minutes and works three times.
+
+The threats' positions go to the server once, to make the file, and nothing is kept.
+
+### Mission overlay
+
+**Export → Mission overlay** in the top bar makes **one image of everything planned on the map**, for ForeFlight to lay over its own charts: LZ/PZ boundaries and graphics, routes and their labels, threats and their rings and masks, the FLOT, local points and your own overlays, as they are drawn on the screen. Send it in place of the threats, routes and LZ/PZs one by one when a crew only needs to see the plan.
+
+- **Area**: *The whole mission* (everything drawn, with a margin) or *The map as shown*. An imported KMZ overlay counts toward the whole mission only when nothing else is planned.
+- **Detail**: *Standard* (3,200 pixels on its longest side) or *High* (6,400). The screen says how much ground a pixel covers. High is offered on a computer only: a phone's or tablet's browser cannot draw an image that large. For a small area both are already as sharp as the map gets, and only Standard is offered.
+- **File**: *MBTiles* is ForeFlight's own map layer format and works on every subscription: AirDrop it to the iPad or open it from Files, and it appears under **Map Layers**. *GeoTIFF* is one image on a map grid: ForeFlight takes it with Military Flight Bag (open it from Files or email; AirDrop puts it in Photos), and ATAK and GIS apps open it too.
+- **Layer name**: what ForeFlight lists it as, and the file's name.
+
+What is left out: the base map (satellite, topo or the sectional: the overlay goes over whichever chart is under it in ForeFlight), the MGRS grid, popups, the LZ card's frame and other people's pointers in a Mission Pack. **Hide anything that should not go in first.** It is a picture: nothing in it can be selected or changed in ForeFlight, and its labels grow and shrink as ForeFlight zooms. The image goes to the server once, to be made into the file, and nothing is kept.
 
 ## 7. On a phone
 
