@@ -151,6 +151,13 @@ public object PackRoutes {
 
     private fun named(value: JsonElement?, otherwise: String): String = if (Js.truthy(value)) Js.text(value) else otherwise
 
+    /** A phase line as the history tells it: as the web draws it (`PL RED`), and "a phase line" where its name is not words. */
+    private fun phaseLine(line: JsonElement?): String {
+        val name = Js.prop(line, "name")
+        val words = if (name is JsonPrimitive && name.isString) Js.trim(name.content) else ""
+        return if (words.isNotEmpty()) "PL $words" else "a phase line"
+    }
+
     /**
      * One sentence for the pack's history about a change to a route set ("Sam B. moved .RP on RED 1."): `describeRouteChange`, held to
      * describe.json's `routes` cases. [before] and [after] are the set's shared data; [name] is the set's. Cut to 300 UTF-16 units,
@@ -209,6 +216,19 @@ public object PackRoutes {
         }
         for (id in flotsBefore.keys) {
             if (id !in flotsAfter) phrases += "removed a FLOT from $set"
+        }
+        val linesBefore = byId(Js.prop(before, "phaseLines"), unique)
+        val linesAfter = byId(Js.prop(after, "phaseLines"), unique)
+        for ((id, line) in linesAfter) {
+            val old = linesBefore[id]
+            when {
+                old == null -> phrases += "added ${phaseLine(line)} to $set"
+                !Js.sameValue(Js.prop(old, "name"), Js.prop(line, "name")) -> phrases += "renamed ${phaseLine(old)} to ${phaseLine(line)} on $set"
+                !PackDiff.sameData(Js.prop(old, "points"), Js.prop(line, "points")) -> phrases += "moved ${phaseLine(line)} on $set"
+            }
+        }
+        for ((id, line) in linesBefore) {
+            if (id !in linesAfter) phrases += "removed ${phaseLine(line)} from $set"
         }
         val what = phrases.firstOrNull() ?: "edited $set"
         return Js.cut("${actor?.takeIf { it.isNotEmpty() } ?: "Someone"} $what.", PackLz.MAX_SENTENCE)
