@@ -41,8 +41,9 @@ describe("the LZ card export with the MGRS grid on", () => {
   beforeEach(() => {
     vi.useFakeTimers();
     container = document.createElement("div");
+    // The size the card draws the map at (captureCard.test.js holds that it gets there).
     Object.defineProperty(container, "clientWidth", { configurable: true, value: 1200 });
-    Object.defineProperty(container, "clientHeight", { configurable: true, value: 800 });
+    Object.defineProperty(container, "clientHeight", { configurable: true, value: 1000 });
     document.body.appendChild(container);
     map = L.map(container, { zoomAnimation: false, fadeAnimation: false }).setView([34.78, -84.08], 14);
     holder.map = map;
