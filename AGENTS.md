@@ -1084,6 +1084,12 @@ simplifying can fold them, so rings are split and re-checked).
   from a phone. What floats on the phone's map goes in `.shell-map`, positioned from its edges (as the Layers button is): the map ends where
   the sheet begins, so it is never under the sheet. `MobileQuickAccess.test.jsx` holds each part of the phone's tools (the rail, the row
   under it, the LZ card's pills) to being its own child of the map area, placed from its edges and never fixed to the window.
+- **The map's size is index.css's, with `!important`.** `.leaflet-container` is held at 100% by an important rule, so a plain inline
+  `style.width` loses to it without a word: the LZ card's capture meant to draw the map at 1200 × 1000 and drew it at the screen's size,
+  which on a phone left over half the card black (the box ran off the 375 px map), and the mission overlay drew only its middle. A capture
+  sets its size with `style.setProperty(name, value, "important")`, puts the `style` attribute back as it was, and checks the map took the
+  size before drawing (`export/captureCard.js`, `missionOverlay/captureOverlay.js`). In jsdom a `clientWidth` getter that honours only an
+  important inline size stands in for the rule (`captureCard.test.js`).
 - **By the time a click arrives, what the press closed has closed.** The phone's search folds as it loses the focus and a menu closes on
   mousedown, both before the click, so "a tap with the search open only folds it" cannot be asked when the click comes: the tap that hides
   the phone's frame is judged by how things stood at `pointerdown`, read in the capture phase before anything has heard of the press
