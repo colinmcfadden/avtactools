@@ -10,6 +10,32 @@ import { getDistanceFeet } from "../../utils/Helpers";
 
 const FEET_PER_KM = 3280.84;
 
+/*
+ * Control measures (the owner, 2026-11-15): a FLOT and a phase line are graphics of their own, tied to no route set. A line is
+ * drawn into a set that holds lines and never a route: this session's (`MEASURES`), one opened from the Library beside it
+ * (`newMeasuresSetId`), or in a mission pack an item with no routes. What is stored is unchanged, a route set's document with no
+ * routes in it (`{version: 1, flots?, phaseLines?, routes: []}`), so the server, the sync and the older apps know nothing new.
+ *
+ * A line saved before that, in a set with routes, stays in that set until it is moved out (useSetLines' `moveLinesOf`).
+ */
+export const MEASURES = "measures";
+export const MEASURES_NAME = "CONTROL MEASURES";
+
+/** Whether `setId` is a set of control measures in this session: its own, or one opened from the Library. */
+export const isMeasuresSetId = (setId) => setId === MEASURES || String(setId ?? "").startsWith(`${MEASURES}-`);
+
+export const newMeasuresSetId = () => `${MEASURES}-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+
+/** How many lines a set holds, of every kind. */
+export const lineCount = (set) => (set?.flots?.length ?? 0) + (set?.phaseLines?.length ?? 0);
+
+/**
+ * Whether a set (`{ routes, flots?, phaseLines? }`) is control measures and no route set: it holds no routes, and either
+ * holds lines or was made to (`made`: its id, or in a pack its name, says so). A set with no routes and no lines that was
+ * not made for them is an empty route set.
+ */
+export const isMeasuresSet = (set, made = false) => (set?.routes?.length ?? 0) === 0 && (made || lineCount(set) > 0);
+
 const isPoint = (point) => Number.isFinite(point?.lat) && Number.isFinite(point?.lon);
 
 export const linePoints = (line) => (Array.isArray(line?.points) ? line.points.filter(isPoint) : []);
@@ -51,3 +77,12 @@ export const setsWithLines = (sketchSets, lists, isOpenedSetId) => {
     ...Object.fromEntries(kinds.map(([name, lines]) => [name, lines.filter((line) => (line.setId ?? null) === set.setId)])),
   }));
 };
+
+/**
+ * This session's sets as the app has them: the route sets (useRouteSketch's, each with whatever lines are still saved inside
+ * it), then the sets of control measures, each marked `measures: true`. A set of control measures is there while it holds a line.
+ */
+export const sessionSets = (sketchSets, lists, isOpenedSetId) =>
+  setsWithLines(sketchSets, lists, (setId) => isOpenedSetId(setId) || isMeasuresSetId(setId)).map((set) =>
+    isMeasuresSet(set, isMeasuresSetId(set.setId)) ? { ...set, measures: true } : set,
+  );

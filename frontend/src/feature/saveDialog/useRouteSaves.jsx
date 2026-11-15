@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { computeRoutePlan, defaultRoutePlan, planPoints } from "../msnxImport/routeCalc";
 import { savedFlots } from "../flot/flots";
 import { savedPhaseLines } from "../phaseLines/phaseLines";
+import { MEASURES_NAME } from "../setLines/setLines";
 import { useToast } from "../ui/Toast";
 import SaveDialog, { nextFreeName } from "./SaveDialog";
 import { SKETCHES } from "../msnxImport/routeSketchReducer";
@@ -12,6 +13,9 @@ import { SKETCHES } from "../msnxImport/routeSketchReducer";
  * useRouteSketch's openSavedRoutes), or one imported mission file (key: its fileId). Each set may be
  * linked to a saved record; the first save asks for a name, later saves update that record in place
  * without asking, and "Save as…" makes a copy.
+ *
+ * A set of control measures (`measures: true`: FLOTs and phase lines, in no route set) is saved the same way, as a record
+ * of its own with no routes in it: the server keeps a route set's document whatever it holds.
  *
  * Whether a set has unsaved changes is worked out by comparing it with what was last saved (or
  * opened): routes keep no dirty flag of their own. Hiding or showing a route is not a change.
@@ -51,6 +55,13 @@ export const setSummary = (routes, flots = [], phaseLines = []) => {
 };
 
 const contentsFor = (set) => {
+  if (set.measures) {
+    return [
+      ...(set.flots?.length ? [{ text: plural(set.flots.length, "FLOT") }] : []),
+      ...(set.phaseLines?.length ? [{ text: plural(set.phaseLines.length, "phase line") }] : []),
+      { icon: "info", text: "Control measures are kept on their own in your Library, apart from any route set." },
+    ];
+  }
   const routes = set.routes;
   const points = routes.reduce((sum, route) => sum + planPoints(route).length, 0);
   const nm = routes.reduce((sum, route) => sum + (routeTotals(route)?.distNm ?? 0), 0);
@@ -71,10 +82,10 @@ const contentsFor = (set) => {
 };
 
 export const defaultSetName = (set) =>
-  set.kind === "mission" ? (set.fileName || "MISSION").replace(/\.msnx$/i, "") : "SKETCHED ROUTES";
+  set.kind === "mission" ? (set.fileName || "MISSION").replace(/\.msnx$/i, "") : set.measures ? MEASURES_NAME : "SKETCHED ROUTES";
 
 /**
- * `sets`: [{ key, kind: "sketch" | "mission", fileName, routes, flots?, phaseLines? }]. `library`: the useSavedRoutes calls
+ * `sets`: [{ key, kind: "sketch" | "mission", fileName, routes, flots?, phaseLines?, measures? }]. `library`: the useSavedRoutes calls
  * plus `serializeFile(fileId)` from useMsnxImport.
  */
 export const useRouteSaves = ({ sets, library, signedIn, onOpenLibrary }) => {
@@ -162,7 +173,7 @@ export const useRouteSaves = ({ sets, library, signedIn, onOpenLibrary }) => {
   /** Writes the set as `name` to `recordId` (or a new record) and marks it saved. */
   const write = useCallback(async (key, name, recordId) => {
     const set = setsRef.current.find((s) => s.key === key);
-    if (!set) throw new Error("Those routes are no longer open.");
+    if (!set) throw new Error("That is no longer open.");
     const print = routesFingerprint(set.routes, set.flots, set.phaseLines);
     let saved;
     if (set.kind === "mission") {
@@ -273,13 +284,18 @@ export const useRouteSaves = ({ sets, library, signedIn, onOpenLibrary }) => {
     dialogs = (
       <SaveDialog
         key={`${dialog.key}-${dialog.copy}`}
-        title={dialog.copy ? "Save as new routes" : kind === "mission" ? "Save mission" : "Save routes"}
+        title={
+          set.measures
+            ? dialog.copy ? "Save as new control measures" : "Save control measures"
+            : dialog.copy ? "Save as new routes" : kind === "mission" ? "Save mission" : "Save routes"
+        }
         subtitle={dialog.copy ? "Saves a copy under a new name. What is open becomes the copy." : undefined}
-        icon="route"
+        icon={set.measures ? "flag" : "route"}
         initialName={dialog.copy ? nextFreeName(name, existing) : name}
         contents={contentsFor(set)}
         existing={existing}
-        kindPhrase={kind === "mission" ? "a mission" : "a route set"}
+        // Control measures are kept as a route set's record, so the two share their names.
+        kindPhrase={kind === "mission" ? "a mission" : set.measures ? "a route set or control measures" : "a route set"}
         onCancel={() => setDialog(null)}
         onSave={async (chosen, { replace }) => {
           await write(set.key, chosen, replace ? replace.id : null);

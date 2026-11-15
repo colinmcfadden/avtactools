@@ -1,7 +1,7 @@
 import { useCallback, useMemo, useState } from "react";
 import { describeRouteChange, flotsFromItem, phaseLinesFromItem, routeSetData, routesFromItem, sharedRouteData } from "./packRoutes";
 import { packLocalId } from "./packRef";
-import { newItemOp, packItemId } from "./packSentences";
+import { measuresCreateSummary, newItemOp, packItemId } from "./packSentences";
 import { restoreSketchRoute } from "../msnxImport/useRouteSketch";
 import { applyOpsTo } from "./packRebase";
 import { usePackItemSync } from "./usePackItemSync";
@@ -142,11 +142,15 @@ export const usePackRoutes = ({
     [open, removeRouteSet, setLinesOf, setIdOf],
   );
 
-  /** A new, empty route set in the pack, opened here. Returns its uuid, or null if refused. */
+  /**
+   * A new, empty route set in the pack, opened here. Returns its uuid, or null if refused. `measures`: it is made for the
+   * pack's control measures (FLOTs, phase lines), which are a route set's item with no routes, and the history says so.
+   */
   const createItem = useCallback(
-    (name) => {
+    (name, { measures = false } = {}) => {
       const uuid = packItemId("route", newId());
       const op = newItemOp({ kind: "route", item: uuid, name, count: sync.items.size, data: { version: 1, routes: [] }, actor });
+      if (measures) op.summary = measuresCreateSummary(actor, op.name);
       const refused = edit([op]);
       if (refused) {
         onRefused?.(refused, null);

@@ -171,12 +171,17 @@ describe("moving a route to another set", () => {
     expect(screen.queryByRole("dialog")).toBeNull();
   });
 
-  it("says what a set to move it to holds beside its routes: its FLOT and its phase lines", () => {
+  it("offers no set of control measures: it holds lines and takes no route", () => {
     const line = [{ lat: 34.5, lon: -84.3 }, { lat: 34.5, lon: -84.1 }];
-    const withLines = { ...SERIAL_2, routes: [], flots: [{ id: "flot-1", points: line }], phaseLines: [{ id: "pl-1", name: "RED", points: line }] };
-    panel({ sets: [SERIAL_1, withLines] });
+    const measures = { key: "measures", kind: "sketch", measures: true, routes: [], flots: [{ id: "flot-1", points: line }], phaseLines: [{ id: "pl-1", name: "RED", points: line }] };
+    // A route set with a FLOT saved inside it, from before control measures were kept on their own, is still a route set.
+    const withFlot = { ...SERIAL_2, flots: [{ id: "flot-2", points: line }] };
+    panel({ sets: [SERIAL_1, withFlot, measures] });
     fireEvent.click(within(routeMenu("CARGO")).getByRole("menuitem", { name: "Move to another set…" }));
-    expect(within(screen.getByRole("dialog", { name: "Move CARGO" })).getByText("1 FLOT · 1 phase line")).toBeInTheDocument();
+    const dialog = screen.getByRole("dialog", { name: "Move CARGO" });
+    const titles = within(dialog).getAllByRole("radio").map((choice) => choice.closest("label").querySelector(".ui-choice__title").textContent);
+    expect(titles).toEqual(["SERIAL 2", "A new route set"]);
+    expect(within(dialog).getByText("1 route · 2 points · 1 FLOT")).toBeInTheDocument();
   });
 
   it("to a new set, named there, in capitals", () => {
@@ -234,6 +239,21 @@ describe("a new route set", () => {
     const { container } = panel();
     const foot = container.querySelector(".shell-dock__foot");
     expect(within(foot).getAllByRole("button").map((button) => button.textContent)).toEqual(["Sketch a route", "Import .msnx", "New route set"]);
+  });
+
+  it("is numbered among the route sets: the control measures are not one of them", () => {
+    const measures = { key: "measures", kind: "sketch", measures: true, routes: [], flots: [{ id: "flot-1", points: [{ lat: 34.5, lon: -84.3 }, { lat: 34.5, lon: -84.1 }] }] };
+    const { actions } = panel({ sets: [SERIAL_1, SERIAL_2, measures] });
+    fireEvent.click(screen.getByRole("button", { name: "New route set" }));
+    expect(actions.newSet).toHaveBeenCalledWith("ROUTES 3");
+  });
+
+  it("with one route set and the control measures there is still nothing to choose between for sketches", () => {
+    const measures = { key: "measures", kind: "sketch", measures: true, routes: [], flots: [{ id: "flot-1", points: [{ lat: 34.5, lon: -84.3 }, { lat: 34.5, lon: -84.1 }] }] };
+    panel({ sets: [SERIAL_1, measures] });
+    fireEvent.click(screen.getByRole("button", { name: "More actions for SERIAL 1" }));
+    const items = within(screen.getByRole("menu", { name: "More actions for SERIAL 1" })).getAllByRole("menuitem").map((item) => item.textContent);
+    expect(items.some((text) => text.startsWith("Sketch a route into this set"))).toBe(false);
   });
 
   it("is not offered a name a set here already has", () => {

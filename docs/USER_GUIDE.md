@@ -130,7 +130,7 @@ Imported routes are fully editable: drag points (serpentine geometry updates too
 - **Flip** beside it in the Routes panel, or **Flip the scallops** on its right-click menu (right-click the line or any of its points), chooses which side the scallops face.
 - Hover the line and drag a point to move it. **Delete FLOT** is on the right-click menu, and the panel has a remove button beside it.
 
-It is saved with the sketched routes, and shared with them in a Mission Pack. It never goes into an exported `.msnx`, and it can't be added to an imported mission: it goes with your sketched routes instead.
+A FLOT stands on its own: it belongs to no route set, and you can draw one with no route on the map. It is kept with your control measures (see *Control measures* below), and never goes into an exported `.msnx` or a route sent to ForeFlight.
 
 ### Phase lines
 
@@ -145,7 +145,21 @@ It draws as a solid black line on a white edge, with **PL** and its name beyond 
 - **Rename**: the pencil beside it in the Routes panel, or **Rename…** on its right-click menu (right-click the line or any of its points).
 - Hover the line and drag a point to move it. **Delete phase line** is on the right-click menu, and the panel has a remove button beside it.
 
-A phase line is kept exactly as a FLOT is: saved with the sketched routes, shared with them in a Mission Pack (the pack's history names it, e.g. *added PL RED*), never part of an exported `.msnx` or a route sent to ForeFlight, and not something an imported mission can hold.
+A phase line stands on its own, as a FLOT does: it belongs to no route set, needs no route, and is never part of an exported `.msnx` or a route sent to ForeFlight.
+
+### Control measures
+
+The FLOT and your phase lines are **control measures**. They are listed in the Routes panel in a section of their own, under the route sets:
+
+![Route sets, and control measures in a section of their own](images/38-control-measures.jpg)
+
+- The first line you draw starts a set called **CONTROL MEASURES**. Lines you draw after it join it.
+- **Save** keeps the set in your Library under the name you give it; after that it saves without asking. The pencil renames it, and **⋯** has **Save as…**, **Add to Mission Pack…** and **Close**.
+- To get it back, open it from the Library (it is listed with your saved routes). Lines you draw while it is open are added to it.
+- In a Mission Pack the pack has its own **CONTROL MEASURES**, made when the first line is drawn there and shared with everyone in the pack as you work. The pack's history names each line, e.g. *added PL RED*.
+- Routes never go into a set of control measures, and it is never exported.
+
+**Lines saved inside a route set.** Before control measures stood on their own, a FLOT or a phase line was saved inside the route set it was drawn with. Open such a set and its lines are listed with the control measures, on a card under the route set's name. **Keep on their own** on that card moves them out into your control measures; then save both.
 
 ### The Routes panel
 
@@ -158,7 +172,7 @@ Routes are listed in the dock's **Routes** panel, one card per *route set*: the 
 - **⋯** on a route also has **Combine with…** and **Move to another set…** (below).
 - Beside the set's name: the **pencil** renames it, and the **paper plane** sends the whole set to ForeFlight (below).
 - **⋯** on a set: **Send to ForeFlight**, **Sketch a route into this set**, **Save as…** (a copy under a new name) and **Close** (asks first if there are unsaved changes).
-- **Sketch a route**, **Import .msnx** and **New route set** are at the foot of the panel. The **FLOT** and **phase lines** are drawn from the left panel's Routes card (on a phone, from the map's route tool) and listed under their set's routes.
+- **Sketch a route**, **Import .msnx** and **New route set** are at the foot of the panel. The **FLOT** and **phase lines** are drawn from the left panel's Routes card (on a phone, from the map's route tool) and listed below the route sets, under **Control measures**.
 
 ### Arranging routes: sets, moving, combining and colours
 

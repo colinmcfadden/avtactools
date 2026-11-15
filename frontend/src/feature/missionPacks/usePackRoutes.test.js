@@ -239,6 +239,19 @@ describe("usePackRoutes", () => {
     ]);
   });
 
+  it("makes the item a pack's control measures are kept in, and the history does not call it a route set", () => {
+    const { result } = renderHook(() => useHarness());
+    let uuid;
+    act(() => { uuid = result.current.routes.createItem("CONTROL MEASURES", { measures: true }); });
+    settleTimers();
+    expect(uuid).toBe("rt-new");
+    const [[op]] = result.current.pack.sent.current;
+    // A route set's item with no routes: what the server and the older apps already know.
+    expect([op.type, op.kind, op.name, op.data]).toEqual(["item.create", "route", "CONTROL MEASURES", { version: 1, routes: [] }]);
+    expect(op.summary).toMatch(/started the pack's control measures \("CONTROL MEASURES"\)\.$/);
+    expect(op.summary).not.toMatch(/route set/);
+  });
+
   it("takes a set someone removed off the map", () => {
     const { result } = opened();
     act(() => { result.current.pack.remote([{ type: "item.delete", item: "rt-1" }]); });

@@ -2,11 +2,26 @@ import { fireEvent, render, screen, waitFor, within } from "@testing-library/rea
 import React, { useRef } from "react";
 import { ToastProvider } from "../../ui/Toast";
 import { AddToPackDialog } from "./PackDialogs";
-import PackPanel, { whenText } from "./PackPanel";
+import PackPanel, { itemDetail, whenText } from "./PackPanel";
 import WorkspaceSwitcher from "./WorkspaceSwitcher";
 
 const now = new Date();
 const minutesAgo = (n) => new Date(now.getTime() - n * 60000).toISOString();
+
+describe("what the Pack panel says an item holds", () => {
+  const line = { id: "l", points: [] };
+
+  it("says a route set by its routes", () => {
+    expect(itemDetail({ kind: "route", data: { version: 1, routes: [{}, {}] } })).toBe("2 routes");
+    expect(itemDetail({ kind: "route", data: { version: 1, routes: [{}], flots: [line] } })).toBe("1 route");
+    expect(itemDetail({ kind: "route", data: { version: 1, routes: [] } })).toBe("0 routes");
+  });
+
+  it("says the pack's control measures by their lines, never as no routes", () => {
+    expect(itemDetail({ kind: "route", data: { version: 1, flots: [line], phaseLines: [line, line], routes: [] } })).toBe("1 FLOT · 2 phase lines");
+    expect(itemDetail({ kind: "route", data: { version: 1, phaseLines: [line], routes: [] } })).toBe("1 phase line");
+  });
+});
 
 describe("when something changed", () => {
   it("says minutes within the hour, the clock today, else the date", () => {

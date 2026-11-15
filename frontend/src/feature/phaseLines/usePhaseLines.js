@@ -17,6 +17,7 @@ export const usePhaseLines = () => {
     renamePhaseLine: rename,
     deletePhaseLine: lines.deleteLine,
     setPhaseLinesOf: lines.setLinesOf,
+    movePhaseLinesOf: lines.moveLinesOf,
     openSavedPhaseLines: lines.openSavedLines,
     hasSessionPhaseLines: lines.hasSessionLines,
     isDrawing: lines.isDrawing,

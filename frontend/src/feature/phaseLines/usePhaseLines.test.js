@@ -91,6 +91,18 @@ describe("usePhaseLines", () => {
     expect(result.current.phaseLines.map((l) => l.id)).toEqual(["new"]);
   });
 
+  it("moves a set's phase lines to another set, and leaves every other set's alone", () => {
+    const { result } = renderHook(() => usePhaseLines());
+    drawn(result, "RED");
+    drawn(result, "BLUE", "opened-a");
+    drawn(result, "DOG", "measures");
+    // Out of this session's own route set, to stand with the control measures.
+    act(() => result.current.movePhaseLinesOf(null, "measures"));
+    expect(result.current.phaseLines.map((l) => [l.name, l.setId])).toEqual([["RED", "measures"], ["BLUE", "opened-a"], ["DOG", "measures"]]);
+    act(() => result.current.movePhaseLinesOf("opened-a", "pack:p:rt-9"));
+    expect(result.current.phaseLines.map((l) => [l.name, l.setId])).toEqual([["RED", "measures"], ["BLUE", "pack:p:rt-9"], ["DOG", "measures"]]);
+  });
+
   it("gives phase lines opened from the Library new ids and keeps their names", () => {
     const { result } = renderHook(() => usePhaseLines());
     const data = { phaseLines: [{ id: "saved", name: "RED", points: [] }], flots: [{ id: "flot", points: [] }] };

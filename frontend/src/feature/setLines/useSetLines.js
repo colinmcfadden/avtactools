@@ -30,6 +30,12 @@ export const useSetLines = ({ idPrefix, fromData }) => {
     setLines((previous) => [...previous.filter((line) => (line.setId ?? null) !== owner), ...list.map((line) => filedLine(line, setId))]);
   }, []);
 
+  /** Files the lines of the set `fromSetId` (none: this session's own route set) under `toSetId` instead. */
+  const moveLinesOf = useCallback((fromSetId, toSetId) => {
+    const owner = fromSetId ?? null;
+    setLines((previous) => previous.map((line) => ((line.setId ?? null) === owner ? filedLine(line, toSetId) : line)));
+  }, []);
+
   /** A set's lines opened from the Library: new ids, as its routes get, since a record and its copy can be open side by side. */
   const openSavedLines = useCallback(
     (setId, data) =>
@@ -56,6 +62,7 @@ export const useSetLines = ({ idPrefix, fromData }) => {
     updateLine,
     deleteLine,
     setLinesOf,
+    moveLinesOf,
     openSavedLines,
     hasSessionLines,
     isDrawing: draft !== null,

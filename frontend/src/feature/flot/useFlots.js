@@ -18,6 +18,7 @@ export const useFlots = () => {
     flipFlot: flipFlotById,
     deleteFlot: lines.deleteLine,
     setFlotsOf: lines.setLinesOf,
+    moveFlotsOf: lines.moveLinesOf,
     openSavedFlots: lines.openSavedLines,
     hasSessionFlots: lines.hasSessionLines,
     isDrawing: lines.isDrawing,
