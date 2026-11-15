@@ -17,6 +17,7 @@ export const PRIORITY_PATHS = [
   "/export-package",
   "/generate-excel",
   "/brief/pdf",          // a brief's figures and pages, printed
+  "/overlay-image",      // a mission overlay cut into tiles
 ];
 
 let active = 0;

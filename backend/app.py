@@ -47,6 +47,7 @@ from routes.overlay_routes import overlay_bp
 from routes.threat_set_routes import threat_set_bp
 from routes.threat_routes import threat_bp
 from routes.route_share_routes import route_share_bp
+from routes.overlay_image_routes import overlay_image_bp
 from routes.aircraft_routes import aircraft_bp
 from routes.admin_routes import admin_bp
 from routes.config_routes import config_bp
@@ -137,6 +138,7 @@ app.register_blueprint(overlay_bp)
 app.register_blueprint(threat_set_bp)
 app.register_blueprint(threat_bp)
 app.register_blueprint(route_share_bp)
+app.register_blueprint(overlay_image_bp)
 app.register_blueprint(aircraft_bp)
 app.register_blueprint(admin_bp)
 app.register_blueprint(config_bp)

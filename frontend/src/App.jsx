@@ -64,6 +64,7 @@ import { parseThsFile } from "./feature/threats/parseThs";
 import { setNameFromFile } from "./feature/threats/threatSets";
 import ThreatDialog from "./feature/threats/ThreatDialog";
 import ThreatExportModal from "./feature/threats/ThreatExportModal";
+import MissionOverlayDialog from "./feature/missionOverlay/MissionOverlayDialog";
 import UnitBuilder from "./feature/unit/UnitBuilder";
 import { useLzWorkspace } from "./feature/lzWorkspace/useLzWorkspace";
 import { withLzMeasure } from "./feature/lzMeasure/lzMeasure";
@@ -660,7 +661,32 @@ function App() {
     logout();
   };
   const [mapCenter, setMapCenter] = useState([34.0522, -118.2437]);
-  const [showThreatExport, setShowThreatExport] = useState(false);
+  // The threat export dialog: null, or { setId } (null for every open set).
+  const [showThreatExport, setShowThreatExport] = useState(null);
+  // The mission overlay dialog (feature/missionOverlay).
+  const [showOverlay, setShowOverlay] = useState(false);
+  // The top bar's Export menu: the whole mission as one image, and every open threat in one file.
+  const exportKinds = [
+    feat.exports && {
+      kind: "overlay",
+      icon: "image",
+      title: "Mission overlay",
+      text: "The map's planning as one image · .mbtiles, .tif for ForeFlight",
+    },
+    feat.threats && {
+      kind: "threats",
+      icon: "diamond",
+      title: "All threats",
+      text: threats.length ? `${threats.length} in one file · .kmz, .kml for ForeFlight, ATAK` : "No threats are open",
+      disabled: threats.length === 0,
+    },
+  ].filter(Boolean);
+  // A threats file is named for its set; every open set's for the only one with threats, else plainly.
+  const threatFileName = (setId) => {
+    const withThreats = threatSets.sets.filter((set) => set.threats.length > 0);
+    const named = setId ? withThreats.find((set) => set.id === setId) : withThreats.length === 1 ? withThreats[0] : null;
+    return named?.name || "threats";
+  };
   const [showUnitBuilder, setShowUnitBuilder] = useState(false);
 
   const {
@@ -1959,6 +1985,8 @@ function App() {
         ) : null}
         onImport={(kind) => pickers[kind]?.open()}
         canImport={{ msnx: feat.msnx_import && !inPack, ths: feat.threats, routefile: feat.routes }}
+        exportKinds={exportKinds}
+        onExport={(kind) => (kind === "overlay" ? setShowOverlay(true) : setShowThreatExport({ setId: null }))}
         pack={packs.topPack}
         packStatus={packs.topStatus ?? "live"}
         people={packPeople}
@@ -2442,10 +2470,10 @@ function App() {
               onCloseSet={inPack ? (id) => packItemOf(id) && packs.actions.close(packItemOf(id)) : threatSets.closeSet}
               onMakeActive={threatSets.setActiveSet}
               onToggleVisibility={toggleThreatVisibility}
-              onExportThs={() =>
-                Promise.resolve(exportThsFile("threats")).catch((err) => toast({ tone: "error", message: `The .ths could not be made: ${err.message}` }))
+              onExportThs={(setId) =>
+                Promise.resolve(exportThsFile(threatFileName(setId), { setId })).catch((err) => toast({ tone: "error", message: `The .ths could not be made: ${err.message}` }))
               }
-              onExportKmz={() => setShowThreatExport(true)}
+              onExportKmz={(setId) => setShowThreatExport({ setId })}
               onCollapse={() => dock.setCollapsed(true)}
             />
           )}
@@ -2786,10 +2814,20 @@ function App() {
 
       {showThreatExport && (
         <ThreatExportModal
-          threats={threats}
-          onDownload={() => exportKmzFile("threats")}
-          onDownloadThs={() => exportThsFile("threats")}
-          onClose={() => setShowThreatExport(false)}
+          sets={threatSets.sets}
+          initialSetId={showThreatExport.setId ?? null}
+          onDownload={({ setId, format }) => exportKmzFile(threatFileName(setId), { setId, format })}
+          onDownloadThs={({ setId }) => exportThsFile(threatFileName(setId), { setId })}
+          onClose={() => setShowThreatExport(null)}
+        />
+      )}
+
+      {showOverlay && map && (
+        <MissionOverlayDialog
+          map={map}
+          defaultName={inPack ? packs.meta?.name || "MISSION OVERLAY" : activeDiagram?.name || "MISSION OVERLAY"}
+          notify={toast}
+          onClose={() => setShowOverlay(false)}
         />
       )}
 

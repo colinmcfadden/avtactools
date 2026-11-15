@@ -144,7 +144,9 @@ const ExportBox = ({ bounds, onUpdate, onDelete, aspectRatio }) => {
       <Rectangle 
         ref={rectRef}
         bounds={bounds} 
-        pathOptions={{ color: "red", weight: 2, fillOpacity: 0.1 }} 
+        pathOptions={{ color: "red", weight: 2, fillOpacity: 0.1 }}
+        // The LZ card's frame, never part of a mission overlay (missionOverlay/captureOverlay.js).
+        screenOnly
         eventHandlers={{ contextmenu: handleRightClick }}
       />
       
