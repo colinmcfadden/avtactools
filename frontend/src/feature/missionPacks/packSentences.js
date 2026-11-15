@@ -36,6 +36,12 @@ export const createSummary = (actor, kind, name, pointCount) => {
   return `${who} added the point set "${name}" (${pointCount.toLocaleString("en-US")} point${pointCount === 1 ? "" : "s"}).`;
 };
 
+/**
+ * The history's sentence for the item a pack's control measures (FLOTs, phase lines) are kept in: a route set's item with
+ * no routes, made by the web when the first line is drawn, so it is not called a route set.
+ */
+export const measuresCreateSummary = (actor, name) => `${actor || "Someone"} started the pack's control measures ("${name}").`;
+
 /** The operation that makes a new item `item` (its uuid) of `kind`, named as newItemName says, with its sentence. */
 export const newItemOp = ({ kind, item, name, count, data, actor }) => {
   const label = newItemName(kind, name, count);

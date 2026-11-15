@@ -4,6 +4,9 @@ import RoutePlanSection from "../msnxImport/RoutePlanSection";
 import { ROUTE_COLOR_CHOICES, routeColorName } from "../msnxImport/routeSetOps";
 import { formatDuration } from "../msnxImport/routeCalc";
 import { flotLengthKm } from "../flot/flots";
+import { phaseLineLabel, phaseLineLengthKm } from "../phaseLines/phaseLines";
+import { PHASE_LINE_CASING, PHASE_LINE_COLOR } from "../phaseLines/phaseLineStyle";
+import { lineCount } from "../setLines/setLines";
 import { defaultSetName, routeTotals, setSummary } from "../saveDialog/useRouteSaves";
 import Avatar, { shortName } from "../ui/Avatar";
 import Chip from "../ui/Chip";
@@ -28,6 +31,12 @@ import "./shell.css";
  * (Combine with…) or moved to another set, or a new one (Move to another set…). New route set, at the
  * foot, makes an empty set that the next sketches go into. None of these in a read-only pack, and an
  * imported mission's routes only change colour: which routes it has is its file's.
+ *
+ * Control measures (FLOTs, phase lines) are graphics of their own, in no route set (the owner, 2026-11-15): they have a
+ * section of their own under the route sets, a card for each set of them (`measures: true`: this session's, one opened
+ * from the Library, a pack's), saved, renamed and closed by itself. They are drawn from the sidebar's Routes tools (Route,
+ * FLOT, PL), and on a phone from the map's route tool. Lines saved inside a route set before that are listed there too,
+ * under that set's name, with a way out of it (Keep on their own).
  */
 
 const routeMeta = (route) => {
@@ -143,6 +152,29 @@ const FlotRow = ({ flot, readOnly, onFlip, onRemove }) => (
   </div>
 );
 
+const PhaseLineRow = ({ line, readOnly, onRename, onRemove }) => {
+  const label = phaseLineLabel(line);
+  return (
+    <div className="shell-route">
+      <span className="shell-route__swatch" style={{ background: PHASE_LINE_COLOR, boxShadow: `0 0 0 1.5px ${PHASE_LINE_CASING}` }} />
+      <div className="shell-route__main">
+        <div className="shell-route__name">{label}</div>
+        <div className="shell-route__meta">Phase line · {phaseLineLengthKm(line).toFixed(1)} km</div>
+      </div>
+      {!readOnly && (
+        <>
+          <button type="button" className="ui-btn ui-btn--ghost ui-btn--28 ui-btn--square" aria-label={`Rename ${label}`} onClick={() => onRename(line.id)}>
+            <Icon name="pencil" size={15} />
+          </button>
+          <button type="button" className="ui-btn ui-btn--ghost ui-btn--28 ui-btn--square" aria-label={`Remove ${label}`} onClick={() => onRemove(line.id)}>
+            <Icon name="trash" size={15} />
+          </button>
+        </>
+      )}
+    </div>
+  );
+};
+
 const stateChip = (set, state) => {
   if (set.pack) {
     if (set.pack.finished) return <Chip icon="lock">Read-only</Chip>;
@@ -162,7 +194,7 @@ const SetCard = ({ set, state, threatCount, expanded, onToggleRoute, actions, pl
   const clean = !set.pack && state.link && !state.dirty;
   // A mission's routes are its file's: none joins, leaves or arrives. Their colours are this app's.
   const sketched = set.kind !== "mission";
-  const empty = set.routes.length === 0 && !(set.flots?.length > 0);
+  const empty = set.routes.length === 0;
   // Where the next sketched route goes: the pack's own say, or this session's with more than one set to choose from.
   const target = set.pack ? set.pack.target : Boolean(set.target);
   const name = state.name;
@@ -263,7 +295,7 @@ const SetCard = ({ set, state, threatCount, expanded, onToggleRoute, actions, pl
       <div className="shell-card__chips" style={{ marginTop: 7 }}>
         {set.kind === "mission" && !set.pack && <Chip tone="info" icon="download">Imported</Chip>}
         {stateChip(set, state)}
-        <span className="shell-card__meta">{setSummary(set.routes, set.flots)}</span>
+        <span className="shell-card__meta">{setSummary(set.routes, set.flots, set.phaseLines)}</span>
       </div>
       {target && !readOnly && (
         <div className="shell-card__people" style={set.pack ? undefined : { color: "#9fb0bf" }}>
@@ -289,7 +321,7 @@ const SetCard = ({ set, state, threatCount, expanded, onToggleRoute, actions, pl
             <span>{state.saving ? "Saving" : clean ? "Saved" : "Save"}</span>
           </button>
         )}
-        {/* A FLOT is not written to AMPS: with no routes there is nothing to export. */}
+        {/* A FLOT and a phase line are not written to AMPS: with no routes there is nothing to export. */}
         {set.routes.length > 0 && (
           <button type="button" className={`ui-btn${set.pack ? " ui-btn--grow" : ""}`} onClick={() => actions.export(set, { withThreats: withThreats && threatCount > 0 })}>
             <Icon name="upload" size={15} />
@@ -328,20 +360,133 @@ const SetCard = ({ set, state, threatCount, expanded, onToggleRoute, actions, pl
           )}
         </React.Fragment>
       ))}
+    </section>
+  );
+};
+
+/**
+ * A set of control measures, or the lines still saved inside a route set (`attached`). The first is a set of its own
+ * and is saved, renamed and closed here; the second is saved with its route set, which says so, and can be moved out.
+ */
+const MeasuresCard = ({ set, state, actions, attached = false }) => {
+  const [renaming, setRenaming] = useState(false);
+  const [draft, setDraft] = useState("");
+  const readOnly = Boolean(set.pack?.finished);
+  const clean = !set.pack && state.link && !state.dirty;
+  const name = state.name;
+  const lines = setSummary([], set.flots ?? [], set.phaseLines ?? []);
+
+  const commitRename = () => {
+    setRenaming(false);
+    const next = draft.trim().toUpperCase();
+    if (next && next !== name) actions.rename(set, next);
+  };
+
+  return (
+    <section className={`shell-set${set.pack ? " shell-set--pack" : ""}`} aria-label={`${name}, control measures`}>
+      <div className="shell-card__row">
+        {renaming ? (
+          <input
+            className="ui-input shell-card__name-input"
+            style={{ textTransform: "uppercase" }}
+            value={draft}
+            // eslint-disable-next-line jsx-a11y/no-autofocus
+            autoFocus
+            aria-label="Name of these control measures"
+            maxLength={100}
+            onChange={(event) => setDraft(event.target.value)}
+            onBlur={commitRename}
+            onKeyDown={(event) => {
+              if (event.key === "Enter") commitRename();
+              if (event.key === "Escape") {
+                event.stopPropagation();
+                setRenaming(false);
+              }
+            }}
+          />
+        ) : (
+          <h3 className="shell-set__name" style={{ margin: 0 }}>{name}</h3>
+        )}
+        {!attached && !renaming && !readOnly && actions.rename && (
+          <button
+            type="button"
+            className="ui-btn ui-btn--ghost ui-btn--26 ui-btn--square"
+            aria-label={`Rename the control measures ${name}`}
+            onClick={() => {
+              setDraft(name);
+              setRenaming(true);
+            }}
+          >
+            <Icon name="pencil" size={15} />
+          </button>
+        )}
+        {!attached && (
+          <MoreMenu
+            label={`More actions for the control measures ${name}`}
+            items={[
+              { icon: "copy", title: set.pack ? "Save a copy to Library…" : "Save as…", onSelect: () => actions.saveAs(set) },
+              { icon: "layers", title: "Add to Mission Pack…", onSelect: () => actions.addToPack?.(set, state.link), hidden: Boolean(set.pack) || !actions.addToPack, disabled: !state.link, text: state.link ? undefined : "Save it first" },
+              { divider: true },
+              { icon: "x", title: set.pack ? "Close here" : "Close", text: set.pack ? "It stays in the pack" : "Takes these control measures out of this session", onSelect: () => actions.close(set) },
+            ]}
+          />
+        )}
+      </div>
+      <div className="shell-card__chips" style={{ marginTop: 7 }}>
+        {!attached && stateChip(set, state)}
+        <span className="shell-card__meta">{lines}</span>
+      </div>
+      {attached && (
+        <div className="shell-card__people" style={{ color: "#9fb0bf" }}>
+          <Icon name="route" size={13} color="#9fb0bf" />
+          <span>Saved with the route set {name}, from before control measures were kept on their own.</span>
+        </div>
+      )}
+      {!attached && set.pack?.editedBy && (
+        <div className="shell-card__people">
+          <Avatar person={set.pack.editedBy} size="sm" />
+          <span>{shortName(set.pack.editedBy.name)} · {whenShort(set.pack.editedAt)}</span>
+        </div>
+      )}
+      {((!attached && !set.pack) || (attached && !readOnly && actions.keepLinesOnTheirOwn)) && (
+        <div className="shell-card__actions">
+          {attached ? (
+            <button type="button" className="ui-btn ui-btn--grow" onClick={() => actions.keepLinesOnTheirOwn(set)}>
+              <Icon name="logOut" size={15} />
+              <span>Keep on their own</span>
+            </button>
+          ) : (
+            <button
+              type="button"
+              className={`ui-btn ui-btn--grow${clean ? "" : " ui-btn--primary"}`}
+              disabled={clean || state.saving}
+              onClick={() => actions.save(set)}
+            >
+              <Icon name={clean ? "check" : "save"} size={15} />
+              <span>{state.saving ? "Saving" : clean ? "Saved" : "Save"}</span>
+            </button>
+          )}
+        </div>
+      )}
+      <div className="shell-set__divider" />
       {(set.flots ?? []).map((flot) => (
         <FlotRow key={flot.id} flot={flot} readOnly={readOnly} onFlip={actions.flipFlot} onRemove={actions.removeFlot} />
+      ))}
+      {(set.phaseLines ?? []).map((line) => (
+        <PhaseLineRow key={line.id} line={line} readOnly={readOnly} onRename={actions.renamePhaseLine} onRemove={actions.removePhaseLine} />
       ))}
     </section>
   );
 };
 
 /**
- * `sets`: [{ key, kind, fileName, routes, flots?, pack? }]; `stateOf(key)` from useRouteSaves (in a pack: a
- * stand-in with the name). `actions`: save, saveAs, rename, close, export, share (a route), shareSet
- * (`(set, name)`, the whole set), toggleVisibility, removeRoute, addToPack, flipFlot, removeFlot, and for
- * arranging routes: recolor `(set, routeId, color)`, combineRoutes `(set, firstId, secondId)`, moveRoute
- * `(set, routeId, { key } | { newName })`, newSet `()`, sketchInto `(set)`. A set of this session
- * with `target: true` is where new sketches go. `plan(set)`: the plan-editing calls for that set's routes. `pointSearch`: what the plan's add-a-point field searches.
+ * `sets`: [{ key, kind, fileName, routes, flots?, phaseLines?, measures?, pack? }]; `stateOf(key)` from useRouteSaves (in a
+ * pack: a stand-in with the name). A set with `measures: true` is control measures and no route set. `actions`: save, saveAs, rename, close, export, share (a route), shareSet
+ * (`(set, name)`, the whole set), toggleVisibility, removeRoute, addToPack, flipFlot, removeFlot,
+ * renamePhaseLine `(id)`, removePhaseLine `(id)`, keepLinesOnTheirOwn `(set)` (a route set's lines, out of it), and for arranging routes: recolor `(set, routeId, color)`,
+ * combineRoutes `(set, firstId, secondId)`, moveRoute `(set, routeId, { key } | { newName })`, newSet `()`,
+ * sketchInto `(set)`. A set of this session with `target: true` is where new sketches go. `plan(set)`: the
+ * plan-editing calls for that set's routes. `pointSearch`: what the plan's add-a-point field searches.
  */
 const RoutesDockPanel = ({
   sets,
@@ -352,7 +497,6 @@ const RoutesDockPanel = ({
   localPointNames,
   pointSearch,
   sketch,
-  flot = null,
   pack = null,
   onImportMsnx,
   canImportMsnx = true,
@@ -373,13 +517,18 @@ const RoutesDockPanel = ({
   const [asking, setAsking] = useState(null);
   const askedSet = asking ? sets.find((set) => set.key === asking.setKey) : null;
   const askedRoute = askedSet?.routes.find((route) => route.id === asking.routeId) ?? null;
-  const takesRoutes = (set) => set.kind !== "mission" && !set.pack?.finished;
-  const sketchSetCount = sets.filter((set) => set.kind !== "mission").length;
-  // The foot's buttons, two to a row once there are more than three of them (one left over takes its row).
+  // Control measures are no route sets: a set of them is listed apart, takes no route and is never where sketches go.
+  const routeSets = sets.filter((set) => !set.measures);
+  // Every set that holds lines: sets of control measures, then the route sets that still have some saved inside them.
+  const measureSets = [...sets.filter((set) => set.measures), ...routeSets].filter((set) => lineCount(set) > 0);
+  const measureCount = measureSets.reduce((sum, set) => sum + lineCount(set), 0);
+  const takesRoutes = (set) => set.kind !== "mission" && !set.measures && !set.pack?.finished;
+  const sketchSetCount = routeSets.filter((set) => set.kind !== "mission").length;
+  // The foot's buttons, two to a row once New route set is among them (one left over takes its row).
   const twoToARow = actions.newSet ? { flexBasis: "calc(50% - 4px)" } : undefined;
   const suggestedSetName = () => {
     const taken = new Set(sets.map((set) => stateOf(set.key).name));
-    let n = sets.length + 1;
+    let n = routeSets.length + 1;
     while (taken.has(`ROUTES ${n}`)) n += 1;
     return `ROUTES ${n}`;
   };
@@ -388,7 +537,7 @@ const RoutesDockPanel = ({
     <>
       <PanelHead
         title="Routes"
-        subtitle={pack ? `${pack.name} · ${sets.length} route ${sets.length === 1 ? "set" : "sets"}` : `${sets.length} route ${sets.length === 1 ? "set" : "sets"} in this session`}
+        subtitle={pack ? `${pack.name} · ${routeSets.length} route ${routeSets.length === 1 ? "set" : "sets"}` : `${routeSets.length} route ${routeSets.length === 1 ? "set" : "sets"} in this session`}
         onCollapse={onCollapse}
       />
       <div className="shell-dock__body">
@@ -401,7 +550,7 @@ const RoutesDockPanel = ({
             </div>
           </div>
         )}
-        {sets.length === 0 ? (
+        {routeSets.length === 0 ? (
           <div className="shell-empty">
             {pack
               ? readOnly
@@ -410,9 +559,9 @@ const RoutesDockPanel = ({
               : "No routes yet. Sketch one on the map, or import an AMPS mission file."}
           </div>
         ) : (
-          <PanelSection label="Route sets" count={sets.length}>
+          <PanelSection label="Route sets" count={routeSets.length}>
             <div className="shell-list" style={{ gap: 10 }}>
-              {sets.map((set) => (
+              {routeSets.map((set) => (
                 <SetCard
                   key={set.key}
                   set={set}
@@ -431,12 +580,24 @@ const RoutesDockPanel = ({
             </div>
           </PanelSection>
         )}
+        {measureSets.length > 0 && (
+          <>
+            <div className="shell-spacer" />
+            <PanelSection label="Control measures" count={measureCount}>
+              <div className="shell-list" style={{ gap: 10 }}>
+                {measureSets.map((set) => (
+                  <MeasuresCard key={set.key} set={set} state={stateOf(set.key)} actions={actions} attached={!set.measures} />
+                ))}
+              </div>
+            </PanelSection>
+          </>
+        )}
       </div>
       {asking?.type === "move" && askedRoute && (
         <MoveRouteDialog
           route={askedRoute}
           fromName={stateOf(askedSet.key).name}
-          destinations={sets.filter((set) => set.key !== askedSet.key && takesRoutes(set)).map((set) => ({ key: set.key, name: stateOf(set.key).name, routes: set.routes, flots: set.flots }))}
+          destinations={sets.filter((set) => set.key !== askedSet.key && takesRoutes(set)).map((set) => ({ key: set.key, name: stateOf(set.key).name, routes: set.routes, flots: set.flots, phaseLines: set.phaseLines }))}
           suggestedName={suggestedSetName()}
           onCancel={() => setAsking(null)}
           onMove={(destination) => {
@@ -483,19 +644,6 @@ const RoutesDockPanel = ({
                 <button type="button" className="ui-btn ui-btn--38 ui-btn--grow" style={twoToARow} onClick={() => actions.newSet(suggestedSetName())}>
                   <Icon name="plus" size={15} />
                   <span>New route set</span>
-                </button>
-              )}
-              {flot && (
-                <button
-                  type="button"
-                  className="ui-btn ui-btn--38 ui-btn--grow"
-                  style={twoToARow ?? { flexBasis: "100%" }}
-                  aria-pressed={flot.active}
-                  onClick={flot.active ? flot.onCancel : flot.onStart}
-                  disabled={!flot.enabled}
-                >
-                  <Icon name={flot.active ? "x" : "flag"} size={15} />
-                  <span>{flot.active ? "Cancel FLOT" : "Draw FLOT"}</span>
                 </button>
               )}
             </>

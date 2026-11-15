@@ -26,7 +26,7 @@ describe("the phone's rail, a step at a time", () => {
   it("offers only the route tool and Set Target before there is a target, and sets it at the crosshair", () => {
     const onSetTarget = vi.fn();
     renderQuickAccess({ onSetTarget });
-    expect(railNames()).toEqual(["Sketch route", "Set Target"]);
+    expect(railNames()).toEqual(["Route, FLOT or phase line", "Set Target"]);
     fireEvent.click(screen.getByRole("button", { name: "Set Target" }));
     expect(onSetTarget).toHaveBeenCalledTimes(1);
     expect(screen.queryByRole("button", { name: "Analyze" })).toBeNull();
@@ -37,7 +37,7 @@ describe("the phone's rail, a step at a time", () => {
     const onAnalyze = vi.fn();
     const onToggleDrawing = vi.fn();
     renderQuickAccess({ hasTarget: true, onAnalyze, onToggleDrawing });
-    expect(railNames()).toEqual(["Sketch route", "Set Target", "Analyze", "Draw LZ"]);
+    expect(railNames()).toEqual(["Route, FLOT or phase line", "Set Target", "Analyze", "Draw LZ"]);
     const analyze = screen.getByRole("button", { name: "Analyze" });
     expect(analyze).toBeEnabled();
     expect(analyze).toHaveClass("qa-pill--primary");
@@ -69,13 +69,53 @@ describe("the phone's rail, a step at a time", () => {
     const onToggleBackstop = vi.fn();
     renderQuickAccess({ hasTarget: true, analyzed: true, addHelo, onToggleBackstop });
     expect(railNames()).toEqual([
-      "Sketch route", "Set Target", "Re-analyze", "Draw LZ",
+      "Route, FLOT or phase line", "Set Target", "Re-analyze", "Draw LZ",
       "Add helicopter", "Add PZ marker", "Add sector of fire", "Draw a backstop", "Add unit", "Add go-around",
     ]);
     fireEvent.click(screen.getByRole("button", { name: "Add helicopter" }));
     expect(addHelo).toHaveBeenCalledTimes(1);
     fireEvent.click(screen.getByRole("button", { name: "Draw a backstop" }));
     expect(onToggleBackstop).toHaveBeenCalledTimes(1);
+  });
+
+  // The owner, 2026-11-14: FLOT and PL go with Route, and the phone's first screen keeps its two buttons.
+  it("asks which line in a menu on the route tool: a route, the FLOT or a phase line", () => {
+    const toggleRouteSketch = vi.fn();
+    const onStartFlot = vi.fn();
+    const onStartPhaseLine = vi.fn();
+    renderQuickAccess({ toggleRouteSketch, onStartFlot, onStartPhaseLine });
+    const route = () => screen.getByRole("button", { name: "Route, FLOT or phase line" });
+    fireEvent.click(route());
+    expect(toggleRouteSketch).not.toHaveBeenCalled();
+    const menu = screen.getByRole("menu", { name: "Route, FLOT or phase line" });
+    expect(within(menu).getAllByRole("menuitem").map((item) => item.textContent.trim())).toEqual(["Sketch a route", "Draw the FLOT", "Draw a phase line (PL)"]);
+    fireEvent.click(within(menu).getByRole("menuitem", { name: "Draw the FLOT" }));
+    expect(onStartFlot).toHaveBeenCalledTimes(1);
+    fireEvent.click(route());
+    fireEvent.click(screen.getByRole("menuitem", { name: "Draw a phase line (PL)" }));
+    expect(onStartPhaseLine).toHaveBeenCalledTimes(1);
+    fireEvent.click(route());
+    fireEvent.click(screen.getByRole("menuitem", { name: "Sketch a route" }));
+    expect(toggleRouteSketch).toHaveBeenCalledTimes(1);
+  });
+
+  it("ends the route from the route tool while one is sketched, with no menu", () => {
+    const toggleRouteSketch = vi.fn();
+    renderQuickAccess({ isSketching: true, toggleRouteSketch });
+    const end = screen.getByRole("button", { name: "End route" });
+    expect(end).toHaveAttribute("aria-pressed", "true");
+    fireEvent.click(end);
+    expect(toggleRouteSketch).toHaveBeenCalledTimes(1);
+    expect(screen.queryByRole("menu")).toBeNull();
+  });
+
+  it("greys the route tool out while a FLOT or a phase line is drawn", () => {
+    const { unmount } = renderQuickAccess({ isDrawingPhaseLine: true });
+    expect(screen.getByRole("button", { name: "Route, FLOT or phase line" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Set Target" })).toBeDisabled();
+    unmount();
+    renderQuickAccess({ isDrawingFlot: true });
+    expect(screen.getByRole("button", { name: "Route, FLOT or phase line" })).toBeDisabled();
   });
 
   it("asks which unit and which side of a go-around in a menu", () => {
@@ -116,8 +156,10 @@ describe("what a short map has room for", () => {
     expect(railNames()).toEqual(["More tools", "Add helicopter", "Add PZ marker", "Add sector of fire", "Draw a backstop", "Add unit", "Add go-around"]);
     fireEvent.click(screen.getByRole("button", { name: "More tools" }));
     const menu = screen.getByRole("menu", { name: "More tools" });
-    expect(within(menu).getAllByRole("menuitem").map((item) => item.textContent.trim())).toEqual(["Sketch route", "Set Target", "Re-analyze", "Draw LZ"]);
-    fireEvent.click(within(menu).getByRole("menuitem", { name: "Sketch route" }));
+    expect(within(menu).getAllByRole("menuitem").map((item) => item.textContent.trim())).toEqual([
+      "Sketch a route", "Draw the FLOT", "Draw a phase line (PL)", "Set Target", "Re-analyze", "Draw LZ",
+    ]);
+    fireEvent.click(within(menu).getByRole("menuitem", { name: "Sketch a route" }));
     expect(toggleRouteSketch).toHaveBeenCalledTimes(1);
   });
 

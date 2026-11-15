@@ -4,6 +4,8 @@ import { symbolDataUri } from '../feature/symbols/milsym';
 import Icon from '../feature/ui/Icon';
 import Menu, { MenuItem, useMenu } from '../feature/ui/Menu';
 import BackstopGlyph from '../feature/backstops/BackstopGlyph';
+import FlotGlyph from '../feature/flot/FlotGlyph';
+import PhaseLineGlyph from '../feature/phaseLines/PhaseLineGlyph';
 import { RAIL, cardTools, railCapacity, railFit, railRows, railTools, undoShown } from '../feature/phoneFrame/phoneFrame';
 import './MobileQuickAccess.css';
 
@@ -12,6 +14,7 @@ import './MobileQuickAccess.css';
  * hides and shows it, where a thumb reaches. It offers the tools in the order the app is used (phoneFrame.js):
  * the route tool and Set Target; with a target, Analyze and Draw LZ, in words while they are the next step; once
  * the LZ/PZ is analysed, the planning tools, two to a row. What a short map has no room for goes behind More.
+ * The route tool opens a choice of the lines drawn across the map: a route, the FLOT or a phase line.
  *
  * Beside the hide button, undo and redo, only while there is something to take back. At the left, above Layers,
  * the LZ card's Capture, and Export once a capture area is set.
@@ -90,8 +93,15 @@ const glyphOf = (tool) => {
   }
 };
 
-// The choices behind a tool that offers more than one thing (a unit's symbol, a go-around's side).
+const lineGlyphs = { route: routeGlyph(false), flot: <FlotGlyph />, phaseLine: <PhaseLineGlyph /> };
+const lineRuns = (act) => ({ route: act.toggleRouteSketch, flot: act.onStartFlot, phaseLine: act.onStartPhaseLine });
+
+// The choices behind a tool that offers more than one thing (the route tool's lines, a unit's symbol, a go-around's side).
 const choicesOf = (tool, act) => {
+  if (tool.key === 'route' && tool.choices) {
+    const runs = lineRuns(act);
+    return tool.choices.map((choice) => ({ key: `line-${choice.key}`, title: choice.label, icon: lineGlyphs[choice.key], run: runs[choice.key] }));
+  }
   if (tool.key === 'unit') {
     return [
       { key: 'unit-builder', title: 'Build a MIL-STD symbol…', icon: builderGlyph, run: act.onOpenUnitBuilder },
@@ -209,6 +219,7 @@ const MobileQuickAccess = ({
   isSketching = false,
   isDrawingBackstop = false,
   isDrawingFlot = false,
+  isDrawingPhaseLine = false,
   // The map's height, which says how many rows fit; not measured, every row is drawn.
   mapHeight,
   // The tools folded away by the button under them, and the whole frame put away by a tap on the map.
@@ -218,6 +229,8 @@ const MobileQuickAccess = ({
   undo,
   onSetTarget,
   toggleRouteSketch,
+  onStartFlot,
+  onStartPhaseLine,
   onAnalyze,
   onToggleDrawing,
   addHelo,
@@ -235,7 +248,7 @@ const MobileQuickAccess = ({
   isExporting,
   exportProgress,
 }) => {
-  const act = { onSetTarget, toggleRouteSketch, onAnalyze, onToggleDrawing, addHelo, addPZMarker, addSector, onToggleBackstop, addUnit, onOpenUnitBuilder, addGoAround };
+  const act = { onSetTarget, toggleRouteSketch, onStartFlot, onStartPhaseLine, onAnalyze, onToggleDrawing, addHelo, addPZMarker, addSector, onToggleBackstop, addUnit, onOpenUnitBuilder, addGoAround };
   const tools = railTools({
     features,
     hasTarget,
@@ -245,6 +258,7 @@ const MobileQuickAccess = ({
     sketchingRoute: isSketching,
     drawingBackstop: isDrawingBackstop,
     drawingFlot: isDrawingFlot,
+    drawingPhaseLine: isDrawingPhaseLine,
   });
   const { rows, more } = railFit(railRows(tools), railCapacity(mapHeight));
   const card = cardTools({ features, canExport, hasCaptureArea: Boolean(exportBox) });

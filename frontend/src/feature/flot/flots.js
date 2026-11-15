@@ -1,25 +1,23 @@
-import { getDistanceFeet } from "../../utils/Helpers";
+import { lineLengthKm, linePoints, linesFromData, plainPoints, savedLines, setsWithLines } from "../setLines/setLines";
 
 /*
  * The FLOT, the forward line of own troops (the owner's, 2026-11-08): a line of semicircles drawn across the map, kept with a set of
  * routes beside its routes (`flots` of the set's document, left out when there are none) as { id, points: [{ lat, lon }, ...] }, with
  * `flipped: true` when its scallops face the other way. It is no route, so it is never written to an AMPS or ForeFlight file.
+ * What it shares with a set's other lines (a phase line) is feature/setLines.
  *
  * Scallops are the size of the screen's, not the ground's, so they are worked out for the zoom in screen pixels (MapView's Flot).
  * By default they are to the right of the direction the line was drawn in; flipping puts them on the other side.
  */
 
-const FEET_PER_KM = 3280.84;
 const ARC_STEPS = 8;
 
 /** Across one scallop, in screen pixels. */
 export const SCALLOP_PX = 18;
 
-const isPoint = (point) => Number.isFinite(point?.lat) && Number.isFinite(point?.lon);
+export const flotPoints = linePoints;
 
-export const flotPoints = (flot) => (Array.isArray(flot?.points) ? flot.points.filter(isPoint) : []);
-
-export const createFlot = (points, id) => ({ id, points: points.map(({ lat, lon }) => ({ lat, lon })) });
+export const createFlot = (points, id) => ({ id, points: plainPoints(points) });
 
 /** The FLOT with its scallops on the other side. `flipped` is left out unless it is true, so an unflipped FLOT keeps one shape. */
 export const flipFlot = (flot) => {
@@ -28,29 +26,15 @@ export const flipFlot = (flot) => {
 };
 
 /** The FLOTs of a set's saved data; whatever is not an object with an id is none. */
-export const flotsFromData = (data) =>
-  (Array.isArray(data?.flots) ? data.flots : []).filter((flot) => flot && typeof flot === "object" && flot.id !== undefined);
+export const flotsFromData = (data) => linesFromData(data, "flots");
 
 /** What is saved of FLOTs: without the set they are filed under here. */
-export const savedFlots = (flots) => (flots ?? []).map(({ setId: _filed, ...flot }) => flot);
+export const savedFlots = savedLines;
 
-export const flotLengthKm = (flot) => {
-  const points = flotPoints(flot);
-  const feet = points.slice(1).reduce((sum, point, i) => sum + getDistanceFeet(points[i].lat, points[i].lon, point.lat, point.lon), 0);
-  return feet / FEET_PER_KM;
-};
+export const flotLengthKm = lineLengthKm;
 
 /** The sketched sets (useRouteSketch's) with their FLOTs, and a set that has FLOTs and no routes; this session's own first. */
-export const setsWithFlots = (sketchSets, flots, isOpenedSetId) => {
-  const ofSet = (setId) => flots.filter((flot) => (flot.setId ?? null) === setId);
-  const known = new Set(sketchSets.map((set) => set.setId));
-  const extra = [...new Set(flots.map((flot) => flot.setId ?? null))]
-    .filter((setId) => !known.has(setId) && (setId === null || isOpenedSetId(setId)))
-    .map((setId) => ({ setId, routes: [] }));
-  const session = extra.filter((set) => set.setId === null);
-  const opened = extra.filter((set) => set.setId !== null);
-  return [...session, ...sketchSets, ...opened].map((set) => ({ ...set, flots: ofSet(set.setId) }));
-};
+export const setsWithFlots = (sketchSets, flots, isOpenedSetId) => setsWithLines(sketchSets, { flots }, isOpenedSetId);
 
 // -- On the screen ------------------------------------------------------------------------------------------------------------------
 

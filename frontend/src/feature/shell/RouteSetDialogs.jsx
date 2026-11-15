@@ -15,7 +15,7 @@ const plural = (n, one) => `${n} ${one}${n === 1 ? "" : "s"}`;
 
 /**
  * `route` is moving out of the set called `fromName`. `destinations`: the other sets that take routes,
- * `[{ key, name, routes, flots }]`. `suggestedName`: for a new set. `onMove({ key })` or
+ * `[{ key, name, routes, flots, phaseLines }]`. `suggestedName`: for a new set. `onMove({ key })` or
  * `onMove({ newName })`.
  */
 export const MoveRouteDialog = ({ route, fromName, destinations, suggestedName = "", onMove, onCancel }) => {
@@ -67,7 +67,7 @@ export const MoveRouteDialog = ({ route, fromName, destinations, suggestedName =
               <input type="radio" name="move-route" checked={chosen === set.key} onChange={() => setChosen(set.key)} />
               <span>
                 <span className="ui-choice__title">{set.name}</span>
-                <span className="ui-choice__text">{setSummary(set.routes, set.flots)}</span>
+                <span className="ui-choice__text">{setSummary(set.routes, set.flots, set.phaseLines)}</span>
               </span>
             </label>
           ))}

@@ -1,6 +1,7 @@
 import {
   DRAWING_ALREADY,
   FINISH_BOUNDARY_FIRST,
+  LINE_CHOICES,
   RAIL,
   STAGE,
   cardTools,
@@ -33,7 +34,17 @@ describe("the rail's tools, in the order the app is used", () => {
     expect(keys(tools)).toEqual(["route", "target"]);
     expect(byKey(tools, "target")).toMatchObject({ label: "Set Target", enabled: true, wide: true, tone: "primary" });
     expect(byKey(tools, "target").hint).toMatch(/crosshair/);
-    expect(byKey(tools, "route")).toMatchObject({ label: "Sketch route", enabled: true, pressed: false });
+    expect(byKey(tools, "route")).toMatchObject({ label: "Route, FLOT or phase line", enabled: true, pressed: false });
+  });
+
+  // The owner, 2026-11-14: FLOT and PL go with Route, without two more buttons on the phone's first screen.
+  it("makes the route tool a choice of the three lines, and the way to end a route being sketched", () => {
+    expect(keys(byKey(railTools(), "route").choices)).toEqual(["route", "flot", "phaseLine"]);
+    expect(byKey(railTools(), "route").choices).toBe(LINE_CHOICES);
+    expect(byKey(railTools({ hasTarget: true, analyzed: true }), "route").choices).toBe(LINE_CHOICES);
+    const sketching = byKey(railTools({ sketchingRoute: true }), "route");
+    expect(sketching).toMatchObject({ label: "End route", pressed: true });
+    expect(sketching.choices).toBeUndefined();
   });
 
   it("adds an active Analyze and Draw LZ once a target is set, Analyze the next step", () => {
@@ -95,6 +106,13 @@ describe("the rail's tools, in the order the app is used", () => {
     expect(byKey(flot, "route").enabled).toBe(false);
     expect(byKey(flot, "draw").enabled).toBe(false);
     expect(byKey(flot, "analyze").enabled).toBe(true);
+
+    const phaseLine = railTools({ hasTarget: true, analyzed: true, drawingPhaseLine: true });
+    expect(byKey(phaseLine, "route")).toMatchObject({ enabled: false, hint: DRAWING_ALREADY });
+    expect(byKey(phaseLine, "draw").enabled).toBe(false);
+    expect(byKey(phaseLine, "backstop").enabled).toBe(false);
+    expect(byKey(phaseLine, "target").enabled).toBe(false);
+    expect(byKey(phaseLine, "analyze").enabled).toBe(true);
   });
 
   it("offers nothing where nothing may be changed (a finished pack, a viewer)", () => {

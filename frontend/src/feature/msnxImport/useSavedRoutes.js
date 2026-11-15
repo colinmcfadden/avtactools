@@ -27,11 +27,14 @@ export const useSavedRoutes = () => {
     }
   };
 
-  // A set's FLOTs go beside its routes, and the key is left out when there are none.
-  const sketchForm = (name, routes, flots = []) => {
+  // A set's FLOTs and phase lines go beside its routes, and each key is left out when there are none.
+  const sketchForm = (name, routes, flots = [], phaseLines = []) => {
     const form = new FormData();
     form.append("name", name);
-    form.append("route_data", JSON.stringify({ version: 1, ...(flots.length > 0 ? { flots } : {}), routes }));
+    form.append(
+      "route_data",
+      JSON.stringify({ version: 1, ...(flots.length > 0 ? { flots } : {}), ...(phaseLines.length > 0 ? { phaseLines } : {}), routes }),
+    );
     return form;
   };
 
@@ -50,8 +53,8 @@ export const useSavedRoutes = () => {
   };
 
   /** Both save functions return the created record (id, name, ...). */
-  const saveSketch = async (name, routes, flots = []) => {
-    const form = sketchForm(name, routes, flots);
+  const saveSketch = async (name, routes, flots = [], phaseLines = []) => {
+    const form = sketchForm(name, routes, flots, phaseLines);
     form.append("kind", "sketch");
     const res = await api.post("/routes", form);
     return res.data;
@@ -65,8 +68,8 @@ export const useSavedRoutes = () => {
   };
 
   /** `name` renames the saved record too; without it the name stays as it is. */
-  const updateSketch = async (id, routes, name = "", flots = []) => {
-    const res = await api.put(`/routes/${id}`, sketchForm(name, routes, flots));
+  const updateSketch = async (id, routes, name = "", flots = [], phaseLines = []) => {
+    const res = await api.put(`/routes/${id}`, sketchForm(name, routes, flots, phaseLines));
     return res.data;
   };
 

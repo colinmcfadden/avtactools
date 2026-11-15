@@ -121,6 +121,41 @@ describe("opening a saved set of routes", () => {
     expect(result.current.stateOf("k").dirty).toBe(false);
   });
 
+  it("sees a phase line as a change, saves it beside the routes and the FLOTs, and is clean again", async () => {
+    const library = { savedRoutes: [], updateSketch: vi.fn().mockResolvedValue({ updated_at: "2026-10-07T12:00:00" }), saveSketch: vi.fn() };
+    const flots = [{ id: "f", setId: "k", points: [{ lat: 34, lon: -84 }, { lat: 35, lon: -85 }] }];
+    const useLinesHarness = ({ phaseLines }) =>
+      useRouteSaves({ sets: [{ key: "k", kind: "sketch", routes: [savedRoute("a", "ALPHA 1")], flots, phaseLines }], library, signedIn: true });
+    const { result, rerender } = renderHook(useLinesHarness, { wrapper: ToastProvider, initialProps: { phaseLines: [] } });
+    act(() => result.current.adopt("k", ALPHA));
+    rerender({ phaseLines: [] });
+    expect(result.current.stateOf("k").dirty).toBe(false);
+    const drawn = [{ id: "p", name: "RED", setId: "k", points: [{ lat: 34, lon: -84 }, { lat: 35, lon: -85 }] }];
+    rerender({ phaseLines: drawn });
+    expect(result.current.stateOf("k").dirty).toBe(true);
+    await act(async () => {
+      await result.current.save("k");
+    });
+    const [, , , sentFlots, sentLines] = library.updateSketch.mock.calls[0];
+    expect(sentFlots).toEqual([{ id: "f", points: flots[0].points }]);
+    expect(sentLines).toEqual([{ id: "p", name: "RED", points: drawn[0].points }]);
+    expect(result.current.stateOf("k").dirty).toBe(false);
+    // A rename is a change too.
+    rerender({ phaseLines: [{ ...drawn[0], name: "BLUE" }] });
+    expect(result.current.stateOf("k").dirty).toBe(true);
+  });
+
+  it("keeps a set open that has only a phase line", () => {
+    const library = { savedRoutes: [], updateSketch: vi.fn(), saveSketch: vi.fn() };
+    const useOnlyLine = ({ phaseLines }) =>
+      useRouteSaves({ sets: phaseLines.length > 0 ? [{ key: "k", kind: "sketch", routes: [], phaseLines }] : [], library, signedIn: true });
+    const phaseLines = [{ id: "p", name: "RED", points: [] }];
+    const { result, rerender } = renderHook(useOnlyLine, { wrapper: ToastProvider, initialProps: { phaseLines } });
+    act(() => result.current.adopt("k", ALPHA));
+    rerender({ phaseLines });
+    expect(result.current.stateOf("k")).toMatchObject({ link: { id: 42 }, dirty: false });
+  });
+
   it("keeps a set open that has only a FLOT", () => {
     const library = { savedRoutes: [], updateSketch: vi.fn(), saveSketch: vi.fn() };
     const useOnlyFlot = ({ flots }) =>
