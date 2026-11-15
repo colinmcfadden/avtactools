@@ -2826,6 +2826,7 @@ function App() {
         <MissionOverlayDialog
           map={map}
           defaultName={inPack ? packs.meta?.name || "MISSION OVERLAY" : activeDiagram?.name || "MISSION OVERLAY"}
+          mapStyle={mapStyle}
           notify={toast}
           onClose={() => setShowOverlay(false)}
         />

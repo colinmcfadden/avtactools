@@ -1,10 +1,10 @@
 """
-POST /api/overlay-image: a mission overlay (the map's planning layers as one transparent PNG the web captured) made
-into an MBTiles or GeoTIFF file for ForeFlight (`overlay_image.py`). Web only: not in contracts/openapi.yaml, so
-nothing an app may rely on. Nothing is kept; the answer is the file.
+POST /api/overlay-image: a mission overlay (the map's planning layers, drawn by the web in pieces) made into an MBTiles
+or GeoTIFF file for ForeFlight, with or without USGS's topo map under it (`overlay_image.py`). Web only: not in
+contracts/openapi.yaml, so nothing an app may rely on. Nothing is kept; the answer is the file.
 """
 
-import io
+import os
 import re
 import threading
 
@@ -13,20 +13,19 @@ from flask_jwt_extended import jwt_required
 
 import terrain_tiles
 from entitlements import require_feature
-from overlay_image import OverlayError, build_geotiff, build_mbtiles
+from overlay_image import BASES, FORMATS, OverlayError, build, read_area, read_pieces
 
 overlay_image_bp = Blueprint('overlay_image', __name__)
 
-MAX_UPLOAD_BYTES = 48 * 1024 * 1024  # a 6,400-pixel PNG of planning layers is a few MB; a busy one far less than this
+# Under Cloudflare's 100 MB for a request; the web checks its pieces against it first. Pieces of planning layers are
+# mostly transparent and small; a terrain mask's tint fills them.
+MAX_UPLOAD_BYTES = 90 * 1024 * 1024
 MAX_NAME = 60
-# One at a time: a large overlay holds a few hundred MB while it is tiled, and the server has one worker (AGENTS.md §9).
+# One at a time: an overlay holds a few hundred MB while it is made, and the server has one worker (AGENTS.md §9). The
+# wait is short because Cloudflare gives a request 100 s, and the overlay being made takes up to about a minute.
 _build_lock = threading.Lock()
-LOCK_WAIT_SECONDS = 90
-
-FORMATS = {
-    'mbtiles': (build_mbtiles, 'mbtiles', 'application/octet-stream'),
-    'geotiff': (build_geotiff, 'tif', 'image/tiff'),
-}
+LOCK_WAIT_SECONDS = 20
+STATUS = {'too_large': 413, 'base_unavailable': 502}
 
 
 def _layer_name(raw):
@@ -47,33 +46,37 @@ def _refused(code, message, status=400):
 @require_feature('exports')
 @terrain_tiles.pauses_warming
 def overlay_image():
-    """Multipart: `image` (PNG), `north`, `south`, `east`, `west` (its corners, degrees), `format`
-    (`mbtiles` or `geotiff`) and `name`. Answers the file."""
+    """Multipart: `format` (`mbtiles` or `geotiff`), `base` (`none` or `usgs-topo`), `name`, where the area lies
+    (`zoom`, a tenth at most, in device pixels; `left`, `top`, `width`, `height` in that zoom's global pixels) and
+    its pieces, `piece-<column>-<row>`, each a PNG of overlay_image.PIECE pixels a side. Answers the file."""
     if request.content_length and request.content_length > MAX_UPLOAD_BYTES:
-        return _refused('too_large', 'The overlay image is too large to send.', 413)
+        return _refused('too_large', 'The overlay is too large to send. Choose less detail.', 413)
+    request.max_content_length = MAX_UPLOAD_BYTES
     kind = request.form.get('format', '')
     if kind not in FORMATS:
         return _refused('bad_format', 'Choose MBTiles or GeoTIFF.')
-    upload = request.files.get('image')
-    if upload is None:
-        return _refused('no_image', 'No overlay image was sent.')
-    data = upload.read(MAX_UPLOAD_BYTES + 1)
-    if len(data) > MAX_UPLOAD_BYTES:
-        return _refused('too_large', 'The overlay image is too large to send.', 413)
-    build, extension, mimetype = FORMATS[kind]
+    base = request.form.get('base') or 'none'
+    if base not in BASES:
+        return _refused('bad_base', 'Choose no base map or the USGS topo map.')
     name = _layer_name(request.form.get('name'))
-    corners = {key: request.form.get(key) for key in ('north', 'south', 'east', 'west')}
+    try:
+        area = read_area(request.form, kind, base)
+        pieces = read_pieces(request.files, area)
+    except OverlayError as refused:
+        return _refused(refused.code, refused.message, STATUS.get(refused.code, 400))
 
     if not _build_lock.acquire(timeout=LOCK_WAIT_SECONDS):
         return _refused('busy', 'Another overlay is being made. Try again in a minute.', 503)
     try:
-        built = build(data, corners, name)
+        path = build(kind, area, pieces, base, name)
     except OverlayError as refused:
-        return _refused(refused.code, refused.message, 413 if refused.code == 'too_large' else 400)
+        return _refused(refused.code, refused.message, STATUS.get(refused.code, 400))
     finally:
         _build_lock.release()
 
-    response = send_file(io.BytesIO(built), mimetype=mimetype, as_attachment=True,
-                         download_name=f'{name}.{extension}', max_age=0)
+    _, extension, mimetype = FORMATS[kind]
+    built = open(path, 'rb')  # noqa: SIM115 — closed by the response
+    os.unlink(path)           # gone once the response closes it
+    response = send_file(built, mimetype=mimetype, as_attachment=True, download_name=f'{name}.{extension}', max_age=0)
     response.headers['Cache-Control'] = 'no-store'
     return response
