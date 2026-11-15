@@ -127,7 +127,7 @@ Imported routes are fully editable: drag points (serpentine geometry updates too
 
 **FLOT**, beside **Route** in the left panel's Routes card, marks the forward line of troops. Click along the line in order, then **Finish** in the bar over the map (or **End FLOT** in the left panel). It draws as a scalloped blue line labelled FLOT.
 
-- **Flip** beside it in the Routes panel, or **Flip the scallops** on its right-click menu, chooses which side the scallops face.
+- **Flip** beside it in the Routes panel, or **Flip the scallops** on its right-click menu (right-click the line or any of its points), chooses which side the scallops face.
 - Hover the line and drag a point to move it. **Delete FLOT** is on the right-click menu, and the panel has a remove button beside it.
 
 It is saved with the sketched routes, and shared with them in a Mission Pack. It never goes into an exported `.msnx`, and it can't be added to an imported mission: it goes with your sketched routes instead.
@@ -142,7 +142,7 @@ It draws as a solid black line on a white edge, with **PL** and its name beyond 
 
 ![A phase line over satellite, topo and the VFR chart](images/34-phase-line-base-maps.jpg)
 
-- **Rename**: the pencil beside it in the Routes panel, or **Rename…** on its right-click menu.
+- **Rename**: the pencil beside it in the Routes panel, or **Rename…** on its right-click menu (right-click the line or any of its points).
 - Hover the line and drag a point to move it. **Delete phase line** is on the right-click menu, and the panel has a remove button beside it.
 
 A phase line is kept exactly as a FLOT is: saved with the sketched routes, shared with them in a Mission Pack (the pack's history names it, e.g. *added PL RED*), never part of an exported `.msnx` or a route sent to ForeFlight, and not something an imported mission can hold.
@@ -154,8 +154,57 @@ Routes are listed in the dock's **Routes** panel, one card per *route set*: the 
 - **Save** — the first time, asks for a name; after that it saves without asking. The card says *Not saved yet*, *Unsaved changes* or *Saved · 14:02*.
 - **Export .msnx** — sketched routes export as a new mission file; an imported file re-exports with your edits. Tick **Include threats as a .ths file** to get the threats beside it.
 - On each route: the **arrow** opens its plan (date, temperature, fuel flow, and the altitude, speed and wind *to* each point; **Get winds** and **Get elevations** fill them in), the **paper plane** sends it to ForeFlight, the **eye** hides it, and **⋯** removes it.
-- **⋯** on a set: **Save as…** (a copy under a new name) and **Close** (asks first if there are unsaved changes).
-- **Sketch a route** and **Import .msnx** are at the foot of the panel.
+- The **coloured dot** beside a route's name changes its colour.
+- **⋯** on a route also has **Combine with…** and **Move to another set…** (below).
+- Beside the set's name: the **pencil** renames it, and the **paper plane** sends the whole set to ForeFlight (below).
+- **⋯** on a set: **Send to ForeFlight**, **Sketch a route into this set**, **Save as…** (a copy under a new name) and **Close** (asks first if there are unsaved changes).
+- **Sketch a route**, **Import .msnx** and **New route set** are at the foot of the panel. The **FLOT** and **phase lines** are drawn from the left panel's Routes card (on a phone, from the map's route tool) and listed under their set's routes.
+
+### Arranging routes: sets, moving, combining and colours
+
+| A route's menu | Its colours |
+|---|---|
+| ![A route's menu](images/28-route-menu.jpg) | ![The colours a route can take](images/29-route-colours.jpg) |
+
+- **New route set**, at the foot of the panel, makes an empty set under the name you give it. The routes you sketch next go into it, and its card says so. To sketch into another set, use that set's **⋯** → **Sketch a route into this set**. A set with no routes yet cannot be saved.
+- **Move to another set…**, in a route's **⋯**, moves the route to another of your sets, or to a new one you name there. It keeps its points, its plan and its colour.
+
+  ![Moving a route](images/30-route-move.jpg)
+
+- **Combine with…**, in a route's **⋯**, joins another route of the same set onto the end of this one. The one route keeps this route's name and colour, and the other is no longer a route of its own. The route that begins where this one ends is offered first, and where the two meet on the same point, that point is kept once.
+
+  ![Combining two routes](images/31-route-combine.jpg)
+
+  Every point keeps its type and name, so look at the points where the two were joined: a target in the middle of the longer route is probably not what you want, and its type is changed in the plan as for any point. The plan is this route's; the legs that came from the other route keep the altitude, speed and wind they were planned with. To join routes of two sets, move one first. To put the other route first, start from that route.
+- **Colour**: click the dot beside a route's name, or **⋯** → **Colour…**, and pick one of twelve.
+
+Each of these is one **Undo**. In a Mission Pack they are shared like any other change and appear in the pack's history. The routes of an imported `.msnx` can change colour but cannot be moved or combined: which routes a mission has is its file's.
+
+### Sending routes to ForeFlight and other apps
+
+The **paper plane** on a route opens its export screen:
+
+- a **QR code** to scan with the iPad's camera, which opens the route in ForeFlight directly. A route with too many points for that gets a code to a download page instead (the link lasts 30 minutes);
+- **Download GPX** and **Download .fpl** (Garmin's flight plan format), to open on the iPad and share into ForeFlight, or into any other app that reads them;
+- the route as text, to paste into ForeFlight's search.
+
+**A whole route set** has the same screen: the paper plane beside the set's name, next to the pencil.
+
+| The set's card | Its export screen |
+|---|---|
+| ![The paper plane beside a set's name](images/24-route-set-send.jpg) | ![The export screen showing a set](images/25-route-set-foreflight.jpg) |
+
+- **Download GPX** is **one file with every route of the set**, in the order the panel lists them and with every point of each. Routes you have hidden on the map are in it too. A route with fewer than two points is left out, and the screen says which. A FLOT is not a route and is never exported.
+- The **QR code** opens a page to download that same file (you need to be signed in and online to make it; the link lasts 30 minutes).
+- A Garmin `.fpl`, the route text and ForeFlight's direct QR code hold **one route each**, by their formats. For those, choose a route under **Send** at the top of the screen; the first choice there, all the routes as one file, goes back to the set. A set with a single route is offered all of them straight away.
+- Apps differ in what they do with several routes in one file. If one shows only the first, choose each route under **Send** and send them one at a time.
+- Opened again with **Import**, the file comes back as a route set with the same routes, in the same order, named for the file. As with any GPX, a point's name comes back as letters and digits (`.TGT` as `TGT`).
+
+The paper plane is greyed out while the set has no route of two points, and says why. It is there in a finished Mission Pack too: sending changes nothing. On a phone it is in the Routes sheet:
+
+| The Routes sheet | The export screen |
+|---|---|
+| ![The set's card on a phone](images/26-phone-route-set-send.jpg) | ![The export screen on a phone](images/27-phone-route-set-foreflight.jpg) |
 
 ### Opening exports in AMPS
 

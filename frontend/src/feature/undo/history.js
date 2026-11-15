@@ -10,6 +10,10 @@
  *
  * `seq` orders steps across documents, so one Undo can take the last thing done wherever it was
  * (feature/undo/useUndo.js). It is taken when the person acts, never in a reducer.
+ *
+ * `link` is on a step that is half of one thing done to two documents (a route moved from one set to
+ * another): both halves carry it, and whoever holds the two histories takes them back, and makes
+ * them again, together (routeSketchReducer.js).
  */
 
 export const MAX_UNDO = 100;
@@ -31,7 +35,7 @@ export const sameJson = (a, b) => a === b || JSON.stringify(a) === JSON.stringif
  * is left alone: nothing was done. A key matching the newest step's merges into it.
  */
 export const recordStep = (history, change, same = sameJson) => {
-  const { label, before, after, key = null, seq } = change;
+  const { label, before, after, key = null, seq, link = null } = change;
   if (same(before, after)) return history;
   const top = history.undo[history.undo.length - 1];
   if (key !== null && top && top.key === key) {
@@ -39,7 +43,7 @@ export const recordStep = (history, change, same = sameJson) => {
     if (same(top.before, after)) return { undo: rest, redo: [] };
     return { undo: [...rest, { ...top, after, seq }], redo: [] };
   }
-  const undo = [...history.undo, { label, before, after, key, seq }];
+  const undo = [...history.undo, { label, before, after, key, seq, ...(link !== null ? { link } : {}) }];
   return { undo: undo.length > MAX_UNDO ? undo.slice(undo.length - MAX_UNDO) : undo, redo: [] };
 };
 

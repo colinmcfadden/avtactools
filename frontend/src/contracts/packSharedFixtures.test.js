@@ -1004,6 +1004,13 @@ const SET = "MISSION 1";
 const WHITE = { id: "sketch-1759900000003-q7r1", name: "WHITE 1", color: "#30D158", points: [] };
 const CP1 = { id: "p4", lat: 34.715, lon: -84.085, ele: null, role: "waypoint", kind: "amps", ptType: "turn", name: ".CP1" };
 
+// Three points, for a route of which only one goes elsewhere.
+const RED_PLUS = [
+  { id: "s1", lat: 34.8, lon: -84.0, ele: null, role: "start", kind: "amps", ptType: "turn", name: ".S1" },
+  { id: "s2", lat: 34.81, lon: -84.01, ele: null, role: "waypoint", kind: "amps", ptType: "turn", name: ".S2" },
+  { id: "s3", lat: 34.82, lon: -84.02, ele: null, role: "waypoint", kind: "amps", ptType: "turn", name: ".S3" },
+];
+
 const rt = (name, change, { before = ROUTES, ...who } = {}) => ({ name, before, after: changed(before, change), itemName: SET, actor: ACTOR, ...who });
 const rtPair = (name, before, after, who = {}) => ({ name, before, after, itemName: SET, actor: ACTOR, ...who });
 const red = (d) => d.routes[0];
@@ -1039,7 +1046,55 @@ const ROUTE_CASES = [
   rt("the ground elevations updated", (d) => { red(d).elevations.p2 = 1760; }),
   rt("a named route removed", (d) => { d.routes.splice(1, 1); }),
   rt("a route with no name removed", (d) => { d.routes.splice(1, 1); }, { before: { version: 1, routes: [RED, withoutName(BLUE)] } }),
-  rt("a route's colour changed is only an edit", (d) => { red(d).color = "#FF9F0A"; }),
+  rt("a route's colour changed", (d) => { red(d).color = "#FF9F0A"; }),
+  rt("a colour given where there was none is a change", (d) => { d.routes[2].color = "#FFFFFF"; }, { before: { version: 1, routes: [RED, BLUE, { id: "w", name: "WHITE 1", points: [] }] } }),
+  rt("a colour that goes from missing to null is a change, as a name is", (d) => { d.routes[2].color = null; }, { before: { version: 1, routes: [RED, BLUE, { id: "w", name: "WHITE 1", points: [] }] } }),
+  rt("a rename is named before the colour, and the colour before a point", (d) => { red(d).points[0].lat = 34.701; red(d).color = "#FF9F0A"; red(d).name = "RED 2"; }),
+  rt("the colour is named before the plan", (d) => { red(d).plan.tempC = 20; red(d).color = "#FF9F0A"; }),
+
+  // Two routes made one (the web's routeSetOps.combineRoutes): the second's points go onto the first, and the second is gone.
+  rt("a route joined onto another is combined into it, not removed, and its points are not named as added", (d) => {
+    red(d).points.push(...blue(d).points.map((point) => ({ ...point, role: "waypoint" })));
+    d.routes.splice(1, 1);
+  }),
+  rt("joined where the two met, the point they share comes over once", (d) => {
+    red(d).points.push(...blue(d).points.slice(1));
+    d.routes.splice(1, 1);
+  }),
+  rt("the route that grew is the later of the two: the first is combined into it", (d) => {
+    blue(d).points.push(...red(d).points);
+    d.routes.splice(0, 1);
+  }),
+  rt("a route with no name combined is \"a route\"", (d) => {
+    red(d).points.push(...blue(d).points);
+    d.routes.splice(1, 1);
+  }, { before: { version: 1, routes: [RED, withoutName(BLUE)] } }),
+  rt("combined is named before a rename, and what the join did to the plan and the ground after", (d) => {
+    red(d).points.push(...blue(d).points);
+    red(d).name = "RED AND BLUE";
+    red(d).plan.perPoint.q2 = { airspeed: { value: 90, type: "ground" } };
+    red(d).elevations.q1 = 1900;
+    d.routes.splice(1, 1);
+  }),
+  rt("a point added besides the ones that came over is still named", (d) => {
+    red(d).points.push(...blue(d).points, CP1);
+    d.routes.splice(1, 1);
+  }),
+  rt("a route removed while another gains points of its own is removed, not combined", (d) => {
+    red(d).points.push(CP1);
+    d.routes.splice(1, 1);
+  }),
+  rt("a route removed with only one of its several points now another's is removed, not combined", (d) => {
+    red(d).points.push(RED_PLUS[0]);
+    d.routes.splice(1, 1);
+  }, { before: { version: 1, routes: [RED, { ...BLUE, points: RED_PLUS }] } }),
+  rt("a route with no points removed is removed", (d) => { d.routes.splice(2, 1); red(d).points.push(CP1); }, { before: { version: 1, routes: [RED, BLUE, WHITE] } }),
+  rt("two routes each joined onto another are each combined, the first named", (d) => {
+    red(d).points.push(...blue(d).points);
+    d.routes[2].points.push(...d.routes[3].points);
+    d.routes.splice(3, 1);
+    d.routes.splice(1, 1);
+  }, { before: { version: 1, routes: [RED, BLUE, { id: "g", name: "GREEN 1", points: [{ id: "g1", lat: 1, lon: 1 }] }, { id: "y", name: "YELLOW 1", points: [{ id: "y1", lat: 2, lon: 2 }, { id: "y2", lat: 3, lon: 3 }] }] } }),
   rt("routes in a new order are only an edit", (d) => { d.routes.reverse(); }),
   rt("points in a new order are only an edit", (d) => { red(d).points.reverse(); }),
   rt("a route with no id is passed over", (d) => { d.routes.push({ name: "GHOST", points: [] }); }),

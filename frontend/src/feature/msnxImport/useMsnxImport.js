@@ -9,6 +9,7 @@ import {
   applyPlanToMsnxDocs,
 } from "./mutateMsnx";
 import { nextRouteColor } from "./colorPalette";
+import { withRouteColor } from "./routeSetOps";
 import { defaultRoutePlan, fetchPointElevationsFt } from "./routeCalc";
 import { fetchForecastWinds, mergeWindsIntoPlan } from "./routeWinds";
 import { INITIAL_SKETCH_STATE, makeRouteReducer } from "./routeSketchReducer";
@@ -270,6 +271,11 @@ export const useMsnxImport = () => {
     return { winds };
   };
 
+  /** A route's colour is this app's, not the file's: it is kept in the saved record beside the file. */
+  const setRouteColor = (id, color) => {
+    editRoutes(id, "Change route colour", (routes) => routes.map((route) => (route.id === id ? withRouteColor(route, color) : route)));
+  };
+
   // The file's XML keeps the route: taking it off the list and putting it back changes nothing there.
   const removeRoute = (id) => {
     editRoutes(id, "Delete route", (routes) => routes.filter((route) => route.id !== id));
@@ -322,6 +328,7 @@ export const useMsnxImport = () => {
     updatePointPosition,
     insertPoint,
     removeRoute,
+    setRouteColor,
     clearRoutes,
     exportFile,
     serializeFile,

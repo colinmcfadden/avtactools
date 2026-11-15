@@ -4,6 +4,9 @@ When a route has too many points to fit ForeFlight's deep link inside a QR code,
 the app stores the route's GPX + Garmin FPL server-side and the QR encodes only
 an opaque token URL. Scanning it opens a small landing page offering both files.
 
+A whole route set is shared the same way, as its one GPX file and no flight plan
+(a Garmin FPL holds one route), so a share's `fpl` may be None.
+
 Unlike the threat download store, a share is fetched several times per token (the
 landing page plus each file download), so entries are TTL-bounded rather than
 consumed after N downloads. Process-local by design: the Fly deployment runs a
@@ -25,7 +28,7 @@ from typing import Callable, Optional
 class RouteShare:
     name: str
     gpx: bytes
-    fpl: bytes
+    fpl: Optional[bytes]
 
 
 @dataclass
@@ -77,9 +80,10 @@ class RouteShareStore:
         for key in [k for k, e in self._entries.items() if e.expires_at <= now]:
             self._remove(key)
 
-    def create(self, name: str, gpx: bytes, fpl: bytes) -> str:
-        gpx, fpl = bytes(gpx), bytes(fpl)
-        size = len(gpx) + len(fpl)
+    def create(self, name: str, gpx: bytes, fpl: Optional[bytes] = None) -> str:
+        gpx = bytes(gpx)
+        fpl = None if fpl is None else bytes(fpl)
+        size = len(gpx) + len(fpl or b"")
         if size > self.max_entry_bytes:
             raise ValueError("Route share exceeds the per-link storage limit")
         token = secrets.token_urlsafe(24)
