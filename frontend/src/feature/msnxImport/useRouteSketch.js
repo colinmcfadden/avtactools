@@ -2,6 +2,7 @@ import { useCallback, useMemo, useReducer, useRef, useState } from "react";
 import { nextRouteColor, ROUTE_COLORS } from "./colorPalette";
 import { buildSketchMsnx } from "./createMsnx";
 import { defaultRoutePlan, ensureRoutePlan, fetchPointElevationsFt } from "./routeCalc";
+import { combineRoutes, withRouteColor } from "./routeSetOps";
 import { fetchForecastWinds, mergeWindsIntoPlan } from "./routeWinds";
 import {
   appendAmpsPoint,
@@ -57,10 +58,15 @@ export const isOpenedSetId = (setId) => String(setId ?? "").startsWith(`${OPENED
  * mission pack's route set (feature/missionPacks/usePackRoutes.js), whose routes keep their ids so
  * everyone's edits can name them. Everything that changes one route finds it by its id, whichever
  * set it is in.
+ *
+ * A set is its routes, so one with none is not there, with one exception: a set made here (`newRouteSet`)
+ * is there from the moment it is made until it is closed, routes or no routes, so that it can be made
+ * first and filled after (sketched into, or routes moved to it).
  */
 export const useRouteSketch = ({ aircraftProfile = null } = {}) => {
   const [isSketching, setIsSketching] = useState(false);
   const [draftPoints, setDraftPoints] = useState([]);
+  const [madeSets, setMadeSets] = useState([]);
   const [{ routes: sketchedRoutes, history: sketchHistory }, dispatch] = useReducer(routeSketchReducer, INITIAL_SKETCH_STATE);
   // One thing a person did to one route: `op` is route -> route, and a typed field's keystrokes share `key`.
   const editRoute = useCallback((routeId, label, op, key = null) => {
@@ -85,9 +91,20 @@ export const useRouteSketch = ({ aircraftProfile = null } = {}) => {
       if (!opened.has(route.setId)) opened.set(route.setId, []);
       opened.get(route.setId).push(route);
     });
+    // A set made here with no routes yet (or none any more) is still a set.
+    madeSets.forEach((setId) => {
+      if (!opened.has(setId)) opened.set(setId, []);
+    });
     opened.forEach((routes, setId) => sets.push({ setId, routes }));
     return sets;
-  }, [sessionRoutes, sketchedRoutes]);
+  }, [sessionRoutes, sketchedRoutes, madeSets]);
+
+  /** A new, empty set beside the others, there until it is closed. Returns its id. */
+  const newRouteSet = useCallback(() => {
+    const setId = generateId(OPENED);
+    setMadeSets((list) => [...list, setId]);
+    return setId;
+  }, []);
 
   const startSketch = () => {
     setDraftPoints([]);
@@ -231,6 +248,7 @@ export const useRouteSketch = ({ aircraftProfile = null } = {}) => {
   /** Closes a set (`setId` null: this session's own sketches). Not something to undo. */
   const removeRouteSet = useCallback((setId) => {
     dispatch({ type: "removeSet", setKey: setId ?? SKETCHES });
+    setMadeSets((list) => (list.includes(setId) ? list.filter((id) => id !== setId) : list));
   }, []);
 
   const undoSketch = useCallback((setKey) => {
@@ -305,6 +323,51 @@ export const useRouteSketch = ({ aircraftProfile = null } = {}) => {
     dispatch({ type: "visible", routeId });
   };
 
+  /** One of the route colours (routeSetOps.js); anything else changes nothing. */
+  const setSketchRouteColor = (routeId, color) => {
+    editRoute(routeId, "Change route colour", (route) => withRouteColor(route, color));
+  };
+
+  /**
+   * Joins the route `secondId` onto the end of `firstId` (routeSetOps.combineRoutes): one route, the
+   * first's, and the second is gone. Both are of one set, so it is one step there. Returns whether it was done.
+   */
+  const combineSketchRoutes = (firstId, secondId) => {
+    const first = routesRef.current.find((route) => route.id === firstId);
+    const second = routesRef.current.find((route) => route.id === secondId);
+    if (!first || !second || first === second || setKeyOf(first) !== setKeyOf(second)) return false;
+    // New ids for points the two share are made here, once: a reducer runs twice under StrictMode.
+    const joined = combineRoutes(first, second);
+    dispatch({
+      type: "edit",
+      routeId: firstId,
+      update: (routes) => routes.filter((route) => route.id !== secondId).map((route) => (route.id === firstId ? { ...joined, visible: route.visible } : route)),
+      step: { seq: nextStepSeq(), label: "Combine routes" },
+    });
+    return true;
+  };
+
+  /**
+   * Files a route under another set (`toSetId`; null: this session's own sketches). `fromSetId`
+   * names the set it is in, for the case of two sets holding a route of one id. One step, which
+   * undo takes back in both sets at once.
+   */
+  const moveSketchRoute = (routeId, toSetId, fromSetId) => {
+    // A set opened from the Library that a route leaves stays, with or without routes, until it is
+    // closed: gone the moment it emptied, it would take its place in the Library's record with it.
+    const leaving = routesRef.current.find((route) => route.id === routeId && (fromSetId === undefined || (route.setId ?? null) === (fromSetId ?? null)));
+    if (leaving && isOpenedSetId(leaving.setId) && leaving.setId !== toSetId) {
+      setMadeSets((list) => (list.includes(leaving.setId) ? list : [...list, leaving.setId]));
+    }
+    dispatch({
+      type: "move",
+      routeId,
+      fromKey: fromSetId === undefined ? undefined : fromSetId ?? SKETCHES,
+      toKey: toSetId ?? SKETCHES,
+      step: { seq: nextStepSeq(), label: "Move route" },
+    });
+  };
+
   /**
    * Exports this session's sketches, or `routes` (a set's), as a .msnx download. Resolves to what
    * buildSketchMsnx says about the file, whose `warning` is set when AMPS will open it as another
@@ -342,6 +405,10 @@ export const useRouteSketch = ({ aircraftProfile = null } = {}) => {
     openSavedRoutes,
     removeSketchRoute,
     toggleSketchVisibility,
+    setSketchRouteColor,
+    combineSketchRoutes,
+    moveSketchRoute,
+    newRouteSet,
     exportSketches,
     updateRoutePlan,
     updatePointPlanOverride,

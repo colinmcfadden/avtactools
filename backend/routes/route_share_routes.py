@@ -4,6 +4,10 @@
   GET  /r/<token>         (public) landing page offering both downloads
   GET  /r/<token>/route.gpx | route.fpl  (public) the files themselves
 
+A whole route set is shared as its one GPX file, every route in it: the request
+leaves `fpl` out (a Garmin flight plan holds one route), the landing page offers
+the GPX alone, and route.fpl answers 404.
+
 Minting a link requires sign-in; the token URL itself is public so it can be
 scanned on an iPad that isn't signed in. Files are served as attachments (never
 rendered), and the only place the route name reaches HTML is the landing page,
@@ -47,12 +51,17 @@ def create_route_share():
     gpx = body.get('gpx')
     fpl = body.get('fpl')
 
-    if not isinstance(gpx, str) or not isinstance(fpl, str) or not gpx or not fpl:
+    # `fpl` left out (or null) is a route set: its GPX holds every route, and there is no flight
+    # plan to go with it. Anything else that is not a flight plan's text is refused, as it always was.
+    with_fpl = fpl is not None
+    if not isinstance(gpx, str) or not gpx:
+        return jsonify({'error': 'Both gpx and fpl route content are required'}), 400
+    if with_fpl and (not isinstance(fpl, str) or not fpl):
         return jsonify({'error': 'Both gpx and fpl route content are required'}), 400
 
     gpx_bytes = gpx.encode('utf-8')
-    fpl_bytes = fpl.encode('utf-8')
-    if len(gpx_bytes) > _MAX_XML_BYTES or len(fpl_bytes) > _MAX_XML_BYTES:
+    fpl_bytes = fpl.encode('utf-8') if with_fpl else None
+    if len(gpx_bytes) > _MAX_XML_BYTES or (with_fpl and len(fpl_bytes) > _MAX_XML_BYTES):
         return jsonify({'error': 'Route is too large to share'}), 413
 
     # Keep the readable name (spaces intact) for the landing page; the filename
@@ -87,10 +96,29 @@ def share_landing(token):
 
     name = html.escape(share.name)
     gpx_url = url_for('route_share.share_file', token=token, kind='gpx')
-    fpl_url = url_for('route_share.share_file', token=token, kind='fpl')
+    if share.fpl is None:
+        # A route set: one GPX with every route in it, and nothing else to offer.
+        intro = 'Download the route set, then import it into ForeFlight. Every route of the set is in the one GPX file.'
+        gpx_label = 'Download GPX'
+        what = 'routes'
+        fpl_button = ''
+        steps = ('<li>Tap the download above.</li>',
+                 '<li>Open the file (Files app or the download banner).</li>',
+                 '<li>Share &rarr; <b>ForeFlight</b> (or &ldquo;Copy to ForeFlight&rdquo;).</li>')
+    else:
+        fpl_url = url_for('route_share.share_file', token=token, kind='fpl')
+        intro = 'Download a route file, then import it into ForeFlight.'
+        gpx_label = 'Download GPX (recommended)'
+        what = 'route'
+        fpl_button = f'\n  <a class="btn fpl" href="{fpl_url}" download>Download Garmin .fpl</a>'
+        steps = ('<li>Tap a download above.</li>',
+                 '<li>Open the file (Files app or the download banner).</li>',
+                 '<li>Share &rarr; <b>ForeFlight</b> (or &ldquo;Copy to ForeFlight&rdquo;).</li>',
+                 '<li>Find the route under <b>Flights</b>; the waypoints load into <b>User Waypoints</b>.</li>')
+    steps = '\n    '.join(steps)
     page = f"""<!doctype html><html><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>{name} — route</title>
+<title>{name} — {what}</title>
 <style>
   body{{font-family:-apple-system,system-ui,sans-serif;background:#101317;color:#e7eaee;
     margin:0;padding:24px;display:flex;justify-content:center}}
@@ -105,15 +133,11 @@ def share_landing(token):
 </style></head>
 <body><div class="card">
   <h1>{name}</h1>
-  <p class="sub">Download a route file, then import it into ForeFlight.</p>
-  <a class="btn gpx" href="{gpx_url}" download>Download GPX (recommended)</a>
-  <a class="btn fpl" href="{fpl_url}" download>Download Garmin .fpl</a>
+  <p class="sub">{intro}</p>
+  <a class="btn gpx" href="{gpx_url}" download>{gpx_label}</a>{fpl_button}
   <p class="sub">To import on the iPad:</p>
   <ol>
-    <li>Tap a download above.</li>
-    <li>Open the file (Files app or the download banner).</li>
-    <li>Share &rarr; <b>ForeFlight</b> (or &ldquo;Copy to ForeFlight&rdquo;).</li>
-    <li>Find the route under <b>Flights</b>; the waypoints load into <b>User Waypoints</b>.</li>
+    {steps}
   </ol>
   <p class="sub" style="font-size:.75rem">This link expires in 30 minutes.</p>
 </div></body></html>"""
@@ -130,6 +154,9 @@ def share_file(token, kind):
 
     if kind == 'gpx':
         data, mimetype = share.gpx, 'application/gpx+xml'
+    elif share.fpl is None:
+        # A route set's link: a flight plan holds one route, so there is none for a set.
+        return _no_store(jsonify({'error': 'This link has no .fpl file'})), 404
     else:
         data, mimetype = share.fpl, 'application/xml'
 
