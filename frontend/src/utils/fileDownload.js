@@ -29,3 +29,18 @@ export const blobError = async (err, fallback) => {
   }
   return err?.response ? fallback : "The server could not be reached. Check the connection and try again.";
 };
+
+/**
+ * Downloads what a link names, without the page holding it: the server answers it as an attachment
+ * (Content-Disposition), so the browser saves it, of any size, without leaving the page. `filename` names it where the
+ * link is the page's own origin; a link to another (the API's) keeps the server's name.
+ */
+export const downloadUrl = (url, filename) => {
+  const a = document.createElement("a");
+  a.href = url;
+  if (filename) a.download = filename;
+  a.rel = "noopener";
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+};

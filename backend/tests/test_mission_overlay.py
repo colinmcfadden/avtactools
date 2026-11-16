@@ -1,5 +1,6 @@
-"""A mission overlay (`POST /api/overlay-image`, `overlay_image.py`, `usgs_topo.py`): the pieces the web draws made into
-MBTiles and GeoTIFF files, with or without USGS's topo map under them."""
+"""A mission overlay (`POST /api/overlay-image`, `/api/overlay-jobs`, `overlay_image.py`, `overlay_jobs.py`,
+`usgs_topo.py`): the pieces the web draws made into MBTiles and GeoTIFF files, with or without USGS's topo map under
+them, while the request waits or in the background."""
 
 import io
 import math
@@ -8,6 +9,7 @@ import sqlite3
 import sys
 import tempfile
 import threading
+import time
 import unittest
 from pathlib import Path
 from types import SimpleNamespace
@@ -22,6 +24,7 @@ import requests  # noqa: E402
 from PIL import Image  # noqa: E402
 
 import overlay_image as oi  # noqa: E402
+import overlay_jobs  # noqa: E402
 import usgs_topo  # noqa: E402
 from auth_harness import NativeAuthCase  # noqa: E402
 from routes import overlay_image_routes  # noqa: E402
@@ -103,8 +106,22 @@ class FakeTopo:
     def colour(zoom):
         return (40 + 10 * zoom, 120, 60)
 
-    def fetch(self, keys):
+    def fetch(self, keys, progress=None):
+        keys = list(keys)
         self.fetched.extend(keys)
+        if progress is not None:
+            progress(len(keys), len(keys))
+
+    def stream(self, keys):
+        for key in keys:
+            self.fetched.append(key)
+            yield key, self.jpeg(*key)
+
+    def jpeg_of(self, key, data):
+        return data
+
+    def image_of(self, key, data):
+        return self.tile(*key)
 
     def tile(self, z, x, y):
         return Image.new('RGB', (256, 256), self.colour(z))
@@ -155,6 +172,16 @@ class ReadingTheArea(unittest.TestCase):
         oi.read_area(self.form(width='10000', height='10000'), 'geotiff', 'none')
         self.assertEqual(self.refused(self.form(width=str(256 * 41), height=str(256 * 40))), 'too_large')
         oi.read_area(self.form(width=str(256 * 40), height=str(256 * 40)), 'mbtiles', 'none')
+
+    def test_more_tiles_in_the_background(self):
+        # 16,000 tiles at 16: over a request's 1,600, within the background's 64,000.
+        form = self.form(zoom='16', width=str(256 * 160), height=str(256 * 100))
+        self.assertEqual(self.refused(form, base='usgs-topo'), 'too_large')
+        for base in ('usgs-topo', 'none'):
+            self.assertEqual(oi.read_area(form, 'mbtiles', base, background=True).width, 256 * 160)
+        with self.assertRaises(oi.OverlayError):
+            oi.read_area(self.form(zoom='16', width=str(256 * 300), height=str(256 * 300)), 'mbtiles', 'usgs-topo',
+                         background=True)
 
     def test_the_topo_map_goes_no_finer_than_its_own_tiles(self):
         self.assertEqual(self.refused(self.form(zoom='17'), 'mbtiles', 'usgs-topo'), 'too_fine')
@@ -272,6 +299,45 @@ class MBTiles(unittest.TestCase):
         with self.assertRaises(oi.OverlayError) as caught:
             oi.build('mbtiles', area, _pieces(area), 'none', 'X')
         self.assertEqual(caught.exception.code, 'empty')
+
+    def test_a_piece_not_sent_is_transparent_and_under_the_topo_map_is_the_map(self):
+        # Two pieces across, the second not sent (nothing is drawn there).
+        area = _area(16, 4096, 512, snap=256)
+        pieces = _pieces(area, [_mark(area, LAT, area.lon(area.left + 300), half=24)])
+        del pieces[(1, 0)]
+        db, close = _open_mbtiles(oi.build('mbtiles', area, pieces, 'none', 'X'))
+        self.addCleanup(close)
+        columns = {c for (c,) in db.execute('SELECT tile_column FROM tiles WHERE zoom_level = 16')}
+        self.assertTrue(columns and max(columns) < area.left // 256 + 8)
+
+        topo = FakeTopo()
+        db, close = _open_mbtiles(oi.build('mbtiles', area, {}, 'usgs-topo', 'X', topo=topo))
+        self.addCleanup(close)
+        self.assertEqual(db.execute('SELECT COUNT(*) FROM tiles WHERE zoom_level = 16').fetchone()[0], 16 * 2)
+        for (data,) in db.execute('SELECT tile_data FROM tiles WHERE zoom_level = 16 LIMIT 3'):
+            self.assertEqual(Image.open(io.BytesIO(data)).convert('RGB').getpixel((9, 9))[0], 40 + 10 * 16, 5)
+
+    def test_progress_is_told_to_the_last_tile_and_a_stop_leaves_no_file(self):
+        area = _area(15, 768, 512, snap=256)
+        told = []
+        path = oi.build('mbtiles', area, _pieces(area, [_mark(area, LAT, LON)]), 'usgs-topo', 'X', topo=FakeTopo(),
+                        progress=lambda stage, done, total: told.append((stage, done, total)))
+        os.unlink(path)
+        self.assertEqual(told[-1][1], told[-1][2])
+        self.assertEqual(told[-1][2], sum(len(keys) for _, keys in oi.pyramid(area)))
+        self.assertEqual([done for _, done, _ in told], list(range(1, told[-1][2] + 1)))
+
+        class Stop(Exception):
+            pass
+
+        def stop(stage, done, total):
+            if done == 3:
+                raise Stop()
+        with tempfile.TemporaryDirectory() as folder, mock.patch.object(oi.tempfile, 'tempdir', folder):
+            with self.assertRaises(Stop):
+                oi.build('mbtiles', area, _pieces(area, [_mark(area, LAT, LON)]), 'usgs-topo', 'X',
+                         topo=FakeTopo(), progress=stop)
+            self.assertEqual(os.listdir(folder), [])
 
 
 # ------------------------------------------------------------------------------------------------------- GeoTIFF
@@ -411,6 +477,33 @@ class UsgsTopo(unittest.TestCase):
             down.fetch([(10, 1, 1)])
         self.assertEqual(caught.exception.code, 'base_unavailable')
 
+    def test_a_stream_keeps_its_order_and_draws_water_from_a_parent(self):
+        def answer(z, x, y):
+            if z == 16 and x == 101:
+                return (404, b'')
+            return (200, _jpeg((20, 40, 200), (20, 200, 40)) if z == 15 else _jpeg((x % 200, 9, 9)))
+        session = FakeSession(answer)
+        topo = usgs_topo.UsgsTopo(session=session, sleep=lambda s: None)
+        keys = [(16, x, 50) for x in range(90, 110)]
+        streamed = list(topo.stream(keys))
+        self.assertEqual([key for key, _ in streamed], keys)
+        data = dict(streamed)
+        self.assertIsNone(data[(16, 101, 50)])
+        self.assertIsNone(topo.jpeg_of((16, 101, 50), None))
+        self.assertEqual(topo.jpeg_of((16, 100, 50), data[(16, 100, 50)]), data[(16, 100, 50)])
+        # Level 16's x 101 is the right half of level 15's x 50: green.
+        self.assertLess(abs(topo.image_of((16, 101, 50), None).getpixel((128, 128))[1] - 200), 10)
+        topo.image_of((16, 101, 50), None)
+        self.assertEqual(session.asked.count(usgs_topo.URL.format(z=15, x=50, y=25)), 1)
+
+    def test_a_stream_closed_part_way_asks_for_no_more(self):
+        session = FakeSession(lambda z, x, y: (200, _jpeg((1, 2, 3))))
+        topo = usgs_topo.UsgsTopo(session=session, sleep=lambda s: None)
+        stream = topo.stream([(16, x, 1) for x in range(5000)])
+        next(stream)
+        stream.close()
+        self.assertLessEqual(len(session.asked), usgs_topo.STREAM_AHEAD + usgs_topo.WORKERS + 1)
+
     def test_a_place_it_does_not_cover_is_refused(self):
         topo = usgs_topo.UsgsTopo(session=FakeSession(lambda z, x, y: (404, b'')), sleep=lambda s: None)
         with self.assertRaises(usgs_topo.TopoError) as caught:
@@ -473,11 +566,16 @@ class Route(NativeAuthCase):
 
     def test_usgs_not_answering_is_a_bad_gateway(self):
         class Down(FakeTopo):
-            def fetch(self, keys):
+            def fetch(self, keys, progress=None):
                 raise usgs_topo.TopoError('base_unavailable', 'The USGS topo map could not be fetched.')
-        with mock.patch.object(oi, 'UsgsTopo', Down):
-            response = self.post({'base': 'usgs-topo'})
-        self.assertEqual((response.status_code, response.get_json()['code']), (502, 'base_unavailable'))
+
+            def stream(self, keys):
+                self.fetch(keys)
+                yield
+        for kind in ('mbtiles', 'geotiff'):
+            with mock.patch.object(oi, 'UsgsTopo', Down):
+                response = self.post({'base': 'usgs-topo', 'format': kind})
+            self.assertEqual((response.status_code, response.get_json()['code']), (502, 'base_unavailable'), kind)
 
     def test_one_is_made_at_a_time(self):
         held = threading.Lock()
@@ -493,6 +591,162 @@ class Route(NativeAuthCase):
         self.assertEqual(overlay_image_routes._layer_name('A' * 90), 'A' * 60)
         self.assertEqual(overlay_image_routes._layer_name('OP DK (2) — night'), 'OP DK (2) night')
 
+
+
+# ------------------------------------------------------------------------------------------------------- jobs
+
+
+class Jobs(NativeAuthCase):
+    extra_blueprints = (overlay_image_bp,)
+
+    def setUp(self):
+        super().setUp()
+        overlay_jobs.reset()
+        self.addCleanup(overlay_jobs.reset)
+        folder = tempfile.TemporaryDirectory()
+        self.addCleanup(folder.cleanup)
+        self.folder = folder.name
+        patcher = mock.patch.object(oi.tempfile, 'tempdir', folder.name)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+        self.make_account()
+        self.head = {'Authorization': f'Bearer {self.login()["access_token"]}'}
+        self.area = _area(15, 4096, 512, snap=256)
+
+    def create(self, fields=None, head=None):
+        area = self.area
+        form = {'format': 'mbtiles', 'base': 'none', 'name': 'OP DK', 'zoom': str(area.zoom),
+                'left': str(area.left), 'top': str(area.top), 'width': str(area.width), 'height': str(area.height),
+                **(fields or {})}
+        return self.client.post('/api/overlay-jobs', headers=self.head if head is None else head, data=form,
+                                content_type='multipart/form-data')
+
+    def send(self, job, pieces, head=None):
+        form = {f'piece-{i}-{j}': (io.BytesIO(data), 'p.png') for (i, j), data in pieces.items()}
+        return self.client.post(f'/api/overlay-jobs/{job}/pieces', headers=self.head if head is None else head,
+                                data=form, content_type='multipart/form-data')
+
+    def made(self, job):
+        for _ in range(200):
+            answer = self.client.get(f'/api/overlay-jobs/{job}', headers=self.head).get_json()
+            if answer['state'] not in ('queued', 'running'):
+                return answer
+            time.sleep(0.02)
+        self.fail('the job did not finish')
+
+    def test_a_job_is_made_from_the_pieces_sent_and_downloaded_by_its_link(self):
+        created = self.create()
+        self.assertEqual(created.status_code, 201, created.data[:300])
+        self.assertEqual(created.headers['Cache-Control'], 'no-store')
+        job = created.get_json()['id']
+        pieces = _pieces(self.area, [_mark(self.area, LAT, self.area.lon(self.area.left + 300))])
+        self.assertEqual(self.send(job, {(0, 0): pieces[(0, 0)]}).get_json()['pieces'], 1)
+        self.assertEqual(self.client.post(f'/api/overlay-jobs/{job}/start', headers=self.head).status_code, 202)
+        answer = self.made(job)
+        self.assertEqual(answer['state'], 'done', answer)
+        self.assertEqual(answer['done'], answer['total'])
+        link = '/api' + answer['download']
+        self.assertNotIn(str(LAT)[:5], link)
+
+        # No bearer token: a browser follows the link.
+        response = self.client.get(link)
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.headers['Cache-Control'], 'no-store')
+        self.assertIn('filename="OP DK.mbtiles"', response.headers['Content-Disposition'])
+        with tempfile.NamedTemporaryFile(suffix='.mbtiles', delete=False) as out:
+            out.write(response.data)
+        response.close()
+        db, close = _open_mbtiles(out.name)
+        self.addCleanup(close)
+        self.assertGreater(db.execute('SELECT COUNT(*) FROM tiles').fetchone()[0], 0)
+        # A part of it, so a download cut off can go on.
+        part = self.client.get(link, headers={'Range': 'bytes=0-15'})
+        self.assertEqual((part.status_code, part.data), (206, b'SQLite format 3\x00'))
+        part.close()
+
+        self.assertEqual(self.client.get(link[:-4] + 'abcd').status_code, 404)
+        self.assertEqual(self.client.get(f'/api/overlay-jobs/{job}/file/').status_code, 404)
+
+    def test_someone_else_cannot_see_send_to_start_or_stop_it(self):
+        job = self.create().get_json()['id']
+        self.make_account('other@example.com')
+        other = {'Authorization': f'Bearer {self.login(email="other@example.com")["access_token"]}'}
+        self.assertEqual(self.client.get(f'/api/overlay-jobs/{job}', headers=other).status_code, 404)
+        self.assertEqual(self.send(job, _pieces(self.area), head=other).status_code, 404)
+        self.assertEqual(self.client.post(f'/api/overlay-jobs/{job}/start', headers=other).status_code, 404)
+        self.client.delete(f'/api/overlay-jobs/{job}', headers=other)
+        self.assertEqual(self.client.get(f'/api/overlay-jobs/{job}', headers=self.head).get_json()['state'],
+                         'receiving')
+        self.assertEqual(self.create(head={}).status_code, 401)
+
+    def test_refusals_say_why(self):
+        self.assertEqual(self.create({'format': 'png'}).get_json()['code'], 'bad_format')
+        job = self.create().get_json()['id']
+        self.assertEqual(self.send(job, {(9, 9): _pieces(self.area)[(0, 0)]}).get_json()['code'], 'bad_pieces')
+        self.assertEqual(self.send(job, {(0, 0): _png(Image.new('RGBA', (10, 10)))}).get_json()['code'], 'bad_image')
+        # Nothing sent and no base: nothing to make.
+        response = self.client.post(f'/api/overlay-jobs/{job}/start', headers=self.head)
+        self.assertEqual((response.status_code, response.get_json()['code']), (400, 'empty'))
+        self.send(job, {(0, 0): _pieces(self.area, [_mark(self.area, LAT, self.area.lon(self.area.left + 9))])[(0, 0)]})
+        self.assertEqual(self.client.post(f'/api/overlay-jobs/{job}/start', headers=self.head).status_code, 202)
+        self.assertEqual(self.client.post(f'/api/overlay-jobs/{job}/start', headers=self.head).get_json()['code'],
+                         'started')
+        self.made(job)
+        self.assertEqual(self.send(job, _pieces(self.area)).get_json()['code'], 'started')
+
+    def test_a_large_area_under_the_topo_map_is_made_and_a_failure_is_told(self):
+        self.area = _area(16, 256 * 60, 256 * 50, snap=256)   # 3,000 tiles at 16: over a request's 1,600
+        with mock.patch.object(oi, 'UsgsTopo', FakeTopo):
+            job = self.create({'base': 'usgs-topo'}).get_json()['id']
+            self.client.post(f'/api/overlay-jobs/{job}/start', headers=self.head)
+            answer = self.made(job)
+        self.assertEqual(answer['state'], 'done', answer)
+
+        class Down(FakeTopo):
+            def stream(self, keys):
+                raise usgs_topo.TopoError('base_unavailable', 'The USGS topo map could not be fetched.')
+                yield
+        self.area = _area(15, 512, 512, snap=256)
+        with mock.patch.object(oi, 'UsgsTopo', Down):
+            job = self.create({'base': 'usgs-topo'}).get_json()['id']
+            self.client.post(f'/api/overlay-jobs/{job}/start', headers=self.head)
+            answer = self.made(job)
+        self.assertEqual((answer['state'], answer['code']), ('failed', 'base_unavailable'))
+
+    def test_a_new_job_or_a_cancel_stops_the_last_and_nothing_is_kept(self):
+        first = self.create().get_json()['id']
+        self.send(first, _pieces(self.area))
+        second = self.create().get_json()['id']
+        self.assertEqual(self.client.get(f'/api/overlay-jobs/{first}', headers=self.head).status_code, 404)
+        self.client.delete(f'/api/overlay-jobs/{second}', headers=self.head)
+        self.assertEqual(self.client.get(f'/api/overlay-jobs/{second}', headers=self.head).status_code, 404)
+        self.assertEqual(os.listdir(self.folder), [])
+
+    def test_a_job_nobody_asks_about_is_stopped(self):
+        # Queued and not asked about for longer than POLL_TIMEOUT: let go of.
+        job = overlay_jobs.create('7', 'mbtiles', 'none', 'X', _area(15, 512, 512, snap=256))
+        with overlay_jobs._lock:
+            job.state = 'queued'
+            overlay_jobs._queue.append(job.id)
+            overlay_jobs._sweep(time.monotonic() + overlay_jobs.POLL_TIMEOUT + 1)
+        self.assertIsNone(overlay_jobs.find('7', job.id))
+        self.assertFalse(os.path.exists(job.folder))
+
+        # Running: told to stop, which its build hears at its next tile.
+        job = overlay_jobs.create('7', 'mbtiles', 'none', 'X', _area(15, 512, 512, snap=256))
+        job.state = 'running'
+        told = overlay_jobs._progress(job)
+        told('writing', 1, 2)
+        with overlay_jobs._lock:
+            overlay_jobs._sweep(time.monotonic() + overlay_jobs.POLL_TIMEOUT + 1)
+        with self.assertRaises(overlay_jobs.Stopped):
+            told('writing', 2, 2)
+
+        # Never started: let go of after UNSTARTED_SECONDS.
+        job = overlay_jobs.create('8', 'mbtiles', 'none', 'X', _area(15, 512, 512, snap=256))
+        with overlay_jobs._lock:
+            overlay_jobs._sweep(time.monotonic() + overlay_jobs.UNSTARTED_SECONDS + 1)
+        self.assertIsNone(overlay_jobs.find('8', job.id))
 
 if __name__ == '__main__':
     unittest.main()

@@ -18,12 +18,20 @@ its top left corner, the last row and column reaching past it. Two files are mad
   the Mercator rows at its latitude, between two of them. Without a base map it keeps its transparency; with one it is
   opaque RGB.
 
+Only the pieces with something in them need be sent: a piece not sent is transparent. Made in the background
+(`overlay_jobs.py`), an MBTiles file may be as large as MBTILES_BACKGROUND_TILES tiles at its top zoom, the topo map's
+own level 16 over a whole operation, and the topo map's tiles are streamed from USGS as they are written
+(`UsgsTopo.stream`); asked for while the client waits (`/api/overlay-image`), it keeps to MBTILES_TILES, which
+Cloudflare's 100 s allow.
+
 The overlay is blended in premultiplied alpha throughout, so a line's edge keeps its colour. Nothing is kept: the file
-is written to a temporary file the route hands back and deletes. Satellite imagery and Mapbox's topo map are never a
+is written to a temporary file the caller hands back and deletes. Satellite imagery and Mapbox's topo map are never a
 base: Mapbox's terms do not allow its imagery to be exported for another app.
 """
 
+import contextlib
 import io
+import itertools
 import math
 import os
 import re
@@ -43,8 +51,12 @@ PIECE = 2048                # device pixels a side of each piece the web draws: 
 MAX_ZOOM = 20               # past this a pixel is about 10 cm and shows nothing more
 GEOTIFF_SIDE = 10_000       # ForeFlight's limit for a GeoTIFF
 MBTILES_TILES = 1_600       # the most tiles at an MBTiles file's top zoom: about 100 million pixels, as a GeoTIFF's most
+# The most at the top zoom of one made in the background: about 110 by 140 km at level 16 in the lower 48, some 85,000
+# tiles with the zooms below, on the topo map about 1.3 GB and twenty minutes' fetching.
+MBTILES_BACKGROUND_TILES = 64_000
 MAX_LEVELS = 8              # zooms below the top in an MBTiles pyramid
 BASE_TILE_BUDGET = 2_000    # USGS tiles a GeoTIFF's base is drawn from at most: about half a minute's fetching
+BACKGROUND_BASE_BUDGET = 6_000  # and in the background, where no request waits: its level 16 for a whole GeoTIFF
 MAX_PIECE_BYTES = 24 * 1024 * 1024
 JPEG_QUALITY = 85
 CHUNK = 256                 # Mercator rows a GeoTIFF is made from at a time
@@ -113,8 +125,15 @@ def _integer(form, key):
     return int(value)
 
 
-def read_area(form, kind, base):
-    """The overlay's place from the request's fields, checked against what the format and the base allow."""
+def mbtiles_limit(background):
+    """The most tiles at an MBTiles file's top zoom: more in the background, where the topo map is streamed and only
+    the pieces with something in them are sent."""
+    return MBTILES_BACKGROUND_TILES if background else MBTILES_TILES
+
+
+def read_area(form, kind, base, background=False):
+    """The overlay's place from the request's fields, checked against what the format and the base allow: more in the
+    background (`overlay_jobs.py`), where no request waits for the file."""
     try:
         zoom = float(str(form.get('zoom', '')).strip())
     except ValueError:
@@ -135,8 +154,9 @@ def read_area(form, kind, base):
         raise OverlayError('bad_area', 'The overlay must lie between 85° N and 85° S.')
     if kind == 'geotiff' and max(width, height) > GEOTIFF_SIDE:
         raise OverlayError('too_large', f'A GeoTIFF overlay must be at most {GEOTIFF_SIDE:,} pixels a side.')
-    if kind == 'mbtiles' and (width // TILE) * (height // TILE) > MBTILES_TILES:
-        raise OverlayError('too_large', f'An MBTiles overlay must be at most {MBTILES_TILES:,} tiles at its finest.')
+    limit = mbtiles_limit(background)
+    if kind == 'mbtiles' and (width // TILE) * (height // TILE) > limit:
+        raise OverlayError('too_large', f'An MBTiles overlay must be at most {limit:,} tiles at its finest.')
     if base == 'usgs-topo' and zoom > USGS_MAX_ZOOM + 1e-9:
         raise OverlayError('too_fine', 'The USGS topo map has no more detail than about 1:20,000. Choose less detail.')
     return area
@@ -145,24 +165,44 @@ def read_area(form, kind, base):
 _PIECE_NAME = re.compile(r'piece-(\d{1,3})-(\d{1,3})')
 
 
-def read_pieces(files, area):
-    """{(column, row): file} for the request's `piece-<column>-<row>` files, exactly the ones the area needs."""
+def piece_key(name, area):
+    """(column, row) of a `piece-<column>-<row>` the area has, or None."""
+    match = _PIECE_NAME.fullmatch(name)
+    if not match:
+        return None
+    key = (int(match[1]), int(match[2]))
+    return key if key[0] < area.piece_columns and key[1] < area.piece_rows else None
+
+
+def read_pieces(files, area, every=True):
+    """{(column, row): file} for the request's `piece-<column>-<row>` files: exactly the ones the area needs, or with
+    `every` false any of them (a piece not sent is transparent)."""
     pieces = {}
     for key in files:
-        match = _PIECE_NAME.fullmatch(key)
-        if not match:
+        at = piece_key(key, area)
+        if at is None:
             raise OverlayError('bad_pieces', 'The overlay was sent with something else in it.')
-        pieces[(int(match[1]), int(match[2]))] = files[key]
+        pieces[at] = files[key]
     wanted = {(i, j) for i in range(area.piece_columns) for j in range(area.piece_rows)}
-    if set(pieces) != wanted:
+    if every and set(pieces) != wanted:
         raise OverlayError('bad_pieces', 'Part of the overlay is missing. Make it again.')
     return pieces
+
+
+def looks_like_piece(data):
+    """Whether bytes start as a PNG of PIECE pixels a side, read from its header alone (it is decoded when drawn)."""
+    return (len(data) > 24 and data[:8] == b'\x89PNG\r\n\x1a\n' and data[12:16] == b'IHDR'
+            and int.from_bytes(data[16:20], 'big') == PIECE and int.from_bytes(data[20:24], 'big') == PIECE)
 
 
 def _read(source):
     if isinstance(source, (bytes, bytearray)):
         return bytes(source)
-    data = source.read(MAX_PIECE_BYTES + 1)
+    if isinstance(source, (str, os.PathLike)):
+        with open(source, 'rb') as file:
+            data = file.read(MAX_PIECE_BYTES + 1)
+    else:
+        data = source.read(MAX_PIECE_BYTES + 1)
     if len(data) > MAX_PIECE_BYTES:
         raise OverlayError('too_large', 'Part of the overlay is too large to send.')
     return data
@@ -214,11 +254,11 @@ def _temporary(suffix):
 # ---------------------------------------------------------------------------------------------------------- GeoTIFF
 
 
-def _base_zoom(area):
+def _base_zoom(area, budget=BASE_TILE_BUDGET):
     """The USGS zoom a GeoTIFF's base is drawn from: the first at or finer than the overlay's, one coarser while the
     tiles it takes are more than the budget."""
     zoom = min(USGS_MAX_ZOOM, math.ceil(area.zoom - 1e-9))
-    while zoom > 0 and len(_base_keys(area, zoom, 0, area.height)) > BASE_TILE_BUDGET:
+    while zoom > 0 and len(_base_keys(area, zoom, 0, area.height)) > budget:
         zoom -= 1
     return zoom
 
@@ -265,7 +305,8 @@ class _MercatorRows:
     def _pieces_in_row(self, j):
         if self.piece_row[0] != j:
             self.piece_row = (None, None)   # let the last row go before the next is decoded
-            self.piece_row = (j, [open_piece(self.pieces[(i, j)]) for i in range(self.area.piece_columns)])
+            self.piece_row = (j, [open_piece(self.pieces[(i, j)]) if (i, j) in self.pieces else _NOTHING
+                                  for i in range(self.area.piece_columns)])
         return self.piece_row[1]
 
     def _chunk(self, k):
@@ -293,8 +334,19 @@ class _MercatorRows:
         return joined[first - k0 * CHUNK:last - k0 * CHUNK + 1]
 
 
-def build_geotiff(area, pieces, base, name, topo=None):
-    """A GeoTIFF of the overlay in EPSG:4326. Returns the path of a temporary file the caller deletes."""
+# A piece not sent: nothing is drawn in it.
+_NOTHING = np.zeros((PIECE, PIECE, 4), dtype=np.uint8)
+_NOTHING.setflags(write=False)
+
+
+def _told(progress, stage):
+    """A `progress(done, total)` for a stage, from the build's `progress(stage, done, total)` (or none)."""
+    return None if progress is None else (lambda done, total: progress(stage, done, total))
+
+
+def build_geotiff(area, pieces, base, name, topo=None, progress=None, background=False):
+    """A GeoTIFF of the overlay in EPSG:4326. Returns the path of a temporary file the caller deletes.
+    `progress(stage, done, total)` is told as it goes (`fetching` the base, then `writing`), and may raise to stop it."""
     import rasterio
     from rasterio.transform import from_bounds
     from rasterio.windows import Window
@@ -304,8 +356,8 @@ def build_geotiff(area, pieces, base, name, topo=None):
     base_zoom = None
     if base == 'usgs-topo':
         topo = topo or UsgsTopo()
-        base_zoom = _base_zoom(area)
-        topo.fetch(_base_keys(area, base_zoom, 0, height))
+        base_zoom = _base_zoom(area, BACKGROUND_BASE_BUDGET if background else BASE_TILE_BUDGET)
+        topo.fetch(_base_keys(area, base_zoom, 0, height), progress=_told(progress, 'fetching'))
     else:
         topo = None
     source = _MercatorRows(area, pieces, topo, base_zoom)
@@ -341,6 +393,8 @@ def build_geotiff(area, pieces, base, name, topo=None):
                 if bands == 4:
                     mixed = _unpremultiply(mixed)
                 tiff.write(np.ascontiguousarray(mixed.transpose(2, 0, 1)), window=Window(0, r0, width, r1 - r0))
+                if progress is not None:
+                    progress('writing', r1, height)
             tiff.update_tags(TIFFTAG_IMAGEDESCRIPTION=_description(name), TIFFTAG_SOFTWARE='EZ/PZ')
         if topo is None and not source.drawn:
             raise OverlayError('empty', 'Nothing is drawn in the overlay’s area.')
@@ -386,33 +440,76 @@ def _encode(image, kind):
     return out.getvalue()
 
 
-def build_mbtiles(area, pieces, base, name, topo=None):
-    """An MBTiles file of the overlay from its zoom down. Returns the path of a temporary file the caller deletes."""
+def pyramid(area):
+    """The zooms of an MBTiles file of the area, top first, each with its tiles as [(x, y)] (x not yet brought into
+    the world)."""
+    top = int(area.zoom)
+    x0, y0 = area.left // TILE, area.top // TILE
+    columns, rows = area.width // TILE, area.height // TILE
+    bottom = _bottom_zoom(top, columns, rows)
+
+    def tiles_at(zoom):
+        shift = top - zoom
+        return [(x, y) for y in range(y0 >> shift, ((y0 + rows - 1) >> shift) + 1)
+                for x in range(x0 >> shift, ((x0 + columns - 1) >> shift) + 1)]
+
+    return [(zoom, tiles_at(zoom)) for zoom in range(top, bottom - 1, -1)]
+
+
+def build_mbtiles(area, pieces, base, name, topo=None, progress=None, background=False):
+    """An MBTiles file of the overlay from its zoom down. Returns the path of a temporary file the caller deletes.
+    `progress('writing', done, total)` is told as each tile is written, and may raise to stop it.
+
+    With the topo map every tile of every zoom is USGS's own for it, streamed as it is written, so a file of tens of
+    thousands of tiles holds no more than a few hundred at once; the overlay is laid on where something is drawn, and
+    elsewhere USGS's JPEG is kept as it came. The overlay at each zoom below the top is made from the one above, and
+    only where something is drawn, so it is kept for the zoom being made alone."""
     top = int(area.zoom)
     count = 2 ** top
     x0, y0 = area.left // TILE, area.top // TILE
     columns, rows = area.width // TILE, area.height // TILE
-    bottom = _bottom_zoom(top, columns, rows)
+    per_piece = PIECE // TILE
+    zooms = pyramid(area)
+    bottom = zooms[-1][0]
     with_base = base == 'usgs-topo'
     if with_base:
         topo = topo or UsgsTopo()
 
-    def tiles_at(zoom):
-        shift = top - zoom
-        return [(x, y) for x in range(x0 >> shift, ((x0 + columns - 1) >> shift) + 1)
-                for y in range(y0 >> shift, ((y0 + rows - 1) >> shift) + 1)]
+    # The top zoom's tiles a piece at a time (each piece decoded once), and only those of pieces sent without a base.
+    cells = [(i, j, u, v) for j in range(area.piece_rows) for i in range(area.piece_columns)
+             for v in range(per_piece) for u in range(per_piece)
+             if i * per_piece + u < columns and j * per_piece + v < rows]
+    if not with_base:
+        cells = [cell for cell in cells if (cell[0], cell[1]) in pieces]
+    total = len(cells) + sum(len(keys) for _, keys in zooms[1:])
+    done = 0
 
-    def output(zoom, x, y, overlay):
-        """The file's tile at (zoom, x, y) for these overlay pixels (premultiplied, or None where nothing is drawn)."""
-        x %= 2 ** zoom
+    def tick():
+        nonlocal done
+        done += 1
+        if progress is not None:
+            progress('writing', done, total)
+
+    def output(zoom, x, y, overlay, data):
+        """The file's tile at (zoom, x, y) for these overlay pixels (premultiplied, or None where nothing is drawn),
+        on USGS's tile `data` as it was streamed."""
         if not with_base:
             return None if overlay is None else _encode(Image.fromarray(_unpremultiply(overlay), 'RGBA'), 'png')
-        if overlay is None and topo.jpeg(zoom, x, y) is not None:
-            return topo.jpeg(zoom, x, y)
-        pixels = np.asarray(topo.tile(zoom, x, y))
+        key = (zoom, x % 2 ** zoom, y)
+        if overlay is None:
+            kept = topo.jpeg_of(key, data)
+            if kept is not None:
+                return kept
+        pixels = np.asarray(topo.image_of(key, data))
         if overlay is not None:
             pixels = _over(pixels, overlay)
         return _encode(Image.fromarray(pixels, 'RGB'), 'jpeg')
+
+    def streamed(keys):
+        """USGS's tiles for [(zoom, x, y)] in order as (key, bytes), or (None, None) for each without a base."""
+        if not with_base:
+            return contextlib.nullcontext(itertools.repeat((None, None), len(keys)))
+        return contextlib.closing(topo.stream([(z, x % 2 ** z, y) for z, x, y in keys]))
 
     path = _temporary('.mbtiles')
     try:
@@ -428,39 +525,40 @@ def build_mbtiles(area, pieces, base, name, topo=None):
                     db.execute('INSERT OR REPLACE INTO tiles VALUES (?, ?, ?, ?)',
                                (zoom, x % 2 ** zoom, 2 ** zoom - 1 - y, sqlite3.Binary(data)))
 
-            if with_base:
-                topo.fetch([(top, x % count, y) for x, y in tiles_at(top)])
             level = {}   # (x, y) -> packed premultiplied pixels of the overlay at the zoom just made
-            for j in range(area.piece_rows):
-                for i in range(area.piece_columns):
-                    pixels = open_piece(pieces[(i, j)])
-                    for v in range(PIECE // TILE):
-                        for u in range(PIECE // TILE):
-                            tx, ty = i * (PIECE // TILE) + u, j * (PIECE // TILE) + v
-                            if tx >= columns or ty >= rows:
-                                continue
-                            tile = pixels[v * TILE:(v + 1) * TILE, u * TILE:(u + 1) * TILE]
-                            overlay = tile if tile[..., 3].any() else None
-                            if overlay is not None:
-                                level[(x0 + tx, y0 + ty)] = _pack(overlay)
-                            store(top, x0 + tx, y0 + ty, output(top, x0 + tx, y0 + ty, overlay))
-                    del pixels
+            keys = [(top, x0 + i * per_piece + u, y0 + j * per_piece + v) for i, j, u, v in cells]
+            with streamed(keys) as bases:
+                at, pixels = None, None
+                for (i, j, u, v), (_, data) in zip(cells, bases):
+                    if at != (i, j):
+                        at, pixels = (i, j), None   # let the last piece go before the next is decoded
+                        if (i, j) in pieces:
+                            pixels = open_piece(pieces[(i, j)])
+                    tx, ty = x0 + i * per_piece + u, y0 + j * per_piece + v
+                    overlay = None
+                    if pixels is not None:
+                        tile = pixels[v * TILE:(v + 1) * TILE, u * TILE:(u + 1) * TILE]
+                        if tile[..., 3].any():
+                            overlay = tile
+                            level[(tx, ty)] = _pack(tile)
+                    store(top, tx, ty, output(top, tx, ty, overlay, data))
+                    tick()
+                pixels = None
             if not level and not with_base:
                 raise OverlayError('empty', 'Nothing is drawn in the overlay’s area.')
-            for zoom in range(top - 1, bottom - 1, -1):
-                keys = tiles_at(zoom)
-                if with_base:
-                    topo.fetch([(zoom, x % 2 ** zoom, y) for x, y in keys])
+            for zoom, tiles in zooms[1:]:
                 below, level = level, {}
-                for x, y in keys:
-                    children = {(dx, dy): _unpack(below[(2 * x + dx, 2 * y + dy)])
-                                for dx in (0, 1) for dy in (0, 1) if (2 * x + dx, 2 * y + dy) in below}
-                    overlay = _halve(children) if children else None
-                    if overlay is not None and not overlay[..., 3].any():
-                        overlay = None
-                    if overlay is not None:
-                        level[(x, y)] = _pack(overlay)
-                    store(zoom, x, y, output(zoom, x, y, overlay))
+                with streamed([(zoom, x, y) for x, y in tiles]) as bases:
+                    for (x, y), (_, data) in zip(tiles, bases):
+                        children = {(dx, dy): _unpack(below[(2 * x + dx, 2 * y + dy)])
+                                    for dx in (0, 1) for dy in (0, 1) if (2 * x + dx, 2 * y + dy) in below}
+                        overlay = _halve(children) if children else None
+                        if overlay is not None and not overlay[..., 3].any():
+                            overlay = None
+                        if overlay is not None:
+                            level[(x, y)] = _pack(overlay)
+                        store(zoom, x, y, output(zoom, x, y, overlay, data))
+                        tick()
 
             bounds = area.bounds()
             west, east = max(-180.0, bounds['west']), min(180.0, bounds['east'])
@@ -491,9 +589,10 @@ FORMATS = {'mbtiles': (build_mbtiles, 'mbtiles', 'application/octet-stream'),
            'geotiff': (build_geotiff, 'tif', 'image/tiff')}
 
 
-def build(kind, area, pieces, base, name, topo=None):
-    """The file for a format: the path of a temporary file the caller deletes."""
+def build(kind, area, pieces, base, name, topo=None, progress=None, background=False):
+    """The file for a format: the path of a temporary file the caller deletes. `progress(stage, done, total)` is told
+    as it goes and may raise to stop it; `background` allows what a request waiting for the file could not."""
     try:
-        return FORMATS[kind][0](area, pieces, base, name, topo=topo)
+        return FORMATS[kind][0](area, pieces, base, name, topo=topo, progress=progress, background=background)
     except TopoError as failed:
         raise OverlayError(failed.code, failed.message) from None

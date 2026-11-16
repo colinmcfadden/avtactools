@@ -2,7 +2,7 @@ import L from "leaflet";
 import * as htmlToImage from "html-to-image";
 import { keepInCapture, SCREEN_ONLY_CLASS } from "../export/captureFilter";
 import { IMAGE_PANE, VECTOR_PANE } from "../overlays/KmzOverlayLayer";
-import { PIECE, PIECE_CSS, PIXEL_RATIO, plainBounds } from "./overlayPlan";
+import { PIECE, PIECE_CSS, PIXEL_RATIO, plainBounds, TILE } from "./overlayPlan";
 
 /*
  * Drawing the map's planning layers into transparent square pieces of an overlay (overlayPlan.js says where). The map is
@@ -70,6 +70,111 @@ export const missionBounds = (map) => {
 /** The map as it is on the screen. */
 export const shownBounds = (map) => plainBounds(map.getBounds());
 
+// Device pixels round a layer's place that a piece is drawn for: a marker's icon (a doghouse, a label, a symbol) reaches
+// well past its point, a line's width and arrows less far. Too much costs a piece drawn for nothing; too little, a piece
+// left out with something in it.
+const MARKER_REACH = 256 * PIXEL_RATIO;
+const PATH_REACH = 64 * PIXEL_RATIO;
+
+const flatLatLngs = (latLngs, out = []) => {
+  for (const item of latLngs ?? []) {
+    if (Array.isArray(item)) flatLatLngs(item, out);
+    else if (item && Number.isFinite(item.lat) && Number.isFinite(item.lng)) out.push(item);
+  }
+  return out;
+};
+
+const ringsOf = (latLngs) => {
+  if (!Array.isArray(latLngs) || latLngs.length === 0) return [];
+  return Array.isArray(latLngs[0]) ? latLngs.flatMap(ringsOf) : [latLngs];
+};
+
+/**
+ * The pieces of a plan with something drawn in them, as a Set of "column,row": what is planned on the map, each layer by
+ * where it reaches (a line along its length, a filled shape or an image over its bounds, a marker round its point). A
+ * layer that cannot say where it is counts everywhere, so nothing is left out. A piece not drawn is sent as nothing: the
+ * server takes it as transparent (backend/overlay_image.py).
+ */
+export const piecesWithContent = (map, plan) => {
+  const found = new Set();
+  const world = TILE * 2 ** plan.zoom;
+  const every = () => {
+    for (let row = 0; row < plan.rows; row += 1) for (let column = 0; column < plan.columns; column += 1) found.add(`${column},${row}`);
+  };
+  // A box in the plan's global device pixels, and its copies a world east and west (an area across the antimeridian).
+  const box = (x0, y0, x1, y1) => {
+    for (const shift of [-world, 0, world]) {
+      const c0 = Math.max(0, Math.floor((x0 + shift - plan.left) / PIECE));
+      const c1 = Math.min(plan.columns - 1, Math.floor((x1 + shift - plan.left) / PIECE));
+      const r0 = Math.max(0, Math.floor((y0 - plan.top) / PIECE));
+      const r1 = Math.min(plan.rows - 1, Math.floor((y1 - plan.top) / PIECE));
+      for (let row = r0; row <= r1; row += 1) for (let column = c0; column <= c1; column += 1) found.add(`${column},${row}`);
+    }
+  };
+  const at = (latLng) => map.project(latLng, plan.zoom);
+  const around = (point, reach) => box(point.x - reach, point.y - reach, point.x + reach, point.y + reach);
+  const along = (latLngs, closed) => {
+    const points = latLngs.map(at);
+    if (closed && points.length > 2) points.push(points[0]);
+    if (points.length === 1) around(points[0], PATH_REACH);
+    for (let k = 1; k < points.length; k += 1) {
+      const a = points[k - 1];
+      const b = points[k];
+      // Steps of a quarter piece: every piece the line passes through, and none its bounding box only spans.
+      const steps = Math.max(1, Math.ceil(Math.hypot(b.x - a.x, b.y - a.y) / (PIECE / 4)));
+      for (let step = 0; step <= steps; step += 1) {
+        around({ x: a.x + ((b.x - a.x) * step) / steps, y: a.y + ((b.y - a.y) * step) / steps }, PATH_REACH);
+      }
+    }
+  };
+  const over = (bounds, reach) => {
+    const nw = at(bounds.getNorthWest());
+    const se = at(bounds.getSouthEast());
+    box(Math.min(nw.x, se.x) - reach, nw.y - reach, Math.max(nw.x, se.x) + reach, se.y + reach);
+  };
+
+  map.eachLayer((layer) => {
+    if (found.size === plan.columns * plan.rows) return;
+    // Groups hold layers the map lists too, and a renderer is where paths are drawn, not a path.
+    if (layer instanceof L.LayerGroup || layer instanceof L.Renderer) return;
+    if (isScreenOnly(map, layer)) return;
+    try {
+      if (layer instanceof L.Circle) {
+        if (layer.options.fill) over(layer.getBounds(), PATH_REACH);
+        else {
+          const centre = at(layer.getLatLng());
+          const edge = at(L.latLng(layer.getBounds().getNorth(), layer.getLatLng().lng));
+          const radius = Math.abs(centre.y - edge.y);
+          const ring = Array.from({ length: 65 }, (_, k) => {
+            const angle = (k / 64) * 2 * Math.PI;
+            return map.unproject([centre.x + radius * Math.cos(angle), centre.y + radius * Math.sin(angle)], plan.zoom);
+          });
+          along(ring, false);
+        }
+      } else if (layer instanceof L.CircleMarker) {
+        around(at(layer.getLatLng()), (layer.getRadius() + (layer.options.weight ?? 0)) * PIXEL_RATIO + PATH_REACH);
+      } else if (layer instanceof L.Polygon) {
+        if (layer.options.fill) over(layer.getBounds(), PATH_REACH);
+        else ringsOf(layer.getLatLngs()).forEach((ring) => along(flatLatLngs(ring), true));
+      } else if (layer instanceof L.Polyline) {
+        ringsOf(layer.getLatLngs()).forEach((line) => along(flatLatLngs(line), false));
+      } else if (layer instanceof L.Marker) {
+        around(at(layer.getLatLng()), MARKER_REACH);
+      } else if (typeof layer.getBounds === "function") {
+        over(layer.getBounds(), PATH_REACH);
+      } else if (typeof layer.getLatLng === "function") {
+        around(at(layer.getLatLng()), MARKER_REACH);
+      } else {
+        every();
+      }
+    } catch {
+      // One that cannot say where it is (not yet drawn) is drawn wherever it may be.
+      every();
+    }
+  });
+  return found;
+};
+
 const settle = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 /** Paths marked `screenOnly` (drawn on the map's one canvas, so no class can leave them out) hidden until put back. */
@@ -90,11 +195,18 @@ const pngOf = (canvas) =>
   });
 
 /**
- * Draws a plan's pieces (overlayPlans) row by row. Returns [{ column, row, blob }], each blob a PNG of PIECE pixels a side
- * whose top left corner is the plan's (left + column × PIECE, top + row × PIECE). `onPiece(done, total)` is told as each
- * piece is begun. The first piece waits `firstSettleMs` for what the new zoom redraws; the rest, which only move, `settleMs`.
+ * Draws a plan's pieces (overlayPlans) row by row: all of them, or those in `pieces` (a Set of "column,row",
+ * piecesWithContent). Returns [{ column, row, blob }], each blob a PNG of PIECE pixels a side whose top left corner is the
+ * plan's (left + column × PIECE, top + row × PIECE); or, given `onDrawn`, hands each to it as it is drawn (and waits for
+ * it: a large overlay is sent as it is drawn, not held) and returns []. `onPiece(done, total)` is told as each piece is
+ * begun. `signal` stops it between pieces (an AbortError). The first piece waits `firstSettleMs` for what the new zoom
+ * redraws; the rest, which only move, `settleMs`.
  */
-export const captureOverlay = async (map, plan, { onPiece, firstSettleMs = 1200, settleMs = 400 } = {}) => {
+export const captureOverlay = async (
+  map,
+  plan,
+  { pieces: wanted, onPiece, onDrawn, signal, firstSettleMs = 1200, settleMs = 400 } = {},
+) => {
   const zoom = Math.round((plan.zoom - Math.log2(PIXEL_RATIO)) * 10) / 10;
   const container = map.getContainer();
   const saved = {
@@ -129,40 +241,49 @@ export const captureOverlay = async (map, plan, { onPiece, firstSettleMs = 1200,
     tileLayers.forEach((layer) => map.removeLayer(layer));
     map.invalidateSize({ pan: false });
 
-    const total = plan.columns * plan.rows;
-    const pieces = [];
+    const order = [];
     for (let row = 0; row < plan.rows; row += 1) {
       for (let column = 0; column < plan.columns; column += 1) {
-        onPiece?.(pieces.length, total);
-        // The piece's corner in the map's own (CSS) pixels at its zoom: a whole number, which the map's corner is set on.
-        const left = (plan.left + column * PIECE) / PIXEL_RATIO;
-        const top = (plan.top + row * PIECE) / PIXEL_RATIO;
-        // `reset` so the map is set afresh: a move within the screen would otherwise pan, keeping its old pixel origin.
-        map.setView(map.unproject([left + PIECE_CSS / 2, top + PIECE_CSS / 2], zoom), zoom, { animate: false, reset: true });
-        await settle(pieces.length === 0 ? firstSettleMs : settleMs);
-        // A map that did not take the piece's size, zoom or corner would be drawn somewhere else than the server puts it.
-        const size = map.getSize();
-        const corner = map.containerPointToLayerPoint([0, 0]).add(map.getPixelOrigin());
-        if (
-          size.x !== PIECE_CSS ||
-          size.y !== PIECE_CSS ||
-          Math.abs(map.getZoom() - zoom) > 1e-6 ||
-          Math.abs(corner.x - left) > 0.01 ||
-          Math.abs(corner.y - top) > 0.01
-        ) {
-          throw new Error("The map could not be set to a piece of the overlay.");
-        }
-        const canvas = await htmlToImage.toCanvas(container, {
-          pixelRatio: PIXEL_RATIO,
-          width: PIECE_CSS,
-          height: PIECE_CSS,
-          skipAutoScale: true,
-          skipFonts: true,
-          filter: keepInOverlay,
-        });
-        if (canvas.width !== PIECE || canvas.height !== PIECE) throw new Error("A piece of the overlay was drawn at the wrong size.");
-        pieces.push({ column, row, blob: await pngOf(canvas) });
+        if (!wanted || wanted.has(`${column},${row}`)) order.push([column, row]);
       }
+    }
+    const total = order.length;
+    const pieces = [];
+    let drawn = 0;
+    for (const [column, row] of order) {
+      if (signal?.aborted) throw new DOMException("The overlay was stopped.", "AbortError");
+      onPiece?.(drawn, total);
+      // The piece's corner in the map's own (CSS) pixels at its zoom: a whole number, which the map's corner is set on.
+      const left = (plan.left + column * PIECE) / PIXEL_RATIO;
+      const top = (plan.top + row * PIECE) / PIXEL_RATIO;
+      // `reset` so the map is set afresh: a move within the screen would otherwise pan, keeping its old pixel origin.
+      map.setView(map.unproject([left + PIECE_CSS / 2, top + PIECE_CSS / 2], zoom), zoom, { animate: false, reset: true });
+      await settle(drawn === 0 ? firstSettleMs : settleMs);
+      // A map that did not take the piece's size, zoom or corner would be drawn somewhere else than the server puts it.
+      const size = map.getSize();
+      const corner = map.containerPointToLayerPoint([0, 0]).add(map.getPixelOrigin());
+      if (
+        size.x !== PIECE_CSS ||
+        size.y !== PIECE_CSS ||
+        Math.abs(map.getZoom() - zoom) > 1e-6 ||
+        Math.abs(corner.x - left) > 0.01 ||
+        Math.abs(corner.y - top) > 0.01
+      ) {
+        throw new Error("The map could not be set to a piece of the overlay.");
+      }
+      const canvas = await htmlToImage.toCanvas(container, {
+        pixelRatio: PIXEL_RATIO,
+        width: PIECE_CSS,
+        height: PIECE_CSS,
+        skipAutoScale: true,
+        skipFonts: true,
+        filter: keepInOverlay,
+      });
+      if (canvas.width !== PIECE || canvas.height !== PIECE) throw new Error("A piece of the overlay was drawn at the wrong size.");
+      const piece = { column, row, blob: await pngOf(canvas) };
+      drawn += 1;
+      if (onDrawn) await onDrawn(piece);
+      else pieces.push(piece);
     }
     onPiece?.(total, total);
     return pieces;

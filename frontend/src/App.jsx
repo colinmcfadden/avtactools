@@ -57,6 +57,7 @@ import MapStyleSwitcher from "./feature/mapStyles/MapStyleSwitcher";
 import useVfrCharts from "./feature/vfrCharts/useVfrCharts";
 import { VFR_STYLE_ID } from "./feature/vfrCharts/vfrCharts";
 import useMgrsGrid from "./feature/mgrsGrid/useMgrsGrid";
+import useRouteDoghouses from "./feature/routeDoghouses/useRouteDoghouses";
 import useSlopeOpacity from "./feature/terrain/slopeOpacity";
 import { useLocalPoints } from "./feature/localPoints/useLocalPoints";
 import { useThreats } from "./feature/threats/useThreats";
@@ -157,6 +158,8 @@ function App() {
   const vfrCharts = useVfrCharts(mapStyle === VFR_STYLE_ID);
   // The MGRS grid over the map: this browser's preference, not the diagram's (unlike mapStyle).
   const { showMgrsGrid, setShowMgrsGrid } = useMgrsGrid();
+  // A doghouse on each leg of the routes shown: this browser's preference too, on until turned off.
+  const { showRouteDoghouses, setShowRouteDoghouses } = useRouteDoghouses();
   // How opaque the slope map is drawn: this browser's too.
   const { slopeOpacity, setSlopeOpacity } = useSlopeOpacity();
 
@@ -2148,6 +2151,8 @@ function App() {
           setMapStyle={setMapStyle}
           showMgrsGrid={showMgrsGrid}
           setShowMgrsGrid={setShowMgrsGrid}
+          showRouteDoghouses={showRouteDoghouses}
+          setShowRouteDoghouses={feat.routes ? setShowRouteDoghouses : undefined}
           vfrCharts={vfrCharts}
           overlays={overlayTools.overlays}
           onToggleOverlay={overlayTools.toggle}
@@ -2297,6 +2302,7 @@ function App() {
           mapStyle={mapStyle}
           vfrCharts={vfrCharts}
           showMgrsGrid={showMgrsGrid}
+          showRouteDoghouses={showRouteDoghouses}
           mapOverlays={overlayTools.overlays}
           overlayFit={overlayTools.fit}
           localPointSets={shownPointSets}

@@ -61,6 +61,8 @@ The **LZ/PZ Tools** grid places draggable markers on the map:
 
 Everything is draggable; most markers can be deleted from their own controls or right-click.
 
+As you zoom out, the doghouses, go-arounds, units, the LZ's length and width and the feet between aircraft are drawn smaller, so they never hide the LZ or the route; two levels further out they are put away until you zoom back in. Point at one, or select it, to see it at full size with its controls. Helicopters are always drawn to scale.
+
 ## 4. Export an LZ/PZ card
 
 1. Press **Set Capture Area** — a red box appears on the map; drag/resize it to frame the imagery for the card.
@@ -174,6 +176,14 @@ Routes are listed in the dock's **Routes** panel, one card per *route set*: the 
 - **⋯** on a set: **Send to ForeFlight**, **Sketch a route into this set**, **Save as…** (a copy under a new name) and **Close** (asks first if there are unsaved changes).
 - **Sketch a route**, **Import .msnx** and **New route set** are at the foot of the panel. The **FLOT** and **phase lines** are drawn from the left panel's Routes card (on a phone, from the map's route tool) and listed below the route sets, under **Control measures**.
 
+### Doghouses on the legs
+
+Every leg of a route, between two of its route points (a checkpoint, the SP or RP, the target), has a doghouse, as on a strip map. Its roof names the point the leg flies to; under it are the leg's **true course**, its **time** (minutes+seconds), its **length in km** and the planned **airspeed**, all from the route's plan, so they change as you change the plan. Shaping points only bend the line: a leg runs through them, and its doghouse stands beside the longest straight part of it, on the right of the way it is flown.
+
+Each doghouse is turned to its leg, so it reads upright when the map is turned that way (ForeFlight's track-up view while flying the leg). It shows once the leg is long enough on the screen to hold it. It goes into a mission overlay as it is on the map, so it can be read when you zoom in on the route in ForeFlight. Turn them all off and on with **Route doghouses** in **Layers**; your browser remembers the choice.
+
+![Route doghouses in an exported overlay](images/39-route-doghouses.jpg)
+
 ### Arranging routes: sets, moving, combining and colours
 
 | A route's menu | Its colours |
@@ -281,11 +291,11 @@ The threats' positions go to the server once, to make the file, and nothing is k
 
 - **Area**: *The whole mission* (everything drawn, with a margin) or *The map as shown*. An imported KMZ overlay counts toward the whole mission only when nothing else is planned.
 - **Base map**: *None* (only what is planned, see-through, over whichever chart ForeFlight shows under it) or *USGS topo* (the USGS topographic map under it, at its own finest, about 1:20,000; the lower 48, Alaska, Hawaii and the territories only). It starts on USGS topo when that is the map on your screen. Satellite and the Mapbox maps cannot go in: their terms do not allow it.
-- **Detail**: *Finest* is as much as the file holds for the area, and no finer than the USGS map goes when it is under it; *Lighter* is a level coarser, a quarter of the size. Each says the scale it comes to (about 1:20,000 is 2 m a pixel), how much ground a pixel covers and how many pixels it is. A larger area gets less detail, never a second file: an LZ is drawn at its sharpest, a whole valley at about 2 m a pixel, a county coarser.
+- **Detail**: *Finest* is as much as the file holds for the area, and no finer than the USGS map goes when it is under it; *Lighter* is a level coarser, a quarter of the size. Each says the scale it comes to (about 1:20,000 is 2 m a pixel), how much ground a pixel covers and how many pixels it is. An **MBTiles** file keeps the USGS map's own finest detail over a whole operation, about 110 by 140 km; the dialog says about how large the file will be and how long it takes to make (a whole operation on the USGS map is several hundred MB and ten minutes or more). A **GeoTIFF** is one image of at most 10,000 pixels a side, so a larger area gets less detail in it: an LZ at its sharpest, a valley at about 2 m a pixel, a county coarser.
 - **File**: *MBTiles* is ForeFlight's own map layer format and works on every subscription: AirDrop it to the iPad or open it from Files, and it appears under **Map Layers**. *GeoTIFF* is one image in latitude and longitude, at most 10,000 pixels a side: ForeFlight takes it with Military Flight Bag (open it from Files or email; AirDrop puts it in Photos), and ATAK and GIS apps open it too.
 - **Layer name**: what ForeFlight lists it as, and the file's name.
 
-The map is drawn in pieces, so a phone draws as much detail as a computer; a large area takes a minute or two. What is left out: the base map on your screen, the MGRS grid, popups, the LZ card's frame and other people's pointers in a Mission Pack. **Hide anything that should not go in first.** It is a picture: nothing in it can be selected or changed in ForeFlight, and its labels grow and shrink as ForeFlight zooms. What is drawn goes to the server once, to be made into the file (with the USGS map fetched there, if you chose it), and nothing is kept.
+The map is drawn in pieces, so a phone draws as much detail as a computer, and only the pieces with something planned in them are drawn and sent. The file is then made on the server while the dialog shows how far it has got; keep the page open until it downloads (closing the dialog or the tab stops it). The download link works for 30 minutes. What is left out: the base map on your screen, the MGRS grid, popups, the LZ card's frame and other people's pointers in a Mission Pack. **Hide anything that should not go in first.** It is a picture: nothing in it can be selected or changed in ForeFlight, and its labels grow and shrink as ForeFlight zooms. What is drawn goes to the server once, to be made into the file (with the USGS map fetched there, if you chose it); the server deletes the file 30 minutes after making it, and everything else as soon as it has.
 
 ## 7. On a phone
 
