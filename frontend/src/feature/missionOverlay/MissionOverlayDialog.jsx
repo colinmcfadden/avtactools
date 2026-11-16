@@ -1,18 +1,21 @@
-import React, { useId, useMemo, useState } from "react";
+import React, { useEffect, useId, useMemo, useRef, useState } from "react";
 import api from "../auth/api";
 import Dialog from "../ui/Dialog";
 import { BusyButton, ProgressBar } from "../ui/Spinner";
-import { blobError, downloadBlob } from "../../utils/fileDownload";
-import { captureOverlay, missionBounds, shownBounds } from "./captureOverlay";
+import { blobError, downloadUrl } from "../../utils/fileDownload";
+import { captureOverlay, missionBounds, piecesWithContent, shownBounds } from "./captureOverlay";
 import {
+  BATCH_BYTES,
   describeArea,
+  describeBytes,
+  describeMinutes,
   describePixels,
   describeResolution,
   describeScale,
+  estimateOverlay,
   FORMATS,
   GEOTIFF_SIDE,
   layerName,
-  MAX_UPLOAD_BYTES,
   overlayFileName,
   overlayPlans,
   USGS_MAX_ZOOM,
@@ -24,7 +27,57 @@ import {
  * overlay lies over ForeFlight's own charts) or USGS's topo map, fetched by the server at its own resolution; the detail
  * is as fine as the file allows, or a level lighter; the file is MBTiles (any ForeFlight subscription) or a GeoTIFF
  * (Military Flight Bag, and other apps). The map is drawn in pieces, so a phone draws as much detail as a computer.
+ *
+ * The server makes it in the background (backend/overlay_jobs.py): a whole operation on the USGS map at its own level 16 is
+ * tens of thousands of tiles, ten minutes and more, where a request may wait 100 s. So a job is made, the pieces with
+ * something in them are drawn and sent a batch at a time (the rest are see-through, or the USGS map alone), the job is
+ * started and asked how it stands every POLL_MS until its file is made, which is downloaded from a link of its own. A
+ * stop, or the dialog closing, stops the job on the server too.
  */
+
+const POLL_MS = 2000;
+
+const stopped = () => new DOMException("The overlay was stopped.", "AbortError");
+
+const pause = (ms, signal) =>
+  new Promise((resolve, reject) => {
+    if (signal.aborted) {
+      reject(stopped());
+      return;
+    }
+    const timer = setTimeout(resolve, ms);
+    signal.addEventListener(
+      "abort",
+      () => {
+        clearTimeout(timer);
+        reject(stopped());
+      },
+      { once: true },
+    );
+  });
+
+/** What the server said, else `fallback`; the app's own words where no answer came, or the job was lost. */
+const jobError = async (err, fallback) => {
+  if (err?.response?.status === 404) return "The server lost the overlay (it may have restarted). Try again.";
+  return blobError(err, fallback);
+};
+
+/** "Fetching the USGS map: tile 1,200 of 41,500" and the like, for how the job stands on the server. */
+const describeJob = (job, format) => {
+  if (!job) return "Starting…";
+  const count = (value) => Number(value ?? 0).toLocaleString("en-US");
+  if (job.state === "receiving") return "Sending…";
+  if (job.state === "queued") {
+    return job.ahead > 0 ? `Waiting for ${job.ahead} other overlay${job.ahead === 1 ? "" : "s"} to be made…` : "Waiting to be made…";
+  }
+  if (job.stage === "fetching") return `Fetching the USGS map: tile ${count(job.done)} of ${count(job.total)}`;
+  if (job.stage === "writing") {
+    return format === "mbtiles"
+      ? `Writing tile ${count(job.done)} of ${count(job.total)}`
+      : `Writing the file: row ${count(job.done)} of ${count(job.total)}`;
+  }
+  return "Making the file…";
+};
 
 const Choice = ({ name, checked, onChange, title, text, disabled }) => (
   <label className={`ui-choice${checked ? " ui-choice--selected" : ""}`} style={disabled ? { opacity: 0.55, cursor: "default" } : undefined}>
@@ -45,13 +98,11 @@ const Group = ({ id, label, children, style }) => (
   </div>
 );
 
-const megabytes = (bytes) => `${Math.ceil(bytes / (1024 * 1024))} MB`;
-
 /** "About 1:20,000 · 2.0 m a pixel · 9,800 × 7,400 pixels" */
 const describePlan = (plan) =>
   `About ${describeScale(plan.metresPerPixel)} · ${describeResolution(plan.metresPerPixel).replace(/^about /, "")} · ${describePixels(plan)} pixels`;
 
-const MissionOverlayDialog = ({ map, defaultName = "MISSION OVERLAY", mapStyle, onClose, notify }) => {
+const MissionOverlayDialog = ({ map, defaultName = "MISSION OVERLAY", mapStyle, onClose, notify, pollMs = POLL_MS }) => {
   const ids = useId();
   // Read once as it opens: the dialog covers the map, so nothing moves under it.
   const areas = useMemo(() => ({ mission: missionBounds(map), shown: shownBounds(map) }), [map]);
@@ -62,61 +113,128 @@ const MissionOverlayDialog = ({ map, defaultName = "MISSION OVERLAY", mapStyle, 
   const [name, setName] = useState(defaultName);
   const [stage, setStage] = useState(null);
   const [drawn, setDrawn] = useState({ done: 0, total: 0 });
+  const [job, setJob] = useState(null);
   const [error, setError] = useState(null);
+  // The run under way: what stops it, and the job it made on the server.
+  const run = useRef(null);
 
   const bounds = areas[area];
   const mapMaxZoom = map.getMaxZoom();
   const plans = useMemo(() => overlayPlans(bounds, { format, base, mapMaxZoom }), [bounds, format, base, mapMaxZoom]);
   const chosen = detail === "lighter" && plans.lighter ? "lighter" : "finest";
   const plan = plans[chosen];
+  // The pieces with something in them: only those are drawn and sent.
+  const wanted = useMemo(() => piecesWithContent(map, plan), [map, plan]);
+  const estimate = estimateOverlay(plan);
+
+  // A job left by a dialog closed part way (the person, or the page) is stopped on the server, not left to time out.
+  const letGo = (current) => {
+    if (!current) return;
+    current.controller.abort();
+    if (current.job) api.delete(`/overlay-jobs/${current.job}`).catch(() => {});
+  };
+  useEffect(() => () => letGo(run.current), []);
+
+  const stop = () => {
+    letGo(run.current);
+    run.current = null;
+    setStage(null);
+    setJob(null);
+  };
 
   const make = async () => {
+    const controller = new AbortController();
+    const { signal } = controller;
+    const current = { controller, job: null };
+    run.current = current;
     setError(null);
-    setStage("drawing");
-    setDrawn({ done: 0, total: plan.pieces });
-    let pieces;
+    setJob(null);
+    setStage("starting");
     try {
-      pieces = await captureOverlay(map, plan, { onPiece: (done, total) => setDrawn({ done, total }) });
-    } catch {
-      setStage(null);
-      setError("The map could not be drawn into the overlay. Try again.");
-      return;
-    }
-    const size = pieces.reduce((sum, piece) => sum + piece.blob.size, 0);
-    if (size > MAX_UPLOAD_BYTES) {
-      setStage(null);
-      setError(`What is drawn comes to ${megabytes(size)}, more than can be sent. Choose less detail or a smaller area.`);
-      return;
-    }
-    setStage("making");
-    try {
-      const form = new FormData();
-      form.append("format", format);
-      form.append("base", base);
-      form.append("name", layerName(name));
-      for (const key of ["zoom", "left", "top", "width", "height"]) form.append(key, String(plan[key]));
-      for (const piece of pieces) form.append(`piece-${piece.column}-${piece.row}`, piece.blob, `piece-${piece.column}-${piece.row}.png`);
-      const answer = await api.post("/overlay-image", form, { responseType: "blob" });
+      const order = new FormData();
+      order.append("format", format);
+      order.append("base", base);
+      order.append("name", layerName(name));
+      for (const key of ["zoom", "left", "top", "width", "height"]) order.append(key, String(plan[key]));
+      const { data: made } = await api.post("/overlay-jobs", order, { signal });
+      current.job = made.id;
+
+      setStage("drawing");
+      setDrawn({ done: 0, total: wanted.size });
+      let batch = new FormData();
+      let bytes = 0;
+      let count = 0;
+      const send = async () => {
+        if (count === 0) return;
+        const sending = batch;
+        batch = new FormData();
+        bytes = 0;
+        count = 0;
+        await api.post(`/overlay-jobs/${made.id}/pieces`, sending, { signal });
+      };
+      if (wanted.size > 0) {
+        await captureOverlay(map, plan, {
+          pieces: wanted,
+          signal,
+          onPiece: (done, total) => setDrawn({ done, total }),
+          onDrawn: async (piece) => {
+            if (count > 0 && bytes + piece.blob.size > BATCH_BYTES) await send();
+            const key = `piece-${piece.column}-${piece.row}`;
+            batch.append(key, piece.blob, `${key}.png`);
+            bytes += piece.blob.size;
+            count += 1;
+          },
+        });
+      }
+      await send();
+
+      await api.post(`/overlay-jobs/${made.id}/start`, null, { signal });
+      setStage("making");
+      let status = null;
+      for (;;) {
+        await pause(pollMs, signal);
+        ({ data: status } = await api.get(`/overlay-jobs/${made.id}`, { signal }));
+        setJob(status);
+        if (status.state === "done") break;
+        if (status.state === "failed" || status.state === "cancelled") {
+          current.job = null;
+          throw Object.assign(new Error(status.error || "The overlay could not be made. Try again."), { said: true });
+        }
+      }
+      current.job = null;
       const fileName = overlayFileName(name, format);
-      downloadBlob(answer.data, fileName);
+      downloadUrl(`${api.defaults.baseURL ?? ""}${status.download}`, fileName);
       notify?.({ tone: "ok", message: `${fileName} is in your downloads. Open it with ForeFlight from Files${format === "mbtiles" ? " or AirDrop" : ""}.` });
+      run.current = null;
       onClose();
     } catch (err) {
-      setError(await blobError(err, "The overlay could not be made. Try again."));
-    } finally {
+      if (signal.aborted) return; // stopped, or the dialog closed: nothing to say
+      letGo(current);
+      run.current = null;
       setStage(null);
+      setJob(null);
+      if (err?.said) setError(err.message);
+      else if (err?.isAxiosError || err?.response || err?.request) setError(await jobError(err, "The overlay could not be made. Try again."));
+      else setError("The map could not be drawn into the overlay. Try again.");
     }
   };
 
   const busy = stage !== null;
   const working =
-    stage === "drawing"
-      ? `Drawing piece ${Math.min(drawn.done + 1, drawn.total)} of ${drawn.total}…`
-      : stage === "making"
-        ? base === "usgs-topo"
-          ? "Fetching the USGS map and making the file…"
-          : "Making the file…"
-        : null;
+    stage === "starting"
+      ? "Starting…"
+      : stage === "drawing"
+        ? `Drawing piece ${Math.min(drawn.done + 1, drawn.total).toLocaleString("en-US")} of ${drawn.total.toLocaleString("en-US")}…`
+        : stage === "making"
+          ? describeJob(job, format)
+          : null;
+  const drawsText =
+    wanted.size < plan.pieces
+      ? ` Draws ${wanted.size.toLocaleString("en-US")} of its ${plan.pieces.toLocaleString("en-US")} pieces of map, where something is planned.`
+      : "";
+  const estimateText = estimate
+    ? ` About ${plan.tiles.toLocaleString("en-US")} tiles, ${describeBytes(estimate.bytes)}; the server takes ${describeMinutes(estimate.seconds)} to make it.`
+    : "";
   const finestText =
     plans.limitedBy === "base"
       ? `${describePlan(plans.finest)}. The USGS topo map has no more detail than this.`
@@ -131,10 +249,10 @@ const MissionOverlayDialog = ({ map, defaultName = "MISSION OVERLAY", mapStyle, 
       width="xwide"
       onClose={busy ? undefined : onClose}
       dismissible={!busy}
-      note="What is drawn goes to the server once, to make the file. Nothing is kept."
+      note="What is drawn goes to the server once, to make the file, which it keeps for 30 minutes to be downloaded."
       footer={
         <div style={{ display: "flex", gap: 8 }}>
-          <button type="button" className="ui-btn" onClick={onClose} disabled={busy}>Cancel</button>
+          <button type="button" className="ui-btn" onClick={busy ? stop : onClose}>{busy ? "Stop" : "Cancel"}</button>
           <BusyButton className="ui-btn ui-btn--primary" icon="download" busy={busy} onClick={make}>
             <span>{working ?? `Download .${FORMATS[format].extension}`}</span>
           </BusyButton>
@@ -235,9 +353,18 @@ const MissionOverlayDialog = ({ map, defaultName = "MISSION OVERLAY", mapStyle, 
         In it: everything drawn on the map but the base map on the screen and the MGRS grid. Hide what should not go in first.
         It is a picture: nothing in it can be selected or changed in ForeFlight, and labels grow and shrink as ForeFlight zooms.
       </div>
+      {!busy && (drawsText || estimateText) && (
+        <div className="ui-field__hint" style={{ marginTop: 8 }}>{`${drawsText}${estimateText}`.trim()}</div>
+      )}
       {stage === "drawing" && drawn.total > 1 && (
         <div style={{ marginTop: 12 }}>
           <ProgressBar done={drawn.done} total={drawn.total} label="Pieces of the overlay drawn" />
+        </div>
+      )}
+      {stage === "making" && (
+        <div style={{ marginTop: 12 }}>
+          <div className="ui-field__hint" aria-live="polite">{describeJob(job, format)}</div>
+          <ProgressBar done={job?.state === "running" ? job.done : 0} total={job?.state === "running" ? job.total : 0} label="The overlay being made" />
         </div>
       )}
       {error && <div role="alert" className="ui-field__hint ui-field__hint--error">{error}</div>}

@@ -2,7 +2,7 @@ import L from "leaflet";
 import * as htmlToImage from "html-to-image";
 import { SCREEN_ONLY_CLASS } from "../export/captureFilter";
 import { IMAGE_PANE, VECTOR_PANE } from "../overlays/KmzOverlayLayer";
-import { captureOverlay, isScreenOnly, keepInOverlay, missionBounds } from "./captureOverlay";
+import { captureOverlay, isScreenOnly, keepInOverlay, missionBounds, piecesWithContent } from "./captureOverlay";
 import { areaAt, PIECE, PIECE_CSS, PIXEL_RATIO } from "./overlayPlan";
 
 vi.mock("html-to-image", () => ({ toCanvas: vi.fn() }));
@@ -72,6 +72,65 @@ describe("what goes in a mission overlay", () => {
     for (const name of ["leaflet-overlay-pane", "leaflet-marker-pane", "leaflet-tooltip-pane", "map-slope"]) {
       expect(keepInOverlay(node(name))).toBe(true);
     }
+  });
+});
+
+describe("the pieces with something in them", () => {
+  const AREA = { north: 34.8, south: 34.5, east: -84.3, west: -84.6 };
+  let map;
+  beforeEach(() => {
+    map = makeMap();
+  });
+  afterEach(() => map.remove());
+
+  // The whole area at device zoom 17, about 2 m a CSS pixel: some 14 pieces across and 17 down.
+  const plan = (() => {
+    const area = areaAt(AREA, 17, "mbtiles");
+    const columns = Math.ceil(area.width / PIECE);
+    const rows = Math.ceil(area.height / PIECE);
+    return { ...area, columns, rows, pieces: columns * rows };
+  })();
+  const pieceAt = (lat, lon) => {
+    const at = map.project([lat, lon], plan.zoom);
+    return `${Math.floor((at.x - plan.left) / PIECE)},${Math.floor((at.y - plan.top) / PIECE)}`;
+  };
+
+  it("is the pieces a line passes through, not the box round it", () => {
+    L.tileLayer("https://tiles.invalid/{z}/{x}/{y}.png").addTo(map);
+    L.polyline([[34.5, -84.5], [34.7, -84.3]]).addTo(map);
+    const found = piecesWithContent(map, plan);
+    expect(plan.pieces).toBeGreaterThan(150);
+    expect(found.has(pieceAt(34.5, -84.5))).toBe(true);
+    expect(found.has(pieceAt(34.7, -84.3))).toBe(true);
+    expect(found.has(pieceAt(34.6, -84.4))).toBe(true);
+    // The line's other corners are well away from it.
+    expect(found.has(pieceAt(34.5, -84.3))).toBe(false);
+    expect(found.has(pieceAt(34.7, -84.5))).toBe(false);
+    expect(found.size).toBeLessThan(plan.pieces / 3);
+  });
+
+  it("is the pieces round a marker, the whole of a filled shape, and none for what the screen alone shows", () => {
+    L.marker([34.65, -84.45]).addTo(map);
+    L.rectangle([[34.52, -84.58], [34.54, -84.56]]).addTo(map);
+    L.marker([34.55, -84.35], { icon: L.divIcon({ className: "packs-cursor" }) }).addTo(map);
+    L.rectangle([[34.7, -84.35], [34.78, -84.31]], { screenOnly: true }).addTo(map);
+    const found = piecesWithContent(map, plan);
+    expect(found.has(pieceAt(34.65, -84.45))).toBe(true);
+    expect(found.has(pieceAt(34.53, -84.57))).toBe(true);
+    expect(found.has(pieceAt(34.55, -84.35))).toBe(false);
+    expect(found.has(pieceAt(34.74, -84.33))).toBe(false);
+    expect(found.size).toBeLessThan(20);
+  });
+
+  it("is every piece where a layer cannot say where it is", () => {
+    const Mystery = L.Layer.extend({ onAdd() {}, onRemove() {} });
+    new Mystery().addTo(map);
+    expect(piecesWithContent(map, plan).size).toBe(plan.pieces);
+  });
+
+  it("is nothing where nothing is planned", () => {
+    L.tileLayer("https://tiles.invalid/{z}/{x}/{y}.png").addTo(map);
+    expect(piecesWithContent(map, plan).size).toBe(0);
   });
 });
 
@@ -175,6 +234,34 @@ describe("drawing a mission overlay", () => {
     expect(htmlToImage.toCanvas).not.toHaveBeenCalled();
     expect(element.getAttribute("style")).toBe(style);
     expect(element.classList.contains("hide-ui-for-export")).toBe(false);
+    expect(map.hasLayer(tiles)).toBe(true);
+    expect(map.getZoom()).toBe(12);
+  });
+
+  it("draws only the pieces asked for, hands each on as it is drawn, and stops when asked", async () => {
+    const style = makeSizedMap();
+    const plan = planAt(14);
+    htmlToImage.toCanvas.mockImplementation(async () => drawnPiece());
+    const handed = [];
+    const kept = await captureOverlay(map, plan, {
+      firstSettleMs: 0,
+      settleMs: 0,
+      pieces: new Set(["1,2", "0,1"]),
+      onDrawn: async ({ column, row, blob }) => handed.push([column, row, blob instanceof Blob]),
+    });
+    expect(kept).toEqual([]);
+    expect(handed).toEqual([[0, 1, true], [1, 2, true]]);
+
+    const controller = new AbortController();
+    const stopped = captureOverlay(map, plan, {
+      firstSettleMs: 0,
+      settleMs: 0,
+      signal: controller.signal,
+      onDrawn: async () => controller.abort(),
+    });
+    await expect(stopped).rejects.toMatchObject({ name: "AbortError" });
+    expect(htmlToImage.toCanvas).toHaveBeenCalledTimes(3);
+    expect(element.getAttribute("style")).toBe(style);
     expect(map.hasLayer(tiles)).toBe(true);
     expect(map.getZoom()).toBe(12);
   });

@@ -608,6 +608,11 @@ def analysis_running():
                 _no_analysis.set()
 
 
+def wait_while_analysing():
+    """Waits while an analysis runs: for background work that should not compete with one (a mission overlay)."""
+    _no_analysis.wait()
+
+
 def pauses_warming(view):
     """Decorate a route whose work should not share the server with warming."""
     @functools.wraps(view)

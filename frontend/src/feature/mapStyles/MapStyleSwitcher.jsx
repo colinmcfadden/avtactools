@@ -10,9 +10,20 @@ import "./MapStyleSwitcher.css";
  *
  * Below the tiles, the MGRS grid's switch (when setShowMgrsGrid is given). The
  * grid goes over any base map, and while it is on the collapsed button says so,
- * so lines on the map are never a mystery. Under that, a switch for each map overlay open.
+ * so lines on the map are never a mystery. Then the route doghouses' switch (when setShowRouteDoghouses is given), and
+ * under that, a switch for each map overlay open.
  */
-const MapStyleSwitcher = ({ mapStyle, setMapStyle, showMgrsGrid = false, setShowMgrsGrid, vfrCharts, overlays = [], onToggleOverlay }) => {
+const MapStyleSwitcher = ({
+  mapStyle,
+  setMapStyle,
+  showMgrsGrid = false,
+  setShowMgrsGrid,
+  showRouteDoghouses = true,
+  setShowRouteDoghouses,
+  vfrCharts,
+  overlays = [],
+  onToggleOverlay,
+}) => {
   const [open, setOpen] = useState(false);
   const containerRef = useRef(null);
 
@@ -80,6 +91,22 @@ const MapStyleSwitcher = ({ mapStyle, setMapStyle, showMgrsGrid = false, setShow
               <span className="map-layer-switch__label">MGRS grid</span>
               <span className="map-layer-switch__state" aria-hidden="true">
                 {showMgrsGrid ? "On" : "Off"}
+              </span>
+              <span className="map-layer-switch__track" aria-hidden="true" />
+            </button>
+          )}
+          {setShowRouteDoghouses && (
+            <button
+              type="button"
+              role="switch"
+              aria-checked={showRouteDoghouses}
+              className="map-layer-switch"
+              title="A doghouse on each leg of the routes shown, from the route's plan"
+              onClick={() => setShowRouteDoghouses(!showRouteDoghouses)}
+            >
+              <span className="map-layer-switch__label">Route doghouses</span>
+              <span className="map-layer-switch__state" aria-hidden="true">
+                {showRouteDoghouses ? "On" : "Off"}
               </span>
               <span className="map-layer-switch__track" aria-hidden="true" />
             </button>

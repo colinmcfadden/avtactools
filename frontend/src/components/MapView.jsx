@@ -49,6 +49,8 @@ import PresenceLayer from "../feature/missionPacks/ui/PresenceLayer";
 import SandtableLayer from "../feature/brief/SandtableLayer";
 import StartAtLocation from "../feature/startLocation/StartAtLocation";
 import MapTap from "../feature/phoneFrame/MapTap";
+import GraphicScale from "../feature/graphicScale/GraphicScale";
+import RouteDoghouseLayer from "../feature/routeDoghouses/RouteDoghouseLayer";
 
 // Fix for default Leaflet marker icons in React
 delete L.Icon.Default.prototype._getIconUrl;
@@ -256,6 +258,7 @@ const MapView = ({
   setContextMenu,
   mapStyle,
   showMgrsGrid,
+  showRouteDoghouses = true,
   mapOverlays = [],
   overlayFit = null,
   // The slope map's opacity, a percentage of its own: this browser's (slopeOpacity.js).
@@ -285,6 +288,10 @@ const MapView = ({
   const activeMapStyle = getMapStyle(mapStyle);
   // Visible local points that a dragged route point can snap onto. Memoized so
   // the route layers aren't handed a fresh array on every unrelated re-render.
+  const routesForDoghouses = useMemo(
+    () => [...(importedRoutes || []), ...(sketchedRoutes || [])],
+    [importedRoutes, sketchedRoutes],
+  );
   const localSnapPoints = useMemo(
     () =>
       (localPointSets || [])
@@ -482,6 +489,8 @@ const MapView = ({
       <MapUpdater center={targetLocation} targetId={activeDiagramId} paused={Boolean(presentation)} />
       {flyTo && <MapUpdater center={[flyTo.lat, flyTo.lon]} targetId={`fly:${flyTo.key}`} zoom={flyTo.zoom ?? 17} paused={Boolean(presentation)} />}
       <SizeWatcher />
+      {/* The LZ/PZ's doghouses, go-arounds and units shrink as the map zooms out past the LZ's own scale */}
+      <GraphicScale boundary={detectedLZ || customLZ} />
 
       {!presentation && (<>
         {(presence?.length > 0 || onPoint) && <PresenceLayer people={presence} onPoint={onPoint} />}
@@ -502,6 +511,9 @@ const MapView = ({
           snapPoints={localSnapPoints}
           drawing={isDrawingLZ || isSketchingRoute || isDrawingBackstop || isDrawingLine}
         />
+
+        {/* A doghouse on each leg of the routes shown, from the route's plan; in an overlay export as on the screen */}
+        <RouteDoghouseLayer routes={routesForDoghouses} shown={showRouteDoghouses} />
 
         <LocalPointsLayer pointSets={localPointSets} onAddToRoute={onAddLocalPointToRoute} />
 

@@ -1,0 +1,52 @@
+/*
+ * The LZ/PZ's planning graphics drawn smaller as the map zooms out, and put away further out (scaleRule.js). The
+ * map's element carries the scale; each graphic's own wrapper (`map-graphic-scale`) takes it with `scale`, which stands
+ * apart from its `transform`, so a drag's lift and a doghouse's turn are untouched. One that is held, hovered or being
+ * dragged is drawn at its full size with its controls, so it can be read and moved.
+ */
+.map-graphic-scale {
+  scale: var(--ezpz-graphic-scale, 1);
+}
+
+.map-graphic-scale:hover,
+.map-graphic-scale.show-controls,
+.mobile-lifting .map-graphic-scale {
+  scale: 1;
+}
+
+/* The marker's own box is its full size whatever the scale, so only what is drawn in it takes a click or a touch. */
+.doghouse-container.leaflet-interactive,
+.ga-container.leaflet-interactive,
+.unit-div-icon.leaflet-interactive {
+  pointer-events: none;
+}
+
+.unit-object-shell {
+  pointer-events: auto;
+}
+
+.ezpz-graphics-far .doghouse-container,
+.ezpz-graphics-far .ga-container,
+.ezpz-graphics-far .unit-div-icon {
+  display: none;
+}
+
+/*
+ * The LZ's length and width and the feet between two aircraft: labels as large as any graphic, which covered the LZ
+ * once zoomed out. Each is centred on its point by its own translate(-50%, -50%), so it is scaled about its corner,
+ * which keeps its middle on the point.
+ */
+.label-handle > div > div,
+.distance-badge-icon > div {
+  scale: var(--ezpz-graphic-scale, 1);
+  transform-origin: 0 0;
+}
+
+.label-handle:hover > div > div {
+  scale: 1;
+}
+
+.ezpz-graphics-far .label-handle,
+.ezpz-graphics-far .distance-badge-icon {
+  display: none;
+}

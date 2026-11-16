@@ -2,9 +2,12 @@ import L from "leaflet";
 import {
   areaAt,
   describeArea,
+  describeBytes,
+  describeMinutes,
   describePixels,
   describeResolution,
   describeScale,
+  estimateOverlay,
   GEOTIFF_SIDE,
   layerName,
   MARGIN,
@@ -15,12 +18,15 @@ import {
   PIECE,
   PIXEL_RATIO,
   project0,
+  pyramidTiles,
   TILE,
   USGS_MAX_ZOOM,
 } from "./overlayPlan";
 
 // The Ellijay test LZ's country: about 18 km by 22 km.
 const AREA = { north: 34.75, south: 34.55, east: -84.35, west: -84.55 };
+// A whole operation: about 108 by 73 km.
+const OPERATION = { north: 34.95, south: 34.29, east: -83.8, west: -84.98 };
 // An LZ: a hundred metres or so.
 const LZ = { north: 34.6005, south: 34.5995, east: -84.4, west: -84.401 };
 
@@ -97,10 +103,44 @@ describe("the overlay's arithmetic", () => {
     // A large area is held back by the file before the map; one both hold at level 16 is the map's.
     expect(overlayPlans(AREA, { format: "geotiff", base: "usgs-topo" }).limitedBy).toBe("size");
     const both = { north: 34.66, south: 34.58, east: -84.36, west: -84.48 };
-    expect(overlayPlans(both, { format: "mbtiles", base: "none" }).finest.zoom).toBe(USGS_MAX_ZOOM);
+    expect(overlayPlans(both, { format: "mbtiles", base: "none" }).finest.zoom).toBe(MAX_ZOOM);
     expect(overlayPlans(both, { format: "mbtiles", base: "usgs-topo" }).limitedBy).toBe("base");
     // Below the USGS map's most, what holds it is the map on the screen.
     expect(overlayPlans(LZ, { format: "mbtiles", base: "usgs-topo", mapMaxZoom: 12 }).limitedBy).toBe("zoom");
+  });
+
+  it("draws a whole operation's MBTiles at the USGS map's own level, and counts its tiles as the server makes them", () => {
+    const topo = overlayPlans(OPERATION, { format: "mbtiles", base: "usgs-topo", mapMaxZoom: 18 });
+    expect(topo.finest.zoom).toBe(USGS_MAX_ZOOM);
+    expect(topo.limitedBy).toBe("base");
+    // The server's own count for this area (overlay_image.pyramid): levels 16 down to 8.
+    expect(topo.finest.tiles).toBe(43_127);
+    expect(tiles(topo.finest)).toBe(32_116);
+    // Without the map, the file is what holds it: level 17 is past its tiles.
+    const none = overlayPlans(OPERATION, { format: "mbtiles", base: "none", mapMaxZoom: 18 });
+    expect(none.finest.zoom).toBe(16);
+    expect(none.limitedBy).toBe("size");
+    expect(tiles(areaAt(OPERATION, 17, "mbtiles"))).toBeGreaterThan(MBTILES_TILES);
+    expect(overlayPlans(OPERATION, { format: "geotiff" }).finest.tiles).toBeNull();
+  });
+
+  it("counts a pyramid down to where the area is a tile wide, or eight levels, as the server does", () => {
+    // Four tiles across, off a boundary: four, then three, then two, where the area is a tile's width (the server's 9).
+    expect(pyramidTiles({ zoom: 10, left: 1 * TILE, top: 2 * TILE, width: 4 * TILE, height: 1 * TILE })).toBe(4 + 3 + 2);
+    expect(pyramidTiles({ zoom: 5, left: 0, top: 0, width: TILE, height: TILE })).toBe(1);
+  });
+
+  it("says about how large and how long an MBTiles file on the USGS map is, and nothing for the rest", () => {
+    const plan = overlayPlans(OPERATION, { format: "mbtiles", base: "usgs-topo", mapMaxZoom: 18 }).finest;
+    const estimate = estimateOverlay(plan);
+    expect(describeBytes(estimate.bytes)).toBe("about 630 MB");
+    expect(describeMinutes(estimate.seconds)).toBe("about 12 minutes");
+    expect(estimateOverlay({ ...plan, base: "none" })).toBeNull();
+    expect(estimateOverlay({ ...plan, format: "geotiff" })).toBeNull();
+    expect(describeBytes(3.2 * 1024 * 1024)).toBe("about 3 MB");
+    expect(describeBytes(1.34 * 1024 ** 3)).toBe("about 1.3 GB");
+    expect(describeMinutes(20)).toBe("under a minute");
+    expect(describeMinutes(70)).toBe("about a minute");
   });
 
   it("goes no finer than the map does", () => {

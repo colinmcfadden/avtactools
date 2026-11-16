@@ -1,8 +1,9 @@
 /*
  * A mission overlay (docs/USER_GUIDE.md, *Mission overlay*): the map's planning layers drawn in square pieces at one zoom,
- * which the server puts together into an MBTiles or GeoTIFF for ForeFlight, with USGS's topo map under them if asked
- * (backend/overlay_image.py). This is the arithmetic of it, apart from the map: at what zoom the area is drawn, where it
- * lies in that zoom's pixels, how many pieces that is, and what it comes to on the ground.
+ * which the server puts together in the background into an MBTiles or GeoTIFF for ForeFlight, with USGS's topo map under
+ * them if asked (backend/overlay_image.py, overlay_jobs.py). This is the arithmetic of it, apart from the map: at what
+ * zoom the area is drawn, where it lies in that zoom's pixels, how many pieces and tiles that is, and what it comes to on
+ * the ground.
  *
  * Everything here is in device pixels: the map is drawn at PIXEL_RATIO device pixels a CSS pixel, so a device zoom is the
  * map's CSS zoom plus one, and Leaflet's global pixels at it are twice its CSS ones. The server takes the area in those.
@@ -22,10 +23,17 @@ export const MAX_ZOOM = 19;
 export const USGS_MAX_ZOOM = 16;
 // ForeFlight's limit for a GeoTIFF, and the server's.
 export const GEOTIFF_SIDE = 10_000;
-// The most tiles at an MBTiles file's finest zoom, the server's: about 100 million pixels, as a GeoTIFF's most.
-export const MBTILES_TILES = 1_600;
-// What the pieces may come to, under the server's 90 MB for a request (overlay_image_routes.MAX_UPLOAD_BYTES).
-export const MAX_UPLOAD_BYTES = 88 * 1024 * 1024;
+// The most tiles at an MBTiles file's finest zoom, the server's in the background (overlay_image.MBTILES_BACKGROUND_TILES):
+// a whole operation, about 110 by 140 km, at the USGS map's level 16.
+export const MBTILES_TILES = 64_000;
+// The zooms below the finest an MBTiles file has, the server's (overlay_image.MAX_LEVELS).
+export const MAX_LEVELS = 8;
+// What the pieces are sent in, a request at a time: well under the server's 90 MB for one (MAX_UPLOAD_BYTES there).
+export const BATCH_BYTES = 24 * 1024 * 1024;
+// What a stored tile of the USGS map comes to, and how fast the server fetches and writes them (measured 2026-11-15: about
+// 12 KB at level 16 and 30 at 12, 70 tiles a second). For the estimate the dialog shows, not a limit.
+const TOPO_TILE_BYTES = 15 * 1024;
+const TOPO_TILES_A_SECOND = 60;
 const MARGIN_PX = MARGIN * PIXEL_RATIO;
 const EARTH_CIRCUMFERENCE_M = 40075016.686;
 const EARTH_RADIUS_M = 6371008.8;
@@ -106,6 +114,24 @@ const finestZoom = (bounds, format, cap) => {
   return Math.max(1, zoom);
 };
 
+/** The tiles of an MBTiles file of the area, every zoom, as the server makes them (overlay_image.pyramid). */
+export const pyramidTiles = (area) => {
+  const columns = area.width / TILE;
+  const rows = area.height / TILE;
+  const x0 = Math.floor(area.left / TILE);
+  const y0 = Math.floor(area.top / TILE);
+  let bottom = area.zoom;
+  while (bottom > 0 && area.zoom - bottom < MAX_LEVELS && Math.max(columns, rows) / 2 ** (area.zoom - bottom) > 1) bottom -= 1;
+  let total = 0;
+  for (let zoom = area.zoom; zoom >= bottom; zoom -= 1) {
+    const shift = 2 ** (area.zoom - zoom);
+    const across = Math.floor((x0 + columns - 1) / shift) - Math.floor(x0 / shift) + 1;
+    const down = Math.floor((y0 + rows - 1) / shift) - Math.floor(y0 / shift) + 1;
+    total += across * down;
+  }
+  return total;
+};
+
 /** The ground a pixel covers at the area's middle, in metres. */
 const metresPerPixel = (bounds, zoom) =>
   (EARTH_CIRCUMFERENCE_M * Math.cos((((bounds.north + bounds.south) / 2) * Math.PI) / 180)) / (TILE * 2 ** zoom);
@@ -127,7 +153,8 @@ export const overlayPlans = (bounds, { format = "mbtiles", base = "none", mapMax
     const area = areaAt(bounds, zoom, format);
     const columns = Math.ceil(area.width / PIECE);
     const rows = Math.ceil(area.height / PIECE);
-    return { ...area, format, base, columns, rows, pieces: columns * rows, metresPerPixel: metresPerPixel(bounds, zoom) };
+    const tiles = format === "mbtiles" ? pyramidTiles(area) : null;
+    return { ...area, format, base, columns, rows, pieces: columns * rows, tiles, metresPerPixel: metresPerPixel(bounds, zoom) };
   };
   const lighterZoom = tenth(finest - 1);
   return { finest: plan(finest), lighter: lighterZoom >= 1 ? plan(lighterZoom) : null, limitedBy };
@@ -168,6 +195,29 @@ export const describeScale = (metres) => {
   const denominator = metres * 10_000;
   const figures = 10 ** Math.max(0, Math.floor(Math.log10(denominator)) - 1);
   return `1:${(Math.round(denominator / figures) * figures).toLocaleString("en-US")}`;
+};
+
+/**
+ * About what an MBTiles file on the USGS map comes to, { bytes, seconds } for the server to make it, or null where it
+ * cannot be said ahead (without the map it is what is drawn; a GeoTIFF is one image of a size the dialog shows).
+ */
+export const estimateOverlay = (plan) =>
+  plan.format === "mbtiles" && plan.base === "usgs-topo"
+    ? { bytes: plan.tiles * TOPO_TILE_BYTES, seconds: plan.tiles / TOPO_TILES_A_SECOND }
+    : null;
+
+/** "about 600 MB", "about 1.3 GB" */
+export const describeBytes = (bytes) => {
+  const mb = bytes / (1024 * 1024);
+  if (mb >= 1000) return `about ${(mb / 1024).toFixed(1)} GB`;
+  return `about ${mb >= 10 ? Math.round(mb / 10) * 10 : Math.max(1, Math.round(mb))} MB`;
+};
+
+/** "under a minute", "about 10 minutes" */
+export const describeMinutes = (seconds) => {
+  if (seconds < 60) return "under a minute";
+  const minutes = Math.round(seconds / 60);
+  return minutes === 1 ? "about a minute" : `about ${minutes} minutes`;
 };
 
 /** "9,800 × 7,400" */
