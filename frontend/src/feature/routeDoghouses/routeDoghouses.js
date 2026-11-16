@@ -4,13 +4,20 @@
  * panel shows (routeCalc.computeRoutePlan): in the roof the point the leg flies to, then the leg's true course, its time
  * as minutes+seconds, its length in km and its planned airspeed. It stands at the middle of the leg's longest straight
  * stretch (a leg bent by shaping points has more than one), clear of the line on the right of the way it is flown, and is turned to that way, as an
- * LZ's doghouses are turned to their heading. It is shown only where the leg is long enough on the screen to hold it.
+ * LZ's doghouses are turned to their heading. It is never put away as the map zooms out: where the leg is too short on
+ * the screen to hold it, it is drawn smaller, down to a floor (a larger one in a mission overlay, so it reads in the file).
  */
 import { computeRoutePlan, defaultRoutePlan, planPoints } from "../msnxImport/routeCalc";
 import { project0 } from "../missionOverlay/overlayPlan";
 
-// The leg on the screen, in CSS pixels, below which its doghouse is not drawn: the box is about 90 px along the leg.
-export const MIN_LEG_PX = 160;
+// The leg on the screen, in CSS pixels, that holds its doghouse at full size (the box is 115 px along it); a shorter one
+// has it smaller, in proportion, so it stays beside its own leg.
+export const FULL_LEG_PX = 160;
+// The smallest it is drawn on the screen: about 24 by 46 px, still a doghouse where the map is zoomed far out.
+export const MIN_SCALE = 0.4;
+// The smallest it is drawn in a mission overlay: its 12 px text is then 18 of the file's pixels (two a CSS pixel), which
+// reads when ForeFlight is zoomed in on the route.
+export const MIN_EXPORT_SCALE = 0.75;
 // The box's half-length along the leg (roof and four rows, 115 px) and half-width across it (60 px), in CSS pixels,
 // and the gap kept between it and the line.
 export const HALF_LENGTH_PX = 58;
@@ -119,5 +126,12 @@ export const routeDoghouses = (routes = []) => {
   return doghouses;
 };
 
-/** Whether a leg's doghouse is drawn at a map zoom. */
-export const fitsAt = (doghouse, zoom) => finite(zoom) && doghouse.lengthPx0 * 2 ** zoom >= MIN_LEG_PX;
+/**
+ * How large a leg's doghouse is drawn at a map zoom, from 1 (its leg holds it) down to `min`, to a hundredth so a pan does
+ * not set it again. A zoom that is no number draws it whole.
+ */
+export const scaleAt = (doghouse, zoom, min = MIN_SCALE) => {
+  if (!finite(zoom)) return 1;
+  const room = (doghouse.lengthPx0 * 2 ** zoom) / FULL_LEG_PX;
+  return Math.round(Math.min(1, Math.max(min, room)) * 100) / 100;
+};

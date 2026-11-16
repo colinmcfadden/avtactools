@@ -17,6 +17,9 @@ export const PIECE_CSS = PIECE / PIXEL_RATIO;
 export const TILE = 256;
 // CSS pixels round the area, so a symbol or label on its edge is not cut through.
 export const MARGIN = 48;
+// On the map's element while an overlay is drawn (captureOverlay), so a layer can draw for the file rather than the
+// screen: the route doghouses keep a size that reads when ForeFlight is zoomed in on them.
+export const OVERLAY_CAPTURE_CLASS = "ezpz-overlay-capture";
 // Past this a pixel is under 30 cm and shows nothing more of what is planned.
 export const MAX_ZOOM = 19;
 // USGS's topo map has no tiles past level 16, about 2 m a pixel in the lower 48 (backend/usgs_topo.py).
