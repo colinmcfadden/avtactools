@@ -3,7 +3,7 @@ import * as htmlToImage from "html-to-image";
 import { SCREEN_ONLY_CLASS } from "../export/captureFilter";
 import { IMAGE_PANE, VECTOR_PANE } from "../overlays/KmzOverlayLayer";
 import { captureOverlay, isScreenOnly, keepInOverlay, missionBounds } from "./captureOverlay";
-import { capturePlan } from "./overlayPlan";
+import { areaAt, PIECE, PIECE_CSS, PIXEL_RATIO } from "./overlayPlan";
 
 vi.mock("html-to-image", () => ({ toCanvas: vi.fn() }));
 
@@ -79,6 +79,8 @@ describe("drawing a mission overlay", () => {
   const AREA = { north: 34.8, south: 34.5, east: -84.3, west: -84.6 };
   let element;
   let map;
+  let tiles;
+  let lzCard;
 
   // As index.css has it: every Leaflet container is held at the screen's size with !important, which only an inline
   // value that is important itself overrides. `takes` false is a page where nothing can.
@@ -91,12 +93,25 @@ describe("drawing a mission overlay", () => {
     Object.defineProperty(element, "clientHeight", { get: side("height", 600) });
     document.body.appendChild(element);
     map = L.map(element, { zoomSnap: 0.1 }).setView([34.6, -84.4], 12);
+    tiles = L.tileLayer("https://tiles.invalid/{z}/{x}/{y}.png").addTo(map);
     L.polyline([[34.5, -84.5], [34.7, -84.3]]).addTo(map);
+    lzCard = L.rectangle([[34.55, -84.45], [34.65, -84.35]], { screenOnly: true, opacity: 0.8, fillOpacity: 0.2 }).addTo(map);
     return element.getAttribute("style");
   };
 
+  // A plan of whole tiles at device zoom 14: two pieces across and three down.
+  const planAt = (zoom) => {
+    const area = areaAt(AREA, zoom, "mbtiles");
+    const columns = Math.ceil(area.width / PIECE);
+    const rows = Math.ceil(area.height / PIECE);
+    return { ...area, format: "mbtiles", base: "none", columns, rows, pieces: columns * rows };
+  };
+
+  const drawnPiece = () => ({ width: PIECE, height: PIECE, toBlob: (done) => done(new Blob(["png"], { type: "image/png" })) });
+
   // Leaflet snaps a zoom to zoomSnap only where the browser has 3D transforms (every one the app runs in); jsdom has none.
   const any3d = L.Browser.any3d;
+  const retina = L.Browser.retina;
   beforeEach(() => {
     htmlToImage.toCanvas.mockReset();
     L.Browser.any3d = true;
@@ -104,40 +119,70 @@ describe("drawing a mission overlay", () => {
   afterEach(() => {
     map.remove();
     L.Browser.any3d = any3d;
+    L.Browser.retina = retina;
   });
 
-  it("draws the map at the plan's size and zoom, and puts it back as it was", async () => {
+  it("draws each piece with its corner on the plan's, the base map taken off, and puts the map back as it was", async () => {
     const style = makeSizedMap();
-    const plan = capturePlan(AREA, "standard", map.getMaxZoom());
-    let drawnAt = null;
+    const plan = planAt(14);
+    expect(plan).toMatchObject({ columns: 2, rows: 3 });
+    const drawn = [];
     htmlToImage.toCanvas.mockImplementation(async (node, options) => {
-      drawnAt = { width: node.clientWidth, height: node.clientHeight, zoom: map.getZoom(), options };
-      return { width: options.width * 2, height: options.height * 2, toBlob: (done) => done(new Blob(["png"])) };
+      drawn.push({
+        size: [node.clientWidth, node.clientHeight],
+        zoom: map.getZoom(),
+        corner: map.containerPointToLayerPoint([0, 0]).add(map.getPixelOrigin()),
+        tiles: map.hasLayer(tiles),
+        retina: L.Browser.retina,
+        lzCard: lzCard.options.opacity,
+        options,
+      });
+      return drawnPiece();
     });
+    const told = [];
 
-    const shot = await captureOverlay(map, AREA, "standard", { settleMs: 0 });
+    const pieces = await captureOverlay(map, plan, { firstSettleMs: 0, settleMs: 0, onPiece: (done, total) => told.push([done, total]) });
 
-    expect(drawnAt).toMatchObject({ width: plan.cssWidth, height: plan.cssHeight, zoom: plan.zoom });
-    expect(drawnAt.options).toMatchObject({ width: plan.cssWidth, height: plan.cssHeight, pixelRatio: 2 });
-    expect(shot).toMatchObject({ width: plan.width, height: plan.height });
-    // The corners drawn hold the whole area, its margin round it.
-    expect(shot.bounds.north).toBeGreaterThan(AREA.north);
-    expect(shot.bounds.south).toBeLessThan(AREA.south);
-    expect(shot.bounds.east).toBeGreaterThan(AREA.east);
-    expect(shot.bounds.west).toBeLessThan(AREA.west);
+    expect(pieces.map(({ column, row }) => [column, row])).toEqual([[0, 0], [1, 0], [0, 1], [1, 1], [0, 2], [1, 2]]);
+    pieces.forEach((piece) => expect(piece.blob).toBeInstanceOf(Blob));
+    drawn.forEach((at, index) => {
+      const { column, row } = pieces[index];
+      expect(at.size).toEqual([PIECE_CSS, PIECE_CSS]);
+      expect(at.zoom).toBeCloseTo(13, 9);
+      expect(at.corner.x).toBeCloseTo((plan.left + column * PIECE) / PIXEL_RATIO, 6);
+      expect(at.corner.y).toBeCloseTo((plan.top + row * PIECE) / PIXEL_RATIO, 6);
+      expect(at.tiles).toBe(false);
+      expect(at.retina).toBe(true);
+      expect(at.lzCard).toBe(0);
+      expect(at.options).toMatchObject({ pixelRatio: PIXEL_RATIO, width: PIECE_CSS, height: PIECE_CSS, filter: keepInOverlay });
+    });
+    expect(told).toEqual([[0, 6], [1, 6], [2, 6], [3, 6], [4, 6], [5, 6], [6, 6]]);
 
     expect(element.getAttribute("style")).toBe(style);
     expect(element.classList.contains("hide-ui-for-export")).toBe(false);
     expect(map.getZoom()).toBe(12);
-    expect(L.Browser.retina).toBe(false);
+    expect(map.getCenter().lat).toBeCloseTo(34.6, 6);
+    expect(map.getCenter().lng).toBeCloseTo(-84.4, 6);
+    expect(map.hasLayer(tiles)).toBe(true);
+    expect(lzCard.options).toMatchObject({ opacity: 0.8, fillOpacity: 0.2 });
+    expect(L.Browser.retina).toBe(retina);
   });
 
   it("refuses to draw a map that kept the screen's size, and puts it back as it was", async () => {
-    // Before the fix the size was set without !important and lost to index.css: only the area's middle was drawn.
+    // Set without !important, the size loses to index.css and the piece would be drawn somewhere else than it belongs.
     const style = makeSizedMap({ takes: false });
-    await expect(captureOverlay(map, AREA, "standard", { settleMs: 0 })).rejects.toThrow("overlay's size");
+    await expect(captureOverlay(map, planAt(14), { firstSettleMs: 0, settleMs: 0 })).rejects.toThrow("could not be set to a piece");
     expect(htmlToImage.toCanvas).not.toHaveBeenCalled();
     expect(element.getAttribute("style")).toBe(style);
     expect(element.classList.contains("hide-ui-for-export")).toBe(false);
+    expect(map.hasLayer(tiles)).toBe(true);
+    expect(map.getZoom()).toBe(12);
+  });
+
+  it("refuses a piece drawn at the wrong size", async () => {
+    makeSizedMap();
+    htmlToImage.toCanvas.mockResolvedValue({ width: PIECE_CSS, height: PIECE_CSS, toBlob: (done) => done(new Blob(["png"])) });
+    await expect(captureOverlay(map, planAt(14), { firstSettleMs: 0, settleMs: 0 })).rejects.toThrow("wrong size");
+    expect(map.hasLayer(tiles)).toBe(true);
   });
 });
