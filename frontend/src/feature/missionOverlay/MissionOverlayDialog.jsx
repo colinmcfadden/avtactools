@@ -102,10 +102,8 @@ const Group = ({ id, label, children, style }) => (
 const describePlan = (plan) =>
   `About ${describeScale(plan.metresPerPixel)} · ${describeResolution(plan.metresPerPixel).replace(/^about /, "")} · ${describePixels(plan)} pixels`;
 
-const MissionOverlayDialog = ({ map, defaultName = "MISSION OVERLAY", mapStyle, onClose, notify, pollMs = POLL_MS }) => {
+const OverlayDialog = ({ map, areas, defaultName = "MISSION OVERLAY", mapStyle, onClose, notify, pollMs = POLL_MS }) => {
   const ids = useId();
-  // Read once as it opens: the dialog covers the map, so nothing moves under it.
-  const areas = useMemo(() => ({ mission: missionBounds(map), shown: shownBounds(map) }), [map]);
   const [area, setArea] = useState(areas.mission ? "mission" : "shown");
   const [base, setBase] = useState(mapStyle === "usgs-topo" ? "usgs-topo" : "none");
   const [detail, setDetail] = useState("finest");
@@ -244,7 +242,7 @@ const MissionOverlayDialog = ({ map, defaultName = "MISSION OVERLAY", mapStyle, 
   return (
     <Dialog
       title="Mission overlay"
-      subtitle="What is planned on the map as one layer for ForeFlight, over its own charts or on the USGS topo map."
+      subtitle="The routes, control measures, threats and points on the map as one layer for ForeFlight, over its own charts or on the USGS topo map. The LZ/PZ stays out."
       icon="image"
       width="xwide"
       onClose={busy ? undefined : onClose}
@@ -370,6 +368,20 @@ const MissionOverlayDialog = ({ map, defaultName = "MISSION OVERLAY", mapStyle, 
       {error && <div role="alert" className="ui-field__hint ui-field__hint--error">{error}</div>}
     </Dialog>
   );
+};
+
+/**
+ * The dialog, once it knows the areas it offers. Read once as it opens (the dialog covers the map, so nothing moves under
+ * it), and in an effect: the map takes the open LZ/PZ off while the dialog is open (MapView's `lzShown`), its layers
+ * gone by the time an effect of the commit that opened the dialog runs, so the whole mission is what the overlay holds.
+ */
+const MissionOverlayDialog = (props) => {
+  const { map } = props;
+  const [areas, setAreas] = useState(null);
+  useEffect(() => {
+    setAreas({ mission: missionBounds(map), shown: shownBounds(map) });
+  }, [map]);
+  return areas ? <OverlayDialog {...props} areas={areas} /> : null;
 };
 
 export default MissionOverlayDialog;
