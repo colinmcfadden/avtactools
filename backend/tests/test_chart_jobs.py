@@ -817,7 +817,9 @@ class ProcessTests(ChartCase):
         old_token = self.started(job_id)
         old = chart_job._start(job_id, old_token, 0)       # the build process of a container about to go
         self.addCleanup(lambda: old.poll() is None and os.killpg(old.pid, signal.SIGKILL))
-        until(lambda: locks.held(lock) and self.row(job_id).stage == "unzip", what="the old build process")
+        # Held, and past its one write before the pause (where it stands as the stage starts: work_total None becomes 0).
+        # Waiting for the lock alone, the snapshot was now and then taken before that write, which then failed the test.
+        until(lambda: locks.held(lock) and self.row(job_id).work_total is not None, what="the old build process")
         before = self.snapshot(job_id)
 
         # The new container looks: the lock is held, so it writes nothing and starts nothing ...
