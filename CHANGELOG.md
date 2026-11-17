@@ -1,3 +1,23 @@
+## [1.11.0](https://github.com/colinmcfadden/avtactools/compare/v1.10.0...v1.11.0) (2026-11-17)
+
+### Features
+
+* add phase lines, and put flot and pl beside route in the left panel ([42de217](https://github.com/colinmcfadden/avtactools/commit/42de21793215cc0c4933f6b0ff1488dd7d837885))
+* **android:** keep a route set's phase lines and say them in a pack's history ([9c37ec6](https://github.com/colinmcfadden/avtactools/commit/9c37ec683b45a172b82cd4e3033f2481351769ad))
+* export a mission overlay for ForeFlight, and every open threat in one file ([8463460](https://github.com/colinmcfadden/avtactools/commit/84634604beb9e42a2255dc9b3397e0f6869525ec))
+* keep the flot and phase lines on their own, in no route set ([faf32bc](https://github.com/colinmcfadden/avtactools/commit/faf32bc0c322e9cdbf805c64035a7bdda6e3f07e))
+* keep the LZ/PZ out of mission overlays and shrink route doghouses instead of hiding them ([1f267d0](https://github.com/colinmcfadden/avtactools/commit/1f267d09c804861d9ad7326b8f071eec961c66c7))
+* make route sets, move and combine routes, and change a route's colour ([edea4a5](https://github.com/colinmcfadden/avtactools/commit/edea4a57c381c17dee59108013f34c0174d548fe))
+* overlays at USGS's finest detail, scaled planning graphics and doghouses on route legs ([0a8f15f](https://github.com/colinmcfadden/avtactools/commit/0a8f15f7d8377de3b00c5eb74b2deb7ddffa7e53))
+
+### Bug Fixes
+
+* draw the LZ card's map at 1200 x 1000 on every screen ([daf39bb](https://github.com/colinmcfadden/avtactools/commit/daf39bbe048f32dfc05666c0365731aa2712ed55))
+* lay out the phone's frame again, with the search at the top and the tools in order ([6c9095a](https://github.com/colinmcfadden/avtactools/commit/6c9095af18a55cf6d00493803d1a3b39da5921ef))
+* open a line's menu from its points, and keep the draw bar inside a phone ([494e4ad](https://github.com/colinmcfadden/avtactools/commit/494e4ad3dfe438c66430604c76ef885c9cd2e0b6))
+* open the mission overlay's GeoTIFF where it belongs, at the finest detail ([ec1a955](https://github.com/colinmcfadden/avtactools/commit/ec1a9557293f5b4894d71b307d68d67f7849ce51))
+* send a whole route set to ForeFlight as one file, from its title row ([f38b3cc](https://github.com/colinmcfadden/avtactools/commit/f38b3ccfbb752d45f7e31101291244c09021da6b))
+
 ## [1.10.0](https://github.com/colinmcfadden/avtactools/compare/v1.9.1...v1.10.0) (2026-11-10)
 
 ### Features
