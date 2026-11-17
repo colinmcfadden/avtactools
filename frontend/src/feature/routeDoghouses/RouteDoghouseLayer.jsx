@@ -2,8 +2,14 @@ import { useEffect, useMemo } from "react";
 import { useMap } from "react-leaflet";
 import L from "leaflet";
 import { doghouseBoxHtml } from "../doghouses/doghouseBox";
-import { fitsAt, routeDoghouses } from "./routeDoghouses";
+import { OVERLAY_CAPTURE_CLASS } from "../missionOverlay/overlayPlan";
+import { MIN_EXPORT_SCALE, MIN_SCALE, routeDoghouses, scaleAt } from "./routeDoghouses";
 import "./routeDoghouses.css";
+
+// Turned to the leg and drawn at its size, about the marker's point: a uniform scale and a turn about one point give the
+// same either way round, and the offset off the line, inside, shrinks with the box. In `transform`, not the newer `scale`
+// property, which html-to-image may not copy into an overlay.
+const turnOf = (doghouse, scale = 1) => `rotate(${doghouse.rotation}deg)${scale === 1 ? "" : ` scale(${scale})`}`;
 
 const iconOf = (doghouse) =>
   L.divIcon({
@@ -11,7 +17,7 @@ const iconOf = (doghouse) =>
     iconSize: [0, 0],
     iconAnchor: [0, 0],
     // Turned to the leg, then moved off the line in its own frame: to the right of the way it is flown, clear of it.
-    html: `<div class="route-doghouse__turn" style="transform: rotate(${doghouse.rotation}deg)">${doghouseBoxHtml(doghouse.box, {
+    html: `<div class="route-doghouse__turn" style="transform: ${turnOf(doghouse)}">${doghouseBoxHtml(doghouse.box, {
       className: "route-doghouse__box",
       style: `transform: translate(calc(-50% + ${doghouse.offset.x}px), calc(-50% + ${doghouse.offset.y}px));`,
       roofStyle: "white-space: nowrap; overflow: hidden; text-overflow: clip;",
@@ -20,8 +26,8 @@ const iconOf = (doghouse) =>
 
 /**
  * The legs' doghouses over the routes shown. Drawn as markers that take no click (the route's line and points under them
- * keep theirs), and shown or put away as the zoom changes, in the same call, so a mission overlay that sets the view and
- * draws at once finds them as that zoom has them.
+ * keep theirs), and sized as the zoom changes, in the same call, so a mission overlay that sets the view and draws at once
+ * finds them as that zoom has them, at its own floor (`OVERLAY_CAPTURE_CLASS`, put on the map's element before it does).
  */
 const RouteDoghouseLayer = ({ routes, shown = true }) => {
   const map = useMap();
@@ -35,9 +41,10 @@ const RouteDoghouseLayer = ({ routes, shown = true }) => {
     }));
     const group = L.layerGroup(placed.map(({ marker }) => marker)).addTo(map);
     const fit = (zoom) => {
+      const min = map.getContainer().classList.contains(OVERLAY_CAPTURE_CLASS) ? MIN_EXPORT_SCALE : MIN_SCALE;
       for (const { doghouse, marker } of placed) {
-        const element = marker.getElement();
-        if (element) element.style.display = fitsAt(doghouse, zoom) ? "" : "none";
+        const turn = marker.getElement()?.querySelector(".route-doghouse__turn");
+        if (turn) turn.style.transform = turnOf(doghouse, scaleAt(doghouse, zoom, min));
       }
     };
     const now = () => fit(map.getZoom());

@@ -2,14 +2,16 @@ import { computeRoutePlan, defaultRoutePlan } from "../msnxImport/routeCalc";
 import { project0 } from "../missionOverlay/overlayPlan";
 import {
   courseText,
-  fitsAt,
+  FULL_LEG_PX,
   GAP_PX,
   HALF_LENGTH_PX,
   HALF_WIDTH_PX,
   legTime,
-  MIN_LEG_PX,
+  MIN_EXPORT_SCALE,
+  MIN_SCALE,
   roofName,
   routeDoghouses,
+  scaleAt,
   sideOffset,
 } from "./routeDoghouses";
 
@@ -84,12 +86,23 @@ describe("a route's doghouses", () => {
     expect(first.offset.y).not.toBe(0);
   });
 
-  it("is drawn only where the leg is long enough on the screen to hold it", () => {
+  it("is drawn smaller where its leg is too short on the screen to hold it, and never put away", () => {
     const [, second] = routeDoghouses([ROUTE]);
-    const zoom = Math.log2(MIN_LEG_PX / second.lengthPx0);
-    expect(fitsAt(second, zoom + 0.01)).toBe(true);
-    expect(fitsAt(second, zoom - 0.01)).toBe(false);
-    expect(fitsAt(second, undefined)).toBe(false);
+    // Whole from the zoom at which the leg is FULL_LEG_PX on the screen, and in proportion to it below.
+    const full = Math.log2(FULL_LEG_PX / second.lengthPx0);
+    expect(scaleAt(second, full)).toBe(1);
+    expect(scaleAt(second, full + 3)).toBe(1);
+    expect(scaleAt(second, full - 0.5)).toBe(0.71);
+    expect(scaleAt(second, full - 1)).toBe(0.5);
+    // Down to a floor, however far out: a mark of the leg's doghouse, still there.
+    expect(scaleAt(second, full - 2)).toBe(MIN_SCALE);
+    expect(scaleAt(second, full - 12)).toBe(MIN_SCALE);
+    // A mission overlay's floor is higher, so it reads in the file.
+    expect(scaleAt(second, full - 1, MIN_EXPORT_SCALE)).toBe(MIN_EXPORT_SCALE);
+    expect(scaleAt(second, full - 12, MIN_EXPORT_SCALE)).toBe(MIN_EXPORT_SCALE);
+    expect(scaleAt(second, full - 0.2, MIN_EXPORT_SCALE)).toBe(0.87);
+    // With no zoom to go by, whole.
+    expect(scaleAt(second, undefined)).toBe(1);
   });
 
   it("has none for a route hidden, one of a single route point, or one with a place that is not one", () => {

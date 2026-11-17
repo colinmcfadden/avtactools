@@ -274,6 +274,10 @@ const MapView = ({
   // The live sandtable (feature/brief): while it is given, the map shows the brief's step and nothing of the planning
   // layers, and takes no edit. They are drawn again, as they were, when it ends.
   presentation = null,
+  // The open LZ/PZ's own layers (its target, boundary, slope map and planning graphics). The mission overlay's dialog
+  // takes them off while it is open: the overlay is the routes, control measures, threats and points, never an LZ/PZ,
+  // and the map behind the dialog then shows what goes in (feature/missionOverlay).
+  lzShown = true,
   vfrCharts = NO_CHARTS,
   // Given the Leaflet map once it is made: the zoom buttons beside the map work it (feature/mapZoom), and a phone's
   // Set Target reads its middle.
@@ -398,7 +402,7 @@ const MapView = ({
           </>
         )}
 
-        {isDrawingBackstop && backstopDraftPoints.length > 0 && (
+        {lzShown && isDrawingBackstop && backstopDraftPoints.length > 0 && (
           <>
             <Polyline positions={backstopDraftPoints.map((p) => [p.lat, p.lon])} pathOptions={BACKSTOP_CASING} />
             <Polyline positions={backstopDraftPoints.map((p) => [p.lat, p.lon])} pathOptions={BACKSTOP_LINE} />
@@ -448,7 +452,7 @@ const MapView = ({
         ))}
 
         {/* Render the Active Drawing Line */}
-        {isDrawingLZ && drawingPoints.length > 0 && (
+        {lzShown && isDrawingLZ && drawingPoints.length > 0 && (
           <>
             <Polyline
               positions={drawingPoints}
@@ -459,7 +463,7 @@ const MapView = ({
         )}
 
         {/* Render the Completed Custom Polygon */}
-        {customLZ && (
+        {lzShown && customLZ && (
           <Polygon
             positions={customLZ}
             pathOptions={{
@@ -519,6 +523,7 @@ const MapView = ({
 
         <ThreatLayer threats={threats} onMove={onThreatMove} onEdit={onThreatEdit} />
 
+        {lzShown && (<>
         {/* 1. The Grid Location (Green Star) */}
         {targetLocation && (
           <Marker position={targetLocation} icon={starIcon}>
@@ -636,6 +641,7 @@ const MapView = ({
             }}
           />
         )}
+        </>)}
       </>)}
 
       {/* Export Logic */}

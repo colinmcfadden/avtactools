@@ -674,7 +674,7 @@ function App() {
       kind: "overlay",
       icon: "image",
       title: "Mission overlay",
-      text: "The map's planning as one image · .mbtiles, .tif for ForeFlight",
+      text: "Routes, control measures and threats as one layer · .mbtiles, .tif for ForeFlight",
     },
     feat.threats && {
       kind: "threats",
@@ -2316,6 +2316,7 @@ function App() {
           presence={inPack ? packs.others : undefined}
           onPoint={inPack ? packs.pointAt : undefined}
           presentation={presenting ? sandtable.presentation : null}
+          lzShown={!showOverlay}
         />
         {presenting && <SandtableStage sandtable={sandtable} />}
 

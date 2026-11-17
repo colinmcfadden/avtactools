@@ -2,7 +2,7 @@ import L from "leaflet";
 import * as htmlToImage from "html-to-image";
 import { keepInCapture, SCREEN_ONLY_CLASS } from "../export/captureFilter";
 import { IMAGE_PANE, VECTOR_PANE } from "../overlays/KmzOverlayLayer";
-import { PIECE, PIECE_CSS, PIXEL_RATIO, plainBounds, TILE } from "./overlayPlan";
+import { OVERLAY_CAPTURE_CLASS, PIECE, PIECE_CSS, PIXEL_RATIO, plainBounds, TILE } from "./overlayPlan";
 
 /*
  * Drawing the map's planning layers into transparent square pieces of an overlay (overlayPlan.js says where). The map is
@@ -236,7 +236,7 @@ export const captureOverlay = async (
       background: "transparent",
     };
     Object.entries(styles).forEach(([name, value]) => container.style.setProperty(name, value, "important"));
-    container.classList.add("hide-ui-for-export");
+    container.classList.add("hide-ui-for-export", OVERLAY_CAPTURE_CLASS);
     showPaths = hideScreenOnlyPaths(map);
     tileLayers.forEach((layer) => map.removeLayer(layer));
     map.invalidateSize({ pan: false });
@@ -291,7 +291,7 @@ export const captureOverlay = async (
     L.Browser.retina = saved.retina;
     try {
       showPaths?.();
-      container.classList.remove("hide-ui-for-export");
+      container.classList.remove("hide-ui-for-export", OVERLAY_CAPTURE_CLASS);
       if (saved.style === null) container.removeAttribute("style");
       else container.setAttribute("style", saved.style);
       map.invalidateSize({ pan: false });
