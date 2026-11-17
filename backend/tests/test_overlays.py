@@ -16,9 +16,10 @@ from routes.overlay_routes import MAX_FILE_BYTES, MAX_PER_ACCOUNT, overlay_bp  #
 
 
 def kmz():
+    # A fixed time: a zip records when each entry was written, so two made either side of a two-second step differed.
     buffer = io.BytesIO()
     with zipfile.ZipFile(buffer, 'w') as archive:
-        archive.writestr('doc.kml', '<kml xmlns="http://www.opengis.net/kml/2.2"><Placemark><Point><coordinates>-84,34</coordinates></Point></Placemark></kml>')
+        archive.writestr(zipfile.ZipInfo('doc.kml', date_time=(2026, 1, 1, 0, 0, 0)),'<kml xmlns="http://www.opengis.net/kml/2.2"><Placemark><Point><coordinates>-84,34</coordinates></Point></Placemark></kml>')
     return buffer.getvalue()
 
 

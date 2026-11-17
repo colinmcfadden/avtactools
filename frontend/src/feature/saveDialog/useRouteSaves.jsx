@@ -1,6 +1,8 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { computeRoutePlan, defaultRoutePlan, planPoints } from "../msnxImport/routeCalc";
 import { savedFlots } from "../flot/flots";
+import { savedPhaseLines } from "../phaseLines/phaseLines";
+import { MEASURES_NAME } from "../setLines/setLines";
 import { useToast } from "../ui/Toast";
 import SaveDialog, { nextFreeName } from "./SaveDialog";
 import { SKETCHES } from "../msnxImport/routeSketchReducer";
@@ -12,6 +14,9 @@ import { SKETCHES } from "../msnxImport/routeSketchReducer";
  * linked to a saved record; the first save asks for a name, later saves update that record in place
  * without asking, and "Save as…" makes a copy.
  *
+ * A set of control measures (`measures: true`: FLOTs and phase lines, in no route set) is saved the same way, as a record
+ * of its own with no routes in it: the server keeps a route set's document whatever it holds.
+ *
  * Whether a set has unsaved changes is worked out by comparing it with what was last saved (or
  * opened): routes keep no dirty flag of their own. Hiding or showing a route is not a change.
  */
@@ -19,9 +24,14 @@ import { SKETCHES } from "../msnxImport/routeSketchReducer";
 export { SKETCHES };
 const PENDING = Symbol("pending");
 
-export const routesFingerprint = (routes, flots = []) => {
+export const routesFingerprint = (routes, flots = [], phaseLines = []) => {
   const shown = (routes ?? []).map(({ visible, ...rest }) => rest);
-  return JSON.stringify(flots?.length ? { routes: shown, flots: savedFlots(flots) } : shown);
+  if (!flots?.length && !phaseLines?.length) return JSON.stringify(shown);
+  return JSON.stringify({
+    routes: shown,
+    ...(flots?.length ? { flots: savedFlots(flots) } : {}),
+    ...(phaseLines?.length ? { phaseLines: savedPhaseLines(phaseLines) } : {}),
+  });
 };
 
 const plural = (n, one, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
@@ -35,14 +45,23 @@ export const routeTotals = (route) => {
   }
 };
 
-export const setSummary = (routes, flots = []) => {
+export const setSummary = (routes, flots = [], phaseLines = []) => {
   const points = routes.reduce((sum, route) => sum + (route.points?.length ?? 0), 0);
-  const parts = routes.length > 0 || flots.length === 0 ? [plural(routes.length, "route"), plural(points, "point")] : [];
+  const lines = flots.length + phaseLines.length;
+  const parts = routes.length > 0 || lines === 0 ? [plural(routes.length, "route"), plural(points, "point")] : [];
   if (flots.length > 0) parts.push(plural(flots.length, "FLOT"));
+  if (phaseLines.length > 0) parts.push(plural(phaseLines.length, "phase line"));
   return parts.join(" · ");
 };
 
 const contentsFor = (set) => {
+  if (set.measures) {
+    return [
+      ...(set.flots?.length ? [{ text: plural(set.flots.length, "FLOT") }] : []),
+      ...(set.phaseLines?.length ? [{ text: plural(set.phaseLines.length, "phase line") }] : []),
+      { icon: "info", text: "Control measures are kept on their own in your Library, apart from any route set." },
+    ];
+  }
   const routes = set.routes;
   const points = routes.reduce((sum, route) => sum + planPoints(route).length, 0);
   const nm = routes.reduce((sum, route) => sum + (routeTotals(route)?.distNm ?? 0), 0);
@@ -57,15 +76,16 @@ const contentsFor = (set) => {
     { text: `${plural(routes.length, "route")}, ${plural(points, "point")}${nm ? `, ${nm.toFixed(1)} nm` : ""}` },
     { text: "Speeds, altitudes, winds, fuel flow and the start time" },
     ...(set.flots?.length ? [{ text: plural(set.flots.length, "FLOT") }] : []),
+    ...(set.phaseLines?.length ? [{ text: plural(set.phaseLines.length, "phase line") }] : []),
     { icon: "info", text: "Threats are never saved. Export them as a .ths if you need them next to the mission." },
   ];
 };
 
 export const defaultSetName = (set) =>
-  set.kind === "mission" ? (set.fileName || "MISSION").replace(/\.msnx$/i, "") : "SKETCHED ROUTES";
+  set.kind === "mission" ? (set.fileName || "MISSION").replace(/\.msnx$/i, "") : set.measures ? MEASURES_NAME : "SKETCHED ROUTES";
 
 /**
- * `sets`: [{ key, kind: "sketch" | "mission", fileName, routes, flots? }]. `library`: the useSavedRoutes calls
+ * `sets`: [{ key, kind: "sketch" | "mission", fileName, routes, flots?, phaseLines?, measures? }]. `library`: the useSavedRoutes calls
  * plus `serializeFile(fileId)` from useMsnxImport.
  */
 export const useRouteSaves = ({ sets, library, signedIn, onOpenLibrary }) => {
@@ -81,12 +101,12 @@ export const useRouteSaves = ({ sets, library, signedIn, onOpenLibrary }) => {
   const setsRef = useRef(sets);
   setsRef.current = sets;
 
-  const prints = useMemo(() => Object.fromEntries(sets.map((set) => [set.key, routesFingerprint(set.routes, set.flots)])), [sets]);
+  const prints = useMemo(() => Object.fromEntries(sets.map((set) => [set.key, routesFingerprint(set.routes, set.flots, set.phaseLines)])), [sets]);
 
   // A set just opened from the Library is clean once its routes have arrived; a set that has gone
   // (every sketch removed, a mission closed) is no longer linked, so the next save is a new record.
   useEffect(() => {
-    const present = new Set(sets.filter((set) => set.routes.length > 0 || set.flots?.length > 0).map((set) => set.key));
+    const present = new Set(sets.filter((set) => set.routes.length > 0 || set.flots?.length > 0 || set.phaseLines?.length > 0).map((set) => set.key));
     setSnapshots((prev) => {
       let changed = false;
       const next = { ...prev };
@@ -153,8 +173,8 @@ export const useRouteSaves = ({ sets, library, signedIn, onOpenLibrary }) => {
   /** Writes the set as `name` to `recordId` (or a new record) and marks it saved. */
   const write = useCallback(async (key, name, recordId) => {
     const set = setsRef.current.find((s) => s.key === key);
-    if (!set) throw new Error("Those routes are no longer open.");
-    const print = routesFingerprint(set.routes, set.flots);
+    if (!set) throw new Error("That is no longer open.");
+    const print = routesFingerprint(set.routes, set.flots, set.phaseLines);
     let saved;
     if (set.kind === "mission") {
       const file = await lib.current.serializeFile(key);
@@ -167,7 +187,11 @@ export const useRouteSaves = ({ sets, library, signedIn, onOpenLibrary }) => {
       // Which set a route is filed under here (useRouteSketch) is not part of what is saved.
       const routes = set.routes.map(({ setId: _filed, ...route }) => route);
       const flots = savedFlots(set.flots);
-      saved = recordId != null ? await lib.current.updateSketch(recordId, routes, name, flots) : await lib.current.saveSketch(name, routes, flots);
+      const phaseLines = savedPhaseLines(set.phaseLines);
+      saved =
+        recordId != null
+          ? await lib.current.updateSketch(recordId, routes, name, flots, phaseLines)
+          : await lib.current.saveSketch(name, routes, flots, phaseLines);
     }
     const id = recordId ?? saved?.id;
     setLinks((prev) => ({ ...prev, [key]: { id, name } }));
@@ -260,13 +284,18 @@ export const useRouteSaves = ({ sets, library, signedIn, onOpenLibrary }) => {
     dialogs = (
       <SaveDialog
         key={`${dialog.key}-${dialog.copy}`}
-        title={dialog.copy ? "Save as new routes" : kind === "mission" ? "Save mission" : "Save routes"}
+        title={
+          set.measures
+            ? dialog.copy ? "Save as new control measures" : "Save control measures"
+            : dialog.copy ? "Save as new routes" : kind === "mission" ? "Save mission" : "Save routes"
+        }
         subtitle={dialog.copy ? "Saves a copy under a new name. What is open becomes the copy." : undefined}
-        icon="route"
+        icon={set.measures ? "flag" : "route"}
         initialName={dialog.copy ? nextFreeName(name, existing) : name}
         contents={contentsFor(set)}
         existing={existing}
-        kindPhrase={kind === "mission" ? "a mission" : "a route set"}
+        // Control measures are kept as a route set's record, so the two share their names.
+        kindPhrase={kind === "mission" ? "a mission" : set.measures ? "a route set or control measures" : "a route set"}
         onCancel={() => setDialog(null)}
         onSave={async (chosen, { replace }) => {
           await write(set.key, chosen, replace ? replace.id : null);

@@ -7,7 +7,7 @@ EZ-PZ is a map-based planning tool for helicopter landing zone / pickup zone (LZ
 The interface has four parts:
 
 - **Left panel** — MGRS search, LZ/PZ analysis data, placement tools, export, and route tools.
-- **Top bar** — where your work is saved (**Library**, your own; Mission Packs come later), **Import**, the **Library** button, and your account (sign out is in its menu).
+- **Top bar** — where your work is saved (**Library**, your own; Mission Packs come later), **Import**, **Export** (a mission overlay, or every open threat as one file), the **Library** button, and your account (sign out is in its menu).
 - **Map** — the working area, with the zoom buttons at its top-left.
 - **Dock** (right) — one panel at a time, picked from the icons on its right edge: **LZ/PZ**, **Routes**, **Threats** and **Imports**. Click the open panel's icon again to fold it away. A small amber dot on an icon means something there has unsaved changes. On a narrow window the dock is a sheet along the bottom: drag its handle up or down, or tap a tab.
 
@@ -61,6 +61,8 @@ The **LZ/PZ Tools** grid places draggable markers on the map:
 
 Everything is draggable; most markers can be deleted from their own controls or right-click.
 
+As you zoom out, the doghouses, go-arounds, units, the LZ's length and width and the feet between aircraft are drawn smaller, so they never hide the LZ or the route; two levels further out they are put away until you zoom back in. Point at one, or select it, to see it at full size with its controls. Helicopters are always drawn to scale.
+
 ## 4. Export an LZ/PZ card
 
 1. Press **Set Capture Area** — a red box appears on the map; drag/resize it to frame the imagery for the card.
@@ -75,10 +77,15 @@ Everything is draggable; most markers can be deleted from their own controls or 
 
 ## 5. Routes (.msnx)
 
-The **Routes (.msnx)** card has two tools:
+The **Routes** card in the left panel has the three lines you draw across the map:
 
 - **Route** — sketch a new route by clicking on the map.
-- **Upload** — import an existing AMPS/Mission X `.msnx` file.
+- **FLOT** — draw the forward line of own troops (see *The FLOT* below).
+- **PL** — draw a phase line and name it (see *Phase lines* below).
+
+![Route, FLOT and PL in the left panel](images/36-routes-tools.jpg)
+
+None of them needs an LZ/PZ. An existing AMPS/Mission X `.msnx` file comes in through **Import** (see *Importing a .msnx* below).
 
 ### Sketching a route
 
@@ -120,12 +127,41 @@ Imported routes are fully editable: drag points (serpentine geometry updates too
 
 ### The FLOT
 
-**Draw FLOT** at the foot of the Routes panel marks the forward line of troops. Click along the line in order, then **Finish**. It draws as a scalloped blue line labelled FLOT.
+**FLOT**, beside **Route** in the left panel's Routes card, marks the forward line of troops. Click along the line in order, then **Finish** in the bar over the map (or **End FLOT** in the left panel). It draws as a scalloped blue line labelled FLOT.
 
-- **Flip** beside it in the Routes panel, or **Flip the scallops** on its right-click menu, chooses which side the scallops face.
+- **Flip** beside it in the Routes panel, or **Flip the scallops** on its right-click menu (right-click the line or any of its points), chooses which side the scallops face.
 - Hover the line and drag a point to move it. **Delete FLOT** is on the right-click menu, and the panel has a remove button beside it.
 
-It is saved with the sketched routes, and shared with them in a Mission Pack. It never goes into an exported `.msnx`, and it can't be added to an imported mission: it goes with your sketched routes instead.
+A FLOT stands on its own: it belongs to no route set, and you can draw one with no route on the map. It is kept with your control measures (see *Control measures* below), and never goes into an exported `.msnx` or a route sent to ForeFlight.
+
+### Phase lines
+
+**PL**, beside **Route** and **FLOT**, draws a phase line. Click along the line in order, then **Finish** (or **End PL**), and give it a name. The name is what follows PL: type `RED` and the line reads **PL RED**. A name is suggested (ALPHA, BRAVO, …) that you can type over, and it is kept in capitals.
+
+![A route, a FLOT and a phase line](images/33-lines-after.jpg)
+
+It draws as a solid black line on a white edge, with **PL** and its name beyond each end, so it reads over the satellite, topo and VFR maps alike:
+
+![A phase line over satellite, topo and the VFR chart](images/34-phase-line-base-maps.jpg)
+
+- **Rename**: the pencil beside it in the Routes panel, or **Rename…** on its right-click menu (right-click the line or any of its points).
+- Hover the line and drag a point to move it. **Delete phase line** is on the right-click menu, and the panel has a remove button beside it.
+
+A phase line stands on its own, as a FLOT does: it belongs to no route set, needs no route, and is never part of an exported `.msnx` or a route sent to ForeFlight.
+
+### Control measures
+
+The FLOT and your phase lines are **control measures**. They are listed in the Routes panel in a section of their own, under the route sets:
+
+![Route sets, and control measures in a section of their own](images/38-control-measures.jpg)
+
+- The first line you draw starts a set called **CONTROL MEASURES**. Lines you draw after it join it.
+- **Save** keeps the set in your Library under the name you give it; after that it saves without asking. The pencil renames it, and **⋯** has **Save as…**, **Add to Mission Pack…** and **Close**.
+- To get it back, open it from the Library (it is listed with your saved routes). Lines you draw while it is open are added to it.
+- In a Mission Pack the pack has its own **CONTROL MEASURES**, made when the first line is drawn there and shared with everyone in the pack as you work. The pack's history names each line, e.g. *added PL RED*.
+- Routes never go into a set of control measures, and it is never exported.
+
+**Lines saved inside a route set.** Before control measures stood on their own, a FLOT or a phase line was saved inside the route set it was drawn with. Open such a set and its lines are listed with the control measures, on a card under the route set's name. **Keep on their own** on that card moves them out into your control measures; then save both.
 
 ### The Routes panel
 
@@ -134,8 +170,65 @@ Routes are listed in the dock's **Routes** panel, one card per *route set*: the 
 - **Save** — the first time, asks for a name; after that it saves without asking. The card says *Not saved yet*, *Unsaved changes* or *Saved · 14:02*.
 - **Export .msnx** — sketched routes export as a new mission file; an imported file re-exports with your edits. Tick **Include threats as a .ths file** to get the threats beside it.
 - On each route: the **arrow** opens its plan (date, temperature, fuel flow, and the altitude, speed and wind *to* each point; **Get winds** and **Get elevations** fill them in), the **paper plane** sends it to ForeFlight, the **eye** hides it, and **⋯** removes it.
-- **⋯** on a set: **Save as…** (a copy under a new name) and **Close** (asks first if there are unsaved changes).
-- **Sketch a route** and **Import .msnx** are at the foot of the panel.
+- The **coloured dot** beside a route's name changes its colour.
+- **⋯** on a route also has **Combine with…** and **Move to another set…** (below).
+- Beside the set's name: the **pencil** renames it, and the **paper plane** sends the whole set to ForeFlight (below).
+- **⋯** on a set: **Send to ForeFlight**, **Sketch a route into this set**, **Save as…** (a copy under a new name) and **Close** (asks first if there are unsaved changes).
+- **Sketch a route**, **Import .msnx** and **New route set** are at the foot of the panel. The **FLOT** and **phase lines** are drawn from the left panel's Routes card (on a phone, from the map's route tool) and listed below the route sets, under **Control measures**.
+
+### Doghouses on the legs
+
+Every leg of a route, between two of its route points (a checkpoint, the SP or RP, the target), has a doghouse, as on a strip map. Its roof names the point the leg flies to; under it are the leg's **true course**, its **time** (minutes+seconds), its **length in km** and the planned **airspeed**, all from the route's plan, so they change as you change the plan. Shaping points only bend the line: a leg runs through them, and its doghouse stands beside the longest straight part of it, on the right of the way it is flown.
+
+Each doghouse is turned to its leg, so it reads upright when the map is turned that way (ForeFlight's track-up view while flying the leg). As you zoom out it never disappears: where its leg is too short on the screen to hold it, it is drawn smaller, down to a small mark. It goes into a mission overlay at its full size where the leg has room, and never smaller than three-quarters of it, so it can be read when you zoom in on the route in ForeFlight. Turn them all off and on with **Route doghouses** in **Layers**; your browser remembers the choice.
+
+![Route doghouses in an exported overlay](images/39-route-doghouses.jpg)
+
+### Arranging routes: sets, moving, combining and colours
+
+| A route's menu | Its colours |
+|---|---|
+| ![A route's menu](images/28-route-menu.jpg) | ![The colours a route can take](images/29-route-colours.jpg) |
+
+- **New route set**, at the foot of the panel, makes an empty set under the name you give it. The routes you sketch next go into it, and its card says so. To sketch into another set, use that set's **⋯** → **Sketch a route into this set**. A set with no routes yet cannot be saved.
+- **Move to another set…**, in a route's **⋯**, moves the route to another of your sets, or to a new one you name there. It keeps its points, its plan and its colour.
+
+  ![Moving a route](images/30-route-move.jpg)
+
+- **Combine with…**, in a route's **⋯**, joins another route of the same set onto the end of this one. The one route keeps this route's name and colour, and the other is no longer a route of its own. The route that begins where this one ends is offered first, and where the two meet on the same point, that point is kept once.
+
+  ![Combining two routes](images/31-route-combine.jpg)
+
+  Every point keeps its type and name, so look at the points where the two were joined: a target in the middle of the longer route is probably not what you want, and its type is changed in the plan as for any point. The plan is this route's; the legs that came from the other route keep the altitude, speed and wind they were planned with. To join routes of two sets, move one first. To put the other route first, start from that route.
+- **Colour**: click the dot beside a route's name, or **⋯** → **Colour…**, and pick one of twelve.
+
+Each of these is one **Undo**. In a Mission Pack they are shared like any other change and appear in the pack's history. The routes of an imported `.msnx` can change colour but cannot be moved or combined: which routes a mission has is its file's.
+
+### Sending routes to ForeFlight and other apps
+
+The **paper plane** on a route opens its export screen:
+
+- a **QR code** to scan with the iPad's camera, which opens the route in ForeFlight directly. A route with too many points for that gets a code to a download page instead (the link lasts 30 minutes);
+- **Download GPX** and **Download .fpl** (Garmin's flight plan format), to open on the iPad and share into ForeFlight, or into any other app that reads them;
+- the route as text, to paste into ForeFlight's search.
+
+**A whole route set** has the same screen: the paper plane beside the set's name, next to the pencil.
+
+| The set's card | Its export screen |
+|---|---|
+| ![The paper plane beside a set's name](images/24-route-set-send.jpg) | ![The export screen showing a set](images/25-route-set-foreflight.jpg) |
+
+- **Download GPX** is **one file with every route of the set**, in the order the panel lists them and with every point of each. Routes you have hidden on the map are in it too. A route with fewer than two points is left out, and the screen says which. A FLOT is not a route and is never exported.
+- The **QR code** opens a page to download that same file (you need to be signed in and online to make it; the link lasts 30 minutes).
+- A Garmin `.fpl`, the route text and ForeFlight's direct QR code hold **one route each**, by their formats. For those, choose a route under **Send** at the top of the screen; the first choice there, all the routes as one file, goes back to the set. A set with a single route is offered all of them straight away.
+- Apps differ in what they do with several routes in one file. If one shows only the first, choose each route under **Send** and send them one at a time.
+- Opened again with **Import**, the file comes back as a route set with the same routes, in the same order, named for the file. As with any GPX, a point's name comes back as letters and digits (`.TGT` as `TGT`).
+
+The paper plane is greyed out while the set has no route of two points, and says why. It is there in a finished Mission Pack too: sending changes nothing. On a phone it is in the Routes sheet:
+
+| The Routes sheet | The export screen |
+|---|---|
+| ![The set's card on a phone](images/26-phone-route-set-send.jpg) | ![The export screen on a phone](images/27-phone-route-set-foreflight.jpg) |
 
 ### Opening exports in AMPS
 
@@ -183,6 +276,27 @@ Threats have their own panel. They are kept in your Library as you work, with no
 
 While a Mission Pack is open the threats on the map are the pack's, and anyone who can edit it can add, move or remove them; yours are put aside and come back when you leave it. Copy a set in from the Library's **Threats** tab. Whether you have hidden a threat stays yours, and a terrain mask is worked out on each person's own screen rather than sent to the others.
 
+**Exporting threats.** The foot of the Threats panel exports **every open set as one file** (it says **Export all** and the count when more than one set is open), and so does **Export → All threats** in the top bar. A set's own **⋯** menu exports that set alone. The export screen asks:
+
+- **Send**: all the open sets, or one of them. In a KMZ or KML each set is a folder of its own, named for the set, so ForeFlight and ATAK list them apart. Threats you have hidden on the map are in the file too.
+- **KMZ** (what ForeFlight, ATAK and Aero App expect) or **KML** (the same, unzipped, for an app that takes only KML).
+- **Download .ths for AMPS**: the same threats as one list (AMPS keeps no folders).
+- A **QR code** of the KMZ, to scan on the iPad or phone that will open it. The link lasts 10 minutes and works three times.
+
+The threats' positions go to the server once, to make the file, and nothing is kept.
+
+### Mission overlay
+
+**Export → Mission overlay** in the top bar makes **one map layer of the routes and what goes with them**, for ForeFlight: routes with their labels and leg doghouses, the FLOT and phase lines, threats with their rings and masks, local points and your own overlays, as they are drawn on the screen. **An LZ/PZ never goes in**: while the dialog is open the open LZ/PZ (its boundary, slope map, doghouses and other graphics) is taken off the map, so what you see behind the dialog is what goes in, and it comes back when the dialog closes. Send it in place of the routes and threats one by one when a crew only needs to see the plan.
+
+- **Area**: *The whole mission* (everything drawn, with a margin) or *The map as shown*. An imported KMZ overlay counts toward the whole mission only when nothing else is planned.
+- **Base map**: *None* (only what is planned, see-through, over whichever chart ForeFlight shows under it) or *USGS topo* (the USGS topographic map under it, at its own finest, about 1:20,000; the lower 48, Alaska, Hawaii and the territories only). It starts on USGS topo when that is the map on your screen. Satellite and the Mapbox maps cannot go in: their terms do not allow it.
+- **Detail**: *Finest* is as much as the file holds for the area, and no finer than the USGS map goes when it is under it; *Lighter* is a level coarser, a quarter of the size. Each says the scale it comes to (about 1:20,000 is 2 m a pixel), how much ground a pixel covers and how many pixels it is. An **MBTiles** file keeps the USGS map's own finest detail over a whole operation, about 110 by 140 km; the dialog says about how large the file will be and how long it takes to make (a whole operation on the USGS map is several hundred MB and ten minutes or more). A **GeoTIFF** is one image of at most 10,000 pixels a side, so a larger area gets less detail in it: an LZ at its sharpest, a valley at about 2 m a pixel, a county coarser.
+- **File**: *MBTiles* is ForeFlight's own map layer format and works on every subscription: AirDrop it to the iPad or open it from Files, and it appears under **Map Layers**. *GeoTIFF* is one image in latitude and longitude, at most 10,000 pixels a side: ForeFlight takes it with Military Flight Bag (open it from Files or email; AirDrop puts it in Photos), and ATAK and GIS apps open it too.
+- **Layer name**: what ForeFlight lists it as, and the file's name.
+
+The map is drawn in pieces, so a phone draws as much detail as a computer, and only the pieces with something planned in them are drawn and sent. The file is then made on the server while the dialog shows how far it has got; keep the page open until it downloads (closing the dialog or the tab stops it). The download link works for 30 minutes. What is left out besides the LZ/PZ: the base map on your screen, the MGRS grid, popups, the LZ card's frame and other people's pointers in a Mission Pack. **Hide anything that should not go in first.** It is a picture: nothing in it can be selected or changed in ForeFlight, and its labels grow and shrink as ForeFlight zooms. What is drawn goes to the server once, to be made into the file (with the USGS map fetched there, if you chose it); the server deletes the file 30 minutes after making it, and everything else as soon as it has.
+
 ## 7. On a phone
 
 On a phone (a window 850 px wide or narrower) the app is laid out for one hand, and shows you only what you can use next.
@@ -195,7 +309,7 @@ On a phone (a window 850 px wide or narrower) the app is laid out for one hand, 
 - **Menu** (☰, beside GO) holds everything else from the top bar: the workspace, your account, **Tools** (the left panel: aircraft, analysis data, the slope map and LZ box switches), **Brief**, **Import** and the **Library**. Tap ☰ again, or the map, to put it away.
 - **The crosshair** marks the middle of the map you can see. **Set Target** puts the target there: move the map until the crosshair is on the spot, then tap it. (Searching a grid, or a long press on the map → **Set as Target**, still work.)
 - **The tools come in the order you use them**, at the bottom right where your thumb is:
-  1. With no target: the route tool and **Set Target**.
+  1. With no target: the route tool and **Set Target**. The route tool opens a short list: **Sketch a route**, **Draw the FLOT** or **Draw a phase line (PL)**. While you sketch a route, the same button ends it.
   2. With a target: **Analyze** and **Draw LZ** appear.
   3. While you draw a boundary, **Analyze** is greyed out until you tap **Finish LZ**.
   4. Once the LZ is analysed, the planning tools appear (helicopter, PZ marker, sector, backstop, unit, go-around). Set Target, Re-analyze and Draw LZ stay, as icons.
@@ -203,6 +317,10 @@ On a phone (a window 850 px wide or narrower) the app is laid out for one hand, 
 - **Undo and redo** appear beside the tools while there is something to undo.
 - **Hide and show**: the **⌄** button under the tools folds them away (it then reads **Tools ⌃**). A tap on the map hides everything except the search bar, and the next tap brings it all back; so does ☰. A tap never hides anything while you are drawing, and a tap that closed a menu or folded the search does only that.
 - On a short screen (a phone on its side, or with the bottom sheet raised) the tools that do not fit are behind **⋯ More**.
+
+The route tool's choice, naming a phase line, and the phase line on the map:
+
+![The route tool's choice of lines, naming a phase line, and the line drawn](images/35-phone-lines.jpg)
 
 | Search open | Everything hidden | Menu |
 |---|---|---|

@@ -5,6 +5,7 @@ import React from "react";
 import MapStyleSwitcher from "./MapStyleSwitcher";
 import { MAP_STYLES } from "./mapStyles";
 import useMgrsGrid, { MGRS_GRID_STORAGE_KEY } from "../mgrsGrid/useMgrsGrid";
+import useRouteDoghouses, { ROUTE_DOGHOUSES_STORAGE_KEY } from "../routeDoghouses/useRouteDoghouses";
 
 // The switcher as App composes it: the base map in state, the grid from its hook.
 const Harness = ({ initialStyle = "satellite" }) => {
@@ -159,5 +160,42 @@ describe("the VFR thumbnail", () => {
   it("leaves the other maps' thumbnails as they are", () => {
     opened({ known: true, live: LIVE });
     expect(screen.getByText("Topo").closest("button").querySelector("img").getAttribute("src")).toMatch(/api\.mapbox\.com/);
+  });
+});
+
+describe("the Layers control's route doghouses switch", () => {
+  const RouteHarness = () => {
+    const { showRouteDoghouses, setShowRouteDoghouses } = useRouteDoghouses();
+    return (
+      <MapStyleSwitcher
+        mapStyle="satellite"
+        setMapStyle={() => {}}
+        showRouteDoghouses={showRouteDoghouses}
+        setShowRouteDoghouses={setShowRouteDoghouses}
+      />
+    );
+  };
+  const doghouseSwitch = () => screen.getByRole("switch", { name: "Route doghouses" });
+
+  it("starts on, turns them off and on, and remembers off across a reload", () => {
+    const first = render(<RouteHarness />);
+    openLayers();
+    expect(doghouseSwitch()).toHaveAttribute("aria-checked", "true");
+    fireEvent.click(doghouseSwitch());
+    expect(doghouseSwitch()).toHaveAttribute("aria-checked", "false");
+    expect(window.localStorage.getItem(ROUTE_DOGHOUSES_STORAGE_KEY)).toBe("off");
+    first.unmount();
+
+    render(<RouteHarness />);
+    openLayers();
+    expect(doghouseSwitch()).toHaveAttribute("aria-checked", "false");
+    fireEvent.click(doghouseSwitch());
+    expect(window.localStorage.getItem(ROUTE_DOGHOUSES_STORAGE_KEY)).toBeNull();
+  });
+
+  it("is not offered without a way to change it (an account without routes)", () => {
+    render(<MapStyleSwitcher mapStyle="satellite" setMapStyle={() => {}} />);
+    openLayers();
+    expect(screen.queryByRole("switch", { name: "Route doghouses" })).toBeNull();
   });
 });

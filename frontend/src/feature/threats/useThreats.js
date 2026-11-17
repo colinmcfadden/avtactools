@@ -3,6 +3,7 @@ import api from "../auth/api";
 import { nextFreeName } from "../saveDialog/SaveDialog";
 import { makeThreat, newThreatId, threatToPayload } from "./threatModel";
 import { parseThsFile } from "./parseThs";
+import { exportBody, exportFileName, exportGroups } from "./threatExport";
 import {
   canon,
   conflictName,
@@ -526,32 +527,33 @@ export const useThreats = ({ userId = null, canSave = false, notify = () => {} }
   };
 
   /**
-   * Builds a .ths from the current threats and downloads it. Called alongside a
-   * mission (.msnx) export so the two files travel together into AMPS.
+   * Builds a .ths of every open set's threats (or `setId`'s) and downloads it. Called alongside a
+   * mission (.msnx) export so the two files travel together into AMPS. AMPS keeps no folders, so the
+   * sets are one list in it.
    */
-  const exportThsFile = async (baseName) => {
-    if (threats.length === 0) return;
-    const name = `${(baseName || "threats").replace(/\.(msnx|ths)$/i, "")}.ths`;
+  const exportThsFile = async (baseName, { setId = null } = {}) => {
+    const groups = exportGroups(shown, setId);
+    if (groups.length === 0) return;
+    const name = exportFileName(baseName, "ths");
     const res = await api.post(
       "/threats-ths",
-      { fileName: name, threats: threats.map(threatToPayload) },
+      { fileName: name, threats: groups.flatMap((set) => set.threats).map(threatToPayload) },
       { responseType: "blob" },
     );
     downloadBlob(res.data, name);
   };
 
   /**
-   * Builds a KMZ overlay (vector marker + range rings + terrain-mask polygons)
-   * and downloads it — the format ForeFlight, ATAK, and Aero App all import.
+   * Builds one file of every open set's threats (or `setId`'s), each set a folder of its own, and downloads it:
+   * the marker, its range rings and its terrain mask as vectors, which ForeFlight, ATAK and Aero App all import.
+   * `format` is "kmz" (zipped, the usual) or "kml".
    */
-  const exportKmzFile = async (baseName) => {
-    if (threats.length === 0) return;
-    const name = `${(baseName || "threats").replace(/\.(msnx|kmz)$/i, "")}.kmz`;
-    const res = await api.post(
-      "/threats-kmz",
-      { fileName: name, threats: threats.map(threatToPayload) },
-      { responseType: "blob" },
-    );
+  const exportKmzFile = async (baseName, { setId = null, format = "kmz" } = {}) => {
+    const groups = exportGroups(shown, setId);
+    if (groups.length === 0) return;
+    const extension = format === "kml" ? "kml" : "kmz";
+    const name = exportFileName(baseName, extension);
+    const res = await api.post("/threats-kmz", exportBody(groups, name, extension), { responseType: "blob" });
     downloadBlob(res.data, name);
   };
 

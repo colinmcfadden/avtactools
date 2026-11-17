@@ -26,6 +26,8 @@ import GoAroundMarker from "../feature/goAround/GoAround";
 import Backstop from "../feature/backstops/Backstop";
 import { BACKSTOP_CASING, BACKSTOP_LINE, BACKSTOP_RED } from "../feature/backstops/backstopStyle";
 import Flot from "../feature/flot/Flot";
+import PhaseLine from "../feature/phaseLines/PhaseLine";
+import { PHASE_LINE_CASING, PHASE_LINE_COLOR } from "../feature/phaseLines/phaseLineStyle";
 import ExportHandler from "../feature/export/ExportHandler";
 import CursorGridReadout from "./CursorGridReadout";
 import DraftPointMarkers, { plainDraftPositions } from "./DraftPointMarkers";
@@ -47,6 +49,8 @@ import PresenceLayer from "../feature/missionPacks/ui/PresenceLayer";
 import SandtableLayer from "../feature/brief/SandtableLayer";
 import StartAtLocation from "../feature/startLocation/StartAtLocation";
 import MapTap from "../feature/phoneFrame/MapTap";
+import GraphicScale from "../feature/graphicScale/GraphicScale";
+import RouteDoghouseLayer from "../feature/routeDoghouses/RouteDoghouseLayer";
 
 // Fix for default Leaflet marker icons in React
 delete L.Icon.Default.prototype._getIconUrl;
@@ -112,6 +116,8 @@ function MapInteractionHandler({
   addBackstopDraftPoint,
   isDrawingFlot,
   addFlotDraftPoint,
+  isDrawingPhaseLine,
+  addPhaseLineDraftPoint,
   onMapMove,
   presenting = false,
 }) {
@@ -129,7 +135,7 @@ function MapInteractionHandler({
         return;
       }
       if (isDrawingLZ) return; // Don't interrupt drawing
-      if (isDrawingBackstop || isDrawingFlot) {
+      if (isDrawingBackstop || isDrawingFlot || isDrawingPhaseLine) {
         e.originalEvent.preventDefault();
         return;
       }
@@ -164,6 +170,8 @@ function MapInteractionHandler({
         addBackstopDraftPoint(e.latlng.lat, e.latlng.lng);
       } else if (isDrawingFlot) {
         addFlotDraftPoint(e.latlng.lat, e.latlng.lng);
+      } else if (isDrawingPhaseLine) {
+        addPhaseLineDraftPoint(e.latlng.lat, e.latlng.lng);
       } else {
         setContextMenu(null); // Click anywhere else to close the menu
       }
@@ -215,6 +223,12 @@ const MapView = ({
   isDrawingFlot = false,
   flotDraftPoints = [],
   addFlotDraftPoint,
+  phaseLines = [],
+  updatePhaseLine,
+  onPhaseLineContextMenu,
+  isDrawingPhaseLine = false,
+  phaseLineDraftPoints = [],
+  addPhaseLineDraftPoint,
   pzMarkers,
   updatePZMarker,
   deletePZMarker,
@@ -244,6 +258,7 @@ const MapView = ({
   setContextMenu,
   mapStyle,
   showMgrsGrid,
+  showRouteDoghouses = true,
   mapOverlays = [],
   overlayFit = null,
   // The slope map's opacity, a percentage of its own: this browser's (slopeOpacity.js).
@@ -259,6 +274,10 @@ const MapView = ({
   // The live sandtable (feature/brief): while it is given, the map shows the brief's step and nothing of the planning
   // layers, and takes no edit. They are drawn again, as they were, when it ends.
   presentation = null,
+  // The open LZ/PZ's own layers (its target, boundary, slope map and planning graphics). The mission overlay's dialog
+  // takes them off while it is open: the overlay is the routes, control measures, threats and points, never an LZ/PZ,
+  // and the map behind the dialog then shows what goes in (feature/missionOverlay).
+  lzShown = true,
   vfrCharts = NO_CHARTS,
   // Given the Leaflet map once it is made: the zoom buttons beside the map work it (feature/mapZoom), and a phone's
   // Set Target reads its middle.
@@ -268,9 +287,15 @@ const MapView = ({
 }) => {
   // Default Center (somewhere neutral)
   const defaultCenter = [34.0522, -118.2437];
+  // A FLOT or a phase line being drawn takes the map's clicks, as a route's sketch does.
+  const isDrawingLine = isDrawingFlot || isDrawingPhaseLine;
   const activeMapStyle = getMapStyle(mapStyle);
   // Visible local points that a dragged route point can snap onto. Memoized so
   // the route layers aren't handed a fresh array on every unrelated re-render.
+  const routesForDoghouses = useMemo(
+    () => [...(importedRoutes || []), ...(sketchedRoutes || [])],
+    [importedRoutes, sketchedRoutes],
+  );
   const localSnapPoints = useMemo(
     () =>
       (localPointSets || [])
@@ -321,7 +346,7 @@ const MapView = ({
       <KmzOverlayLayer
         overlays={mapOverlays}
         fit={overlayFit}
-        passive={Boolean(presentation) || isDrawingLZ || isDrawingFlot || isDrawingBackstop || isSketchingRoute}
+        passive={Boolean(presentation) || isDrawingLZ || isDrawingLine || isDrawingBackstop || isSketchingRoute}
       />
 
       {/* The MGRS grid, over any base map; screen only, never on an LZ card */}
@@ -337,6 +362,8 @@ const MapView = ({
         addBackstopDraftPoint={addBackstopDraftPoint}
         isDrawingFlot={isDrawingFlot}
         addFlotDraftPoint={addFlotDraftPoint}
+        isDrawingPhaseLine={isDrawingPhaseLine}
+        addPhaseLineDraftPoint={addPhaseLineDraftPoint}
         addDraftPoint={addDraftPoint}
         onDraftPointContextMenu={onDraftPointContextMenu}
         onMapMove={onMapMove}
@@ -375,7 +402,7 @@ const MapView = ({
           </>
         )}
 
-        {isDrawingBackstop && backstopDraftPoints.length > 0 && (
+        {lzShown && isDrawingBackstop && backstopDraftPoints.length > 0 && (
           <>
             <Polyline positions={backstopDraftPoints.map((p) => [p.lat, p.lon])} pathOptions={BACKSTOP_CASING} />
             <Polyline positions={backstopDraftPoints.map((p) => [p.lat, p.lon])} pathOptions={BACKSTOP_LINE} />
@@ -400,12 +427,32 @@ const MapView = ({
             data={flot}
             onChange={updateFlot}
             onContextMenu={onFlotContextMenu}
-            passive={isDrawingFlot || isDrawingBackstop || isDrawingLZ || isSketchingRoute}
+            passive={isDrawingLine || isDrawingBackstop || isDrawingLZ || isSketchingRoute}
+          />
+        ))}
+
+        {isDrawingPhaseLine && phaseLineDraftPoints.length > 0 && (
+          <>
+            <Polyline positions={phaseLineDraftPoints.map((p) => [p.lat, p.lon])} pathOptions={{ color: PHASE_LINE_CASING, weight: 6, opacity: 0.85 }} />
+            <Polyline positions={phaseLineDraftPoints.map((p) => [p.lat, p.lon])} pathOptions={{ color: PHASE_LINE_COLOR, weight: 3, dashArray: "8 6" }} />
+            {phaseLineDraftPoints.map((p, i) => (
+              <CircleMarker key={`phase-line-draft-${i}`} center={[p.lat, p.lon]} radius={4} pathOptions={{ color: PHASE_LINE_CASING, weight: 2, fillColor: PHASE_LINE_COLOR, fillOpacity: 1 }} interactive={false} />
+            ))}
+          </>
+        )}
+
+        {phaseLines.map((line) => (
+          <PhaseLine
+            key={`phase-line-${line.id}`}
+            data={line}
+            onChange={updatePhaseLine}
+            onContextMenu={onPhaseLineContextMenu}
+            passive={isDrawingLine || isDrawingBackstop || isDrawingLZ || isSketchingRoute}
           />
         ))}
 
         {/* Render the Active Drawing Line */}
-        {isDrawingLZ && drawingPoints.length > 0 && (
+        {lzShown && isDrawingLZ && drawingPoints.length > 0 && (
           <>
             <Polyline
               positions={drawingPoints}
@@ -416,7 +463,7 @@ const MapView = ({
         )}
 
         {/* Render the Completed Custom Polygon */}
-        {customLZ && (
+        {lzShown && customLZ && (
           <Polygon
             positions={customLZ}
             pathOptions={{
@@ -446,6 +493,8 @@ const MapView = ({
       <MapUpdater center={targetLocation} targetId={activeDiagramId} paused={Boolean(presentation)} />
       {flyTo && <MapUpdater center={[flyTo.lat, flyTo.lon]} targetId={`fly:${flyTo.key}`} zoom={flyTo.zoom ?? 17} paused={Boolean(presentation)} />}
       <SizeWatcher />
+      {/* The LZ/PZ's doghouses, go-arounds and units shrink as the map zooms out past the LZ's own scale */}
+      <GraphicScale boundary={detectedLZ || customLZ} />
 
       {!presentation && (<>
         {(presence?.length > 0 || onPoint) && <PresenceLayer people={presence} onPoint={onPoint} />}
@@ -455,7 +504,7 @@ const MapView = ({
           onUpdatePosition={onUpdateMsnxPointPosition}
           onInsertPoint={onInsertMsnxPoint}
           snapPoints={localSnapPoints}
-          drawing={isDrawingLZ || isSketchingRoute || isDrawingBackstop || isDrawingFlot}
+          drawing={isDrawingLZ || isSketchingRoute || isDrawingBackstop || isDrawingLine}
         />
 
         <MsnxRouteLayer
@@ -464,13 +513,17 @@ const MapView = ({
           onInsertPoint={onInsertMsnxPoint}
           onPointContextMenu={onSketchPointContextMenu}
           snapPoints={localSnapPoints}
-          drawing={isDrawingLZ || isSketchingRoute || isDrawingBackstop || isDrawingFlot}
+          drawing={isDrawingLZ || isSketchingRoute || isDrawingBackstop || isDrawingLine}
         />
+
+        {/* A doghouse on each leg of the routes shown, from the route's plan; in an overlay export as on the screen */}
+        <RouteDoghouseLayer routes={routesForDoghouses} shown={showRouteDoghouses} />
 
         <LocalPointsLayer pointSets={localPointSets} onAddToRoute={onAddLocalPointToRoute} />
 
         <ThreatLayer threats={threats} onMove={onThreatMove} onEdit={onThreatEdit} />
 
+        {lzShown && (<>
         {/* 1. The Grid Location (Green Star) */}
         {targetLocation && (
           <Marker position={targetLocation} icon={starIcon}>
@@ -527,7 +580,7 @@ const MapView = ({
             target={targetLocation}
             onChange={updateBackstop}
             onContextMenu={onBackstopContextMenu}
-            passive={isDrawingBackstop || isDrawingFlot || isDrawingLZ || isSketchingRoute}
+            passive={isDrawingBackstop || isDrawingLine || isDrawingLZ || isSketchingRoute}
           />
         ))}
 
@@ -588,6 +641,7 @@ const MapView = ({
             }}
           />
         )}
+        </>)}
       </>)}
 
       {/* Export Logic */}

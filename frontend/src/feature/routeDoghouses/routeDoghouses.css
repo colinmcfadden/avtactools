@@ -1,0 +1,20 @@
+/* A leg's doghouse (RouteDoghouseLayer.jsx): a point with no size of its own, the box turned about it. */
+.route-doghouse {
+  pointer-events: none;
+}
+
+.route-doghouse__turn {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 0;
+  height: 0;
+}
+
+.route-doghouse__box {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 60px;
+  filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.45));
+}

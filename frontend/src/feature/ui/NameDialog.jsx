@@ -18,6 +18,7 @@ const NameDialog = ({
   confirmLabel = "OK",
   upperCase = false,
   allowEmpty = false,
+  maxLength = 100,
   onConfirm,
   onCancel,
   children,
@@ -82,7 +83,7 @@ const NameDialog = ({
             style={upperCase ? { textTransform: "uppercase" } : undefined}
             value={name}
             placeholder={placeholder}
-            maxLength={100}
+            maxLength={maxLength}
             autoComplete="off"
             spellCheck={false}
             aria-invalid={Boolean(error)}

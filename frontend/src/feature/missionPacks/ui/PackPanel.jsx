@@ -34,10 +34,16 @@ export const whenText = (value, now = new Date()) => {
   return text.endsWith("h ago") ? clockTime(value) : shortDate(value, now);
 };
 
-const itemDetail = (item) => {
+const count = (n, one) => `${n} ${n === 1 ? one : `${one}s`}`;
+
+export const itemDetail = (item) => {
   if (item.kind === "route") {
     const n = item.data?.routes?.length ?? 0;
-    return `${n} ${n === 1 ? "route" : "routes"}`;
+    const flots = Array.isArray(item.data?.flots) ? item.data.flots.length : 0;
+    const phaseLines = Array.isArray(item.data?.phaseLines) ? item.data.phaseLines.length : 0;
+    // A pack's control measures are an item with no routes: it is told by the lines it holds, not as "0 routes".
+    const lines = [flots > 0 ? count(flots, "FLOT") : "", phaseLines > 0 ? count(phaseLines, "phase line") : ""].filter(Boolean);
+    return n === 0 && lines.length > 0 ? lines.join(" · ") : count(n, "route");
   }
   if (item.kind === "pointset") {
     const n = Array.isArray(item.data) ? item.data.length : 0;

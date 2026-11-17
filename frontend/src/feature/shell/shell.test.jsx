@@ -250,6 +250,147 @@ describe("an imported mission's card in the Routes panel", () => {
   });
 });
 
+describe("control measures in the Routes panel", () => {
+  const ROUTE = { id: "r1", name: "ROUTE 1", color: "#e85", points: [{ id: "p1", lat: 34, lon: -84 }], plan: {} };
+  const FLOT = { id: "flot-1", points: [{ lat: 34, lon: -84 }, { lat: 34.009, lon: -84 }] };
+  const RED = { id: "pl-1", name: "RED", points: [{ lat: 34, lon: -84 }, { lat: 34.018, lon: -84 }] };
+  const routes = (extra = {}) => ({ key: "sketches", kind: "sketch", routes: [ROUTE], ...extra });
+  // A FLOT and a phase line are in a set of their own, which holds no route.
+  const measures = (extra = {}) => ({ key: "measures", kind: "sketch", measures: true, routes: [], flots: [FLOT], phaseLines: [RED], ...extra });
+  const NAMES = { sketches: "SKETCHED ROUTES", measures: "CONTROL MEASURES" };
+  const panel = (sets, actions = {}, state = {}) => (
+    <RoutesDockPanel
+      sets={sets}
+      stateOf={(key) => ({ name: NAMES[key], link: null, dirty: true, saving: false, savedAt: null, ...state })}
+      actions={{ save: () => {}, saveAs: () => {}, rename: () => {}, close: () => {}, export: () => {}, toggleVisibility: () => {}, removeRoute: () => {}, ...actions }}
+      plan={() => ({})}
+      sketch={{ active: false, name: "ROUTE 2", points: 0, enabled: true, onStart: () => {}, onCancel: () => {}, onFinish: () => {} }}
+    />
+  );
+  const routeCard = () => screen.getByRole("region", { name: "SKETCHED ROUTES" });
+  const measuresCard = (name = "CONTROL MEASURES") => screen.getByRole("region", { name: `${name}, control measures` });
+
+  it("are listed in a section of their own, under the route sets, and no route set's card lists them", () => {
+    render(panel([routes(), measures()]));
+    expect(within(routeCard()).getByText("1 route · 1 point")).toBeInTheDocument();
+    expect(within(routeCard()).queryByText("PL RED")).toBeNull();
+    expect(within(routeCard()).queryByText("FLOT")).toBeNull();
+    const card = measuresCard();
+    expect(within(card).getByText("1 FLOT · 1 phase line")).toBeInTheDocument();
+    expect(within(card).getByText("FLOT")).toBeInTheDocument();
+    expect(within(card).getByText("PL RED")).toBeInTheDocument();
+    expect(within(card).getByText("Phase line · 2.0 km")).toBeInTheDocument();
+    // The route sets are counted without them, and they are counted by the line.
+    expect(screen.getByText("1 route set in this session")).toBeInTheDocument();
+    expect(screen.getByText("Control measures").textContent).toBe("Control measures2");
+    expect(routeCard().compareDocumentPosition(card) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
+  it("need no route: with none in the session they are still there, and no route set is made for them", () => {
+    render(panel([measures()]));
+    expect(screen.getByText("0 route sets in this session")).toBeInTheDocument();
+    expect(screen.getByText("No routes yet. Sketch one on the map, or import an AMPS mission file.")).toBeInTheDocument();
+    expect(screen.queryByText("Route sets")).toBeNull();
+    expect(within(measuresCard()).getByText("PL RED")).toBeInTheDocument();
+  });
+
+  it("are saved, renamed and closed by themselves, and are never exported or sketched into", () => {
+    const save = vi.fn();
+    const rename = vi.fn();
+    const close = vi.fn();
+    const saveAs = vi.fn();
+    const set = measures();
+    render(panel([routes(), set], { save, rename, close, saveAs, shareSet: () => {}, sketchInto: () => {} }));
+    const card = measuresCard();
+    fireEvent.click(within(card).getByRole("button", { name: "Save" }));
+    expect(save).toHaveBeenCalledWith(set);
+
+    fireEvent.click(within(card).getByRole("button", { name: "Rename the control measures CONTROL MEASURES" }));
+    const field = within(card).getByLabelText("Name of these control measures");
+    fireEvent.change(field, { target: { value: "op dk graphics" } });
+    fireEvent.keyDown(field, { key: "Enter" });
+    expect(rename).toHaveBeenCalledWith(set, "OP DK GRAPHICS");
+
+    expect(within(card).queryByRole("button", { name: "Export .msnx" })).toBeNull();
+    expect(within(card).queryByRole("button", { name: /ForeFlight/ })).toBeNull();
+    fireEvent.click(within(card).getByRole("button", { name: "More actions for the control measures CONTROL MEASURES" }));
+    const items = within(screen.getByRole("menu")).getAllByRole("menuitem").map((item) => item.textContent);
+    expect(items.some((text) => text.startsWith("Save as…"))).toBe(true);
+    expect(items.some((text) => /Sketch a route|ForeFlight/.test(text))).toBe(false);
+    fireEvent.click(within(screen.getByRole("menu")).getByRole("menuitem", { name: /^Close/ }));
+    expect(close).toHaveBeenCalledWith(set);
+  });
+
+  it("says Saved, with nothing to press, once they are", () => {
+    render(panel([measures()], {}, { link: { id: 7, name: "CONTROL MEASURES" }, dirty: false }));
+    expect(within(measuresCard()).getByRole("button", { name: "Saved" })).toBeDisabled();
+  });
+
+  it("renames and removes a phase line, and flips and removes a FLOT, from their rows", () => {
+    const actions = { renamePhaseLine: vi.fn(), removePhaseLine: vi.fn(), flipFlot: vi.fn(), removeFlot: vi.fn() };
+    render(panel([measures()], actions));
+    fireEvent.click(screen.getByRole("button", { name: "Rename PL RED" }));
+    expect(actions.renamePhaseLine).toHaveBeenCalledWith("pl-1");
+    fireEvent.click(screen.getByRole("button", { name: "Remove PL RED" }));
+    expect(actions.removePhaseLine).toHaveBeenCalledWith("pl-1");
+    fireEvent.click(screen.getByRole("button", { name: "Flip the scallops of this FLOT to the other side" }));
+    expect(actions.flipFlot).toHaveBeenCalledWith("flot-1");
+    fireEvent.click(screen.getByRole("button", { name: "Remove this FLOT" }));
+    expect(actions.removeFlot).toHaveBeenCalledWith("flot-1");
+  });
+
+  it("are only shown in a finished pack, which saves nothing by hand", () => {
+    render(panel([measures({ pack: { finished: true } })]));
+    const card = measuresCard();
+    expect(within(card).getByText("PL RED")).toBeInTheDocument();
+    expect(within(card).getByText("Read-only")).toBeInTheDocument();
+    expect(within(card).queryByRole("button", { name: "Save" })).toBeNull();
+    expect(screen.queryByRole("button", { name: /^Rename/ })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Remove PL RED" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Remove this FLOT" })).toBeNull();
+  });
+
+  describe("saved inside a route set, from before they were kept on their own", () => {
+    const old = () => routes({ flots: [FLOT], phaseLines: [RED] });
+
+    it("are listed with the control measures under that set's name, which is where they are saved", () => {
+      render(panel([old()]));
+      // The set still says what it is saved with; its lines are listed with the control measures.
+      expect(within(routeCard()).getByText("1 route · 1 point · 1 FLOT · 1 phase line")).toBeInTheDocument();
+      expect(within(routeCard()).queryByText("PL RED")).toBeNull();
+      const card = measuresCard("SKETCHED ROUTES");
+      expect(within(card).getByText("PL RED")).toBeInTheDocument();
+      expect(within(card).getByText(/^Saved with the route set SKETCHED ROUTES/)).toBeInTheDocument();
+      // They are the set's to save, rename and close.
+      expect(within(card).queryByRole("button", { name: "Save" })).toBeNull();
+      expect(within(card).queryByRole("button", { name: /^Rename the control measures/ })).toBeNull();
+      expect(within(card).queryByRole("button", { name: /^More actions/ })).toBeNull();
+    });
+
+    it("are moved out of it, to stand on their own, from that card", () => {
+      const keepLinesOnTheirOwn = vi.fn();
+      const set = old();
+      render(panel([set], { keepLinesOnTheirOwn }));
+      fireEvent.click(within(measuresCard("SKETCHED ROUTES")).getByRole("button", { name: "Keep on their own" }));
+      expect(keepLinesOnTheirOwn).toHaveBeenCalledWith(set);
+    });
+
+    it("stay where they are where nothing may be changed", () => {
+      const { unmount } = render(panel([old()]));
+      expect(screen.queryByRole("button", { name: "Keep on their own" })).toBeNull();
+      unmount();
+      render(panel([routes({ flots: [FLOT], pack: { finished: true } })], { keepLinesOnTheirOwn: () => {} }));
+      expect(screen.queryByRole("button", { name: "Keep on their own" })).toBeNull();
+    });
+  });
+
+  it("are not drawn from the panel's foot: FLOT and PL are the sidebar's, beside Route", () => {
+    render(panel([measures()]));
+    expect(screen.queryByRole("button", { name: /^(Draw|Cancel) FLOT$/ })).toBeNull();
+    expect(screen.getByRole("button", { name: "Sketch a route" })).toBeInTheDocument();
+  });
+});
+
 describe("the dock", () => {
   const items = [
     { key: "lz", label: "LZ/PZ", icon: "hexagon", dot: "warn" },
@@ -304,7 +445,7 @@ describe("whether a route set is saved", () => {
     render(<ToastProvider>{result.current.dialogs}</ToastProvider>);
     fireEvent.change(screen.getByLabelText("Name"), { target: { value: "RED" } });
     fireEvent.click(screen.getByRole("button", { name: /^Save$/ }));
-    await waitFor(() => expect(library.saveSketch).toHaveBeenCalledWith("RED", routes, []));
+    await waitFor(() => expect(library.saveSketch).toHaveBeenCalledWith("RED", routes, [], []));
     await waitFor(() => expect(result.current.stateOf("sketches")).toMatchObject({ link: { id: 31, name: "RED" }, dirty: false }));
 
     routes = [route("a", { plan: { tempC: 21 } })];
@@ -314,7 +455,7 @@ describe("whether a route set is saved", () => {
     await act(async () => {
       await result.current.save("sketches");
     });
-    expect(library.updateSketch).toHaveBeenCalledWith(31, routes, "RED", []);
+    expect(library.updateSketch).toHaveBeenCalledWith(31, routes, "RED", [], []);
     expect(result.current.stateOf("sketches").dirty).toBe(false);
   });
 });

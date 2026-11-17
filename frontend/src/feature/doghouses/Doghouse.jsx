@@ -3,6 +3,7 @@ import L from "leaflet";
 import { useMap } from "react-leaflet";
 import { calculateBearing } from '../../utils/Helpers';
 import { mapObjectControlMarkup } from '../../utils/mapObjectControls';
+import { doghouseBoxHtml } from './doghouseBox';
 import {
   doghouseDisplay,
   doghouseFieldUpdates,
@@ -32,37 +33,18 @@ const Doghouse = ({ data, updateDoghouse }) => {
     const field = locked ? "default" : "text";
 
     return `
-      <div class="drag-lifter doghouse-interactive-wrapper" style="position: relative; width: 100%; height: 100%; display: flex; align-items: center; justify-content: center; pointer-events: none;">
+      <div class="drag-lifter doghouse-interactive-wrapper map-graphic-scale" style="position: relative; width: 100%; height: 100%; display: flex; align-items: center; justify-content: center; pointer-events: none;">
         
         ${locked ? "" : `<div class="map-object-controls dh-controls" style="position: absolute; width: 140px; display: flex; justify-content: space-between; align-items: center; z-index: 10;">
             ${mapObjectControlMarkup({ type: "rotate", title: "Drag to rotate doghouse", className: "dh-btn dh-rotate" })}
             ${mapObjectControlMarkup({ type: "move", title: "Drag to move doghouse", className: "dh-btn dh-move" })}
         </div>`}
 
-        <div class="doghouse-wrapper" style="pointer-events: auto; width: 60px; transform: rotate(${rotation}deg); transform-origin: center center; position: absolute; z-index: 20;">
-            <div style="width: 0; height: 0; border-left: 30px solid transparent; border-right: 30px solid transparent; border-bottom: 20px solid black; position: relative;">
-                <div class="dh-input" data-type="id" style="position: absolute; top: 2px; left: -30px; width: 60px; text-align: center; font-weight: bold; font-size: 10px; color: white; cursor: ${field};">${shown.id}</div>
-            </div>
-            <div style="background: white; border: 2px solid black; width: 60px; display: flex; flex-direction: column; font-family: monospace; font-weight: bold; font-size: 12px; color: black;">
-                <div style="border-bottom: 1px solid black; display: flex; justify-content: center; align-items: center;">
-                    <span class="dh-input" data-type="heading" style="cursor: ${field}; min-width: 20px; text-align: right; padding: 2px 0;">${shown.heading}</span>
-                    <span style="pointer-events: none;">°</span>
-                </div>
-                <div style="border-bottom: 1px solid black; display: flex; justify-content: center; align-items: center;">
-                    <span class="dh-input" data-type="time-m" style="cursor: ${field}; min-width: 15px; text-align: right; padding: 2px 0;">${shown.minutes}</span>
-                    <span style="pointer-events: none;">+</span>
-                    <span class="dh-input" data-type="time-s" style="cursor: ${field}; min-width: 15px; text-align: left; padding: 2px 0;">${shown.seconds}</span>
-                </div>
-                <div style="border-bottom: 1px solid black; display: flex; justify-content: center; align-items: center;">
-                    <span class="dh-input" data-type="dist" style="cursor: ${field}; min-width: 20px; text-align: right; padding: 2px 0;">${shown.distance}</span>
-                    <span style="font-size: 10px; margin-left: 1px; pointer-events: none;"> km</span>
-                </div>
-                <div style="display: flex; justify-content: center; align-items: center;">
-                    <span class="dh-input" data-type="airspeed" style="cursor: ${field}; min-width: 20px; text-align: right; padding: 2px 0;">${shown.airspeed}</span>
-                    <span style="font-size: 10px; margin-left: 1px; pointer-events: none;"> kts</span>
-                </div>
-            </div>
-        </div>
+        ${doghouseBoxHtml(shown, {
+          editable: true,
+          cursor: field,
+          style: `pointer-events: auto; width: 60px; transform: rotate(${rotation}deg); transform-origin: center center; position: absolute; z-index: 20;`,
+        })}
       </div>`;
   };
 

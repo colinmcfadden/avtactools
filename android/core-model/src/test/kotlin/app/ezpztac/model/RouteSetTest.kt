@@ -38,6 +38,17 @@ class RouteSetTest {
         assertEquals(data.getValue("flots"), RouteSets.serialize(read(data)).getValue("flots"))
     }
 
+    @Test
+    fun `a set's phase lines, which this version does not draw yet, come through a read and a write`() {
+        val line = buildJsonObject {
+            put("id", "pl-1")
+            put("name", "RED")
+            put("points", JsonArray(listOf(buildJsonObject { put("lat", 34.7); put("lon", -84.1) }, buildJsonObject { put("lat", 34.8); put("lon", -84.0) })))
+        }
+        val data = doc(extra = JsonObject(mapOf("phaseLines" to JsonArray(listOf(line)))))
+        assertEquals(data.getValue("phaseLines"), RouteSets.serialize(read(data)).getValue("phaseLines"))
+    }
+
     /** The fixture's routes all say `sketch-1`; a set needs each its own. */
     private fun named(id: String, route: JsonElement) = JsonObject(route.jsonObject + ("id" to JsonPrimitive(id)))
 

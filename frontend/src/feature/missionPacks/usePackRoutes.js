@@ -1,7 +1,7 @@
 import { useCallback, useMemo, useState } from "react";
-import { describeRouteChange, flotsFromItem, routeSetData, routesFromItem, sharedRouteData } from "./packRoutes";
+import { describeRouteChange, flotsFromItem, phaseLinesFromItem, routeSetData, routesFromItem, sharedRouteData } from "./packRoutes";
 import { packLocalId } from "./packRef";
-import { newItemOp, packItemId } from "./packSentences";
+import { measuresCreateSummary, newItemOp, packItemId } from "./packSentences";
 import { restoreSketchRoute } from "../msnxImport/useRouteSketch";
 import { applyOpsTo } from "./packRebase";
 import { usePackItemSync } from "./usePackItemSync";
@@ -28,6 +28,8 @@ export const usePackRoutes = ({
   sketchedRoutes,
   flots = [],
   setFlotsOf,
+  phaseLines = [],
+  setPhaseLinesOf,
   loadSketchRoutes,
   replaceRouteSet,
   removeRouteSet,
@@ -49,19 +51,31 @@ export const usePackRoutes = ({
         doc: routeSetData(
           (sketchedRoutes ?? []).filter((route) => route.setId === setId),
           flots.filter((flot) => flot.setId === setId),
+          phaseLines.filter((line) => line.setId === setId),
         ),
         name: names[uuid] ?? "",
       });
     });
     return map;
-  }, [open, names, sketchedRoutes, flots, setIdOf]);
+  }, [open, names, sketchedRoutes, flots, phaseLines, setIdOf]);
 
   const forget = (uuid) => {
     setOpen((list) => list.filter((u) => u !== uuid));
     setNames(({ [uuid]: _gone, ...rest }) => rest); // eslint-disable-line no-unused-vars
   };
 
-  const currentShape = useCallback((item) => routeSetData(routesFromItem(item, setIdOf(item.uuid)), flotsFromItem(item)), [setIdOf]);
+  const currentShape = useCallback(
+    (item) => routeSetData(routesFromItem(item, setIdOf(item.uuid)), flotsFromItem(item), phaseLinesFromItem(item)),
+    [setIdOf],
+  );
+  // A set's FLOTs and phase lines, as its item has them (none: the set has gone from here).
+  const setLinesOf = useCallback(
+    (setId, item = null) => {
+      setFlotsOf?.(setId, item ? flotsFromItem(item) : []);
+      setPhaseLinesOf?.(setId, item ? phaseLinesFromItem(item) : []);
+    },
+    [setFlotsOf, setPhaseLinesOf],
+  );
   const applyTheirs = useCallback(
     (uuid, item, { ops, dropHistory } = {}) => {
       const setId = setIdOf(uuid);
@@ -72,18 +86,18 @@ export const usePackRoutes = ({
           ? (routes) => applyOpsTo({ routes }, ops).routes.map((route) => (route.setId ? route : restoreSketchRoute(route, setId)))
           : undefined,
       });
-      setFlotsOf?.(setId, flotsFromItem(item));
+      setLinesOf(setId, item);
       setNames((n) => ({ ...n, [uuid]: item.name }));
     },
-    [replaceRouteSet, setFlotsOf, setIdOf],
+    [replaceRouteSet, setLinesOf, setIdOf],
   );
   const removeLocal = useCallback(
     (uuid) => {
       removeRouteSet(setIdOf(uuid));
-      setFlotsOf?.(setIdOf(uuid), []);
+      setLinesOf(setIdOf(uuid));
       forget(uuid);
     },
-    [removeRouteSet, setFlotsOf, setIdOf],
+    [removeRouteSet, setLinesOf, setIdOf],
   );
 
   const sync = usePackItemSync({
@@ -109,12 +123,12 @@ export const usePackRoutes = ({
       const item = sync.items.get(uuid);
       if (!item || open.includes(uuid)) return Boolean(item);
       loadSketchRoutes(item.data?.routes ?? [], { setId: setIdOf(uuid) });
-      setFlotsOf?.(setIdOf(uuid), flotsFromItem(item));
+      setLinesOf(setIdOf(uuid), item);
       setNames((n) => ({ ...n, [uuid]: item.name }));
       setOpen((list) => [...list, uuid]);
       return true;
     },
-    [sync.items, open, loadSketchRoutes, setFlotsOf, setIdOf],
+    [sync.items, open, loadSketchRoutes, setLinesOf, setIdOf],
   );
 
   /** Takes a route set off the map (it stays in the pack). A change still waiting is sent first. */
@@ -122,17 +136,21 @@ export const usePackRoutes = ({
     (uuid) => {
       if (!open.includes(uuid)) return;
       removeRouteSet(setIdOf(uuid));
-      setFlotsOf?.(setIdOf(uuid), []);
+      setLinesOf(setIdOf(uuid));
       forget(uuid);
     },
-    [open, removeRouteSet, setFlotsOf, setIdOf],
+    [open, removeRouteSet, setLinesOf, setIdOf],
   );
 
-  /** A new, empty route set in the pack, opened here. Returns its uuid, or null if refused. */
+  /**
+   * A new, empty route set in the pack, opened here. Returns its uuid, or null if refused. `measures`: it is made for the
+   * pack's control measures (FLOTs, phase lines), which are a route set's item with no routes, and the history says so.
+   */
   const createItem = useCallback(
-    (name) => {
+    (name, { measures = false } = {}) => {
       const uuid = packItemId("route", newId());
       const op = newItemOp({ kind: "route", item: uuid, name, count: sync.items.size, data: { version: 1, routes: [] }, actor });
+      if (measures) op.summary = measuresCreateSummary(actor, op.name);
       const refused = edit([op]);
       if (refused) {
         onRefused?.(refused, null);

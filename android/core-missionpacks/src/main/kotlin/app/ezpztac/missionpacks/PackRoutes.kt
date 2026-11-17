@@ -151,6 +151,13 @@ public object PackRoutes {
 
     private fun named(value: JsonElement?, otherwise: String): String = if (Js.truthy(value)) Js.text(value) else otherwise
 
+    /** A phase line as the history tells it: as the web draws it (`PL RED`), and "a phase line" where its name is not words. */
+    private fun phaseLine(line: JsonElement?): String {
+        val name = Js.prop(line, "name")
+        val words = if (name is JsonPrimitive && name.isString) Js.trim(name.content) else ""
+        return if (words.isNotEmpty()) "PL $words" else "a phase line"
+    }
+
     /**
      * One sentence for the pack's history about a change to a route set ("Sam B. moved .RP on RED 1."): `describeRouteChange`, held to
      * describe.json's `routes` cases. [before] and [after] are the set's shared data; [name] is the set's. Cut to 300 UTF-16 units,
@@ -163,6 +170,27 @@ public object PackRoutes {
         val phrases = ArrayList<String>()
         val was = byId(Js.prop(before, "routes"), unique)
         val now = byId(Js.prop(after, "routes"), unique)
+        // A route that is gone, with its points now another route's, was not removed: it was joined onto that route (the web's
+        // routeSetOps.combineRoutes), all of its points or all but the first, where the two met.
+        val taken = LinkedHashMap<String, Pair<JsonElement, Set<String>>>()   // the route that grew -> the one joined onto it, and the ids that came over
+        val joined = HashSet<String>()                                         // the routes joined onto another
+        for ((goneId, gone) in was) {
+            if (goneId in now) continue
+            val goneIds = byId(Js.prop(gone, "points"), unique).keys.toList()
+            if (goneIds.isEmpty()) continue
+            for ((id, route) in now) {
+                val old = was[id]
+                if (old == null || id in taken) continue
+                val oldPoints = byId(Js.prop(old, "points"), unique)
+                val newPoints = byId(Js.prop(route, "points"), unique)
+                val carried = goneIds.filter { it in newPoints && it !in oldPoints }
+                if (carried.isNotEmpty() && carried.size >= goneIds.size - 1) {
+                    taken[id] = gone to carried.toSet()
+                    joined += goneId
+                    break
+                }
+            }
+        }
         for ((id, route) in now) {
             val label = named(Js.prop(route, "name"), "a route")
             val old = was[id]
@@ -170,17 +198,23 @@ public object PackRoutes {
                 phrases += "added the route $label to $set"
                 continue
             }
+            val onto = taken[id]
+            if (onto != null) {
+                val goneName = Js.prop(onto.first, "name")
+                phrases += "combined ${if (Js.truthy(goneName)) "the route ${Js.text(goneName)}" else "a route"} into $label"
+            }
             val oldName = Js.prop(old, "name")
             if (!Js.sameValue(oldName, Js.prop(route, "name"))) {
                 phrases += if (Js.truthy(oldName)) "renamed the route ${Js.text(oldName)} to $label" else "named a route $label"
             }
+            if (!Js.sameValue(Js.prop(old, "color"), Js.prop(route, "color"))) phrases += "changed the colour of $label"
             val oldPoints = byId(Js.prop(old, "points"), unique)
             val newPoints = byId(Js.prop(route, "points"), unique)
             for ((pointId, point) in newPoints) {
                 val previous = oldPoints[pointId]
                 val pointName = named(Js.prop(point, "name"), "a point")
                 when {
-                    previous == null -> phrases += "added $pointName to $label"
+                    previous == null -> if (onto == null || pointId !in onto.second) phrases += "added $pointName to $label"
                     !Js.sameValue(Js.prop(previous, "lat"), Js.prop(point, "lat")) || !Js.sameValue(Js.prop(previous, "lon"), Js.prop(point, "lon")) ->
                         phrases += "moved $pointName on $label"
                     !PackDiff.sameData(previous, point) -> phrases += "changed $pointName on $label"
@@ -193,7 +227,7 @@ public object PackRoutes {
             if (!PackDiff.sameData(Js.prop(old, "elevations"), Js.prop(route, "elevations"))) phrases += "updated the ground elevations of $label"
         }
         for ((id, route) in was) {
-            if (id in now) continue
+            if (id in now || id in joined) continue
             val routeName = Js.prop(route, "name")
             phrases += if (Js.truthy(routeName)) "removed the route ${Js.text(routeName)} from $set" else "removed a route from $set"
         }
@@ -209,6 +243,19 @@ public object PackRoutes {
         }
         for (id in flotsBefore.keys) {
             if (id !in flotsAfter) phrases += "removed a FLOT from $set"
+        }
+        val linesBefore = byId(Js.prop(before, "phaseLines"), unique)
+        val linesAfter = byId(Js.prop(after, "phaseLines"), unique)
+        for ((id, line) in linesAfter) {
+            val old = linesBefore[id]
+            when {
+                old == null -> phrases += "added ${phaseLine(line)} to $set"
+                !Js.sameValue(Js.prop(old, "name"), Js.prop(line, "name")) -> phrases += "renamed ${phaseLine(old)} to ${phaseLine(line)} on $set"
+                !PackDiff.sameData(Js.prop(old, "points"), Js.prop(line, "points")) -> phrases += "moved ${phaseLine(line)} on $set"
+            }
+        }
+        for ((id, line) in linesBefore) {
+            if (id !in linesAfter) phrases += "removed ${phaseLine(line)} from $set"
         }
         val what = phrases.firstOrNull() ?: "edited $set"
         return Js.cut("${actor?.takeIf { it.isNotEmpty() } ?: "Someone"} $what.", PackLz.MAX_SENTENCE)

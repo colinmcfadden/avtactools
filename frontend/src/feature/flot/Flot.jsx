@@ -1,8 +1,9 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useMemo, useState } from "react";
 import { Marker, Polyline, useMap, useMapEvent } from "react-leaflet";
 import L from "leaflet";
 import { createMapObjectHandleIcon } from "../../utils/mapObjectControls";
-import { flotLabelSpot, flotPoints, scallopRuns } from "./flots";
+import LineHandles, { useLineEditing } from "../setLines/LineHandles";
+import { flotLabelSpot, scallopRuns } from "./flots";
 import "./flot.css";
 
 const FLOT_COLOR = "#2f8fff";
@@ -32,21 +33,9 @@ const Flot = ({ data, onChange, onContextMenu, passive = false }) => {
   const [view, setView] = useState(0);
   useMapEvent("moveend", () => setView((n) => n + 1));
 
-  const [live, setLive] = useState(null);
-  const [active, setActive] = useState(false);
-  const drag = useRef(null);
   const editable = Boolean(onChange) && !passive;
-
-  // A pack that turns read-only mid-drag takes the handles away, and their dragend with them.
-  useEffect(() => {
-    if (!editable) {
-      drag.current = null;
-      setLive(null);
-    }
-  }, [editable]);
-
-  const saved = flotPoints(data);
-  const points = live ?? saved;
+  const editing = useLineEditing({ data, onChange, editable });
+  const { saved, points } = editing;
   const flipped = Boolean(data.flipped);
 
   const drawn = useMemo(() => {
@@ -70,31 +59,6 @@ const Flot = ({ data, onChange, onContextMenu, passive = false }) => {
 
   if (saved.length < 2) return null;
 
-  const positions = points.map((p) => [p.lat, p.lon]);
-  const showing = (value) => () => {
-    if (!drag.current) setActive(value);
-  };
-  const hover = { mouseover: showing(true), mouseout: showing(false) };
-
-  const handlesFor = (index) => ({
-    ...hover,
-    dragstart: () => {
-      drag.current = { latest: null };
-    },
-    drag: (e) => {
-      if (!drag.current) return;
-      const at = e.target.getLatLng();
-      drag.current.latest = saved.map((point, i) => (i === index ? { lat: at.lat, lon: at.lng } : point));
-      setLive(drag.current.latest);
-    },
-    dragend: () => {
-      const moved = drag.current?.latest;
-      drag.current = null;
-      setLive(null);
-      if (moved && onChange) onChange(data.id, { points: moved });
-    },
-  });
-
   return (
     <>
       {drawn.runs.length > 0 && (
@@ -104,40 +68,7 @@ const Flot = ({ data, onChange, onContextMenu, passive = false }) => {
         </>
       )}
       {drawn.label && icon && <Marker position={drawn.label.at} icon={icon} interactive={false} keyboard={false} />}
-      {editable && (
-        <>
-          {/* What a finger or the mouse finds: scallops this thin would be nearly impossible to hit. */}
-          <Polyline
-            positions={positions}
-            pathOptions={{ opacity: 0, weight: 26 }}
-            eventHandlers={{
-              ...hover,
-              click: (e) => {
-                L.DomEvent.stopPropagation(e);
-                setActive((value) => !value);
-              },
-              contextmenu: (e) => {
-                if (!onContextMenu) return;
-                L.DomEvent.stop(e);
-                e.originalEvent.preventDefault();
-                onContextMenu(data.id, e.originalEvent.clientX, e.originalEvent.clientY);
-              },
-            }}
-          />
-          {saved.map((point, i) => (
-            <Marker
-              // eslint-disable-next-line react/no-array-index-key
-              key={i}
-              position={[point.lat, point.lon]}
-              icon={HANDLE_ICON}
-              draggable
-              eventHandlers={handlesFor(i)}
-              opacity={active ? 1 : 0}
-              zIndexOffset={1000}
-            />
-          ))}
-        </>
-      )}
+      {editable && <LineHandles id={data.id} editing={editing} icon={HANDLE_ICON} onContextMenu={onContextMenu} />}
     </>
   );
 };

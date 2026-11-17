@@ -7,6 +7,8 @@ import "../feature/aircraft/aircraft.css";
 import { UNIT_TYPES } from "../feature/unit/UnitIcons";
 import { symbolDataUri } from "../feature/symbols/milsym";
 import BackstopGlyph from "../feature/backstops/BackstopGlyph";
+import FlotGlyph from "../feature/flot/FlotGlyph";
+import PhaseLineGlyph from "../feature/phaseLines/PhaseLineGlyph";
 import packageJson from "../../package.json";
 
 /**
@@ -22,6 +24,10 @@ export const diagramReadiness = ({ hasTarget, analyzed, editable = true }) =>
       : editable
         ? "Analyzed. Planning graphics, export and save are unlocked."
         : "Analyzed. Read-only here: viewing and export still work.";
+
+// The colour a line tool takes while its line is being drawn, as the Route tool's does.
+const LINE_TOOL_ON = "#64D2FF";
+const LINES_READ_ONLY = "Read-only here: nothing can be drawn.";
 
 const Controls = ({
   aircraftProfiles,
@@ -48,6 +54,13 @@ const Controls = ({
   addSector,
   isDrawingBackstop = false,
   onToggleBackstop,
+  // The FLOT and the phase line: drawn as a route is, into the set new routes go into, with no LZ/PZ needed.
+  isDrawingFlot = false,
+  onToggleFlot,
+  isDrawingPhaseLine = false,
+  onTogglePhaseLine,
+  // False where nothing may be changed (a finished Mission Pack, or a viewer of one).
+  canDrawLines = true,
   exportBox,
   enableExportMode,
   isExporting,
@@ -540,6 +553,37 @@ const Controls = ({
                 {isSketching ? "End Route" : "Route"}
               </span>
             </button>
+            {onToggleFlot && (
+              <button
+                onClick={onToggleFlot}
+                className={`ff-tool-btn ${isDrawingFlot ? "active" : ""}`}
+                disabled={!canDrawLines}
+                aria-pressed={isDrawingFlot}
+                title={canDrawLines ? "Draw the FLOT, the forward line of own troops (click the map along the line)" : LINES_READ_ONLY}
+                style={{ borderColor: isDrawingFlot ? LINE_TOOL_ON : "" }}
+              >
+                <FlotGlyph color={isDrawingFlot ? LINE_TOOL_ON : undefined} />
+                <span className="btn-label" style={{ color: isDrawingFlot ? LINE_TOOL_ON : "" }}>
+                  {isDrawingFlot ? "End FLOT" : "FLOT"}
+                </span>
+              </button>
+            )}
+            {onTogglePhaseLine && (
+              <button
+                onClick={onTogglePhaseLine}
+                className={`ff-tool-btn ${isDrawingPhaseLine ? "active" : ""}`}
+                disabled={!canDrawLines}
+                aria-pressed={isDrawingPhaseLine}
+                aria-label={isDrawingPhaseLine ? "End phase line" : "Phase line"}
+                title={canDrawLines ? "Draw a phase line (click the map along the line)" : LINES_READ_ONLY}
+                style={{ borderColor: isDrawingPhaseLine ? LINE_TOOL_ON : "" }}
+              >
+                <PhaseLineGlyph color={isDrawingPhaseLine ? LINE_TOOL_ON : "currentColor"} />
+                <span className="btn-label" style={{ color: isDrawingPhaseLine ? LINE_TOOL_ON : "" }}>
+                  {isDrawingPhaseLine ? "End PL" : "PL"}
+                </span>
+              </button>
+            )}
           </div>
         </div>
         )}

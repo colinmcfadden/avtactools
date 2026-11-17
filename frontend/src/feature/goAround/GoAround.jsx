@@ -36,7 +36,7 @@ const GoAroundMarker = ({ data, updateGoAround, deleteGoAround }) => {
     const path = isRight ? rightArrowPath : leftArrowPath;
 
     return `
-      <div class="drag-lifter doghouse-interactive-wrapper" style="position: relative; width: 100%; height: 100%; pointer-events: none;">
+      <div class="drag-lifter doghouse-interactive-wrapper map-graphic-scale" style="position: relative; width: 100%; height: 100%; pointer-events: none;">
         
         <div class="ga-interaction-group" style="position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); width: 160px; height: 120px; pointer-events: auto; display: flex; align-items: center; justify-content: center; background: rgba(0,0,0,0.01); border-radius: 8px;">
             

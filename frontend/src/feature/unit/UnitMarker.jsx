@@ -29,7 +29,7 @@ const UnitMarker = ({ data, updateUnitPosition, deleteUnit, onEdit }) => {
       return L.divIcon({
         className: "unit-div-icon",
         html: `
-          <div class="drag-lifter map-object-shell unit-object-shell" style="position:relative;width:${parts.size.width}px;height:${parts.size.height}px;display:flex;align-items:center;justify-content:center;">
+          <div class="drag-lifter map-object-shell unit-object-shell map-graphic-scale" style="position:relative;width:${parts.size.width}px;height:${parts.size.height}px;display:flex;align-items:center;justify-content:center;">
             ${parts.svg}
             ${moveControl}
           </div>`,
@@ -41,7 +41,7 @@ const UnitMarker = ({ data, updateUnitPosition, deleteUnit, onEdit }) => {
     return L.divIcon({
       className: "unit-div-icon",
       html: `
-            <div class="drag-lifter map-object-shell unit-object-shell" style="position: relative; width: 100%; height: 100%; display: flex; align-items: center; justify-content: center;">
+            <div class="drag-lifter map-object-shell unit-object-shell map-graphic-scale" style="position: relative; width: 100%; height: 100%; display: flex; align-items: center; justify-content: center;">
                 <img src="${data.path}" style="width: 50px; height: 30px; object-fit: contain; pointer-events: none;" draggable="false" />
                 ${moveControl}
             </div>
