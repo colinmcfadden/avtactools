@@ -150,10 +150,12 @@ def get_local_weather():
         # --- THE SINGLE FETCH OPTIMIZATION ---
         try:
             metar_url = "https://aviationweather.gov/api/data/metar"
+            # Whole hours only: aviationweather.gov refuses a fraction ("Invalid value for hours"), which once
+            # left every answer the defaults below. Reports come newest first, so a station's latest is the one kept.
             metar_params = {
-                "bbox": bbox, 
-                "format": "json", 
-                "hours": "1.5"
+                "bbox": bbox,
+                "format": "json",
+                "hours": "2"
             }
             
             print(f"DEBUG: Fetching ALL METARs in BBOX: {bbox}")
@@ -197,7 +199,8 @@ def get_local_weather():
             'wind_gust_kts': best_report.get('wgst'),
             'vis_sm': best_report.get('visib'),
             'pressure': pressure,
-            'flight_category': best_report.get('fltcat'),
+            # aviationweather.gov now writes it fltCat; fltcat is what it wrote before.
+            'flight_category': best_report.get('fltCat', best_report.get('fltcat')),
             'raw_metar': best_report.get('rawOb'),
             'distance_miles': round(min_dist * 69, 1) if min_dist != float('inf') else 0,
             'notams': active_notams
