@@ -137,6 +137,10 @@ class PackDescribeFixtureTest {
                     (case["pointCount"] as? JsonPrimitive)?.int,
                 ),
             )
+            "measuresCreateSummary" -> assertEquals(
+                case.getValue("summary").jsonPrimitive.content,
+                PackSentences.measuresCreateSummary(actor, case.getValue("itemName").jsonPrimitive.content),
+            )
             "updateFromOriginalSummary" -> assertEquals(
                 case.getValue("summary").jsonPrimitive.content,
                 PackSentences.updateFromOriginalSummary(actor, case.getValue("itemName").jsonPrimitive.content),
@@ -149,7 +153,7 @@ class PackDescribeFixtureTest {
     fun `every helper the web has is here, and every case of each is replayed`() {
         val helpers = cases("summaries").map { it.getValue("helper").jsonPrimitive.content }.toSet()
         assertEquals(
-            setOf("renameSummary", "deleteItemOp", "copyFromLibrary", "actorName", "newItemOp", "newPointSetOp", "createSummary", "updateFromOriginalSummary"),
+            setOf("renameSummary", "deleteItemOp", "copyFromLibrary", "actorName", "newItemOp", "newPointSetOp", "createSummary", "updateFromOriginalSummary", "measuresCreateSummary"),
             helpers,
         )
         assertEquals(2, summaries("newPointSetOp").count { it.getValue("made").jsonObject["refused"] is JsonPrimitive && text(it.getValue("made").jsonObject["refused"]) != null })
