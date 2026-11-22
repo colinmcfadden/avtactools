@@ -27,6 +27,7 @@ import app.ezpztac.android.LidarWaitingPreferences
 import app.ezpztac.android.MinimumVersion
 import app.ezpztac.android.MinimumVersionPreferences
 import app.ezpztac.android.HiddenDiagramPreferences
+import app.ezpztac.android.ThreatDisplayPreferences
 import app.ezpztac.android.OpenDiagramPreferences
 import app.ezpztac.android.OpenRouteSetPreferences
 import app.ezpztac.android.OpenThreatSetPreferences
@@ -77,6 +78,7 @@ import app.ezpztac.data.FileMasterProfileStore
 import app.ezpztac.data.LastBrief
 import app.ezpztac.data.MissionTemplate
 import app.ezpztac.data.HiddenDiagramStore
+import app.ezpztac.data.ThreatDisplayStore
 import app.ezpztac.data.OpenDiagramStore
 import app.ezpztac.data.OpenRouteSetStore
 import app.ezpztac.data.OpenThreatSetStore
@@ -343,6 +345,9 @@ interface AppBindings {
 
     @Binds
     fun hiddenDiagrams(impl: HiddenDiagramPreferences): HiddenDiagramStore
+
+    @Binds
+    fun threatDisplay(impl: ThreatDisplayPreferences): ThreatDisplayStore
 
     @Binds
     fun openRouteSets(impl: OpenRouteSetPreferences): OpenRouteSetStore

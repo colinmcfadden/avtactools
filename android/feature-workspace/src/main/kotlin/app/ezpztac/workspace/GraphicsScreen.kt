@@ -122,19 +122,30 @@ fun graphicsActionsOf(viewModel: GraphicsViewModel, crosshair: LatLon?): Graphic
  * The list of the open diagram's graphics, the inspector for the one held, undo and redo, and the separation alerts. [placeButtons] adds the buttons that put
  * one at the crosshair and the unit builder; the LZ/PZ plan has its own tools for those, as modes (`LzPlanContent`), and leaves them out.
  */
+/** Undo and Redo for the planning graphics. Not in a read-only pack: a step taken back there would be a change the pack refuses. */
 @Composable
-fun GraphicsContent(state: GraphicsUiState, crosshairGrid: String?, actions: GraphicsActions, modifier: Modifier = Modifier, placeButtons: Boolean = true) {
+internal fun GraphicsUndoRedo(state: GraphicsUiState, actions: GraphicsActions) {
+    if (state.locked == null && (state.canEdit || state.undoDepth > 0 || state.redoDepth > 0)) {
+        Row {
+            TextAction("Undo", onClick = actions.undo, enabled = state.undoDepth > 0)
+            TextAction("Redo", onClick = actions.redo, enabled = state.redoDepth > 0)
+        }
+    }
+}
+
+@Composable
+fun GraphicsContent(
+    state: GraphicsUiState, crosshairGrid: String?, actions: GraphicsActions, modifier: Modifier = Modifier, placeButtons: Boolean = true,
+    /** Its own heading, with Undo and Redo: not inside a card that has them ([GraphicsUndoRedo]). */
+    titled: Boolean = true,
+) {
     var addingUnit by rememberSaveable { mutableStateOf(false) }
     var newUnit by rememberSaveable(stateSaver = UnitDraftSaver) { mutableStateOf(UnitDraft()) }
     Column(modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(Tokens.Spacing.md.dp)) {
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-            Text("Planning graphics", style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.onSurface)
-            // Not in a read-only pack: a step taken back there would be a change the pack refuses.
-            if (state.locked == null && (state.canEdit || state.undoDepth > 0 || state.redoDepth > 0)) {
-                Row {
-                    TextAction("Undo", onClick = actions.undo, enabled = state.undoDepth > 0)
-                    TextAction("Redo", onClick = actions.redo, enabled = state.redoDepth > 0)
-                }
+        if (titled) {
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                Text("Planning graphics", style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.onSurface)
+                GraphicsUndoRedo(state, actions)
             }
         }
         // Said before anything else, whether or not it is analysed: a refusal of Undo on an LZ/PZ not analysed is said too.

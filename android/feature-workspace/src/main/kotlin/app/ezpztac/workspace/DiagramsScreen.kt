@@ -34,6 +34,8 @@ import app.ezpztac.designsystem.BannerKind
 import app.ezpztac.designsystem.EzpzText
 import app.ezpztac.designsystem.EzpzTextField
 import app.ezpztac.designsystem.EzpzTheme
+import app.ezpztac.designsystem.StatTile
+import app.ezpztac.designsystem.TileGrid
 import app.ezpztac.designsystem.PrimaryButton
 import app.ezpztac.designsystem.SecondaryButton
 import app.ezpztac.designsystem.TextAction
@@ -147,7 +149,7 @@ private fun ActiveDiagramCard(current: ActiveDiagramUi, actions: DiagramsActions
             AnalysisControls(current, actions)
             AircraftPicker(current.aircraft, actions.selectAircraft)
             current.summary?.let { SummaryTiles(it) }
-            current.weather?.let { WeatherSection(it, nowMillis, actions.refreshWeather) }
+            current.weather?.let { WeatherSection(it, nowMillis, onRefresh = actions.refreshWeather) }
             extras?.invoke()
             ManageControls(current.uuid, current.name, actions)
         }
@@ -183,11 +185,15 @@ internal fun AnalysisControls(current: ActiveDiagramUi, actions: DiagramsActions
 @Composable
 internal fun SummaryTiles(summary: SummaryUi) {
     Column(verticalArrangement = Arrangement.spacedBy(Tokens.Spacing.sm.dp)) {
-        Row(horizontalArrangement = Arrangement.spacedBy(Tokens.Spacing.sm.dp)) {
-            Tile("Capacity · ${summary.aircraft}", summary.capacity.toString(), Modifier.weight(1f), emphasis = true)
-            Tile("Area (ft²)", withCommas(summary.areaSqFt), Modifier.weight(1f))
-        }
-        Tile("Elevation (MSL)", summary.elevation?.let { if (it.all(Char::isDigit) || it.startsWith("-")) "$it ft" else it } ?: "—", Modifier.fillMaxWidth())
+        // Compact, three to a row where they fit (the owner's request of 2026-11-22: the analysis was too large to follow on a phone).
+        val elevation = summary.elevation?.let { if (it.all(Char::isDigit) || it.startsWith("-")) "$it ft" else it } ?: "—"
+        TileGrid(
+            listOf(
+                { m -> StatTile("Capacity", summary.capacity.toString(), m, unit = summary.aircraft, emphasis = true, description = "Capacity: ${summary.capacity} ${summary.aircraft}") },
+                { m -> StatTile("Area (ft²)", withCommas(summary.areaSqFt), m) },
+                { m -> StatTile("Elevation (MSL)", elevation, m) },
+            ),
+        )
         SlopeTile(summary.slope)
         // Open until closed, and kept so while the app runs (a turn of the phone included); how this person likes the card, not part of the plan.
         var profileOpen by rememberSaveable { mutableStateOf(true) }
@@ -195,29 +201,12 @@ internal fun SummaryTiles(summary: SummaryUi) {
     }
 }
 
-@Composable
-private fun Tile(
-    label: String, value: String, modifier: Modifier = Modifier, emphasis: Boolean = false, valueColor: Color = MaterialTheme.colorScheme.onSurface,
-    caption: String? = null,
-) {
-    Surface(modifier = modifier, shape = RoundedCornerShape(Tokens.Radius.sm.dp), color = MaterialTheme.colorScheme.surfaceVariant) {
-        Column(Modifier.padding(Tokens.Spacing.md.dp), verticalArrangement = Arrangement.spacedBy(Tokens.Spacing.xs.dp)) {
-            Text(label, style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            Text(
-                value, style = MaterialTheme.typography.headlineSmall.copy(fontWeight = if (emphasis) FontWeight.Bold else FontWeight.SemiBold),
-                color = if (emphasis) MaterialTheme.colorScheme.primary else valueColor,
-            )
-            if (caption != null) Text(caption, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        }
-    }
-}
-
 /** The tile that says whether the ground is fit to land on. Colour is never the only signal: the word says it too. */
 @Composable
 private fun SlopeTile(slope: SlopeTileUi) {
     when (slope) {
-        SlopeTileUi.Measuring -> Tile("Max terrain slope", "Measuring…", Modifier.fillMaxWidth())
-        is SlopeTileUi.Unavailable -> Tile("Max terrain slope", "—", Modifier.fillMaxWidth(), caption = slope.message)
+        SlopeTileUi.Measuring -> StatTile("Max terrain slope", "Measuring…", Modifier.fillMaxWidth())
+        is SlopeTileUi.Unavailable -> StatTile("Max terrain slope", "—", Modifier.fillMaxWidth(), caption = slope.message)
         is SlopeTileUi.Measured -> {
             val color = when (slope.call.level) {
                 LzSummary.SlopeLevel.SAFE -> EzpzTheme.status.success
@@ -226,13 +215,14 @@ private fun SlopeTile(slope: SlopeTileUi) {
             }
             Surface(
                 modifier = Modifier.fillMaxWidth().semantics { contentDescription = slopeSpoken(slope.call) },
-                shape = RoundedCornerShape(Tokens.Radius.sm.dp), color = MaterialTheme.colorScheme.surfaceVariant, border = BorderStroke(2.dp, color),
+                shape = RoundedCornerShape(Tokens.Radius.sm.dp), color = MaterialTheme.colorScheme.surfaceContainerHighest, border = BorderStroke(2.dp, color),
             ) {
-                Column(Modifier.padding(Tokens.Spacing.md.dp), verticalArrangement = Arrangement.spacedBy(Tokens.Spacing.xs.dp)) {
-                    Text("Max terrain slope", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    Row(horizontalArrangement = Arrangement.spacedBy(Tokens.Spacing.md.dp), verticalAlignment = Alignment.CenterVertically) {
-                        Text("${oneDecimal(slope.call.maxDeg)}°", style = MaterialTheme.typography.headlineSmall.copy(fontWeight = FontWeight.SemiBold), color = MaterialTheme.colorScheme.onSurface)
-                        Text(slope.call.label, style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold), color = color)
+                Column(Modifier.padding(horizontal = 10.dp, vertical = Tokens.Spacing.sm.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                    // The figure and its call on the label's line, so the tile is three short lines, not five tall ones.
+                    Row(horizontalArrangement = Arrangement.spacedBy(Tokens.Spacing.sm.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Text("Max terrain slope", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.weight(1f))
+                        Text("${oneDecimal(slope.call.maxDeg)}°", style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold), color = MaterialTheme.colorScheme.onSurface)
+                        Text(slope.call.label, style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold), color = color)
                     }
                     // What was judged at the landing heading and the wind the limits are for (the web's smaller lines under the slope).
                     slope.call.lines.forEach { line ->

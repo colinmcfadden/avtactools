@@ -27,6 +27,7 @@ import app.ezpztac.data.HandoffFormat
 import app.ezpztac.data.RouteSketching
 import app.ezpztac.designsystem.Banner
 import app.ezpztac.designsystem.BannerKind
+import app.ezpztac.designsystem.GlassSurface
 import app.ezpztac.designsystem.PrimaryButton
 import app.ezpztac.designsystem.SecondaryButton
 import app.ezpztac.designsystem.TextAction
@@ -220,8 +221,7 @@ fun RouteToolbarWhileDrawing(state: RoutesUiState, actions: RoutesActions, modif
 /** What is over the map while drawing: how many points, and the things to do. */
 @Composable
 fun RouteToolbar(drawing: RouteDrawingUi, error: String?, actions: RoutesActions, modifier: Modifier = Modifier) {
-    Surface(
-        shape = RoundedCornerShape(Tokens.Radius.md.dp), color = MaterialTheme.colorScheme.surface, tonalElevation = 3.dp, shadowElevation = 6.dp,
+    GlassSurface(
         modifier = modifier.padding(horizontal = Tokens.Spacing.md.dp).semantics { contentDescription = "Drawing a route" },
     ) {
         Column(Modifier.padding(Tokens.Spacing.md.dp), verticalArrangement = Arrangement.spacedBy(Tokens.Spacing.sm.dp)) {

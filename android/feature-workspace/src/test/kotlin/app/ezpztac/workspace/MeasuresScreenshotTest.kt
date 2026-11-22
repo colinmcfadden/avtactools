@@ -95,6 +95,32 @@ class MeasuresScreenshotTest {
     }
 
     @Test
+    fun `control measures of the person's own go into a Mission Pack from their card, and lines saved in a route set or a pack's are not offered it`() {
+        val added = mutableListOf<Pair<String, String>>()
+        show {
+            Column(Modifier.padding(horizontal = 16.dp)) {
+                MeasuresSection(listOf(own, older), MeasuresCardActions(addToPack = { uuid, name -> added += uuid to name }))
+            }
+        }
+        compose.onNodeWithText("Add to Mission Pack…").assertIsDisplayed().performClick()
+        assertEquals(listOf("m-1" to "CONTROL MEASURES"), added)
+        assertEquals("only the set of their own offers it", 1, compose.onAllNodes(androidx.compose.ui.test.hasText("Add to Mission Pack…")).fetchSemanticsNodes().size)
+        shot("cards-add-to-pack")
+    }
+
+    @Test
+    fun `no pack to add to offers nothing`() {
+        show { Column(Modifier.padding(horizontal = 16.dp)) { MeasuresSection(listOf(own), MeasuresCardActions()) } }
+        compose.onNodeWithText("Add to Mission Pack…").assertDoesNotExist()
+    }
+
+    @Test
+    fun `a pack's own control measures are not offered to a pack`() {
+        show { Column(Modifier.padding(horizontal = 16.dp)) { MeasuresSection(listOf(own.copy(inPack = true)), MeasuresCardActions(addToPack = { _, _ -> })) } }
+        compose.onNodeWithText("Add to Mission Pack…").assertDoesNotExist()
+    }
+
+    @Test
     fun `a read-only pack's card offers no change, in the light palette`() {
         show(ThemeMode.Light) {
             Column(Modifier.padding(horizontal = 16.dp)) { MeasuresSection(listOf(own.copy(inPack = true, locked = "OP DK is finished.")), MeasuresCardActions()) }

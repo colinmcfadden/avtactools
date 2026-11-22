@@ -705,7 +705,7 @@ fun MapHome(
                         )
                         Panel.Routes -> RoutesHost(
                             crosshair = state.center, threatCount = counts.threats, onBrowseLibrary = { libraryTab = LibraryTab.ROUTES }, viewModel = routesModel,
-                            onAddToPack = askCopy?.invoke(RecordKind.ROUTE), onSaveCopy = saveCopy, measures = { MeasuresSectionHost(measuresModel) },
+                            onAddToPack = askCopy?.invoke(RecordKind.ROUTE), onSaveCopy = saveCopy, measures = { MeasuresSectionHost(measuresModel, onAddToPack = askCopy?.invoke(RecordKind.ROUTE)) },
                         )
                         Panel.Threats -> ThreatsHost(
                             onExport = { ShareExport.share(context, it) }, onImport = importFiles, crosshair = state.center, crosshairGrid = state.readout?.mgrs,

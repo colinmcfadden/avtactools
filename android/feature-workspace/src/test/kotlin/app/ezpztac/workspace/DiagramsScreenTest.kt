@@ -252,7 +252,7 @@ class DiagramsScreenTest {
     @Test
     fun `an analysed diagram shows its summary, and analysing again is the quieter choice`() {
         val r = show(DiagramsUiState(current = open(DiagramStatus.ANALYZED, summary = tiles())))
-        compose.onNodeWithText("Capacity · UH-60L").performScrollTo().assertIsDisplayed()
+        compose.onNodeWithText("Capacity").performScrollTo().assertIsDisplayed()
         compose.onNodeWithText("13").assertIsDisplayed()
         compose.onNodeWithText("854,831").assertIsDisplayed()                                 // thousands, written here, not by the platform
         compose.onNodeWithText("4050 ft").assertIsDisplayed()

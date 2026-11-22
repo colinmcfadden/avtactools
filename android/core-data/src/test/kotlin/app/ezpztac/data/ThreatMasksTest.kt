@@ -13,6 +13,7 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.TestScope
+import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
@@ -21,7 +22,7 @@ import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
-/** What a threat's terrain mask does and does not do on its own: it is asked for by a press, once, and it goes with the threat. */
+/** What a threat's terrain mask does and does not do: it is asked for once at a time, by a press or by itself for the threats on the map, and it goes with the threat. */
 @OptIn(ExperimentalCoroutinesApi::class)
 class ThreatMasksTest {
     private class Vault : ThreatVault {
@@ -128,5 +129,94 @@ class ThreatMasksTest {
         val id = r.store.add(threat()); advanceUntilIdle()
         masks.request(id); advanceUntilIdle()
         assertEquals(MaskState.Failed(ThreatMasks.COULD_NOT), masks.states.value[id])
+    }
+
+    // -- Asked for by themselves (the owner's request of 2026-11-22: the terrain mask shown by default) ---------------------------------------------------------
+
+    private class Auto(scope: TestScope, val display: ThreatDisplay = ThreatDisplay(InMemoryThreatDisplayStore())) {
+        val store = ThreatStore(Vault(), CoroutineScope(SupervisorJob() + StandardTestDispatcher(scope.testScheduler)), StandardTestDispatcher(scope.testScheduler)) { 1_000L }
+        val api = Api()
+        val job = SupervisorJob()
+        val masks = ThreatMasks(api, store, CoroutineScope(job + StandardTestDispatcher(scope.testScheduler)), display)
+    }
+
+    @Test
+    fun `nothing is asked for by itself until the account's threats are on, then each threat on the map gets its mask, one at a time`() = runTest {
+        val r = Auto(this)
+        val a = r.store.add(threat())
+        val b = r.store.add(threat().copy(name = "two", lat = 34.8))
+        advanceUntilIdle()
+        assertTrue("not before the account's threats are on", r.api.asked.isEmpty())
+
+        r.api.gate = CompletableDeferred()
+        r.masks.setAutomatic(true)
+        advanceUntilIdle()
+        assertEquals("the second waits for the first's answer", 1, r.api.asked.size)
+        r.api.gate!!.complete(Unit)
+        advanceUntilIdle()
+        assertEquals(2, r.api.asked.size)
+        assertTrue(r.masks.states.value[a] is MaskState.Ready)
+        assertTrue(r.masks.states.value[b] is MaskState.Ready)
+        advanceUntilIdle()
+        assertEquals("a mask in hand is not asked for again", 2, r.api.asked.size)
+        r.job.cancel()
+    }
+
+    @Test
+    fun `a mask turned off on this device, a hidden threat and a radar that shows no mask are not asked for`() = runTest {
+        val r = Auto(this)
+        val off = r.store.add(threat())
+        val hidden = r.store.add(threat().copy(name = "hidden", lat = 34.8))
+        r.store.add(threat().copy(name = "no mask", lat = 34.9, radars = Radars.defaultPair().map { it.copy(showMask = false) }))
+        advanceUntilIdle()
+        r.display.setMask(off, false)
+        r.store.setVisible(hidden, false)
+        r.masks.setAutomatic(true)
+        advanceUntilIdle()
+        assertTrue(r.api.asked.toString(), r.api.asked.isEmpty())
+
+        r.display.setMask(off, true)                                                         // turned on again: worked out now
+        advanceUntilIdle()
+        assertEquals(LatLon(34.75, -84.05), r.api.asked.single().first)
+        r.job.cancel()
+    }
+
+    @Test
+    fun `a mask that could not be had is not asked for again by itself until the threat changes`() = runTest {
+        val r = Auto(this)
+        val failing = object : ThreatMaskApi {
+            var asked = 0
+            override suspend fun mask(at: LatLon, radars: List<Radar>): ThreatMaskDto {
+                asked++
+                error("the server is down")
+            }
+        }
+        val masks = ThreatMasks(failing, r.store, CoroutineScope(r.job + StandardTestDispatcher(testScheduler)), r.display)
+        val id = r.store.add(threat()); advanceUntilIdle()
+        masks.setAutomatic(true); advanceUntilIdle()
+        assertEquals(MaskState.Failed(ThreatMasks.COULD_NOT), masks.states.value[id])
+        advanceUntilIdle()
+        assertEquals("not asked again on its own", 1, failing.asked)
+        r.store.move(id, 34.76, -84.05); advanceUntilIdle()
+        assertEquals("moved, it is asked for where it is now", 2, failing.asked)
+        r.job.cancel()
+    }
+
+    @Test
+    fun `a threat being dragged is asked for once it is still, not for every place it passes through`() = runTest {
+        val r = Auto(this)
+        val id = r.store.add(threat()); advanceUntilIdle()
+        r.masks.setAutomatic(true); advanceUntilIdle()
+        assertEquals(1, r.api.asked.size)
+        repeat(10) { step ->
+            r.store.previewMove(id, 34.75 + (step + 1) * 0.001, -84.05)
+            advanceTimeBy(ThreatMasks.AUTO_PAUSE_MS / 4)
+        }
+        assertEquals("nothing while the finger moves", 1, r.api.asked.size)
+        r.store.settle()
+        advanceUntilIdle()
+        assertEquals(2, r.api.asked.size)
+        assertEquals(34.76, r.api.asked.last().first.lat, 1e-9)
+        r.job.cancel()
     }
 }

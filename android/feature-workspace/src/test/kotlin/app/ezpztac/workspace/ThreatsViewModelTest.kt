@@ -35,6 +35,9 @@ import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 import app.ezpztac.data.ThreatMaskApi
 import app.ezpztac.data.ThreatMasks
+import app.ezpztac.data.ThreatDisplay
+import app.ezpztac.data.InMemoryThreatDisplayStore
+import app.ezpztac.data.MaskState
 import app.ezpztac.network.ThreatMaskDto
 import app.ezpztac.network.ThreatMaskRadarDto
 import app.ezpztac.network.ApiException
@@ -80,7 +83,8 @@ class ThreatsViewModelTest {
         val maskApi = FakeMaskApi()
         val masks = ThreatMasks(maskApi, store, scope.backgroundScope)
         private val template = File("../../backend/threat_template.ths").readBytes()
-        val model = ThreatsViewModel(store, selection, ThreatTransfer(ThsWriter { template }), masks, { _, _, _ -> }, pack).also {
+        val display = ThreatDisplay(InMemoryThreatDisplayStore())
+        val model = ThreatsViewModel(store, selection, ThreatTransfer(ThsWriter { template }), masks, { _, _, _ -> }, pack, display).also {
             it.worker = StandardTestDispatcher(scope.testScheduler)
         }
         val notices = mutableListOf<String>()
@@ -421,15 +425,48 @@ class ThreatsViewModelTest {
     }
 
     @Test
-    fun `hiding the mask takes it off, and removing the threat takes its mask with it`() = runTest(dispatcher) {
+    fun `hiding the mask takes it off this device's map and keeps it, showing it again asks for nothing, and removing the threat takes its mask with it`() = runTest(dispatcher) {
         val r = rig()
         val id = held(r)
         r.model.showMask(id); advanceUntilIdle()
+        assertEquals(1, r.maskApi.asked.size)
         r.model.hideMask(id); advanceUntilIdle()
-        assertEquals(ThreatMaskUi.Status.OFF, r.state.held!!.mask.status)
+        assertEquals(ThreatMaskUi.Status.HIDDEN, r.state.held!!.mask.status)
+        assertFalse(r.state.held!!.maskOn)
+        assertFalse(r.display.maskOn(id))
+        assertTrue("kept with the threat", r.masks.states.value[id] is MaskState.Ready)
         r.model.showMask(id); advanceUntilIdle()
+        assertEquals(ThreatMaskUi.Status.SHOWING, r.state.held!!.mask.status)
+        assertEquals("the mask in hand is shown again, not asked for", 1, r.maskApi.asked.size)
         r.store.remove(id); advanceUntilIdle()
         assertTrue(r.masks.states.value.isEmpty())
+    }
+
+    @Test
+    fun `the held threat's bar shows and hides its range rings and its mask on this device alone`() = runTest(dispatcher) {
+        val r = rig()
+        val id = held(r)
+        assertTrue(r.state.held!!.ringsOn)
+        assertTrue(r.state.held!!.hasRings)
+        r.model.setRings(id, false); advanceUntilIdle()
+        assertFalse(r.state.held!!.ringsOn)
+        assertEquals(setOf(id), r.display.ringsOff.value)
+        assertEquals("the threat itself is not changed", threat().radars, r.store.entries.value.single().threat.radars)
+        r.model.setRings(id, true); advanceUntilIdle()
+        assertTrue(r.state.held!!.ringsOn)
+
+        r.model.setMask(id, true); advanceUntilIdle()
+        assertEquals(ThreatMaskUi.Status.SHOWING, r.state.held!!.mask.status)
+        r.model.setMask(id, false); advanceUntilIdle()
+        assertEquals(ThreatMaskUi.Status.HIDDEN, r.state.held!!.mask.status)
+    }
+
+    @Test
+    fun `a threat whose radars show no ring and no mask says so, and is offered neither`() = runTest(dispatcher) {
+        val r = rig()
+        held(r, threat().let { t -> t.copy(radars = t.radars.map { it.copy(showRangeRings = false, showMask = false) }) })
+        assertFalse(r.state.held!!.hasRings)
+        assertFalse(r.state.held!!.wantsMask)
     }
 
     // -- The form (S5) -------------------------------------------------------------------------------------------------------------

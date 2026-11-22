@@ -42,6 +42,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import app.ezpztac.data.MeasureKind
 import app.ezpztac.designsystem.Banner
 import app.ezpztac.designsystem.BannerKind
+import app.ezpztac.designsystem.GlassSurface
 import app.ezpztac.designsystem.PrimaryButton
 import app.ezpztac.designsystem.SecondaryButton
 import app.ezpztac.designsystem.TextAction
@@ -97,8 +98,7 @@ internal fun pointsSoFar(points: Int): String = when (points) {
 @Composable
 fun MeasuresToolbar(draft: MeasureDraftUi, error: String?, actions: MeasuresActions, modifier: Modifier = Modifier) {
     val (title, hint) = drawingWords(draft.kind)
-    Surface(
-        shape = RoundedCornerShape(Tokens.Radius.md.dp), color = MaterialTheme.colorScheme.surface, tonalElevation = 3.dp, shadowElevation = 6.dp,
+    GlassSurface(
         modifier = modifier.padding(horizontal = Tokens.Spacing.md.dp).semantics { contentDescription = title.removeSuffix(".") },
     ) {
         Column(Modifier.padding(Tokens.Spacing.md.dp), verticalArrangement = Arrangement.spacedBy(Tokens.Spacing.sm.dp)) {

@@ -21,6 +21,7 @@ import app.ezpztac.data.LocalPoints
 import app.ezpztac.data.MapDrag
 import app.ezpztac.data.MapFocus
 import app.ezpztac.data.MaskState
+import app.ezpztac.model.ThreatEntry
 import app.ezpztac.data.OpenDiagrams
 import app.ezpztac.data.OpenRouteSets
 import app.ezpztac.data.OtherDiagrams
@@ -33,6 +34,8 @@ import app.ezpztac.data.RouteSketching
 import app.ezpztac.data.SlopeState
 import app.ezpztac.data.SlopeVisibility
 import app.ezpztac.data.ThreatMasks
+import app.ezpztac.data.ThreatDisplay
+import app.ezpztac.data.InMemoryThreatDisplayStore
 import app.ezpztac.data.ThreatSelection
 import app.ezpztac.data.ThreatStore
 import app.ezpztac.data.WeatherService
@@ -142,6 +145,8 @@ class HomeViewModel @Inject constructor(
     val symbols: SymbolRenderer,
     /** Backstops, FLOTs and phase lines: what is being drawn and held of them. None in a test that does not ask for them. */
     private val controlMeasures: ControlMeasures? = null,
+    /** Which threats' rings and terrain masks this device leaves off; none in a test that does not ask (all are drawn). */
+    private val threatDisplay: ThreatDisplay = ThreatDisplay(InMemoryThreatDisplayStore()),
 ) : ViewModel() {
     private val _opened = MutableSharedFlow<OpenedDiagram>(extraBufferCapacity = 4, onBufferOverflow = BufferOverflow.DROP_OLDEST)
 
@@ -324,19 +329,26 @@ class HomeViewModel @Inject constructor(
     /** Says whether the signed-in account has threats ([threatsAllowed]). Turned off, a threat held is put down. */
     fun allowThreats(allowed: Boolean) {
         threatsAllowed.value = allowed
+        // Masks are worked out by themselves only for an account whose threats are on its map.
+        threatMasks.setAutomatic(allowed)
         if (!allowed) threatSelection.clear()
     }
 
     /** The local-only threat picture: visible markers and their range rings, with the held threat marked. Nothing while the account has no threats. */
-    val threatScene: StateFlow<ThreatScene> = combine(threats.entries, threatSelection.held, threatMasks.states, threatsAllowed) { entries, held, masks, allowed ->
-        if (!allowed) return@combine ThreatScene.EMPTY
-        // A terrain mask is drawn only for a threat the person asked for one of, and only while it is still that threat's: one moved since is not what it shows.
-        val pictures = entries.associate { entry ->
-            val mask = (masks[entry.id] as? MaskState.Ready)?.mask?.takeIf { it.isFor(entry.threat) }
+    val threatScene: StateFlow<ThreatScene> = combine(
+        combine(threats.entries, threatSelection.held, threatMasks.states, threatsAllowed, ::ThreatInputs),
+        threatDisplay.ringsOff, threatDisplay.masksOff,
+    ) { inputs, ringsOff, masksOff ->
+        if (!inputs.allowed) return@combine ThreatScene.EMPTY
+        // A terrain mask is drawn only while it is still that threat's (one moved since is not what it shows), and not where this device leaves it off.
+        val pictures = inputs.entries.filter { it.id !in masksOff }.associate { entry ->
+            val mask = (inputs.masks[entry.id] as? MaskState.Ready)?.mask?.takeIf { it.isFor(entry.threat) }
             entry.id to mask?.images.orEmpty().map { ThreatMaskPicture("${entry.id}-${it.type}", mask!!.south, mask.west, mask.north, mask.east, it.dataUri) }
         }
-        ThreatScene.of(entries, held, pictures)
+        ThreatScene.of(inputs.entries, inputs.held, pictures, ringsOff)
     }.stateIn(viewModelScope, SharingStarted.Eagerly, ThreatScene.EMPTY)
+
+    private class ThreatInputs(val entries: List<ThreatEntry>, val held: String?, val masks: Map<String, MaskState>, val allowed: Boolean)
 
     /** What the Threats tab carries: the threats in the picture on this device. The Imports tab's count is its panel's own ([PanelCounts.imports]). */
     val counts: StateFlow<PanelCounts> = combine(threats.entries, threatsAllowed) { entries, allowed -> PanelCounts(threats = if (allowed) entries.size else 0) }

@@ -36,10 +36,16 @@ fun interface OpenWrites {
 }
 
 /** The open LZ/PZ and route set: written now if [uuid] is the one open, which may then be held under a new id (its record was deleted elsewhere). */
-class SessionWrites(private val diagrams: DiagramSession, private val routes: RouteSession, private val threats: ThreatStore? = null) : OpenWrites {
+class SessionWrites(
+    private val diagrams: DiagramSession,
+    private val routes: RouteSession,
+    private val threats: ThreatStore? = null,
+    /** The control measures open beside the route set: a set of them is a route record too. */
+    private val measures: MeasuresSession? = null,
+) : OpenWrites {
     override suspend fun write(kind: RecordKind, uuid: String): String = when (kind) {
         RecordKind.LZ -> diagrams.writeIfOpen(uuid) { it.id }
-        RecordKind.ROUTE -> routes.writeIfOpen(uuid) { it.id }
+        RecordKind.ROUTE -> if (measures?.active?.value?.id == uuid) measures.writeIfOpen(uuid) { it.id } else routes.writeIfOpen(uuid) { it.id }
         RecordKind.THREAT_SET -> {
             threats?.flush()                                                                      // a change may be in its pause
             uuid

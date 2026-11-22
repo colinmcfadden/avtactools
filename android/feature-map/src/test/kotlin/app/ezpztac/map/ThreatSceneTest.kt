@@ -46,6 +46,14 @@ class ThreatSceneTest {
     }
 
     @Test
+    fun `rings turned off on this device go, the threat's marker stays, and the other threats keep theirs`() {
+        val scene = ThreatScene.of(listOf(entry("a"), entry("b")), ringsOff = setOf("a"))
+        assertEquals(listOf("a", "b"), scene.pins.map { it.id })
+        assertEquals(listOf(Radars.DETECTION, Radars.ENGAGEMENT), scene.rings.map { it.type })
+        assertTrue(scene.rings.all { it.threatId == "b" })
+    }
+
+    @Test
     fun `hidden or invalid threats are absent and disabled rings stay absent`() {
         val scene = ThreatScene.of(listOf(entry("hidden", visible = false), entry("bad", lat = Double.NaN), entry("plain", rings = false)))
         assertEquals(listOf("plain"), scene.pins.map { it.id })

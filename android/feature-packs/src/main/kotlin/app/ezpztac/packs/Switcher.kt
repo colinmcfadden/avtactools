@@ -42,6 +42,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import app.ezpztac.designsystem.BlurBehindWindow
 import app.ezpztac.designsystem.EzpzIcons
 import app.ezpztac.designsystem.EzpzTheme
 import app.ezpztac.designsystem.PillButton
@@ -77,6 +78,7 @@ fun SwitcherSheet(
     LaunchedEffect(Unit) { viewModel.switcherOpened() }
     val sheet = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     ModalBottomSheet(onDismissRequest = onDismiss, sheetState = sheet, containerColor = MaterialTheme.colorScheme.surfaceContainerLow) {
+        BlurBehindWindow()                                                         // the map behind, blurred, where the device allows it
         SwitcherContent(state, actionsOf(viewModel, onDismiss, onPick, onNewPack, onTeams, notify), Modifier.verticalScroll(rememberScrollState()))
     }
 }

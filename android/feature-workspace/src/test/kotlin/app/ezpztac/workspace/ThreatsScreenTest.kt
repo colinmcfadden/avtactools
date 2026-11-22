@@ -272,7 +272,7 @@ class ThreatsScreenTest {
     fun `a threat on the map has its terrain mask in the form, and a new one does not`() {
         val r = form(editing(mask = ThreatMaskUi()))
         compose.onNodeWithText("Show terrain mask").performScrollTo().performClick()
-        compose.onNodeWithText("save first to include what you changed here", substring = true).performScrollTo().assertIsDisplayed()
+        compose.onNodeWithText("save to include what you changed here", substring = true).performScrollTo().assertIsDisplayed()
         assertEquals(listOf("showMask:t1"), r.log)
     }
 

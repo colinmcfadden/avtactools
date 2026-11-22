@@ -8,6 +8,8 @@ import app.ezpztac.data.MaskState
 import app.ezpztac.data.OpenPack
 import app.ezpztac.data.PackFacts
 import app.ezpztac.data.ThreatMasks
+import app.ezpztac.data.ThreatDisplay
+import app.ezpztac.data.InMemoryThreatDisplayStore
 import app.ezpztac.data.ThreatSetStanding
 import app.ezpztac.data.ThreatSetView
 import app.ezpztac.data.ThreatStore
@@ -84,6 +86,9 @@ data class ThreatMaskUi(val status: Status = Status.OFF, val message: String? = 
 
         /** It could not be had. */
         FAILED,
+
+        /** Turned off on this device ([ThreatDisplay]): neither drawn nor asked for. */
+        HIDDEN,
     }
 }
 
@@ -99,6 +104,12 @@ data class HeldThreatUi(
     /** One line for each radar: `Detection · 25 nm · antenna 20 ft AGL · rings on`. */
     val radars: List<String>,
     val mask: ThreatMaskUi = ThreatMaskUi(),
+    /** Whether this device draws its range rings and its terrain mask ([ThreatDisplay]): both, unless the person turned them off. */
+    val ringsOn: Boolean = true,
+    val maskOn: Boolean = true,
+    /** Whether any of its radars has a ring to draw, or a mask to work out: its own settings, which the person's switches cannot add to. */
+    val hasRings: Boolean = true,
+    val wantsMask: Boolean = true,
 )
 
 /**
@@ -163,6 +174,8 @@ class ThreatsViewModel @Inject constructor(
     private val masks: ThreatMasks,
     private val conflicts: ConflictResolver,
     private val pack: OpenPack = OpenPack.None,
+    /** Which threats' rings and masks this device leaves off. */
+    private val display: ThreatDisplay = ThreatDisplay(InMemoryThreatDisplayStore()),
 ) : ViewModel() {
     private data class Local(
         val editing: ThreatEditUi? = null,
@@ -210,16 +223,25 @@ class ThreatsViewModel @Inject constructor(
 
     private val setsNow = combine(store.sets, store.activeSet, store.saves, packNow) { sets, active, saves, inPack -> SetsNow(sets, active, saves, inPack) }
 
-    val state: StateFlow<ThreatsUiState> = combine(store.entries, selection.held, local, masks.states, setsNow) { entries, held, local, maskStates, now ->
+    // Each threat's mask, and what this device leaves off.
+    private class Shown(val masks: Map<String, MaskState>, val ringsOff: Set<String>, val masksOff: Set<String>) {
+        fun mask(id: String): MaskState? = masks[id]
+
+        fun maskOff(id: String) = id in masksOff
+    }
+
+    private val shown = combine(masks.states, display.ringsOff, display.masksOff, ::Shown)
+
+    val state: StateFlow<ThreatsUiState> = combine(store.entries, selection.held, local, shown, setsNow) { entries, held, local, shown, now ->
         val (sets, active, saves) = Triple(now.sets, now.active, now.saves)
         ThreatsUiState(
-            threats = entries.map { it.toRow(held, maskStates[it.id]) },
-            sets = sets.map { set -> ThreatSetUi(set.id, set.name, set.standing, set.entries.map { it.toRow(held, maskStates[it.id]) }, set.id == active) },
+            threats = entries.map { it.toRow(held, shown) },
+            sets = sets.map { set -> ThreatSetUi(set.id, set.name, set.standing, set.entries.map { it.toRow(held, shown) }, set.id == active) },
             saves = saves,
             pack = now.pack,
-            held = entries.firstOrNull { it.id == held && it.visible }?.let { heldOf(it, maskStates[it.id]) },
+            held = entries.firstOrNull { it.id == held && it.visible }?.let { heldOf(it, shown) },
             editing = local.editing?.let { e ->
-                e.copy(grid = gridOf(e.at), mask = e.id?.let { id -> entries.firstOrNull { it.id == id } }?.let { maskOf(it, maskStates[it.id]) })
+                e.copy(grid = gridOf(e.at), mask = e.id?.let { id -> entries.firstOrNull { it.id == id } }?.let { maskOf(it, shown) })
             },
             exporting = local.exporting, error = local.error, note = local.note,
         )
@@ -494,18 +516,24 @@ class ThreatsViewModel @Inject constructor(
         _notices.tryEmit(message)
     }
 
-    private fun ThreatEntry.toRow(heldId: String?, mask: MaskState?) = ThreatRowUi(
+    private fun ThreatEntry.toRow(heldId: String?, shown: Shown) = ThreatRowUi(
         id = id, name = threat.name, sidc = threat.milstdId, symbol = symbolName(threat.milstdId), grid = gridOf(threat), ranges = reachOf(threat.radars),
-        visible = visible, held = id == heldId, mask = maskOf(this, mask).status,
+        visible = visible, held = id == heldId, mask = maskOf(this, shown).status,
     )
 
-    private fun heldOf(entry: ThreatEntry, mask: MaskState?): HeldThreatUi {
+    private fun heldOf(entry: ThreatEntry, shown: Shown): HeldThreatUi {
         val t = entry.threat
         return HeldThreatUi(
             id = entry.id, name = t.name, symbol = symbolName(t.milstdId), grid = gridOf(t), latLon = "%.5f, %.5f".format(java.util.Locale.ROOT, t.lat, t.lon),
-            source = t.source, information = t.information, radars = t.radars.map(::radarLine), mask = maskOf(entry, mask),
+            source = t.source, information = t.information, radars = t.radars.map(::radarLine), mask = maskOf(entry, shown),
+            ringsOn = entry.id !in shown.ringsOff, maskOn = !shown.maskOff(entry.id),
+            hasRings = t.radars.any { it.showRangeRings && it.rangeNmi.isFinite() && it.rangeNmi > 0 },
+            wantsMask = t.radars.any { it.showMask && it.bands.any { band -> band.viewable } },
         )
     }
+
+    private fun maskOf(entry: ThreatEntry, shown: Shown): ThreatMaskUi =
+        if (shown.maskOff(entry.id)) ThreatMaskUi(ThreatMaskUi.Status.HIDDEN, "Turned off on this device.") else maskOf(entry, shown.mask(entry.id))
 
     private fun maskOf(entry: ThreatEntry, state: MaskState?): ThreatMaskUi = when (state) {
         null -> ThreatMaskUi()
@@ -520,15 +548,26 @@ class ThreatsViewModel @Inject constructor(
     }
 
     /**
-     * Asks the server what the held threat's radars can see over the terrain. **This is the one thing that sends a threat anywhere**, and it is the person pressing a button: the
-     * threat's place and radar settings go up once for this answer (the server keeps nothing), and nothing else about it does.
+     * Shows a threat's terrain mask on this device ([ThreatDisplay]), and asks the server for it when there is none that is still the threat's (it is otherwise asked
+     * for by itself: [ThreatMasks]). What goes up is the threat's place and radar settings, nothing else about it.
      */
     fun showMask(id: String) {
-        viewModelScope.launch { masks.request(id) }
+        val wasOff = !display.maskOn(id)
+        display.setMask(id, true)
+        val entry = store.entries.value.firstOrNull { it.id == id } ?: return
+        // Shown again after being hidden: the mask in hand, if it is still this threat's, is drawn without asking. Otherwise a press asks (again, after a failure).
+        val current = (masks.states.value[id] as? MaskState.Ready)?.mask?.isFor(entry.threat) == true
+        if (!(wasOff && current)) viewModelScope.launch { masks.request(id) }
     }
 
-    /** Takes a threat's mask off the map. */
-    fun hideMask(id: String) = masks.hide(id)
+    /** Takes a threat's mask off the map on this device, and asks for none; it is kept with the threat. */
+    fun hideMask(id: String) = display.setMask(id, false)
+
+    /** Shows or hides a threat's range rings on this device. */
+    fun setRings(id: String, on: Boolean) = display.setRings(id, on)
+
+    /** The held threat's bar's switch for its terrain mask. */
+    fun setMask(id: String, on: Boolean) = if (on) showMask(id) else hideMask(id)
 
     private fun gridOf(t: Threat) = gridOf(LatLon(t.lat, t.lon))
 

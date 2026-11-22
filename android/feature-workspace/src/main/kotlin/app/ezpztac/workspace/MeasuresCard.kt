@@ -58,19 +58,26 @@ class MeasuresCardActions(
     val closeSet: () -> Unit = {},
     val keepOnTheirOwn: (setId: String) -> Unit = {},
     val dismissError: () -> Unit = {},
+    /** Asks which Mission Pack a copy of a set of the person's own goes into (the web's *Add to Mission Pack…*); null while packs do not run here, or one is open. */
+    val addToPack: ((uuid: String, name: String) -> Unit)? = null,
 )
 
-internal fun measuresCardActionsOf(viewModel: MeasuresViewModel) = MeasuresCardActions(
+internal fun measuresCardActionsOf(viewModel: MeasuresViewModel, addToPack: ((String, String) -> Unit)? = null) = MeasuresCardActions(
     hold = viewModel::holdLine, remove = { viewModel.removeLine(it) }, flip = { viewModel.flipLine(it) }, renameLine = viewModel::renameLine,
     renameSet = viewModel::renameSet, closeSet = viewModel::closeSet, keepOnTheirOwn = viewModel::keepOnTheirOwn, dismissError = viewModel::dismissError,
+    addToPack = addToPack,
 )
 
 /** The Routes panel's *Control measures* (the web's section of `MeasuresCard`s), over [MeasuresViewModel]; nothing while no set has a line in it. */
 @Composable
-fun MeasuresSectionHost(viewModel: MeasuresViewModel = hiltViewModel()) {
+fun MeasuresSectionHost(
+    viewModel: MeasuresViewModel = hiltViewModel(),
+    /** Asks which Mission Pack a copy of the control measures goes into: given while packs run here and none is open. */
+    onAddToPack: ((uuid: String, name: String) -> Unit)? = null,
+) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     // While a line is being drawn its bar says what went wrong; here only what the cards were asked.
-    MeasuresSection(state.cards, measuresCardActionsOf(viewModel), state.error.takeIf { state.draft == null })
+    MeasuresSection(state.cards, measuresCardActionsOf(viewModel, onAddToPack), state.error.takeIf { state.draft == null })
 }
 
 /** The cards under *Control measures · n*, n the lines in them all (the web's `measureCount`). */
@@ -119,6 +126,14 @@ fun MeasuresCard(card: MeasuresCardUi, actions: MeasuresCardActions) {
                         TextAction("Cancel", onClick = { renaming = null; refused = null })
                     }
                 }
+            }
+            // A copy into a Mission Pack, as the web's card's menu offers one: of the person's own set, never a pack's or the lines inside a route set.
+            val addToPack = actions.addToPack
+            if (!card.attached && !card.inPack && addToPack != null) {
+                PillButton(
+                    "Add to Mission Pack…", onClick = { addToPack(card.setId, card.name) }, icon = EzpzIcons.groups, style = PillStyle.Outlined,
+                    modifier = Modifier.padding(top = Tokens.Spacing.sm.dp),
+                )
             }
             if (card.attached) {
                 Text(

@@ -43,6 +43,8 @@ import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.role
+import androidx.compose.foundation.layout.size
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
@@ -53,6 +55,7 @@ import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import app.ezpztac.data.MeasureKind
 import app.ezpztac.designsystem.EzpzIcons
+import app.ezpztac.designsystem.GlassSurface
 import app.ezpztac.designsystem.PillButton
 import app.ezpztac.designsystem.PillStyle
 import app.ezpztac.designsystem.SecondaryButton
@@ -90,6 +93,8 @@ data class HeldObjectUi(
     val aircraftName: String? = null,
     /** A backstop, FLOT or phase line: deleted, flipped or named in the bar itself; null for anything else. */
     val measure: MeasureHeldUi? = null,
+    /** A threat: its range rings and terrain mask shown or hidden from the bar itself (the owner's request of 2026-11-22); null for anything else. */
+    val threat: HeldThreatUi? = null,
 )
 
 /**
@@ -132,7 +137,7 @@ fun heldObjectOf(
             graphic = held.of.takeIf { held.doghouse != null || held.name != null },
         )
     }
-    threats.held?.let { return HeldObjectUi(it.name.ifBlank { "Threat" }, it.grid, heading = null) }
+    threats.held?.let { return HeldObjectUi(it.name.ifBlank { "Threat" }, it.grid, heading = null, threat = it) }
     // A backstop, FLOT or phase line, after a threat and before a route: the order a tap on the map tries them in.
     measure?.let { return HeldObjectUi(it.title, it.subtitle, heading = null, locked = it.locked, measure = it) }
     val detail = routes.detail
@@ -188,6 +193,9 @@ class HeldObjectActions(
     val deleteMeasure: () -> String? = { null },
     val flipMeasure: () -> String? = { null },
     val renameMeasure: (String) -> String? = { null },
+    /** The threat held's range rings and terrain mask, shown or hidden on this device. */
+    val setThreatRings: (id: String, on: Boolean) -> Unit = { _, _ -> },
+    val setThreatMask: (id: String, on: Boolean) -> Unit = { _, _ -> },
 )
 
 /** A heading typed in degrees, as the panel's inspector reads one: a number, or the words for what is wrong. */
@@ -230,6 +238,7 @@ fun HeldObjectBarHost(
             openOther = onOpenOther, hideOther = onHideOther, setPointRole = routes::setPointRole,
             setAircraftName = { graphics.setAircraftName(it, held.graphic) },
             deleteMeasure = measures::delete, flipMeasure = measures::flip, renameMeasure = measures::rename,
+            setThreatRings = threats::setRings, setThreatMask = threats::setMask,
         ),
         modifier,
     )
@@ -237,8 +246,7 @@ fun HeldObjectBarHost(
 
 @Composable
 fun HeldObjectBar(held: HeldObjectUi, actions: HeldObjectActions, modifier: Modifier = Modifier) {
-    Surface(
-        shape = RoundedCornerShape(Tokens.Radius.md.dp), color = MaterialTheme.colorScheme.surface, tonalElevation = 3.dp, shadowElevation = 6.dp,
+    GlassSurface(
         modifier = modifier.padding(horizontal = Tokens.Spacing.md.dp).semantics { contentDescription = "Held on the map: ${held.title}" },
     ) {
         // A doghouse's fields are typed into here, its heading among them; in a read-only pack they are said.
@@ -290,6 +298,7 @@ fun HeldObjectBar(held: HeldObjectUi, actions: HeldObjectActions, modifier: Modi
             }
             held.alsoOpen?.let { other -> AlsoOpenActions(other, actions) }
             held.measure?.let { measure -> key(measure.key) { MeasureActions(measure, actions) } }
+            held.threat?.let { threat -> key(threat.id) { ThreatLayerChips(threat, actions) } }
             held.pointType?.let { type ->
                 key(type.routeId, type.pointId) { PointTypeChips(type, enabled = typeChangeable) { role -> actions.setPointRole(type.routeId, type.pointId, role) } }
                 type.fixed?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
@@ -401,6 +410,53 @@ private fun MeasureActions(measure: MeasureHeldUi, actions: HeldObjectActions) {
             Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error, modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite })
         }
     }
+}
+
+/**
+ * A threat's range rings and terrain mask, shown or hidden on this device from its bar (the owner's request of 2026-11-22: both by default, and within reach of a
+ * thumb). A switch is off, with why, where the threat's own radars draw no ring or work out no mask (its settings, which the form changes). Under them, where the mask
+ * is: being worked out, out of date, or why it could not be had.
+ */
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+internal fun ThreatLayerChips(threat: HeldThreatUi, actions: HeldObjectActions) {
+    Column(verticalArrangement = Arrangement.spacedBy(Tokens.Spacing.xs.dp)) {
+        Text("Shown on the map", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        FlowRow(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(Tokens.Spacing.sm.dp)) {
+            LayerChip("Range rings", EzpzIcons.adjust, on = threat.ringsOn && threat.hasRings, enabled = threat.hasRings) { actions.setThreatRings(threat.id, it) }
+            LayerChip("Terrain mask", EzpzIcons.landscape, on = threat.maskOn && threat.wantsMask, enabled = threat.wantsMask) { actions.setThreatMask(threat.id, it) }
+        }
+        val note = when {
+            !threat.hasRings && !threat.wantsMask -> "Its radars show neither rings nor a mask: change that in its settings."
+            !threat.hasRings -> "Its radars show no range ring: turn one on in its settings."
+            !threat.wantsMask -> "Its radars work out no mask: turn one on in its settings."
+            !threat.maskOn -> null
+            threat.mask.status == ThreatMaskUi.Status.WORKING -> "Working out the terrain mask…"
+            threat.mask.status == ThreatMaskUi.Status.FAILED || threat.mask.status == ThreatMaskUi.Status.NOTHING_VISIBLE -> threat.mask.message
+            threat.mask.status == ThreatMaskUi.Status.OUT_OF_DATE -> "Working out the terrain mask again: the threat has changed."
+            else -> null
+        }
+        note?.let {
+            Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite })
+        }
+        if (threat.mask.status == ThreatMaskUi.Status.FAILED && threat.maskOn && threat.wantsMask) {
+            TextAction("Try the mask again", onClick = { actions.setThreatMask(threat.id, true) })
+        }
+    }
+}
+
+/** A switch of what is drawn, as a chip with its picture: ticked while it is shown, heard as a switch. */
+@Composable
+private fun LayerChip(label: String, icon: Int, on: Boolean, enabled: Boolean, onChange: (Boolean) -> Unit) {
+    FilterChip(
+        selected = on, onClick = { onChange(!on) }, enabled = enabled,
+        label = { Text(label) },
+        leadingIcon = { Icon(painterResource(if (on) EzpzIcons.check else icon), contentDescription = null, modifier = Modifier.size(18.dp)) },
+        modifier = Modifier.heightIn(min = 48.dp).semantics {
+            role = Role.Switch
+            stateDescription = if (on) "Shown" else "Hidden"
+        },
+    )
 }
 
 /** A helicopter's name in the bar (the owner's request, 2026-10-22): a chalk or tail number, taken as the inspector takes it, a refusal said under it. */

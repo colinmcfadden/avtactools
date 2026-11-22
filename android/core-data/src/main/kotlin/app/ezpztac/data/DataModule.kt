@@ -122,8 +122,8 @@ internal object DataModule {
     /** A threat's mask is asked for by a press and answered later, and is held in memory with the threats: it is not tied to a screen. */
     @Provides
     @Singleton
-    fun threatMasks(api: ThreatMaskApi, store: ThreatStore): ThreatMasks =
-        ThreatMasks(api, store, CoroutineScope(SupervisorJob() + Dispatchers.Default))
+    fun threatMasks(api: ThreatMaskApi, store: ThreatStore, display: ThreatDisplay): ThreatMasks =
+        ThreatMasks(api, store, CoroutineScope(SupervisorJob() + Dispatchers.Default), display)
 
     /** Every mission pack held on the device, with the edits to them not yet taken or kept (docs/MISSION_PACKS.md). */
     @Provides
@@ -155,8 +155,15 @@ internal object DataModule {
      */
     @Provides
     @Singleton
-    fun libraryCopier(repository: SyncRepository, diagrams: DiagramSession, routes: RouteSession, threats: ThreatStore, upload: LibraryUpload, api: ApiClient): LibraryCopier =
-        LibraryToPack(repository, SessionWrites(diagrams, routes, threats), upload, copyCall(api))
+    fun libraryCopier(
+        repository: SyncRepository,
+        diagrams: DiagramSession,
+        routes: RouteSession,
+        threats: ThreatStore,
+        measures: MeasuresSession,
+        upload: LibraryUpload,
+        api: ApiClient,
+    ): LibraryCopier = LibraryToPack(repository, SessionWrites(diagrams, routes, threats, measures), upload, copyCall(api))
 
     /**
      * The brief being set up (docs/MISSION_BRIEF.md §3) outlives the setup: a change still waiting is written once the person has been still, and a pack's edit is sent,

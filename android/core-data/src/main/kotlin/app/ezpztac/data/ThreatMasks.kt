@@ -3,6 +3,7 @@ package app.ezpztac.data
 import app.ezpztac.model.LatLon
 import app.ezpztac.model.Radar
 import app.ezpztac.model.Threat
+import app.ezpztac.model.ThreatEntry
 import app.ezpztac.model.ThreatSets
 import app.ezpztac.network.ApiClient
 import app.ezpztac.network.ApiException
@@ -14,7 +15,9 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.FlowPreview
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.debounce
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.update
@@ -27,6 +30,7 @@ import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.doubleOrNull
 import kotlinx.serialization.json.intOrNull
 import kotlinx.serialization.json.put
+import java.util.concurrent.ConcurrentHashMap
 
 /** The server, as the terrain mask needs it. [ApiClientThreatMaskApi] is the real one; tests script their own. */
 public interface ThreatMaskApi {
@@ -72,9 +76,12 @@ public sealed interface MaskState {
 }
 
 /**
- * The terrain masks of the threats: what each threat's radars can see, worked out by the server **only when the person asks for a threat's mask**. Threats are otherwise never
- * sent anywhere, so nothing here asks on its own: not when a threat is made, not when it is moved, not at launch. A mask that was asked for and then the threat moved is kept but not
- * drawn ([MaskState.Ready] with a mask that is no longer [ThreatMask.isFor] it), and the person is told it is out of date and asks again if they want it.
+ * The terrain masks of the threats: what each threat's radars can see, worked out by the server. **Each shown threat's mask is asked for by itself** once
+ * [setAutomatic] says the account has threats (the owner's request of 2026-11-22: masks shown by default, as the web works them out as a set opens): one at a time,
+ * for a threat that wants one (a radar that shows a mask, at an altitude band shown), is on the map, has none that is still its own, and whose mask this device has not
+ * been told to leave off ([ThreatDisplay.masksOff]). What goes up is the threat's place and its radars, nothing else about it, and the server keeps nothing. One that
+ * could not be had is not asked for again by itself until the threat changes (the person can ask). A mask that was had and then the threat moved is kept but not drawn
+ * ([MaskState.Ready] with a mask that is no longer [ThreatMask.isFor] it), and a new one is asked for.
  *
  * A mask goes with its threat: kept in the threat's saved set, with what it was worked out for, so it comes back when the set is opened and is not asked for again ([ThreatStore.masks],
  * the owner's decision of 2026-11-07). For an account that cannot save threats it is held in memory only.
@@ -83,11 +90,55 @@ public class ThreatMasks(
     private val api: ThreatMaskApi,
     private val store: ThreatStore,
     private val scope: CoroutineScope,
+    /** Which threats' masks this device leaves off; with none, nothing is asked for by itself. */
+    private val display: ThreatDisplay? = null,
 ) {
     private val _states = MutableStateFlow<Map<String, MaskState>>(emptyMap())
 
     /** Each threat's mask, by the threat's id. A threat that has none asked for is not in it. */
     public val states: StateFlow<Map<String, MaskState>> = _states.asStateFlow()
+
+    private val automatic = MutableStateFlow(false)
+
+    // What a threat's last mask that could not be had was asked for: not asked for again by itself while the threat is the same.
+    private val failedFor = ConcurrentHashMap<String, ThreatMask.Inputs>()
+
+    /** Whether masks are asked for by themselves: while the signed-in account has threats ([app.ezpztac.model.Threat]s shown on its map). Off by default. */
+    public fun setAutomatic(on: Boolean) {
+        automatic.value = on
+    }
+
+    @OptIn(FlowPreview::class)
+    private fun automatically(display: ThreatDisplay) {
+        scope.launch {
+            // One at a time: the next is worked out only once the last has answered, from the states as they are then. The threats as they are once they have
+            // been still a moment: a threat being dragged changes many times a second, and each place it passes through is no mask anyone wants.
+            // Whether a threat is shown, and is there at all, is read as it is now: one hidden or taken away a moment ago is not asked for.
+            combine(automatic, store.entries.debounce(AUTO_PAUSE_MS), _states, display.masksOff) { on, still, states, off ->
+                if (on) nextWanted(store.entries.value, still, states, off) else null
+            }.collect { id -> if (id != null) request(id) }
+        }
+    }
+
+    init {
+        if (display != null) automatically(display)
+    }
+
+    // The first shown threat, still since the pause ([still] has it as it is [now]), that wants a mask and has none of its own, nor one being worked out, nor one
+    // that could not be had for it as it is.
+    private fun nextWanted(now: List<ThreatEntry>, still: List<ThreatEntry>, states: Map<String, MaskState>, off: Set<String>): String? = now.firstOrNull { entry ->
+        val threat = entry.threat
+        if (!entry.visible || entry.id in off || !wantsMask(threat) || !threat.lat.isFinite() || !threat.lon.isFinite()) return@firstOrNull false
+        if (still.firstOrNull { it.id == entry.id }?.threat != threat) return@firstOrNull false
+        when (val state = states[entry.id]) {
+            null -> true
+            MaskState.Working -> false
+            is MaskState.Ready -> !state.mask.isFor(threat)
+            is MaskState.Failed -> failedFor[entry.id] != ThreatMask.Inputs(threat.lat, threat.lon, threat.radars)
+        }
+    }?.id
+
+    private fun wantsMask(threat: Threat): Boolean = threat.radars.any { it.showMask && it.bands.any { band -> band.viewable } }
 
     init {
         // A threat that is gone takes its mask with it, however it went: removed, or wiped at sign-out. One that came back with its set shows, unasked.
@@ -124,7 +175,7 @@ public class ThreatMasks(
         val entry = store.entries.value.firstOrNull { it.id == id } ?: return
         if (_states.value[id] == MaskState.Working) return
         val threat = entry.threat
-        if (threat.radars.none { it.showMask && it.bands.any { band -> band.viewable } }) {
+        if (!wantsMask(threat)) {
             _states.update { it + (id to MaskState.Failed(NOTHING_TO_SHOW)) }
             return
         }
@@ -152,6 +203,7 @@ public class ThreatMasks(
         } catch (_: Exception) {
             MaskState.Failed(COULD_NOT)
         }
+        if (outcome is MaskState.Failed) failedFor[id] = asked else failedFor.remove(id)
         // A threat taken away while the server worked has no mask to keep.
         if (store.entries.value.none { it.id == id }) {
             _states.update { it - id }
@@ -161,7 +213,7 @@ public class ThreatMasks(
         }
     }
 
-    /** Puts a threat's mask away (the button's *Hide*): nothing is drawn, and nothing is asked. */
+    /** Takes a threat's mask away and out of its saved set: nothing is drawn, and nothing is asked until it is wanted again. */
     public fun hide(id: String) {
         _states.update { it - id }
         store.clearMask(id)
@@ -199,5 +251,8 @@ public class ThreatMasks(
     public companion object {
         public const val NOTHING_TO_SHOW: String = "None of this threat's radars shows a mask. Turn on a radar's mask and an altitude band in its settings."
         public const val COULD_NOT: String = "The mask could not be worked out."
+
+        /** How long the threats are still before their masks are asked for by themselves. */
+        public const val AUTO_PAUSE_MS: Long = 1_000L
     }
 }

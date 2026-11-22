@@ -90,6 +90,7 @@ import app.ezpztac.designsystem.EzpzTextField
 import app.ezpztac.designsystem.EzpzTheme
 import app.ezpztac.designsystem.PillButton
 import app.ezpztac.designsystem.PillStyle
+import app.ezpztac.designsystem.SectionCard
 import app.ezpztac.designsystem.SectionLabel
 import app.ezpztac.designsystem.StateChip
 import app.ezpztac.designsystem.StatusTone
@@ -444,7 +445,7 @@ private fun ThreatRow(row: ThreatRowUi, actions: ThreatsActions, onRemove: () ->
 private fun MaskAction(row: ThreatRowUi, actions: ThreatsActions, modifier: Modifier = Modifier) {
     when (row.mask) {
         ThreatMaskUi.Status.WORKING -> Unit
-        ThreatMaskUi.Status.OFF, ThreatMaskUi.Status.FAILED -> TextAction("Show terrain mask", onClick = { actions.showMask(row.id) }, modifier = modifier)
+        ThreatMaskUi.Status.OFF, ThreatMaskUi.Status.FAILED, ThreatMaskUi.Status.HIDDEN -> TextAction("Show terrain mask", onClick = { actions.showMask(row.id) }, modifier = modifier)
         else -> TextAction("Hide mask", onClick = { actions.hideMask(row.id) }, modifier = modifier)
     }
 }
@@ -459,6 +460,7 @@ private fun MaskChip(status: ThreatMaskUi.Status, modifier: Modifier = Modifier)
         ThreatMaskUi.Status.OUT_OF_DATE -> StateChip("Mask out of date", StatusTone.Warning, modifier)
         ThreatMaskUi.Status.NOTHING_VISIBLE -> StateChip("Mask: nothing in sight", StatusTone.Neutral, modifier)
         ThreatMaskUi.Status.OFF -> StateChip("Rings only", StatusTone.Neutral, modifier)
+        ThreatMaskUi.Status.HIDDEN -> StateChip("Mask off", StatusTone.Neutral, modifier)
     }
 }
 
@@ -534,39 +536,44 @@ fun ThreatFormContent(editing: ThreatEditUi, actions: ThreatsActions, crosshairG
                     .padding(start = Tokens.Spacing.lg.dp, end = Tokens.Spacing.lg.dp, bottom = Tokens.Spacing.xl.dp),
                 verticalArrangement = Arrangement.spacedBy(Tokens.Spacing.md.dp),
             ) {
-                FormSection("What it is")
-                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(Tokens.Spacing.md.dp)) {
-                    ThreatSymbol(draft.milstdId)
-                    Column(Modifier.weight(1f)) {
-                        Text(SymbolPresets.threats.firstOrNull { it.sidc == draft.milstdId }?.label ?: "Custom symbol", style = MaterialTheme.typography.bodyLarge)
-                        PresetChooser { actions.updateDraft(draft.copy(milstdId = it)) }
+                // Each part a card of its own that folds (the owner's request of 2026-11-22: a long form where it was hard to see where one was), all open to start.
+                val fold = "threat-form:${editing.id ?: "new"}"
+                SectionCard("What it is", icon = EzpzIcons.crisisAlert, summary = draft.name.ifBlank { null }, foldKey = "$fold:what") {
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(Tokens.Spacing.md.dp)) {
+                        ThreatSymbol(draft.milstdId)
+                        Column(Modifier.weight(1f)) {
+                            Text(SymbolPresets.threats.firstOrNull { it.sidc == draft.milstdId }?.label ?: "Custom symbol", style = MaterialTheme.typography.bodyLarge)
+                            PresetChooser { actions.updateDraft(draft.copy(milstdId = it)) }
+                        }
                     }
+                    EzpzTextField(draft.name, { actions.updateDraft(draft.copy(name = it)) }, "Name")
+                    EzpzTextField(draft.milstdId, { actions.updateDraft(draft.copy(milstdId = it.uppercase())) }, "MIL-STD symbol ID", capitalization = KeyboardCapitalization.Characters)
+                    EzpzTextField(draft.source, { actions.updateDraft(draft.copy(source = it)) }, "Source")
+                    EzpzTextField(draft.information, { actions.updateDraft(draft.copy(information = it)) }, "Information", singleLine = false)
                 }
-                EzpzTextField(draft.name, { actions.updateDraft(draft.copy(name = it)) }, "Name")
-                EzpzTextField(draft.milstdId, { actions.updateDraft(draft.copy(milstdId = it.uppercase())) }, "MIL-STD symbol ID", capitalization = KeyboardCapitalization.Characters)
-                EzpzTextField(draft.source, { actions.updateDraft(draft.copy(source = it)) }, "Source")
-                EzpzTextField(draft.information, { actions.updateDraft(draft.copy(information = it)) }, "Information", singleLine = false)
 
-                FormSection("Where it is")
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text(
-                        editing.grid, style = EzpzText.grid.copy(fontSize = MaterialTheme.typography.bodyLarge.fontSize), modifier = Modifier.weight(1f)
-                            .semantics { contentDescription = "Threat position ${editing.grid}" },
-                    )
-                    TextButton(
-                        onClick = { moving = !moving },
-                        modifier = Modifier.semantics { contentDescription = if (moving) "Hide the controls to move this threat" else "Show controls to move this threat" },
-                    ) { Text(if (moving) "Done moving" else "Move") }
+                SectionCard("Where it is", icon = EzpzIcons.pinDrop, summary = editing.grid, foldKey = "$fold:where") {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(
+                            editing.grid, style = EzpzText.grid.copy(fontSize = MaterialTheme.typography.bodyLarge.fontSize), modifier = Modifier.weight(1f)
+                                .semantics { contentDescription = "Threat position ${editing.grid}" },
+                        )
+                        TextButton(
+                            onClick = { moving = !moving },
+                            modifier = Modifier.semantics { contentDescription = if (moving) "Hide the controls to move this threat" else "Show controls to move this threat" },
+                        ) { Text(if (moving) "Done moving" else "Move") }
+                    }
+                    if (moving) FormPosition(actions, crosshairGrid)
                 }
-                if (moving) FormPosition(actions, crosshairGrid)
 
                 draft.radars.forEachIndexed { index, radar ->
-                    RadarEditor(radar) { changed -> actions.updateDraft(draft.copy(radars = draft.radars.mapIndexed { i, old -> if (i == index) changed else old })) }
+                    RadarEditor(radar, "$fold:radar$index") { changed -> actions.updateDraft(draft.copy(radars = draft.radars.mapIndexed { i, old -> if (i == index) changed else old })) }
                 }
 
                 editing.mask?.let { mask ->
-                    FormSection("Terrain mask")
-                    TerrainMask(editing.id.orEmpty(), mask, actions, saves)
+                    SectionCard("Terrain mask", icon = EzpzIcons.landscape, summary = maskSummary(mask), foldKey = "$fold:mask") {
+                        TerrainMask(editing.id.orEmpty(), mask, actions, saves)
+                    }
                 }
                 if (!editing.isNew) {
                     HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
@@ -594,9 +601,15 @@ fun ThreatFormContent(editing: ThreatEditUi, actions: ThreatsActions, crosshairG
     }
 }
 
-@Composable
-private fun FormSection(text: String) {
-    Text(text, style = MaterialTheme.typography.titleSmall, color = EzpzTheme.status.accent, modifier = Modifier.padding(top = Tokens.Spacing.sm.dp).semantics { heading() })
+/** What the terrain mask's card says while folded. */
+internal fun maskSummary(mask: ThreatMaskUi): String = when (mask.status) {
+    ThreatMaskUi.Status.OFF -> "Not worked out"
+    ThreatMaskUi.Status.WORKING -> "Working out the mask…"
+    ThreatMaskUi.Status.SHOWING -> "Shown on the map"
+    ThreatMaskUi.Status.OUT_OF_DATE -> "Out of date"
+    ThreatMaskUi.Status.NOTHING_VISIBLE -> "Sees nothing over the terrain"
+    ThreatMaskUi.Status.FAILED -> "Could not be worked out"
+    ThreatMaskUi.Status.HIDDEN -> "Mask off"
 }
 
 /**
@@ -638,18 +651,18 @@ private fun PresetChooser(onChoose: (String) -> Unit) {
 }
 
 @Composable
-private fun RadarEditor(radar: RadarDraft, onChange: (RadarDraft) -> Unit) {
+private fun RadarEditor(radar: RadarDraft, foldKey: String, onChange: (RadarDraft) -> Unit) {
     val label = radar.label
-    Surface(shape = RoundedCornerShape(Tokens.Radius.lg.dp), color = MaterialTheme.colorScheme.surfaceContainerHigh, modifier = Modifier.fillMaxWidth()) {
-        Column(Modifier.padding(Tokens.Spacing.lg.dp), verticalArrangement = Arrangement.spacedBy(Tokens.Spacing.sm.dp)) {
-            Text("$label radar", style = MaterialTheme.typography.titleMedium, modifier = Modifier.semantics { heading() })
+    val summary = "${radar.rangeNmi.ifBlank { "--" }} nmi · antenna ${radar.antennaHeightFt.ifBlank { "--" }} ft ${if (radar.aglNotMsl) "AGL" else "MSL"}"
+    SectionCard("$label radar", icon = EzpzIcons.adjust, summary = summary, foldKey = foldKey) {
+        Column(verticalArrangement = Arrangement.spacedBy(Tokens.Spacing.sm.dp)) {
             Row(horizontalArrangement = Arrangement.spacedBy(Tokens.Spacing.sm.dp)) {
                 EzpzTextField(radar.rangeNmi, { onChange(radar.copy(rangeNmi = it)) }, "Range (nmi)", Modifier.weight(1f), keyboardType = KeyboardType.Decimal)
                 EzpzTextField(radar.antennaHeightFt, { onChange(radar.copy(antennaHeightFt = it)) }, "Antenna (ft)", Modifier.weight(1f), keyboardType = KeyboardType.Decimal)
             }
             ToggleRow("Antenna height is AGL", radar.aglNotMsl) { onChange(radar.copy(aglNotMsl = it)) }
             ToggleRow("Show the range ring", radar.showRangeRings) { onChange(radar.copy(showRangeRings = it)) }
-            ToggleRow("Show the terrain mask when it is worked out", radar.showMask) { onChange(radar.copy(showMask = it)) }
+            ToggleRow("Show the terrain mask", radar.showMask) { onChange(radar.copy(showMask = it)) }
             Text("Aircraft altitude bands", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
             radar.bandAltitudesFt.forEachIndexed { index, altitude ->
                 Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(Tokens.Spacing.sm.dp)) {
@@ -681,15 +694,16 @@ private fun ToggleRow(label: String, checked: Boolean, onChange: (Boolean) -> Un
 }
 
 /**
- * The terrain mask of a threat on the map: where its radars can see over the terrain, as the web draws it. It is worked out by the server, so it is asked for with
- * a button and the form says what is sent. It is worked out for the threat as it is on the map (what Save has kept), not as it is being typed.
+ * The terrain mask of a threat on the map: where its radars can see over the terrain, as the web draws it. It is worked out by the server, by itself for each threat
+ * on the map ([app.ezpztac.data.ThreatMasks]), and the form says what is sent; shown and hidden here on this device. It is worked out for the threat as it is on the
+ * map (what Save has kept), not as it is being typed.
  */
 @Composable
 private fun TerrainMask(id: String, mask: ThreatMaskUi, actions: ThreatsActions, saves: Boolean) {
     Column(verticalArrangement = Arrangement.spacedBy(Tokens.Spacing.sm.dp)) {
         when (mask.status) {
-            ThreatMaskUi.Status.OFF, ThreatMaskUi.Status.FAILED -> {
-                mask.message?.let { Banner(it, BannerKind.Warning) }
+            ThreatMaskUi.Status.OFF, ThreatMaskUi.Status.FAILED, ThreatMaskUi.Status.HIDDEN -> {
+                mask.message?.let { Banner(it, if (mask.status == ThreatMaskUi.Status.HIDDEN) BannerKind.Info else BannerKind.Warning) }
                 PillButton(
                     if (mask.status == ThreatMaskUi.Status.FAILED) "Try the terrain mask again" else "Show terrain mask", onClick = { actions.showMask(id) },
                     icon = EzpzIcons.landscape, style = PillStyle.Tonal,
@@ -712,8 +726,9 @@ private fun TerrainMask(id: String, mask: ThreatMaskUi, actions: ThreatsActions,
             }
         }
         Text(
-            "It is worked out for the threat as it is on the map: save first to include what you changed here. Showing it sends this threat's position and radar settings to the " +
-                if (saves) "server to work it out, and the mask is then saved with the threat in your Library." else "server once, and the server keeps none of it.",
+            "It is worked out by itself for each threat on the map, as the threat is there: save to include what you changed here. Working it out sends this threat's position " +
+                "and radar settings to the " +
+                if (saves) "server, and the mask is then saved with the threat in your Library." else "server, which keeps none of it.",
             style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
     }

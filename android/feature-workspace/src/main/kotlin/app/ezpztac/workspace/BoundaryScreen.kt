@@ -27,6 +27,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import app.ezpztac.data.BoundaryDrawing
 import app.ezpztac.designsystem.Banner
 import app.ezpztac.designsystem.BannerKind
+import app.ezpztac.designsystem.GlassSurface
 import app.ezpztac.designsystem.PrimaryButton
 import app.ezpztac.designsystem.SecondaryButton
 import app.ezpztac.designsystem.TextAction
@@ -125,8 +126,7 @@ fun BoundarySection(state: BoundaryUiState, actions: BoundaryActions, modifier: 
 /** What is over the map while drawing: how many corners, and the four things to do. Over the sheet's peek, so it is reachable with the sheet down. */
 @Composable
 fun BoundaryToolbar(state: BoundaryUiState, actions: BoundaryActions, modifier: Modifier = Modifier) {
-    Surface(
-        shape = RoundedCornerShape(Tokens.Radius.md.dp), color = MaterialTheme.colorScheme.surface, tonalElevation = 3.dp, shadowElevation = 6.dp,
+    GlassSurface(
         modifier = modifier.padding(horizontal = Tokens.Spacing.md.dp).semantics { contentDescription = "Drawing a boundary" },
     ) {
         Column(Modifier.padding(Tokens.Spacing.md.dp), verticalArrangement = Arrangement.spacedBy(Tokens.Spacing.sm.dp)) {
@@ -158,8 +158,7 @@ fun BoundaryToolbar(state: BoundaryUiState, actions: BoundaryActions, modifier: 
  */
 @Composable
 fun AnalyzeOfferBar(offer: AnalyzeOfferUi, error: String?, actions: BoundaryActions, modifier: Modifier = Modifier) {
-    Surface(
-        shape = RoundedCornerShape(Tokens.Radius.md.dp), color = MaterialTheme.colorScheme.surface, tonalElevation = 3.dp, shadowElevation = 6.dp,
+    GlassSurface(
         modifier = modifier.padding(horizontal = Tokens.Spacing.md.dp).semantics { contentDescription = if (offer.fresh) "New LZ/PZ" else "Boundary drawn" },
     ) {
         Column(Modifier.padding(Tokens.Spacing.md.dp), verticalArrangement = Arrangement.spacedBy(Tokens.Spacing.sm.dp)) {
