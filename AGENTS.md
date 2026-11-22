@@ -1630,6 +1630,9 @@ client is built around not losing one:
   has not chosen it. R8 release builds work (verified with an example id).
 - **The server URL** is `-Pezpz.apiUrl=<root>`, default the self-hosted backend. It is the server **root**: the typed calls
   carry their own `/api` paths, unlike the web's `VITE_API_URL`, which ends in `/api`.
+- **The launcher icon is the web's app icon** (`frontend/public/app-icon-512.png`; there is no vector of the mark): an adaptive icon whose background is its ground (`ezpz_icon_background`,
+  #161A20) and whose foreground and monochrome (Android 13's themed icons) are PNGs per density in `mipmap-*`, the mark lifted off its ground and drawn 58 dp across, inside the
+  launcher's 66 dp safe circle. A new mark on the web means making those again. The notifications' small icon (`ic_stat_ezpz`) is the same mark simplified to a vector of one colour.
 - **Security settings in the manifest** (plan, "Security, privacy and distribution"): HTTPS only with the platform's
   certificate checks and no pinning (`network_security_config.xml`; debug builds also allow cleartext to the emulator's
   host loopback `10.0.2.2`), `allowBackup=false` and extraction rules that exclude everything, so LZ locations never reach
