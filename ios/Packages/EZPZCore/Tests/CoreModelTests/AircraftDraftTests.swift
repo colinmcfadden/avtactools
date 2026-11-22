@@ -20,7 +20,9 @@ struct AircraftDraftTests {
         AircraftDraft(name: name, designation: designation)
     }
 
-    func valid(_ draft: AircraftDraft, _ existing: JSONObject? = nil, sourceLocation: SourceLocation = #_sourceLocation) -> (
+    func valid(
+        _ draft: AircraftDraft, _ existing: JSONObject? = nil, sourceLocation: SourceLocation = #_sourceLocation
+    ) -> (
         name: String, data: JSONObject
     ) {
         guard case .valid(let name, let data) = draft.check(existing) else {
@@ -98,7 +100,8 @@ struct AircraftDraftTests {
     @Test func nameAndDesignationAreCutWhereTheServerCutsThemByCharactersAndNotInTheMiddleOfOne() {
         let maxName = Int(limits["maxName"]!.numberValue!.value)
         let maxDesignation = Int(limits["maxDesignation"]!.numberValue!.value)
-        let long = valid(draft(name: String(repeating: "n", count: maxName + 30), designation: String(repeating: "d", count: maxDesignation + 30)))
+        let long = valid(
+            draft(name: String(repeating: "n", count: maxName + 30), designation: String(repeating: "d", count: maxDesignation + 30)))
         #expect(long.name.utf16.count == maxName)
         #expect(long.data["designation"]?.stringValue?.utf16.count == maxDesignation)
 
@@ -138,7 +141,8 @@ struct AircraftDraftTests {
             let low = numbers[field.key]!["min"]!.numberValue!.value
             let high = numbers[field.key]!["max"]!.numberValue!.value
             #expect(number(valid(with { field.set(&$0, AircraftDraft.plain(low)) }).data, field.key) == low, "\(field.key) at its minimum")
-            #expect(number(valid(with { field.set(&$0, AircraftDraft.plain(high)) }).data, field.key) == high, "\(field.key) at its maximum")
+            #expect(
+                number(valid(with { field.set(&$0, AircraftDraft.plain(high)) }).data, field.key) == high, "\(field.key) at its maximum")
             for beyond in [low - 0.01, high + 0.01] {
                 let message = refused(with { field.set(&$0, TypedNumber.plain(beyond)) })
                 let expected = "\(field.label) must be between \(AircraftDraft.plain(low)) and \(AircraftDraft.plain(high))."
@@ -320,11 +324,14 @@ struct AircraftProfileTests {
     @Test func optionalTextIsNoneForAPrimitiveThatIsNotTextAndTheDefaultForAListOrAnObject() {
         #expect(AircraftProfile.normalize(object(#"{"amps_vehicle_description": null}"#)).ampsVehicleDescription == nil)
         #expect(AircraftProfile.normalize(object(#"{"amps_vehicle_description": 3}"#)).ampsVehicleDescription == nil)
-        #expect(AircraftProfile.normalize(object(#"{"amps_vehicle_description": [3]}"#)).ampsVehicleDescription == AircraftProfile.fallback.ampsVehicleDescription)
+        #expect(
+            AircraftProfile.normalize(object(#"{"amps_vehicle_description": [3]}"#)).ampsVehicleDescription
+                == AircraftProfile.fallback.ampsVehicleDescription)
     }
 
     @Test func aProfileIsReadAndWrittenInTheServersSnakeCase() throws {
-        let read = try ModelJSON(ignoreUnknownKeys: true).decode(AircraftProfile.self, from: json(#"{"id": 3, "slug": "ch47", "rotor_diameter_m": 18.3}"#))
+        let read = try ModelJSON(ignoreUnknownKeys: true).decode(
+            AircraftProfile.self, from: json(#"{"id": 3, "slug": "ch47", "rotor_diameter_m": 18.3}"#))
         #expect(read.id == 3)
         #expect(read.rotorDiameterM == 18.3)
         #expect(read.name == "UH-60L Black Hawk")
