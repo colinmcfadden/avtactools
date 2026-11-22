@@ -373,7 +373,7 @@ token carries `sid` and is refused the moment that session ends:
 | **AWS Terrarium tiles** | Elevations, threat viewshed, terrain fallback | `terrain_routes.py`, `threat_routes.py`, `terrain_provider.py` | keyless |
 | **OpenTopoData** (SRTM30m) | Point elevation in field analysis | `terrain_routes.py` | keyless |
 | **aviationweather.gov** | METAR, winds aloft | `weather_routes.py` | keyless |
-| **FAA NOTAM search** | NOTAMs | `weather_routes.py` | keyless |
+| **FAA NOTAM search** | NOTAMs | `weather_routes.py` | keyless, and **refused**: `notams.aim.faa.gov/notamSearch/search` answers a program 403 *Access Denied* (Akamai) since at least 2026-11-22, so every weather answer says NOTAMs are unavailable. The FAA's way in is now its NOTAM Management Service API, OAuth client credentials asked for by email (notams@faa.gov): the owner's to request, then a server-side secret. Never work round the block |
 | **USGS 3DEP LiDAR** | Point clouds: built from, and streamed by the API from its octree on AWS (`lidar/stream.py`; the browser never talks to AWS) | `backend/lidar/`, `tools/` | keyless (§12) |
 | **USGS The National Map, NAIP** | Photographic colour for streamed pieces, fetched in the background (`USGSNAIPImagery` `exportImage`) | `backend/lidar/photo.py` | keyless; credit "USDA NAIP, from USGS The National Map" |
 | **FAA NASR** (28-day subscription) | Airports, heliports, navaids and fixes for the place search: the cycle from the APRA API (`external-api.faa.gov`), its APT, NAV and FIX CSV zips from `nfdc.faa.gov` | `backend/places/refresh.py` | keyless, public domain |
@@ -1073,6 +1073,7 @@ simplifying can fold them, so rings are split and re-checked).
   buffer now goes up through one call sized by what it holds (`BufferData.upload`), a route fault costs the routes and a refused bitmap its tile,
   and `SceneRendererTest` runs the renderer's whole sequence of calls against shadows that check what the binding checks (`GlBinding`, read from
   the instrumented `android-all` jar with `javap`). A new GL call wants its binding's check in those shadows.
+- **A stand-in for someone else's service cannot see it change.** aviationweather.gov began refusing `hours=1.5` (400 *Invalid value for hours*) and renamed `fltcat` `fltCat`; every weather test stood in for it and passed, while production answered every LZ/PZ with its defaults (`TIMEOUT`, *AviationWeather API Offline*) until a crew noticed (2026-11-22). The tests now hold the request to what the service takes (`test_weather_at.py`), and the server reads both spellings; when an outside service's answers go quiet, ask it directly before reading the code.
 - **Auth-gated responses are `Cache-Control: private`.** Flask's `max_age` alone
   emits `public`, which lets Cloudflare cache one user's response for another.
 - **A Leaflet marker given a new icon during its own drag stops being dragged, and nobody is told.** `setIcon` runs `_initInteraction`, which takes the drag handler's listeners
