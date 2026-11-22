@@ -10,6 +10,8 @@ account deletion, and sync on saved LZs, routes and point sets; custom aircraft
 profiles are not in the feed yet). Nothing that needs the Android Gradle Plugin
 exists yet; see `android/README.md`.
 
+The iOS and iPadOS build plan, written once Android had most of its features, is `docs/IOS_PLAN.md`.
+
 This is the repository copy of the shared planning doc
 (https://claude.ai/code/artifact/b5e194d4-db36-488f-8237-5c265d3977dc). The decisions checklist at
 the end records what the owner has settled; anything still open there is not
