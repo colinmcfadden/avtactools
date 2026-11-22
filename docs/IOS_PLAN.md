@@ -1,6 +1,6 @@
 # Plan: EZ/PZ for iPhone and iPad (Swift)
 
-Status: **proposed; I0 built** (2026-11-21). Written after reading `AGENTS.md` and every plan in `docs/`. It turns the iOS half of
+Status: **proposed; I0 built** (2026-11-21), **I1 built** (2026-11-22). Written after reading `AGENTS.md` and every plan in `docs/`. It turns the iOS half of
 `docs/NATIVE_APPS_PLAN.md` into a build plan. It reflects what Android has built since that plan was written (AGENTS.md §17, `docs/HANDOFF.md`)
 and gives the ForeFlight hand-off a section of its own (§3). Nothing in this file is decided until the owner says so: §15 lists the decisions.
 
@@ -113,11 +113,11 @@ Android shows none of them yet. iOS does not follow Android here; it follows the
 
 Rules:
 
-- **The web first, a fixture for each** (as for every pure module). `planning/backstops.json` exists. Before I4 the web records
-  `planning/graphicScale.json` (`referenceZoom`, `graphicScale`); before I5 `planning/controlMeasures.json` (`scallopRuns`, `flotLabelSpot`,
-  `phaseLineEnds`, `labelShift`, `cleanPhaseLineName`, `nextPhaseLineName`, `isMeasuresSet`, `setsWithLines`, `lineLengthKm`) and the leg
-  doghouses' placement and words. Their history sentences are already in `packs/describe.json`. Android can draw them from the same fixtures
-  later.
+- **The web first, a fixture for each** (as for every pure module). `planning/backstops.json`, `planning/graphicScale.json` (`referenceZoom`,
+  `graphicScale`) and `planning/controlMeasures.json` (`scallopRuns`, `flotLabelSpot`, `phaseLineEnds`, `labelShift`, `cleanPhaseLineName`,
+  `nextPhaseLineName`, `isMeasuresSet`, `setsWithLines`, `lineLengthKm`, the lines read from a set's data) exist, the last two recorded by the
+  web in I1, and `CorePlanning` is held to all three. Before I5 the web records the leg doghouses' placement and words. Their history sentences
+  are already in `packs/describe.json`. Android can draw them from the same fixtures later.
 - **In a mission pack** each line is sent on its own (`flots` and `phaseLines` are lists with ids); a line's `points` are a list without ids,
   which the diff sends whole, so two people moving one line's vertices stand as one person's line.
 - **Not under undo** for the FLOT and phase lines, and not on the brief, the sandtable or in 3D, as on the web. A backstop is a graphic, and is.
@@ -385,7 +385,8 @@ ios/
 └─ Packages/
    ├─ EZPZCore/            pure Swift, iOS 26 and macOS 26, run by `swift test` on the Mac
    │   CoreJS (built in I0: JSONTree, Js, JsNumber, what every port reads JSON and numbers with)
-   │   CoreModel  CoreGeo  CorePlanning  CoreFormats  CoreBrief  CoreScene3D
+   │   CoreModel  CoreGeo  CorePlanning (built in I1)  DesignTokens (I1: Tokens.swift, held to WCAG on the Mac)
+   │   CoreFormats  CoreBrief  CoreScene3D
    │   CoreSync   CoreMissionPacks  CoreTesting  ForeFlight
    ├─ EZPZData/            CoreNetwork  CoreData (GRDB)  CoreSymbols (JavaScriptCore, SwiftDraw)
    └─ EZPZFeatures/        DesignSystem  FeatureAuth  FeatureMap  FeatureWorkspace  FeaturePacks
@@ -428,6 +429,9 @@ These traps are recorded in AGENTS.md §14 and §17. Each applies to Swift, ofte
 
 - **`\d` matches every script's digits** in Swift Regex and in `NSRegularExpression` (ICU), as it did on Android. Spell `[0-9]`.
 - **Case-insensitive matching folds `ſ` and the Kelvin sign.** Spell both cases, as Kotlin's port does.
+- **Split text on `unicodeScalars`, never `Character`s.** A `Character` is a grapheme cluster, so a `#`, `&` or `=` followed by a combining mark
+  is one `Character` and a split on it misses (`GridShare`'s link fragments, found in I1). CoreGeo's patterns are small hand-written matchers over
+  ASCII classes (`ScalarPattern`) rather than `Regex`, so no class can widen.
 
 **Numbers**
 
@@ -437,6 +441,13 @@ These traps are recorded in AGENTS.md §14 and §17. Each applies to Swift, ofte
 - **JavaScript's number text** (`1`, `100000000000000000000`, `1e-7`) is `JsNumber.toText`, held to `formats/number_text.json`.
   Swift's `description` writes `1.0`, `1e+20` and `1e-07`. Its *digits* are JavaScript's (the shortest that read back, the closest of
   them), so `toText` lays Swift's digits out JavaScript's way; 461,755 doubles were checked against Node (I0, `ios/Scripts`).
+- **Java's `Math.min` and `max` let NaN through, and Swift's do not**: `Swift.min(.infinity, .nan)` is infinity. The MGRS grid's boxes rely on the
+  NaN going through, so CoreGeo has `javaMin` and `javaMax` (I1). And **Swift's `Int(_:)` traps** on NaN or a value out of range where Kotlin's
+  `toInt()` gives 0 or saturates, and `+` traps where Kotlin's `Int` wraps: the ports saturate or wrap where Kotlin did (`limitsFor`'s wind
+  reduction, `heading + 90` in the slope profile).
+- **Dates are java.time's, counted by hand.** Foundation's Gregorian calendar turns Julian before 1582 and has no `atZone`, so `LocalDate` and
+  `LocalDateTime` count days on the proleptic Gregorian calendar, and `RouteWinds.instantText` follows java.time across a change of daylight
+  saving (a skipped time moves on by the gap, a repeated one takes the earlier offset). The tests run in New York and Kolkata.
 - **`Number()`**: `"0x22"` is 34, `[34.7]` is 34.7, `true` is 1. Swift's `Double("0x22")` is nil, and `Double("0x1p3")` is 8. Port
   `JsNumber.of`.
 - **Darwin's `sin`, `cos`, `atan2` and `exp` are not fdlibm.** The brief's strip charts and the sandtable fit are compared **bit for bit**, so
@@ -448,6 +459,9 @@ These traps are recorded in AGENTS.md §14 and §17. Each applies to Swift, ofte
 
 - **Key order is JavaScript's**: array-index keys first, ascending, then insertion order. Swift `Dictionary` has no order: `JSONObject`
   keeps its entries in JavaScript's order itself, so walking one is always right (Kotlin's ports ask `Js.orderedKeys` at each walk).
+- **Swift's synthesised `==` compares text canonically.** A struct of ids or typed text the ports compare (the drafts, `SketchOps`' ids, the set of
+  colours in use) has hand-written equality by UTF-16 units, and an ordered map keyed by UTF-16 (`OrderedMap`) stands for a JavaScript object of
+  values keyed by point id.
 - **A String key collapses text JavaScript keeps apart.** A `Dictionary` or `Set` keyed by `String` takes `"é"` and `"e\u{301}"` for one
   key, as `==` does. Keys that stand for JavaScript text (an object's keys, `Js.idKey`) are `UTF16Key`, compared by UTF-16 units.
 - **A number keeps its literal text** (`2.50` stays `2.50`; an integer past `Int64` is not rounded), as `JsonElement.toString()` keeps it.
@@ -575,8 +589,9 @@ Material:
 
 ### 7.5 Look
 
-- **The palette** is the redesign's (`contracts/tokens/tokens.json`), generated into `DesignSystem/Tokens.swift` by `contracts/scripts/tokens.py`
-  (it writes only Kotlin today).
+- **The palette** is the redesign's (`contracts/tokens/tokens.json`), generated into `Tokens.swift` by `contracts/scripts/tokens.py` (I1),
+  beside Android's `Tokens.kt`. It is in `EZPZCore`'s pure `DesignTokens` target rather than `DesignSystem`, so Android's contrast and night tests
+  run on the Mac with `swift test`; `DesignSystem` turns its numbers into SwiftUI colours.
 - **Dark by default.** The red **night** palette is the same as Android's and never bright: the map dimmed, and the system's own sheets tinted so
   they never flash white.
 - **Dynamic Type throughout.** Every screen is tried at the accessibility sizes, and the layouts that Android had to stack at large text are
@@ -653,11 +668,11 @@ Material:
 | 4 | `MIN_APP_VERSION_IOS` used (exists); `X-EZPZ-Client: ios/0.1.0 (n)` | Version gate, login history | I2 |
 | 5 | `openapi.yaml`: `/api/route-share`, `/api/threats-kmz`, `/api/threats-kmz-link`, `/api/threats-ths`, `/api/generate-excel`, the overlay job's routes, `/api/places/search`, recorded in `responses.json` | Apps call only routes in the spec (§6 of AGENTS.md) | Before I6 |
 | 6 | `contracts/fixtures/foreflight/*` and `threats/kmz.json`, with the web's `feature/foreflight/` | §3.7 | I7 |
-| 7 | `tokens.py` writes `Tokens.swift` | One palette | I1 |
+| 7 | `tokens.py` writes `Tokens.swift` (done in I1; `ios.yaml` runs its check) | One palette | I1 |
 | 8 | APNs: `POST /api/notifications/devices` (`{token, platform}`), the sender, and its settings | §9 | iN2 (owner) |
 | 9 | `contracts/README.md` says which fixtures iOS reads (done in I0, a paragraph; a column when the table has more to say); `.github/workflows/ios.yaml` (`macos-26`, path-filtered: `ios/**`, `contracts/**`; done in I0, not yet run on GitHub) | CI | I0 |
 | 10 | AGENTS.md: an iOS section in §17 (as Android's), the `ios` scope already exists in `.releaserc.json` (no web release) | Agents | Each step, in its PR |
-| 11 | `planning/graphicScale.json`, `planning/controlMeasures.json` and the leg doghouses' fixture, written by the web's Vitest (§1.4) | Backstops, FLOT, phase lines, scaling and leg doghouses held as everything else is | Before I4 and I5 |
+| 11 | `planning/graphicScale.json` and `planning/controlMeasures.json` (done in I1), and the leg doghouses' fixture, written by the web's Vitest (§1.4) | Backstops, FLOT, phase lines, scaling and leg doghouses held as everything else is | I1; the leg doghouses before I5 |
 
 ---
 
@@ -670,7 +685,7 @@ until the app plans and exports on its own. Weeks are rough, for one person with
 | Step | Delivers | Held to / checked by | Weeks |
 |---|---|---|---|
 | **I0 Foundations** *(built 2026-11-21)* | `ios/` project (`EZPZ.xcodeproj`, its sources a synchronized `App` folder) and the `EZPZCore` package; `Config/Version.xcconfig` (0.1.0, `EZPZ_API_MAJORS`, which `api_version.py check` now reads); swift-format; `ios.yaml` CI; `CoreTesting` (fixtures found from its own path, JSON compared with a tolerance); `CoreJS`: `JSONTree` (JSON.parse's grammar, JavaScript's key order, literal number text, null apart from absent, immutable objects and lists, a bounded parser with its own stack), `Js` (`orderedKeys`, `strictEquals`, `idKey`, `truthy`, `round`, `text`, `trim`, `cut`, `prop`), `JsNumber` (`toText`, `toFixed`, `of`, `parseInt`, `parseFloat`); bundle id placeholder (`app.ezpztac.unreleased`, `.debug` for debug builds, as Android) | `formats/number_text.json`, `workspace/doghouses.json`'s `jsParse`, every JSON fixture read and written back; 461,755 doubles against Node; the app launched on the iPad simulator | 0.5 |
-| **I1 Pure core, part 1** | `CoreModel` (diagram and its normalizer, `DiagramOps`, doghouses, units and SIDC, aircraft draft, sketch routes, point sets, threats, weather), `CoreGeo` (MGRS both ways, the grid, parsing, the target reading, `GridShare`), `CorePlanning` (capacity, separation, graphics, backstops, graphic scale, route calc, winds and elevations, slope call, profile, leg doghouses), control measures (FLOT, phase lines, `isMeasuresSet`), threat sets, `Tokens.swift` | `mgrs/*`, `coords/*`, `workspace/*`, `planning/*` (`backstops.json`, `graphicScale.json`, `controlMeasures.json`), `threats/sets.json`, `routes/sketch.json`, `routes/winds.json`, `symbols/sidc.json`, `aircraft/limits.json`, `localpoints/match.json` | 1.5 |
+| **I1 Pure core, part 1** *(built 2026-11-22: 423 tests, in any time zone; `DesignTokens` too; the leg doghouses wait for their fixture, before I5)* | `CoreModel` (diagram and its normalizer, `DiagramOps`, doghouses, units and SIDC, aircraft draft, sketch routes, point sets, threats, weather), `CoreGeo` (MGRS both ways, the grid, parsing, the target reading, `GridShare`), `CorePlanning` (capacity, separation, graphics, backstops, graphic scale, route calc, winds and elevations, slope call, profile, leg doghouses), control measures (FLOT, phase lines, `isMeasuresSet`), threat sets, `Tokens.swift` | `mgrs/*`, `coords/*`, `workspace/*`, `planning/*` (`backstops.json`, `graphicScale.json`, `controlMeasures.json`), `threats/sets.json`, `routes/sketch.json`, `routes/winds.json`, `symbols/sidc.json`, `aircraft/limits.json`, `localpoints/match.json` | 1.5 |
 | **I2 Network, sync, auth** | `CoreNetwork` (one transport, refresh with persist-before-use and the 30 s grace, priority gate, typed calls), `CoreSync` and GRDB's `RoomSyncStore` twin, the scenarios on the fake, the real Flask server and GRDB; `FeatureAuth` (email, Google, Apple, verify and reset by Universal Link, the `.mil` gate), the shell's gate rules (minimum version, account scope, ended session) | `network/responses.json` strict decode; `LiveServerTest`; the per-kind scenarios | 1.5 |
 | **I3 Map and frames** | `FeatureMap` (MapLibre iOS, three base maps, readout, search with readings, GPS, the MGRS grid layer, `MapProjection`), the iPhone frame (glass controls, sheet, tab control, frame hidden by a tap) and the iPad frame (sidebar, inspector, toolbar); night palette; the long-press menu | Simulator screenshots in dark, light and night, both forms, large text; `MapProjection` tests | 1.5 |
 | **I4 LZ/PZ** | Workspace (open set, autosave, Save as naming, Library records), analysis (SAM, slope by heading, contours, profile, opacity, LZ box), weather tiles, every graphic with drag, turn, the held bar and the tool rail, **backstops** (sketched, the arrow moved and aimed), the measurement line, graphics drawn smaller as the map zooms out, units with `CoreSymbols` (JavaScriptCore, presets, SwiftDraw), aircraft profiles, boundary drawing with Pencil | `workspace/*`, `planning/*`, `symbols/*` (`script.json` against JavaScriptCore); an LZ made on the iPad opens unchanged on the web, and the reverse | 2 |
