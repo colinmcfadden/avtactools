@@ -136,4 +136,11 @@ struct RouteFixtureTests {
         #expect(RouteCalc.jsRound(-2.5) == -2)
         #expect(RouteCalc.jsRound(-0.4).sign == .minus)
     }
+
+    /// Kotlin's decoder throws an unchecked exception for a saved plan of the wrong kind; Swift's is typed, so `ensure` says it throws.
+    @Test func aSavedPlanOfTheWrongKindIsRefusedAsKotlinsDecoderRefusesIt() throws {
+        let plan = JSONObject([("airspeed", .string("fast"))])
+        #expect(throws: ModelJSONError.self) { try RoutePlans.ensure([], plan) }
+        #expect(try RoutePlans.ensure([], nil) == RoutePlans.default())
+    }
 }
