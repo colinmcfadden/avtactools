@@ -4,7 +4,7 @@ name: API version
 # installed apps: within one major nothing they read or send stops working. This compares the spec with the
 # branch it merges into (or, on a push, the commit before) and fails on a breaking change whose major did not
 # move, on versions that disagree (the spec and backend/api_version.py), and on a client build that supports
-# no major the server serves (android/gradle.properties, frontend/src/apiSupport.json). The fix for a break is
+# no major the server serves (android/gradle.properties, ios/Config/Version.xcconfig, frontend/src/apiSupport.json). The fix for a break is
 # `python contracts/scripts/api_version.py bump --base origin/develop`, after deciding the break is wanted.
 on:
   push:
@@ -15,6 +15,7 @@ on:
       - "backend/api_version.py"
       - "android/gradle.properties"
       - "frontend/src/apiSupport.json"
+      - "ios/Config/Version.xcconfig"
       - ".github/workflows/api.yaml"
   pull_request:
     paths:
@@ -23,6 +24,7 @@ on:
       - "backend/api_version.py"
       - "android/gradle.properties"
       - "frontend/src/apiSupport.json"
+      - "ios/Config/Version.xcconfig"
       - ".github/workflows/api.yaml"
 
 permissions:
