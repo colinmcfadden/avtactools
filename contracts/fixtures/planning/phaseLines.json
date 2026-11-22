@@ -1,0 +1,67 @@
+{
+  "generatedBy": "frontend/src/contracts/phaseLineFixtures.test.js (UPDATE_CONTRACTS=1)",
+  "description": "A phase line ({id, name, points: [{lat, lon}, ...]}, under `phaseLines` of a route set's document) is named without its PL and drawn as PL and its name beyond each end. `clean`: cleanPhaseLineName(text) -> `clean`: String(text ?? \"\"), trimmed as JavaScript trims, upper-cased as JavaScript does, runs of JavaScript's spaces (\\s) made one space, one \"PL\" at the start followed by a space or nothing dropped, cut to 24 characters (code points) and trimmed again. `labels`: phaseLineLabel(line) -> `label`: \"PL \" and its name trimmed, or \"PL\" when that is blank or not text. `next`: nextPhaseLineName(lines) -> `next`: the first word of the phonetic alphabet (XRAY, JULIETT) no line's cleaned name is, past ZULU the first number from 27 none is. `renames`: renamePhaseLine(line, text) -> `renamed`, the line unchanged when the cleaned name is blank. `creates`: createPhaseLine(points, id, text) -> `line`. `ends`: phaseLineEnds(pixels) -> `ends`, at each end of the line on the screen {x, y, ux, uy}, the unit vector leaving it, away from the first point that is not on it; none when either has no such point. `shifts`: labelShift({ux, uy}) -> `shift` {fx, fy}: the vector over its larger part, the share of a label's width and height to move its middle by so the end is on its edge. `data`: phaseLinesFromData(data) -> `lines`.",
+  "clean": [
+    {"name":"upper case","text":"red","clean":"RED"},
+    {"name":"a PL typed in front is dropped, and the spaces round it","text":"  pl red  ","clean":"RED"},
+    {"name":"PL alone is no name","text":"PL","clean":""},
+    {"name":"PL with a space and nothing after is no name either","text":"pl ","clean":""},
+    {"name":"only one PL is dropped","text":"PL PL RED","clean":"PL RED"},
+    {"name":"a name that starts with PL is kept whole","text":"PLATTE","clean":"PLATTE"},
+    {"name":"runs of spaces and tabs are one space","text":"pl\t\tred   line","clean":"RED LINE"},
+    {"name":"JavaScript's spaces: a no-break space, an ideographic space, a line separator","text":" red　line ","clean":"RED LINE"},
+    {"name":"a byte order mark is trimmed as JavaScript trims","text":"﻿blue","clean":"BLUE"},
+    {"name":"a zero-width space is not a space","text":"​blue","clean":"​BLUE"},
+    {"name":"upper case as JavaScript has it, a sharp s two letters","text":"straße","clean":"STRASSE"},
+    {"name":"cut to 24 characters","text":"abcdefghijklmnopqrstuvwxyz0123","clean":"ABCDEFGHIJKLMNOPQRSTUVWX"},
+    {"name":"cut by characters, never through an emoji","text":"AAAAAAAAAAAAAAAAAAAAAA🚁🚁B","clean":"AAAAAAAAAAAAAAAAAAAAAA🚁🚁"},
+    {"name":"a space left at the cut is trimmed","text":"AAAAAAAAAAAAAAAAAAAAAAA BRAVO","clean":"AAAAAAAAAAAAAAAAAAAAAAA"},
+    {"name":"null is no name","text":null,"clean":""},
+    {"name":"a number is its text","text":5,"clean":"5"}
+  ],
+  "labels": [
+    {"name":"PL and the name","line":{"id":"pl-1","name":"RED","points":[]},"label":"PL RED"},
+    {"name":"the name trimmed, not cleaned","line":{"id":"pl-1","name":"  red ","points":[]},"label":"PL red"},
+    {"name":"a blank name is PL alone","line":{"id":"pl-1","name":"   ","points":[]},"label":"PL"},
+    {"name":"a name that is not text is PL alone","line":{"id":"pl-1","name":5,"points":[]},"label":"PL"},
+    {"name":"no name is PL alone","line":{"id":"pl-1","points":[]},"label":"PL"},
+    {"name":"no line is PL alone","line":null,"label":"PL"}
+  ],
+  "next": [
+    {"name":"the first is ALPHA","lines":[],"next":"ALPHA"},
+    {"name":"the first word no line has","lines":[{"id":"pl-0","name":"ALPHA","points":[]},{"id":"pl-1","name":"CHARLIE","points":[]}],"next":"BRAVO"},
+    {"name":"names are compared cleaned","lines":[{"id":"pl-0","name":"pl alpha","points":[]},{"id":"pl-1","name":" bravo","points":[]}],"next":"CHARLIE"},
+    {"name":"past ZULU, the next number no line has","lines":[{"id":"pl-0","name":"ALPHA","points":[]},{"id":"pl-1","name":"BRAVO","points":[]},{"id":"pl-2","name":"CHARLIE","points":[]},{"id":"pl-3","name":"DELTA","points":[]},{"id":"pl-4","name":"ECHO","points":[]},{"id":"pl-5","name":"FOXTROT","points":[]},{"id":"pl-6","name":"GOLF","points":[]},{"id":"pl-7","name":"HOTEL","points":[]},{"id":"pl-8","name":"INDIA","points":[]},{"id":"pl-9","name":"JULIETT","points":[]},{"id":"pl-10","name":"KILO","points":[]},{"id":"pl-11","name":"LIMA","points":[]},{"id":"pl-12","name":"MIKE","points":[]},{"id":"pl-13","name":"NOVEMBER","points":[]},{"id":"pl-14","name":"OSCAR","points":[]},{"id":"pl-15","name":"PAPA","points":[]},{"id":"pl-16","name":"QUEBEC","points":[]},{"id":"pl-17","name":"ROMEO","points":[]},{"id":"pl-18","name":"SIERRA","points":[]},{"id":"pl-19","name":"TANGO","points":[]},{"id":"pl-20","name":"UNIFORM","points":[]},{"id":"pl-21","name":"VICTOR","points":[]},{"id":"pl-22","name":"WHISKEY","points":[]},{"id":"pl-23","name":"XRAY","points":[]},{"id":"pl-24","name":"YANKEE","points":[]},{"id":"pl-25","name":"ZULU","points":[]}],"next":"27"},
+    {"name":"and the one after","lines":[{"id":"pl-0","name":"ALPHA","points":[]},{"id":"pl-1","name":"BRAVO","points":[]},{"id":"pl-2","name":"CHARLIE","points":[]},{"id":"pl-3","name":"DELTA","points":[]},{"id":"pl-4","name":"ECHO","points":[]},{"id":"pl-5","name":"FOXTROT","points":[]},{"id":"pl-6","name":"GOLF","points":[]},{"id":"pl-7","name":"HOTEL","points":[]},{"id":"pl-8","name":"INDIA","points":[]},{"id":"pl-9","name":"JULIETT","points":[]},{"id":"pl-10","name":"KILO","points":[]},{"id":"pl-11","name":"LIMA","points":[]},{"id":"pl-12","name":"MIKE","points":[]},{"id":"pl-13","name":"NOVEMBER","points":[]},{"id":"pl-14","name":"OSCAR","points":[]},{"id":"pl-15","name":"PAPA","points":[]},{"id":"pl-16","name":"QUEBEC","points":[]},{"id":"pl-17","name":"ROMEO","points":[]},{"id":"pl-18","name":"SIERRA","points":[]},{"id":"pl-19","name":"TANGO","points":[]},{"id":"pl-20","name":"UNIFORM","points":[]},{"id":"pl-21","name":"VICTOR","points":[]},{"id":"pl-22","name":"WHISKEY","points":[]},{"id":"pl-23","name":"XRAY","points":[]},{"id":"pl-24","name":"YANKEE","points":[]},{"id":"pl-25","name":"ZULU","points":[]},{"id":"pl-26","name":"27","points":[]},{"id":"pl-27","name":"29","points":[]}],"next":"28"},
+    {"name":"lines with no name take nothing","lines":[{"id":"a"},null,{"id":"b","name":7}],"next":"ALPHA"},
+    {"name":"no lines at all","lines":null,"next":"ALPHA"}
+  ],
+  "renames": [
+    {"name":"a new name, cleaned","line":{"id":"pl-1","name":"RED","points":[{"lat":1,"lon":2}]},"text":"pl blue","renamed":{"id":"pl-1","name":"BLUE","points":[{"lat":1,"lon":2}]}},
+    {"name":"a blank name changes nothing","line":{"id":"pl-1","name":"RED","points":[]},"text":"  ","renamed":{"id":"pl-1","name":"RED","points":[]}},
+    {"name":"PL alone changes nothing","line":{"id":"pl-1","name":"RED","points":[]},"text":"PL","renamed":{"id":"pl-1","name":"RED","points":[]}},
+    {"name":"the line's other fields are kept, in their order","line":{"id":"pl-1","colour":"black","name":"RED","points":[]},"text":"gold","renamed":{"id":"pl-1","colour":"black","name":"GOLD","points":[]}}
+  ],
+  "creates": [
+    {"name":"the points as places only, the name cleaned","points":[{"lat":34.8,"lon":-84.09,"at":3},{"lat":34.81,"lon":-84.07}],"id":"pl-1","text":"pl red","line":{"id":"pl-1","name":"RED","points":[{"lat":34.8,"lon":-84.09},{"lat":34.81,"lon":-84.07}]}},
+    {"name":"a blank name is kept blank","points":[{"lat":34.8,"lon":-84.09},{"lat":34.81,"lon":-84.07}],"id":"pl-2","text":"","line":{"id":"pl-2","name":"","points":[{"lat":34.8,"lon":-84.09},{"lat":34.81,"lon":-84.07}]}}
+  ],
+  "ends": [
+    {"name":"a straight line: each end points away from the other","pixels":[{"x":10,"y":50},{"x":110,"y":50}],"ends":[{"x":10,"y":50,"ux":-1,"uy":0},{"x":110,"y":50,"ux":1,"uy":0}]},
+    {"name":"a bent line: each end away from its own leg","pixels":[{"x":0,"y":0},{"x":30,"y":40},{"x":90,"y":40}],"ends":[{"x":0,"y":0,"ux":-0.6,"uy":-0.8},{"x":90,"y":40,"ux":1,"uy":0}]},
+    {"name":"a point on top of the end is passed over for the next","pixels":[{"x":0,"y":0},{"x":0,"y":0},{"x":0,"y":50},{"x":0,"y":50}],"ends":[{"x":0,"y":0,"ux":0,"uy":-1},{"x":0,"y":50,"ux":0,"uy":1}]},
+    {"name":"points all in one place have no ends","pixels":[{"x":4,"y":4},{"x":4,"y":4}],"ends":[]},
+    {"name":"one point has no ends","pixels":[{"x":4,"y":4}],"ends":[]}
+  ],
+  "shifts": [
+    {"name":"leaving to the right, the label is to the right of its end","out":{"ux":1,"uy":0},"shift":{"fx":1,"fy":0}},
+    {"name":"leaving up","out":{"ux":0,"uy":-1},"shift":{"fx":0,"fy":-1}},
+    {"name":"leaving at an angle, the end is on the label's edge","out":{"ux":0.6,"uy":0.8},"shift":{"fx":0.75,"fy":1}},
+    {"name":"leaving to the lower left","out":{"ux":-0.8,"uy":0.6},"shift":{"fx":-1,"fy":0.75}},
+    {"name":"no way out is no shift","out":{"ux":0,"uy":0},"shift":{"fx":0,"fy":0}}
+  ],
+  "data": [
+    {"name":"lines are the entries that are objects with an id","data":{"phaseLines":[null,"PL RED",{"name":"RED"},{"id":"pl-1","name":"RED","points":[]},{"id":7}]},"lines":[{"id":"pl-1","name":"RED","points":[]},{"id":7}]},
+    {"name":"no key is no lines","data":{"flots":[{"id":"a"}]},"lines":[]}
+  ]
+}

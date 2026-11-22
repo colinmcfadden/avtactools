@@ -6,7 +6,7 @@ import { composeEdit } from "../feature/missionPacks/packEdit";
 import { describeLzChange, lzDiagramFromItem, lzItemData, sharedLzData } from "../feature/missionPacks/packLz";
 import { packLocalId } from "../feature/missionPacks/packRef";
 import { describeRouteChange, flotsFromItem, phaseLinesFromItem, routeSetData, routesFromItem, sharedRouteData } from "../feature/missionPacks/packRoutes";
-import { actorName, createSummary, newItemOp, updateFromOriginalSummary } from "../feature/missionPacks/packSentences";
+import { actorName, createSummary, measuresCreateSummary, newItemOp, updateFromOriginalSummary } from "../feature/missionPacks/packSentences";
 import { describePointsChange, newPointSetOp, pointsForPack } from "../feature/missionPacks/usePackPoints";
 import { ROUTE_COLORS } from "../feature/msnxImport/colorPalette";
 import { defaultRoutePlan } from "../feature/msnxImport/routeCalc";
@@ -1267,6 +1267,10 @@ const SUMMARY_CASES = [
   // The item panel's ⋯ menu (usePackWorkspace): Rename is renameSummary above; Update from original is this.
   { name: "an update from the original names the item", helper: "updateFromOriginalSummary", actor: ACTOR, itemName: "LZ HAWK" },
   { name: "an update from the original by no one named is Someone's", helper: "updateFromOriginalSummary", itemName: "LZ HAWK" },
+  // The item a pack's control measures are kept in (usePackRoutes' createItem with { measures: true }): a route set's item with no routes.
+  { name: "the pack's control measures are started, not added as a route set", helper: "measuresCreateSummary", actor: ACTOR, itemName: "CONTROL MEASURES" },
+  { name: "control measures started by no one named are Someone's", helper: "measuresCreateSummary", itemName: "CONTROL MEASURES" },
+  { name: "control measures started by an empty name are Someone's too", helper: "measuresCreateSummary", actor: "", itemName: "OP DK LINES" },
 ];
 
 const summarise = (c) => {
@@ -1291,6 +1295,7 @@ const summarise = (c) => {
     }
     case "createSummary": return { ...c, summary: createSummary(c.actor, c.kind, c.itemName, c.pointCount) };
     case "updateFromOriginalSummary": return { ...c, summary: updateFromOriginalSummary(c.actor, c.itemName) };
+    case "measuresCreateSummary": return { ...c, summary: measuresCreateSummary(c.actor, c.itemName) };
     default: throw new Error(`unknown helper ${c.helper}`);
   }
 };
@@ -1381,7 +1386,9 @@ const describeFixture = () => withoutClockOrRandomness(() => ({
     + "createSummary(actor, kind, itemName, pointCount) -> `summary`: for an LZ/PZ `A added the LZ/PZ \"N\".`, for a route set "
     + "`A added the route set \"N\".`, for a point set `A added the point set \"N\" (k points).`, k written with a comma between "
     + "every three digits (toLocaleString(\"en-US\"): 1,234,567), and \"point\" when k is 1. "
-    + "updateFromOriginalSummary(actor, itemName) -> `summary`, sent with POST /api/packs/<uuid>/items/<item>/update-from-original.",
+    + "updateFromOriginalSummary(actor, itemName) -> `summary`, sent with POST /api/packs/<uuid>/items/<item>/update-from-original. "
+    + "measuresCreateSummary(actor, itemName) -> `summary`: `A started the pack's control measures (\"N\").`, the item.create of the "
+    + "route set item a pack's FLOTs and phase lines are kept in (usePackRoutes, a set with no routes made when the first line is drawn).",
   generatedBy: GENERATED_BY,
   lz: LZ_CASES.map(sentence(describeLzChange)),
   routes: ROUTE_CASES.map(sentence(describeRouteChange)),
@@ -1764,6 +1771,7 @@ describe("mission pack shared-data and history fixtures", () => {
     const { summaries } = describeFixture();
     [
       "renameSummary", "deleteItemOp", "copyFromLibrary", "actorName", "newItemOp", "newPointSetOp", "createSummary", "updateFromOriginalSummary",
+      "measuresCreateSummary",
     ].forEach((helper) => expect(summaries.some((c) => c.helper === helper)).toBe(true));
     summaries.filter((c) => c.helper === "newItemOp").forEach((c) => {
       expect(c.op.summary).toBe(createSummary(c.actor, c.kind, c.op.name));
