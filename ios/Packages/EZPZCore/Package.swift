@@ -12,6 +12,7 @@ let package = Package(
         .library(name: "CoreModel", targets: ["CoreModel"]),
         .library(name: "CoreGeo", targets: ["CoreGeo"]),
         .library(name: "CorePlanning", targets: ["CorePlanning"]),
+        .library(name: "DesignTokens", targets: ["DesignTokens"]),
         .library(name: "CoreTesting", targets: ["CoreTesting"]),
     ],
     targets: [
@@ -24,11 +25,15 @@ let package = Package(
         .target(name: "CoreGeo", dependencies: ["CoreModel", "CoreJS"]),
         // Android's core-planning: aircraft geometry, capacity, separation, the graphics' placement, routes planned, backstops.
         .target(name: "CorePlanning", dependencies: ["CoreModel", "CoreGeo", "CoreJS"]),
+        // The design tokens, generated from contracts/tokens/tokens.json by contracts/scripts/tokens.py (as Android's Tokens.kt):
+        // plain numbers, so the palettes are held to WCAG here on the Mac.
+        .target(name: "DesignTokens"),
         // Reads contracts/fixtures and compares JSON with a tolerance. Test support only.
         .target(name: "CoreTesting", dependencies: ["CoreJS"]),
         .testTarget(name: "CoreJSTests", dependencies: ["CoreJS", "CoreTesting"]),
         .testTarget(name: "CoreModelTests", dependencies: ["CoreModel", "CoreJS", "CoreTesting"]),
         .testTarget(name: "CoreGeoTests", dependencies: ["CoreGeo", "CoreModel", "CoreJS", "CoreTesting"]),
+        .testTarget(name: "DesignTokensTests", dependencies: ["DesignTokens"]),
         .testTarget(name: "CorePlanningTests", dependencies: ["CorePlanning", "CoreGeo", "CoreModel", "CoreJS", "CoreTesting"]),
     ],
     swiftLanguageModes: [.v6]
