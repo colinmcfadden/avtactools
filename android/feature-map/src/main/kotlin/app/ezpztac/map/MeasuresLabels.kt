@@ -131,8 +131,11 @@ private val HANDLE_FILL = Color(0xFF2F5BFF)
  * Drawn on a plain `Box`, never a `Surface`, which would take the touches meant for the map (§14).
  */
 @Composable
-fun MeasuresLabelsLayer(host: MapHost, scene: MeasuresScene, modifier: Modifier = Modifier) {
-    val camera = host.camera
+fun MeasuresLabelsLayer(host: MapHost, scene: MeasuresScene, modifier: Modifier = Modifier) = MeasuresLabels(host.camera, scene, modifier)
+
+/** [MeasuresLabelsLayer] for [camera]: apart from the map's host, so it can be drawn over a stand-in in a test. */
+@Composable
+internal fun MeasuresLabels(camera: CameraState?, scene: MeasuresScene, modifier: Modifier = Modifier) {
     val density = LocalDensity.current.density.toDouble()
     var size by remember { mutableStateOf(IntSize.Zero) }
     Box(modifier.fillMaxSize().onSizeChanged { size = it }.clearAndSetSemantics { }) {

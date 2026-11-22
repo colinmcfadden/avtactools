@@ -8,7 +8,9 @@ import app.ezpztac.data.HeldMeasure
 import app.ezpztac.data.MeasureKind
 import app.ezpztac.data.OpenPack
 import app.ezpztac.data.PackLock
+import app.ezpztac.missionpacks.PackRef
 import app.ezpztac.model.DiagramOps
+import app.ezpztac.model.JsNumber
 import app.ezpztac.model.LatLon
 import app.ezpztac.model.RouteSet
 import app.ezpztac.planning.Backstops
@@ -40,9 +42,30 @@ data class MeasureHeldUi(
     val locked: String? = null,
 )
 
+/** A FLOT or phase line's row on the Routes panel's card (the web's `FlotRow`, `PhaseLineRow`): its title, what it is and how long, and whether it is held. */
+data class MeasureLineUi(val line: HeldMeasure.Line, val title: String, val meta: String, val held: Boolean, val name: String? = null) {
+    val isFlot: Boolean get() = line.key == SetLines.FLOTS
+}
+
+/**
+ * A card of the Routes panel's *Control measures* (the web's `MeasuresCard`): a set of them ([attached] false: renamed and closed here), or the lines an older web saved
+ * inside route set [name] ([attached]: moved out by *Keep on their own*). [inPack] says the set is the open pack's (*Close here*); [locked] why nothing in it may change.
+ */
+data class MeasuresCardUi(
+    val setId: String,
+    val name: String,
+    val attached: Boolean,
+    val summary: String,
+    val lines: List<MeasureLineUi>,
+    val inPack: Boolean = false,
+    val locked: String? = null,
+)
+
 data class MeasuresUiState(
     val draft: MeasureDraftUi? = null,
     val held: MeasureHeldUi? = null,
+    /** The Routes panel's *Control measures*: each set with lines in it, a set of them first (the web's `measureSets`). */
+    val cards: List<MeasuresCardUi> = emptyList(),
     /** The name offered while the phase line's name is asked for (the web's name dialog); null while it is not. */
     val naming: String? = null,
     /** Why the last thing asked was not done, in words; cleared by the next. */
@@ -66,8 +89,10 @@ class MeasuresViewModel @Inject constructor(
         heldUi(held, diagram, sets, lock)
     }
 
-    val state: StateFlow<MeasuresUiState> = combine(measures.draft, held, naming, error) { draft, held, naming, error ->
-        MeasuresUiState(draft?.let { MeasureDraftUi(it.kind, it.points.size, it.canFinish) }, held, naming.takeIf { draft?.kind == MeasureKind.PHASE_LINE }, error)
+    private val cards = combine(measures.sets, measures.held, pack.lock) { sets, held, lock -> cardsOf(sets, held, lock) }
+
+    val state: StateFlow<MeasuresUiState> = combine(measures.draft, held, cards, naming, error) { draft, held, cards, naming, error ->
+        MeasuresUiState(draft?.let { MeasureDraftUi(it.kind, it.points.size, it.canFinish) }, held, cards, naming.takeIf { draft?.kind == MeasureKind.PHASE_LINE }, error)
     }.stateIn(viewModelScope, SharingStarted.Eagerly, MeasuresUiState())
 
     /** Why [kind] cannot be drawn now, in words, or null when it can (a tool's button says so as it is greyed out). */
@@ -154,6 +179,33 @@ class MeasuresViewModel @Inject constructor(
         error.value = null
     }
 
+    /** A row of the card tapped: the line held on the map, or put down if it was (the map's own tap does the same). */
+    fun holdLine(line: HeldMeasure.Line) {
+        measures.toggle(line)
+    }
+
+    /** A row's *Remove* (the web's `removeFlot`, `removePhaseLine`, which ask nothing: undo takes it back). */
+    fun removeLine(line: HeldMeasure.Line): String? = measures.deleteLine(line).also { error.value = it }
+
+    /** A FLOT row's *Flip*. */
+    fun flipLine(line: HeldMeasure.Line): String? = measures.flipLine(line).also { error.value = it }
+
+    /** A phase line row's rename. */
+    fun renameLine(line: HeldMeasure.Line, name: String): String? = measures.renameLine(line, name).also { error.value = it }
+
+    /** The card's rename of a set of control measures. */
+    fun renameSet(name: String): String? = measures.renameSet(name).also { error.value = it }
+
+    /** The card's *Close* (*Close here* in a pack): the set's last change written, then it is out of this session (the Library or the pack keeps it). */
+    fun closeSet() {
+        viewModelScope.launch { measures.closeSet() }
+    }
+
+    /** *Keep on their own*: the lines saved inside route set [setId] moved into the control measures. */
+    fun keepOnTheirOwn(setId: String) {
+        viewModelScope.launch { error.value = measures.keepOnTheirOwn(setId) }
+    }
+
     private fun keep(name: String?) {
         viewModelScope.launch { error.value = measures.finish(name) }
     }
@@ -182,7 +234,37 @@ class MeasuresViewModel @Inject constructor(
         }
     }
 
+    private fun cardsOf(sets: List<RouteSet>, held: HeldMeasure?, lock: PackLock?): List<MeasuresCardUi> =
+        sets.filter { SetLines.count(it) > 0 }
+            .sortedBy { if (isMeasures(it)) 0 else 1 }
+            .map { set ->
+                val flots = SetLines.of(set, SetLines.FLOTS)
+                val phaseLines = SetLines.of(set, SetLines.PHASE_LINES)
+                val rows = flots.map { flot ->
+                    val line = HeldMeasure.Line(set.id, SetLines.FLOTS, DiagramOps.idText(flot["id"]))
+                    MeasureLineUi(line, "FLOT", "${km(flot)} km", held == line)
+                } + phaseLines.map { pl ->
+                    val line = HeldMeasure.Line(set.id, SetLines.PHASE_LINES, DiagramOps.idText(pl["id"]))
+                    MeasureLineUi(line, PhaseLines.label(pl), "Phase line · ${km(pl)} km", held == line, name = PhaseLines.name(pl))
+                }
+                MeasuresCardUi(
+                    set.id, set.name.ifBlank { SetLines.MEASURES_NAME }, attached = !isMeasures(set), summary = summaryOf(flots.size, phaseLines.size), lines = rows,
+                    inPack = PackRef.parse(set.id) != null, locked = lock?.reasonFor(set.id),
+                )
+            }
+
+    private fun isMeasures(set: RouteSet) = SetLines.isMeasures(set, set.name == SetLines.MEASURES_NAME)
+
     companion object {
+        /** What a card holds, as the web's `setSummary` says it with no routes: `1 FLOT · 2 phase lines`. */
+        internal fun summaryOf(flots: Int, phaseLines: Int): String = listOfNotNull(
+            flots.takeIf { it > 0 }?.let { if (it == 1) "1 FLOT" else "$it FLOTs" },
+            phaseLines.takeIf { it > 0 }?.let { if (it == 1) "1 phase line" else "$it phase lines" },
+        ).joinToString(" · ")
+
+        // A line's length to a tenth of a km, as the web's `toFixed(1)`.
+        private fun km(line: kotlinx.serialization.json.JsonObject): String = JsNumber.toFixed(SetLines.lengthKm(line), 1)
+
         const val MOVE_MAP_FIRST = "Move the map to where the point should go first."
 
         /** The longest name a phase line takes (the web's `PHASE_LINE_NAME_MAX`). */

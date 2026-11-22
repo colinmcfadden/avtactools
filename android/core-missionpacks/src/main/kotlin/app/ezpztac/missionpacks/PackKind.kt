@@ -185,7 +185,8 @@ public class LzPackKind(private val env: DiagramNormalizer.Environment = Diagram
             val path = pathOf(op) ?: return null
             if (inBackstop(path, 4) && isField(path[3], "arrow")) return path[2] as JsonObject
             val atBackstop = path.size == 3 && inBackstop(path, 3) && (op["type"] as? JsonPrimitive)?.content == "patch"
-            return (path[2] as? JsonObject).takeIf { atBackstop && (op["value"] as? JsonObject)?.containsKey("arrow") == true }
+            if (!atBackstop || (op["value"] as? JsonObject)?.containsKey("arrow") != true) return null
+            return path[2] as JsonObject
         }
 
         /**
@@ -300,6 +301,11 @@ public object RoutePackKind : PackKind<RouteSet> {
 
     private const val OWN_HIDDEN = "hidden"
 
+    // A route set's own lines (core-planning's `SetLines.FLOTS` and `SetLines.PHASE_LINES`, the web's `flots` and `phaseLines`).
+    private const val FLOTS = "flots"
+    private const val PHASE_LINES = "phaseLines"
+    private val LINE_KEYS = listOf(FLOTS, PHASE_LINES)
+
     override fun shared(data: JsonElement?): JsonElement = PackRoutes.sharedRouteData(data)
 
     override fun fromItem(localId: String, item: PackItemView, own: JsonObject?): RouteSet {
@@ -314,17 +320,36 @@ public object RoutePackKind : PackKind<RouteSet> {
         val after = typed(document)
         val measured = measuredAgainst(shape, read, after)
         val before = JsonObject(mapOf("routes" to JsonArray(measured.map { it.version })))
-        if (PackDiff.sameData(before, after)) return shape
+        if (PackDiff.sameData(before, after)) return withLines(shape, document)
         // Two routes with one id: an operation addressed by it reaches the first, whichever of them the editor changed, so they go whole.
-        if (!addressable(shape)) return wholeRoutes(shape, measured, after)
+        if (!addressable(shape)) return withLines(wholeRoutes(shape, measured, after), document)
         var data: JsonElement = shape
         for (op in PackDiff.diffData(before, after)) {
             // An operation on the set itself is on its routes, which are then not a list it can address: they go whole. Any other is
             // never dropped: one that does not apply to the JSON is made coarser until it does.
             val next = if ((op.getValue("path") as JsonArray).isEmpty()) null else applied(data, op) ?: coarsened(data, op, after)?.let { applied(data, it) }
-            data = next ?: return wholeRoutes(shape, measured, after)
+            data = next ?: return withLines(wholeRoutes(shape, measured, after), document)
         }
-        return data
+        return withLines(data, document)
+    }
+
+    /**
+     * [data] with the set's FLOTs and phase lines as [document] has them (`flots`, `phaseLines`: the set's own fields, kept in [RouteSet.extras], which the
+     * routes' diff above does not see): each put where it was, a new one before `routes` (a FLOT's before a phase line's, as the web's `routeSetData` writes
+     * them), one that went left out. Unchanged, [data] comes back as it was, so a set whose lines did not change sends nothing for them.
+     */
+    private fun withLines(data: JsonElement, document: RouteSet): JsonElement {
+        val obj = data as? JsonObject ?: return data
+        if (LINE_KEYS.all { obj[it] == document.extras[it] }) return data
+        val out = LinkedHashMap<String, JsonElement>()
+        fun putMissing() = LINE_KEYS.forEach { key -> if (key !in obj && key !in out) document.extras[key]?.let { out[key] = it } }
+        for ((key, value) in obj) {
+            // A FLOT's key, new, goes before a phase line's already there; both before the routes.
+            if (key == "routes" || (key == PHASE_LINES && FLOTS !in obj)) putMissing()
+            if (key in LINE_KEYS) document.extras[key]?.let { out[key] = it } else out[key] = value
+        }
+        putMissing()
+        return JsonObject(out)
     }
 
     override fun nameOf(document: RouteSet): String = document.name

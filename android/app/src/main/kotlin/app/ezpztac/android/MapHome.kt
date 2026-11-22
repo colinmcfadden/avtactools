@@ -187,6 +187,7 @@ import app.ezpztac.workspace.LzPanelHost
 import app.ezpztac.workspace.LzToolRailHost
 import app.ezpztac.workspace.MapPointAction
 import app.ezpztac.workspace.MeasuresToolbarHost
+import app.ezpztac.workspace.MeasuresSectionHost
 import app.ezpztac.workspace.MeasuresViewModel
 import app.ezpztac.workspace.PlacementToolbarHost
 import app.ezpztac.workspace.PointsViewModel
@@ -704,7 +705,7 @@ fun MapHome(
                         )
                         Panel.Routes -> RoutesHost(
                             crosshair = state.center, threatCount = counts.threats, onBrowseLibrary = { libraryTab = LibraryTab.ROUTES }, viewModel = routesModel,
-                            onAddToPack = askCopy?.invoke(RecordKind.ROUTE), onSaveCopy = saveCopy,
+                            onAddToPack = askCopy?.invoke(RecordKind.ROUTE), onSaveCopy = saveCopy, measures = { MeasuresSectionHost(measuresModel) },
                         )
                         Panel.Threats -> ThreatsHost(
                             onExport = { ShareExport.share(context, it) }, onImport = importFiles, crosshair = state.center, crosshairGrid = state.readout?.mgrs,
@@ -922,7 +923,7 @@ fun MapHome(
             // The Routes panel's foot: Sketch a route and Import .msnx, pinned under the sets open now.
             // None in a read-only pack, which nothing is drawn into (a sketch still under way keeps its Cancel).
             val footer: (@Composable () -> Unit)? = if (current == Panel.Routes && routes.page == RoutesPage.HOME && !(routes.pack?.readOnly == true && routes.drawing == null)) {
-                { RoutesFooterHost(onImport = importFiles, crosshair = state.center, viewModel = routesModel) }
+                { RoutesFooterHost(onImport = importFiles, crosshair = state.center, viewModel = routesModel, measures = measuresModel) }
             } else if (current == Panel.Pack && CopyRules.footShown(pack.loaded, openPack, canAdd = addingTo != null)) {
                 // The Pack panel's foot while it is not finished: *Add from Library* for anyone who can change it (the Library, adding to the pack), *Finish pack*
                 // for its owner.

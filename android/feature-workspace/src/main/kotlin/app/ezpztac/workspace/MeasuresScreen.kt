@@ -113,11 +113,12 @@ fun MeasuresToolbar(draft: MeasureDraftUi, error: String?, actions: MeasuresActi
                 }
                 TextAction("Cancel", onClick = actions.cancel)
             }
+            // Two to a row, so the words keep to one line on a 360 dp phone at large text; *Finish* under them, as wide as the bar.
             Row(horizontalArrangement = Arrangement.spacedBy(Tokens.Spacing.sm.dp)) {
                 SecondaryButton("Add here", onClick = actions.addAtCrosshair, modifier = Modifier.weight(1f))
                 SecondaryButton("Undo point", onClick = actions.undoPoint, enabled = draft.points > 0, modifier = Modifier.weight(1f))
-                PrimaryButton(if (draft.canFinish) "Finish" else "Add two points", onClick = actions.finish, enabled = draft.canFinish, modifier = Modifier.weight(1f))
             }
+            PrimaryButton(if (draft.canFinish) "Finish" else "Add two points", onClick = actions.finish, enabled = draft.canFinish, modifier = Modifier.fillMaxWidth())
         }
     }
 }

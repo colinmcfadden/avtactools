@@ -232,25 +232,88 @@ class ControlMeasures @Inject constructor(
                 null
             }
         }
-        is HeldMeasure.Line -> editLine(held, if (held.key == SetLines.FLOTS) "Delete FLOT" else "Delete phase line") { null } ?: run {
-            _held.value = null
-            null
-        }
+        is HeldMeasure.Line -> deleteLine(held)
     }
 
     /** Turns the held FLOT's scallops to its other side. */
-    fun flipHeld(): String? {
-        val held = _held.value as? HeldMeasure.Line ?: return "Nothing is held."
-        if (held.key != SetLines.FLOTS) return "Only a FLOT is flipped."
-        return editLine(held, "Flip FLOT") { Flots.flip(it) }
-    }
+    fun flipHeld(): String? = (_held.value as? HeldMeasure.Line)?.let(::flipLine) ?: "Nothing is held."
 
     /** Gives the held phase line another name (`renamePhaseLine`); one with nothing in it is refused, in words. */
-    fun renameHeld(name: String): String? {
-        val held = _held.value as? HeldMeasure.Line ?: return "Nothing is held."
-        if (held.key != SetLines.PHASE_LINES) return "Only a phase line has a name."
+    fun renameHeld(name: String): String? = (_held.value as? HeldMeasure.Line)?.let { renameLine(it, name) } ?: "Nothing is held."
+
+    /** Deletes the FLOT or phase line [line] names (the Routes panel's row, or the held bar); let go of if it was held. Null once deleted; else why not. */
+    fun deleteLine(line: HeldMeasure.Line): String? {
+        editLine(line, if (line.key == SetLines.FLOTS) "Delete FLOT" else "Delete phase line") { null }?.let { return it }
+        if (_held.value == line) _held.value = null
+        return null
+    }
+
+    /** Turns the FLOT [line] names to its other side (`flipFlot`). */
+    fun flipLine(line: HeldMeasure.Line): String? {
+        if (line.key != SetLines.FLOTS) return "Only a FLOT is flipped."
+        return editLine(line, "Flip FLOT") { Flots.flip(it) }
+    }
+
+    /** Gives the phase line [line] names another name (`renamePhaseLine`); one with nothing in it is refused, in words. */
+    fun renameLine(line: HeldMeasure.Line, name: String): String? {
+        if (line.key != SetLines.PHASE_LINES) return "Only a phase line has a name."
         if (PhaseLines.cleanName(name).isEmpty()) return "Give the phase line a name."
-        return editLine(held, "Rename phase line") { PhaseLines.rename(it, name) }
+        return editLine(line, "Rename phase line") { PhaseLines.rename(it, name) }
+    }
+
+    /**
+     * Gives the control measures open now another name, in capitals as the web's card makes it, at most [app.ezpztac.sync.MAX_NAME] characters (counted as
+     * characters). Blank is refused, in words; the same name is no change.
+     */
+    fun renameSet(name: String): String? {
+        val set = measures.active.value ?: return "The control measures are no longer open."
+        lockedReason(set.id)?.let { return it }
+        val clean = app.ezpztac.sync.cutToCharacters(name.trim().uppercase(), app.ezpztac.sync.MAX_NAME).trimEnd()
+        if (clean.isEmpty()) return "Give the control measures a name."
+        if (clean == set.name) return null
+        measures.edit("Rename control measures") { it.copy(name = clean) }
+        return null
+    }
+
+    /**
+     * *Keep on their own* (the web's `moveLinesOf`): the FLOTs and phase lines saved inside route set [setId] (an older web's) are moved into the control measures,
+     * those open now, else the pack's, else a set made for them, and taken out of the route set, which keeps its routes. Null once moved; else why not, in words.
+     */
+    suspend fun keepOnTheirOwn(setId: String): String? {
+        lockedReason(setId)?.let { return it }
+        val from = routes.active.value?.takeIf { it.id == setId && it.mission == null } ?: return "That route set is no longer open."
+        val flots = SetLines.of(from, SetLines.FLOTS)
+        val phaseLines = SetLines.of(from, SetLines.PHASE_LINES)
+        if (flots.isEmpty() && phaseLines.isEmpty()) return null
+        val into: DocumentSession<RouteSet> = holderNow()?.takeIf { it !== routes } ?: when {
+            pack.state.value != null -> {
+                val localId = pack.openMeasures() ?: return "The pack would not take the control measures."
+                if (measures.active.value?.id != localId) return "The control measures are no longer open."
+                measures
+            }
+            else -> {
+                val made = repository.create(
+                    SetLines.MEASURES_NAME,
+                    extras = JsonObject(buildMap { if (flots.isNotEmpty()) put(SetLines.FLOTS, JsonArray(flots)); if (phaseLines.isNotEmpty()) put(SetLines.PHASE_LINES, JsonArray(phaseLines)) }),
+                )
+                if (!measures.open(made.id)) return "The control measures could not be opened."
+                last.remember(made.id)
+                null
+            }
+        } ?: return takeOut(from.id)
+        into.edit("Keep lines on their own") { set ->
+            val withFlots = SetLines.withLines(set, SetLines.FLOTS, SetLines.of(set, SetLines.FLOTS) + flots)
+            SetLines.withLines(withFlots, SetLines.PHASE_LINES, SetLines.of(withFlots, SetLines.PHASE_LINES) + phaseLines)
+        }
+        return takeOut(from.id)
+    }
+
+    // The route set's lines taken out, once they are kept elsewhere; one held there is let go of, since its set has changed.
+    private fun takeOut(setId: String): String? {
+        if (routes.active.value?.id != setId) return null
+        routes.edit("Keep lines on their own") { set -> SetLines.withLines(SetLines.withLines(set, SetLines.FLOTS, emptyList()), SetLines.PHASE_LINES, emptyList()) }
+        if ((_held.value as? HeldMeasure.Line)?.setId == setId) _held.value = null
+        return null
     }
 
     /** The session holding set [setId] now, or null. */
@@ -270,6 +333,17 @@ class ControlMeasures @Inject constructor(
         if (!measures.open(uuid)) return false
         if (PackRef.parse(uuid) == null) last.remember(uuid)
         return true
+    }
+
+    /**
+     * Opens [uuid] as the control measures when its record is a set of them ([SetLines.isMeasures]: no routes, and lines or the name they are made under), as the
+     * web opens a saved set with no routes (`handleLoadSavedRoute`). Null when it is not one (it opens as routes); else whether it opened.
+     */
+    suspend fun openIfMeasures(uuid: String): Boolean? {
+        val set = repository.open(uuid)?.takeIf { it.mission == null } ?: return null
+        if (!SetLines.isMeasures(set, set.name == SetLines.MEASURES_NAME)) return null
+        if (measures.active.value?.id == uuid) return true
+        return openSet(uuid)
     }
 
     /** Closes the control measures open now (its last change written first); a set of the person's own is forgotten for the next launch. */

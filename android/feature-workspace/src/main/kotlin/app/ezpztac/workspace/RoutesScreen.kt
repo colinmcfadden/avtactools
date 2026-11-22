@@ -139,12 +139,14 @@ fun RoutesHost(
     /** Asks what to call a copy of a pack's route set open here, saved to the Library: given while a pack is open. */
     onSaveCopy: ((uuid: String) -> Unit)? = null,
     viewModel: RoutesViewModel = hiltViewModel(),
+    /** The *Control measures* cards under the route sets ([MeasuresSectionHost]). */
+    measures: @Composable () -> Unit = {},
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     var naming by rememberSaveable { mutableStateOf(false) }
     val actions = actionsOf(viewModel, crosshair, save = { naming = true }, browse = onBrowseLibrary, addToPack = onAddToPack, saveCopy = onSaveCopy)
     when (state.page) {
-        RoutesPage.HOME -> RoutesHomeContent(state, actions, modifier, threatCount)
+        RoutesPage.HOME -> RoutesHomeContent(state, actions, modifier, threatCount, measures)
     }
     if (naming) {
         val open = state.open
@@ -161,9 +163,13 @@ fun RoutesHost(
 
 /** The panel's foot (the design's): *Sketch a route* and *Import .msnx*, or, while a route is being drawn, *Cancel* and *Finish*. [onImport] opens the file picker. */
 @Composable
-fun RoutesFooterHost(onImport: () -> Unit, crosshair: LatLon?, viewModel: RoutesViewModel = hiltViewModel()) {
+fun RoutesFooterHost(onImport: () -> Unit, crosshair: LatLon?, viewModel: RoutesViewModel = hiltViewModel(), measures: MeasuresViewModel? = null) {
     val state by viewModel.state.collectAsStateWithLifecycle()
-    RoutesFooter(state, actionsOf(viewModel, crosshair, importMission = onImport))
+    val lines = measures?.let { model ->
+        val drawing = model.state.collectAsStateWithLifecycle().value.draft?.kind
+        LineButtons(drawing) { kind -> model.toggle(kind)?.also { model.dismissError() } }
+    }
+    RoutesFooter(state, actionsOf(viewModel, crosshair, importMission = onImport), lines = lines)
 }
 
 /** The held route's plan, as a page of its own over the frame (the design's RoutePlan), while it is open. */
