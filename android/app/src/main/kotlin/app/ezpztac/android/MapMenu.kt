@@ -33,6 +33,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalWindowInfo
@@ -57,6 +59,7 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Popup
 import androidx.compose.ui.window.PopupPositionProvider
 import androidx.compose.ui.window.PopupProperties
+import app.ezpztac.data.MeasureKind
 import app.ezpztac.designsystem.EzpzIcons
 import app.ezpztac.designsystem.EzpzText
 import app.ezpztac.designsystem.EzpzTheme
@@ -76,6 +79,8 @@ internal data class MapMenuChoices(
     val routePoint: Pair<MapPointAction, () -> Unit>? = null,
     /** *Add object*: a planning graphic of the open LZ/PZ put at the press. Null while no LZ/PZ is open. */
     val addObject: AddObjectChoice? = null,
+    /** *Draw a line here*: a backstop, the FLOT or a phase line started with its first point at the press. Null for an account offered neither panel. */
+    val drawLine: DrawLineChoice? = null,
     val copyGrid: () -> Unit = {},
     /** Sends the grid to someone (docs/GRID_SHARING.md): null where the place has no grid (past 84° N or 80° S). */
     val shareGrid: (() -> Unit)? = null,
@@ -86,6 +91,26 @@ internal data class MapMenuChoices(
  * the chosen [MapObject] at the press.
  */
 internal data class AddObjectChoice(val lzName: String, val off: String?, val place: (MapObject) -> Unit)
+
+/**
+ * *Draw a line here*: why each of the three lines cannot be started now ([off], read as the menu opens: another line or a boundary being drawn, no LZ/PZ analysed for a
+ * backstop, a read-only pack), and starting one with its first point at the press.
+ */
+internal data class DrawLineChoice(val off: Map<MeasureKind, String?>, val start: (MeasureKind) -> Unit)
+
+/**
+ * The lines *Draw a line here* offers an account: a backstop with the LZ/PZ panel ([lz]), the FLOT and a phase line with the Routes panel ([routes]), whose tools they
+ * are (the web's left panel has them in its LZ/PZ and Routes cards).
+ */
+internal fun measureKindsFor(lz: Boolean, routes: Boolean): List<MeasureKind> =
+    listOfNotNull(MeasureKind.BACKSTOP.takeIf { lz }, MeasureKind.FLOT.takeIf { routes }, MeasureKind.PHASE_LINE.takeIf { routes })
+
+/** What *Draw a line here* offers, with the tools' symbols. */
+internal val LINE_CHOICES: List<Triple<MeasureKind, String, String>> = listOf(
+    Triple(MeasureKind.BACKSTOP, "Backstop", "A reference beyond the LZ/PZ, and an arrow back to it"),
+    Triple(MeasureKind.FLOT, "FLOT", "The forward line of troops"),
+    Triple(MeasureKind.PHASE_LINE, "Phase line", "Named when it is finished"),
+)
 
 /** What *Add object* offers: the LZ/PZ tools that put a graphic at a place, with their tool grid's symbols. Draw LZ draws a boundary, which is not a place. */
 internal enum class MapObject(val label: String, val symbol: ToolSymbol, val supporting: String? = null) {
@@ -175,6 +200,7 @@ private fun menuWidth(grid: String): Dp {
 @Composable
 internal fun ColumnScope.MapMenuItems(place: MapMenuPlace, choices: MapMenuChoices, onDismiss: () -> Unit) {
     var objects by remember(place) { mutableStateOf(false) }
+    var lines by remember(place) { mutableStateOf(false) }
     // A tap on the grid copies it, as *Copy grid* does (the web's menu title copies itself too): a finger's height, so a glove finds it.
     Row(
         Modifier.heightIn(min = 48.dp)
@@ -208,6 +234,26 @@ internal fun ColumnScope.MapMenuItems(place: MapMenuPlace, choices: MapMenuChoic
         }
         return
     }
+    val drawLine = choices.drawLine
+    if (lines && drawLine != null) {
+        MenuChoice(EzpzIcons.arrowBack, "Draw a line here", "Its first point goes here", onClick = { lines = false })
+        LINE_CHOICES.filter { it.first in drawLine.off }.forEach { (kind, label, says) ->
+            val off = drawLine.off[kind]
+            DropdownMenuItem(
+                text = {
+                    Column {
+                        Text(label, style = MaterialTheme.typography.labelLarge)
+                        Text(off ?: says, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                },
+                leadingIcon = { LineGlyph(kind, enabled = off == null) },
+                onClick = choose { drawLine.start(kind) }, enabled = off == null,
+                contentPadding = PaddingValues(start = 14.dp, end = 16.dp),
+                modifier = Modifier.heightIn(min = 56.dp),
+            )
+        }
+        return
+    }
     choices.newLz?.let {
         val off = choices.newLzOff
         MenuChoice(EzpzIcons.addLocationAlt, "New LZ/PZ here", off ?: "Opens another LZ/PZ with this target", choose(it), accent = off == null, enabled = off == null)
@@ -216,6 +262,13 @@ internal fun ColumnScope.MapMenuItems(place: MapMenuPlace, choices: MapMenuChoic
         MenuChoice(
             EzpzIcons.addCircle, "Add object here", add.off ?: "A helicopter, PZ, sector, go-around or unit on ${add.lzName}",
             onClick = { objects = true }, accent = add.off == null, enabled = add.off == null,
+        )
+    }
+    drawLine?.let { draw ->
+        val anyOn = draw.off.values.any { it == null }
+        MenuChoice(
+            EzpzIcons.route, "Draw a line here", if (anyOn) "A backstop, the FLOT or a phase line" else draw.off.values.firstOrNull(),
+            onClick = { lines = true }, enabled = anyOn,
         )
     }
     choices.addThreat?.let { MenuChoice(EzpzIcons.crisisAlert, "Add threat here", choices.addThreatOff, choose(it), enabled = choices.addThreatOff == null) }
@@ -249,6 +302,32 @@ private fun MenuChoice(icon: Int, label: String, supporting: String?, onClick: (
         contentPadding = PaddingValues(start = 14.dp, end = 16.dp),
         modifier = Modifier.heightIn(min = if (supporting != null) 56.dp else 48.dp),
     )
+}
+
+/** A line's symbol in the menu: the backstop's tool glyph, the FLOT's scallops, a phase line's plain line. */
+@Composable
+private fun LineGlyph(kind: MeasureKind, enabled: Boolean) {
+    if (kind == MeasureKind.BACKSTOP) {
+        ToolGlyph(ToolSymbol.Backstop, enabled)
+        return
+    }
+    val color = (if (kind == MeasureKind.FLOT) EzpzTheme.status.accent else MaterialTheme.colorScheme.onSurface).copy(alpha = if (enabled) 1f else 0.4f)
+    Canvas(Modifier.size(24.dp)) {
+        val u = size.width / 24f
+        if (kind == MeasureKind.FLOT) {
+            // Three scallops along a line, as the FLOT is drawn.
+            val path = Path().apply {
+                moveTo(3f * u, 15f * u)
+                repeat(3) { i ->
+                    val x = (3f + i * 6f) * u
+                    cubicTo(x, 9f * u, x + 6f * u, 9f * u, x + 6f * u, 15f * u)
+                }
+            }
+            drawPath(path, color, style = Stroke(2f * u, cap = StrokeCap.Round))
+        } else {
+            drawLine(color, Offset(3f * u, 12f * u), Offset(21f * u, 12f * u), 2.4f * u, StrokeCap.Round)
+        }
+    }
 }
 
 /** The design's ring where the map was pressed, while its menu is open: what "here" is once the finger has lifted. Nothing in it takes a touch. */

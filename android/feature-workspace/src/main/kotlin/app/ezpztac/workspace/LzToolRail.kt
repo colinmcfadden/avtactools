@@ -32,6 +32,7 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import app.ezpztac.data.MeasureKind
 import app.ezpztac.data.PlaceTool
 import app.ezpztac.designsystem.EzpzIcons
 import app.ezpztac.designsystem.EzpzTheme
@@ -56,10 +57,12 @@ fun LzToolRailHost(
     modifier: Modifier = Modifier,
     graphics: GraphicsViewModel = hiltViewModel(),
     boundary: BoundaryViewModel = hiltViewModel(),
+    measures: MeasuresViewModel = hiltViewModel(),
 ) {
     val g by graphics.state.collectAsStateWithLifecycle()
     val b by boundary.state.collectAsStateWithLifecycle()
     val placing by graphics.placing.collectAsStateWithLifecycle()
+    val m by measures.state.collectAsStateWithLifecycle()
     LzToolRailContent(
         g, b, placing?.tool, onSaid, modifier,
         // Said here, so the panel's banner does not show it later for no reason.
@@ -74,6 +77,9 @@ fun LzToolRailHost(
                 null
             }
         },
+        backstopOn = m.draft?.kind == MeasureKind.BACKSTOP,
+        // Said here, so the drawing bar does not show it later for no reason.
+        backstop = { measures.toggle(MeasureKind.BACKSTOP)?.also { measures.dismissError() } },
     )
 }
 
@@ -95,6 +101,9 @@ internal fun LzToolRailContent(
     place: (PlaceTool) -> String?,
     done: () -> Unit,
     addUnit: () -> String?,
+    backstopOn: Boolean = false,
+    /** The backstop tool pressed (start, or finish the one being drawn): null once done, else why not. None: the rail has no backstop. */
+    backstop: (() -> String?)? = null,
 ) {
     var confirmDraw by rememberSaveable(b.diagramId) { mutableStateOf(false) }
     LaunchedEffect(b.canStart) { if (!b.canStart) confirmDraw = false }
@@ -105,6 +114,8 @@ internal fun LzToolRailContent(
         place = { tool -> place(tool)?.let(onSaid) },
         done = done,
         unit = { addUnit()?.let(onSaid) },
+        backstopOn = backstopOn,
+        backstop = backstop?.let { start -> { start()?.let(onSaid) } },
     ) ?: return
     LzToolRail(tools, modifier)
     if (confirmDraw && b.canStart) {
@@ -137,6 +148,8 @@ internal fun railTools(
     place: (PlaceTool) -> Unit,
     done: () -> Unit,
     unit: () -> Unit,
+    backstopOn: Boolean = false,
+    backstop: (() -> Unit)? = null,
 ): List<RailTool>? {
     if (!g.canEdit && !b.canStart && !b.drawing) return null
     val offUntil = if (g.canEdit) "" else ". Analyze the LZ/PZ first"
@@ -153,6 +166,15 @@ internal fun railTools(
         placer(PlaceTool.HELICOPTER, ToolSymbol.Helicopter, "Helicopter", "helicopters"),
         placer(PlaceTool.PZ_MARKER, ToolSymbol.Pz, "PZ marker", "PZ markers"),
         placer(PlaceTool.SECTOR_OF_FIRE, ToolSymbol.Sector, "Sector of fire", "sectors of fire"),
+    ) + listOfNotNull(
+        // The web's phone rail has it here, after the sector: drawn beyond the LZ/PZ, it is one of its tools.
+        backstop?.let {
+            RailTool(
+                ToolSymbol.Backstop, "Backstop", if (backstopOn) "Drawing a backstop. Tap to finish" else "Draw a backstop beyond the LZ/PZ$offUntil",
+                g.canEdit || backstopOn, backstopOn, it,
+            )
+        },
+    ) + listOf(
         RailTool(ToolSymbol.Unit, "Unit", "Add a unit at the crosshair$offUntil", g.canEdit, false, unit),
         placer(PlaceTool.GO_AROUND_LEFT, ToolSymbol.GoAroundLeft, "Left go-around", "left go-arounds"),
         placer(PlaceTool.GO_AROUND_RIGHT, ToolSymbol.GoAroundRight, "Right go-around", "right go-arounds"),

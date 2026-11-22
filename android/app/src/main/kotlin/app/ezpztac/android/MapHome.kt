@@ -118,6 +118,9 @@ import app.ezpztac.map.MapScreen
 import app.ezpztac.map.MapStyles
 import app.ezpztac.map.MapSearchSpotlight
 import app.ezpztac.map.MapViewModel
+import app.ezpztac.map.MeasuresLabelsLayer
+import app.ezpztac.map.MeasuresLayer
+import app.ezpztac.map.MeasuresScene
 import app.ezpztac.map.MgrsGridLayer
 import app.ezpztac.map.OtherLzLayer
 import app.ezpztac.map.OtherLzScene
@@ -183,6 +186,8 @@ import app.ezpztac.workspace.LzPane
 import app.ezpztac.workspace.LzPanelHost
 import app.ezpztac.workspace.LzToolRailHost
 import app.ezpztac.workspace.MapPointAction
+import app.ezpztac.workspace.MeasuresToolbarHost
+import app.ezpztac.workspace.MeasuresViewModel
 import app.ezpztac.workspace.PlacementToolbarHost
 import app.ezpztac.workspace.PointsViewModel
 import app.ezpztac.workspace.RoutePlanHost
@@ -269,6 +274,7 @@ fun MapHome(
     }
     val scene by home.scene.collectAsStateWithLifecycle()
     val routeScene by home.routes.collectAsStateWithLifecycle()
+    val measuresScene by home.measures.collectAsStateWithLifecycle()
     val pointScene by home.points.collectAsStateWithLifecycle()
     // The open LZ/PZs not being worked on, drawn faded; those hidden with the eye on their rows; and the one a tap holds.
     val others by home.others.collectAsStateWithLifecycle()
@@ -314,6 +320,8 @@ fun MapHome(
     val graphicsState by graphics.state.collectAsStateWithLifecycle()
     // The Routes panel's state: its page (for the header and Back), the route plan page over the frame, and its toasts.
     val routesModel: RoutesViewModel = hiltViewModel()
+    // The control measures' tools: the map menu's *Draw a line here*, and the bar over the map while one is drawn (the same instance).
+    val measuresModel: MeasuresViewModel = hiltViewModel()
     val routes by routesModel.state.collectAsStateWithLifecycle()
     // A phone starts with the sheet lowered, so the map is usable (the web's sheet does the same).
     val sheet = rememberPanelSheetState(SheetDetent.Lowered)
@@ -760,6 +768,7 @@ fun MapHome(
                         Box(Modifier.onSizeChanged { floating = it.height }) {
                             BoundaryToolbarHost(crosshair = state.center, offerAllowed = !drawing)
                             RouteToolbarHost(crosshair = state.center)
+                            MeasuresToolbarHost(crosshair = state.center, viewModel = measuresModel)
                             PlacementToolbarHost(crosshair = state.center)
                             // What a tap holds (a graphic, a threat, a point of a route): its name, how to turn it, and a way to the rest of its options. Not while drawing, where taps are corners.
                             if (!drawing) {
@@ -840,6 +849,7 @@ fun MapHome(
                     OtherLzLayer(host, if (presenting) OtherLzScene.EMPTY else others)    // the open LZ/PZs not being worked on, faded, under the one that is
                     DiagramLayer(host, if (presenting) LzScene.EMPTY else scene, slopeOpacity / 100f)  // under the routes and the GPS dot, which stays on top
                     PointLayer(host, if (presenting) PointScene.EMPTY else pointScene)    // local points are under the routes: a route point snapped onto one is the route's
+                    MeasuresLayer(host, if (presenting) MeasuresScene.EMPTY else measuresScene)  // backstops, FLOTs and phase lines, under the routes
                     RouteLayer(host, if (presenting) RouteScene.EMPTY else routeScene)
                     ThreatLayer(host, if (presenting) ThreatScene.EMPTY else threatScene) // range rings; symbols and names are Compose below
                     SandtableLayer(host, sandtable?.takeIf { presenting }?.scene ?: SandtableScene.EMPTY)
@@ -849,6 +859,7 @@ fun MapHome(
                     } else {
                         ContourLabelsLayer(host, scene.slope)          // the slope map's heights, under every other label
                         GraphicLabelsLayer(host, scene.graphics, footprints = home.unitFootprints)
+                        MeasuresLabelsLayer(host, measuresScene)       // a backstop's arrow, a FLOT's scallops, a phase line's names
                         PinLabelsLayer(host, routeScene, pointScene, others = others)
                         ThreatLabelsLayer(host, threatScene)
                         PackPointers(host, home)
@@ -867,6 +878,15 @@ fun MapHome(
                             routePoint = if (Panel.Routes in panels) open.routePoint to { routesModel.addPointAt(open.place.at); frameState.choose(Panel.Routes) } else null,
                             addObject = lz.current?.takeIf { Panel.Lz in panels }?.let { current ->
                                 AddObjectChoice(current.name, off = addObjectOff(graphicsState.canEdit, graphicsState.locked)) { kind -> placeObject(graphics, kind, open.place.at) }
+                            },
+                            drawLine = measureKindsFor(Panel.Lz in panels, Panel.Routes in panels).takeIf { it.isNotEmpty() }?.let { kinds ->
+                                DrawLineChoice(kinds.associateWith { measuresModel.refusal(it) }) { kind ->
+                                    // A line drawn from the map is a tool of its panel: a backstop's is the LZ/PZ panel, the FLOT's and a phase line's the Routes panel.
+                                    measuresModel.startAt(kind, open.place.at)?.let { said ->
+                                        measuresModel.dismissError()
+                                        scope.launch { snackbars.showSnackbar(said, withDismissAction = true) }
+                                    }
+                                }
                             },
                             copyGrid = { copyGrid(open.place.grid) },
                             shareGrid = MgrsConverter.toMgrs(open.place.at.lat, open.place.at.lon)?.let { { shareAt("", open.place.at, null) } },

@@ -44,6 +44,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.drawscope.DrawScope
@@ -69,6 +70,7 @@ import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import app.ezpztac.data.AnalysisStatus
+import app.ezpztac.data.MeasureKind
 import app.ezpztac.data.PlaceTool
 import app.ezpztac.data.SlopeOpacity
 import app.ezpztac.designsystem.Banner
@@ -124,6 +126,8 @@ class LzPanelActions(
     val dismissBoundaryError: () -> Unit = {},
     /** Adds a unit made in the unit builder at the crosshair. */
     val addUnit: (UnitDraft) -> Unit = {},
+    /** The backstop tool pressed: starts drawing one beyond the LZ/PZ, or finishes (or cancels) the one being drawn; null once done, else why not, in words. */
+    val drawBackstop: () -> String? = { null },
     /** Asks which Mission Pack a copy of the open LZ/PZ ([uuid], [name]) goes into; none: not offered (no packs here, or one is open). */
     val addToPack: ((uuid: String, name: String) -> Unit)? = null,
     /** Sends the open LZ/PZ's grid to someone (docs/GRID_SHARING.md), with its name and the grid it keeps: given where the host can share. */
@@ -162,11 +166,14 @@ fun LzPanelHost(
     viewModel: DiagramsViewModel = hiltViewModel(),
     graphics: GraphicsViewModel = hiltViewModel(),
     boundary: BoundaryViewModel = hiltViewModel(),
+    measures: MeasuresViewModel = hiltViewModel(),
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     val graphicsState by graphics.state.collectAsStateWithLifecycle()
     val boundaryState by boundary.state.collectAsStateWithLifecycle()
     val placing by graphics.placing.collectAsStateWithLifecycle()
+    val measuresState by measures.state.collectAsStateWithLifecycle()
+    val backstopOn = measuresState.draft?.kind == MeasureKind.BACKSTOP
     // How old the weather is is measured to this, moved on a minute at a time (an endless timer in the view model would never let a test settle).
     val now by produceState(System.currentTimeMillis()) { while (true) { delay(60_000); value = System.currentTimeMillis() } }
     var naming by rememberSaveable { mutableStateOf(false) }
@@ -178,7 +185,7 @@ fun LzPanelHost(
         setSlopeOpacity = viewModel::setSlopeOpacity, showOutline = viewModel::showOutline,
         beginTool = { tool -> graphics.beginPlacing(tool) }, drawBoundary = boundary::start, dismissBoundaryError = boundary::dismissError,
         addUnit = { draft -> graphics.addUnit(draft, crosshair) }, addToPack = onAddToPack, saveCopy = onSaveCopy, toggleOnMap = onToggleOnMap, view3d = viewModel::view3d,
-        shareGrid = onShareGrid,
+        shareGrid = onShareGrid, drawBackstop = { measures.toggle(MeasureKind.BACKSTOP) },
     )
     val graphicsActions = graphicsActionsOf(graphics, crosshair)
     when (pane.shows(state.page)) {
@@ -186,11 +193,11 @@ fun LzPanelHost(
             state, actions, crosshairGrid, modifier, hidden = hiddenOnMap,
             // The open LZ/PZ's tools under its card, unless its plan, which has them, stands beside the list (a tablet's pane); none in a read-only pack.
             tools = state.current?.takeIf { it.locked == null && (pane == LzPane.WHOLE || state.page != LzPage.PLAN) }?.let { current ->
-                { LzToolsSection(current, graphicsState, boundaryState, placing, actions, crosshairGrid) }
+                { LzToolsSection(current, graphicsState, boundaryState, placing, actions, crosshairGrid, backstopOn = backstopOn) }
             },
         )
         LzPage.PLAN -> state.current?.let {
-            LzPlanContent(it, graphicsState, boundaryState, placing, actions, graphicsActions, crosshairGrid, modifier, nowMillis = now)
+            LzPlanContent(it, graphicsState, boundaryState, placing, actions, graphicsActions, crosshairGrid, modifier, nowMillis = now, backstopOn = backstopOn)
         }
         LzPage.AIRCRAFT -> AircraftHost(canMake = canMakeAircraft, modifier = modifier)
         null -> Unit
@@ -690,6 +697,8 @@ fun LzPlanContent(
     crosshairGrid: String?,
     modifier: Modifier = Modifier,
     nowMillis: Long = 0L,
+    /** A backstop is being drawn (its tool is marked). */
+    backstopOn: Boolean = false,
 ) {
     var confirmDelete by rememberSaveable(current.uuid) { mutableStateOf(false) }
     var renaming by rememberSaveable(current.uuid) { mutableStateOf<String?>(null) }
@@ -730,7 +739,7 @@ fun LzPlanContent(
         current.weather?.let { WeatherSection(it, nowMillis, actions.refreshWeather) }
 
         HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
-        LzToolsSection(current, graphics, boundary, placing, actions, crosshairGrid)
+        LzToolsSection(current, graphics, boundary, placing, actions, crosshairGrid, backstopOn = backstopOn)
 
         HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
         GraphicsContent(graphics, crosshairGrid, graphicsActions, placeButtons = false)
@@ -751,8 +760,12 @@ internal fun LzToolsSection(
     actions: LzPanelActions,
     crosshairGrid: String?,
     modifier: Modifier = Modifier,
+    /** A backstop is being drawn (its tool is marked, and finishes it when tapped again). */
+    backstopOn: Boolean = false,
 ) {
     var addingUnit by rememberSaveable(current.uuid) { mutableStateOf(false) }
+    // Why the backstop tool did nothing, said where it was pressed; the next press, or the LZ/PZ changing, puts it away.
+    var backstopRefused by rememberSaveable(current.uuid) { mutableStateOf<String?>(null) }
     var newUnit by rememberSaveable(stateSaver = UnitDraftSaver) { mutableStateOf(UnitDraft()) }
     var confirmDraw by rememberSaveable(current.uuid) { mutableStateOf(false) }
     // The pack finished (or this person made a viewer) while something was being started here: it goes, and does not come back by itself on a reopen.
@@ -760,6 +773,7 @@ internal fun LzToolsSection(
         if (current.locked != null) {
             addingUnit = false
             confirmDraw = false
+            backstopRefused = null
         }
     }
     Column(modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(Tokens.Spacing.md.dp)) {
@@ -772,16 +786,19 @@ internal fun LzToolsSection(
             }
         }
         boundary.error?.let { Banner(it, BannerKind.Error, actionLabel = "Dismiss", onAction = actions.dismissBoundaryError) }
+        backstopRefused?.let { Banner(it, BannerKind.Error, actionLabel = "Dismiss", onAction = { backstopRefused = null }) }
         ToolGrid(
             canPlace = graphics.canEdit, canDraw = boundary.canStart, drawing = boundary.drawing, placing = placing?.tool, addingUnit = addingUnit,
             onDraw = { if (boundary.clears) confirmDraw = true else actions.drawBoundary() },
             onTool = actions.beginTool,
             onUnit = { addingUnit = !addingUnit },
+            backstopOn = backstopOn,
+            onBackstop = { backstopRefused = actions.drawBackstop() },
         )
         if (current.locked == null) {
             Text(
                 when {
-                    !graphics.canEdit -> "Analyze the LZ/PZ to place helicopters, PZs, sectors, units and go-arounds. Draw LZ draws its boundary yourself."
+                    !graphics.canEdit -> "Analyze the LZ/PZ to place helicopters, PZs, sectors, backstops, units and go-arounds. Draw LZ draws its boundary yourself."
                     else -> "Tools place where you tap the map, or at the crosshair. Done and Cancel finish the mode."
                 },
                 style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -991,6 +1008,8 @@ private fun ToolGrid(
     onDraw: () -> Unit,
     onTool: (PlaceTool) -> Unit,
     onUnit: () -> Unit,
+    backstopOn: Boolean = false,
+    onBackstop: () -> Unit = {},
 ) {
     val tiles: List<@Composable (Modifier) -> Unit> = listOf(
         { m -> ToolTile("Draw LZ", "Draw the LZ/PZ boundary", ToolSymbol.Boundary, canDraw && !drawing, drawing, m, onDraw) },
@@ -1000,6 +1019,9 @@ private fun ToolGrid(
         { m -> ToolTile("Unit", "Make a unit to place at the crosshair", ToolSymbol.Unit, canPlace, addingUnit, m, onUnit) },
         { m -> ToolTile("L-GA", "Place left go-arounds", ToolSymbol.GoAroundLeft, canPlace, placing == PlaceTool.GO_AROUND_LEFT, m) { onTool(PlaceTool.GO_AROUND_LEFT) } },
         { m -> ToolTile("R-GA", "Place right go-arounds", ToolSymbol.GoAroundRight, canPlace, placing == PlaceTool.GO_AROUND_RIGHT, m) { onTool(PlaceTool.GO_AROUND_RIGHT) } },
+        { m ->
+            ToolTile("Backstop", if (backstopOn) "Drawing a backstop. Tap to finish" else "Draw a backstop beyond the LZ/PZ", ToolSymbol.Backstop, canPlace || backstopOn, backstopOn, m, onBackstop)
+        },
     )
     Column(verticalArrangement = Arrangement.spacedBy(Tokens.Spacing.sm.dp)) {
         tiles.chunked(4).forEach { row ->
@@ -1012,7 +1034,7 @@ private fun ToolGrid(
 }
 
 /** The tools' little map symbols: the LZ/PZ panel's tool grid, and the map menu's *Add object* list. */
-enum class ToolSymbol { Boundary, Helicopter, Pz, Sector, Unit, GoAroundLeft, GoAroundRight }
+enum class ToolSymbol { Boundary, Helicopter, Pz, Sector, Unit, GoAroundLeft, GoAroundRight, Backstop }
 
 @Composable
 private fun ToolTile(label: String, description: String, glyph: ToolSymbol, enabled: Boolean, on: Boolean, modifier: Modifier, onClick: () -> Unit) {
@@ -1076,6 +1098,7 @@ fun ToolGlyph(glyph: ToolSymbol, enabled: Boolean) {
             }
             ToolSymbol.GoAroundLeft -> goAround(u, warning, left = true)
             ToolSymbol.GoAroundRight -> goAround(u, warning, left = false)
+            ToolSymbol.Backstop -> backstop(u, error)
         }
     }
 }
@@ -1083,6 +1106,21 @@ fun ToolGlyph(glyph: ToolSymbol, enabled: Boolean) {
 private fun polygon(u: Float, vararg points: Pair<Float, Float>): Path = Path().apply {
     points.forEachIndexed { i, (x, y) -> if (i == 0) moveTo(x * u, y * u) else lineTo(x * u, y * u) }
     close()
+}
+
+/**
+ * The web's backstop tool (`BackstopGlyph`): a dashed line across the top and an arrow back from it, in the palette's error red (the map's own red is outlined in white;
+ * at this size, and at night, the palette's colour reads better).
+ */
+private fun DrawScope.backstop(u: Float, color: Color) {
+    val dash = PathEffect.dashPathEffect(floatArrayOf(1.6f * u, 3.4f * u))
+    val line = Path().apply {
+        moveTo(2.9f * u, 6.7f * u)
+        quadraticTo(12f * u, 1.9f * u, 21.1f * u, 6.7f * u)
+    }
+    drawPath(line, color, style = Stroke(2f * u, cap = StrokeCap.Butt, pathEffect = dash))
+    drawLine(color, Offset(12f * u, 5f * u), Offset(12f * u, 16f * u), 2f * u, StrokeCap.Round)
+    drawPath(polygon(u, 12f to 22.5f, 7.7f to 15.8f, 16.3f to 15.8f), color, style = Fill)
 }
 
 /** A curved arrow turning back on itself (the design's go-around): to the left, or mirrored to the right. */

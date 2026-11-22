@@ -80,6 +80,19 @@ internal object DataModule {
         RouteSession(repository, CoroutineScope(SupervisorJob() + Dispatchers.Default), packs = routeItems)
 
     /**
+     * The open set of control measures (FLOTs and phase lines, which belong to no route set: the web's `MEASURES` sets), beside the route session's set. It has a
+     * pack store of its own, since a store's baselines are for the documents of one session.
+     */
+    @Provides
+    @Singleton
+    fun measuresSession(repository: RouteRepository, engine: PackEngine, store: PackStore): MeasuresSession =
+        MeasuresSession(
+            repository,
+            CoroutineScope(SupervisorJob() + Dispatchers.Default),
+            items = PackItemStore(engine, RoutePackKind, store, { it.id }, Dispatchers.Main.immediate),
+        )
+
+    /**
      * Where the diagram session reads and writes a mission pack's LZ/PZs: a save is sent to the pack as operations, never to the library. Its
      * baselines are kept on the main thread, where edits are made.
      */

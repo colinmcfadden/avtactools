@@ -46,6 +46,13 @@ fun RouteLayer(host: MapHost, scene: RouteScene) {
     LaunchedEffect(overlay, scene) { overlay.show(scene) }
 }
 
+/** Draws the open LZ/PZ's backstops and the FLOTs and phase lines of the open sets that are plain lines, and a line being drawn ([MeasuresLabelsLayer] does the rest). */
+@Composable
+fun MeasuresLayer(host: MapHost, scene: MeasuresScene) {
+    val overlay = remember(host) { MeasuresOverlay().also { host.onStyle(it::install) } }
+    LaunchedEffect(overlay, scene) { overlay.show(scene) }
+}
+
 /** Draws the local points that are shown on [host]'s map, gathered into rings where they crowd. An empty scene takes them off. */
 @Composable
 fun PointLayer(host: MapHost, scene: PointScene) {

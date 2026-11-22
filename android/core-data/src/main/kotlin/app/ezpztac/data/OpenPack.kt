@@ -44,6 +44,9 @@ interface OpenPack {
     /** A new, empty route set in the open pack, opened; its local id, or null when it was not made. */
     suspend fun createRouteSet(name: String? = null): String?
 
+    /** The open pack's control measures (its FLOTs and phase lines), opened, made first when it has none; their local id, or null when they were not. */
+    suspend fun openMeasures(): String? = null
+
     /** Opens [itemUuid] of the open pack in its editor; false when it has none, or is not in the pack. */
     suspend fun openItem(itemUuid: String): Boolean
 

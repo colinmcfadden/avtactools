@@ -13,6 +13,7 @@ import app.ezpztac.android.LastDiagram
 import app.ezpztac.android.LastDiagramPreferences
 import app.ezpztac.android.LastRouteSet
 import app.ezpztac.android.LastRouteSetPreferences
+import app.ezpztac.android.LastMeasuresPreferences
 import app.ezpztac.android.ApiChartCalls
 import app.ezpztac.android.ChartCalls
 import app.ezpztac.android.ChartConfig
@@ -54,6 +55,7 @@ import app.ezpztac.android.packs.SessionParking
 import app.ezpztac.android.sync.EngineSyncRunner
 import app.ezpztac.android.sync.SyncRunner
 import app.ezpztac.briefs.RendererBriefPdfs
+import app.ezpztac.data.LastMeasures
 import app.ezpztac.data.LibraryUpload
 import app.ezpztac.android.sync.WorkManagerSyncScheduler
 import app.ezpztac.data.AircraftProfiles
@@ -295,6 +297,9 @@ interface AppBindings {
 
     @Binds
     fun lastRouteSet(impl: LastRouteSetPreferences): LastRouteSet
+
+    @Binds
+    fun lastMeasures(impl: LastMeasuresPreferences): LastMeasures
 
     @Binds
     fun pointSetViews(impl: PointSetViewPreferences): PointSetViewStore

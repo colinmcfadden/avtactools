@@ -5,6 +5,8 @@ import androidx.core.content.edit
 import app.ezpztac.android.LastDiagram
 import app.ezpztac.android.LastRouteSet
 import app.ezpztac.data.DiagramSession
+import app.ezpztac.data.LastMeasures
+import app.ezpztac.data.MeasuresSession
 import app.ezpztac.data.OpenDiagrams
 import app.ezpztac.data.OpenRouteSets
 import app.ezpztac.data.RouteSession
@@ -46,7 +48,8 @@ class LastPackPreferences @Inject constructor(@ApplicationContext context: Conte
  * The person's own LZ/PZ and set of routes set aside while a pack is open, and put back on the way out (the web parks the Library's open LZ/PZs). Both
  * are written before either leaves the editor, and neither leaves if one cannot be written: a switch is not a sign-out, and closing would drop what was
  * not saved (`DocumentSession.close` closes whatever happens). What comes back is the one last open ([LastDiagram], [LastRouteSet], which never name a
- * pack's item), if it is still among the open ones, as a launch brings it back; each on its own, so one that will not open does not keep the other.
+ * pack's item), if it is still among the open ones, as a launch brings it back; each on its own, so one that will not open does not keep the other. The
+ * person's control measures (their FLOTs and phase lines) are set aside and put back the same way ([LastMeasures]).
  */
 @Singleton
 class SessionParking @Inject constructor(
@@ -56,21 +59,30 @@ class SessionParking @Inject constructor(
     private val lastSet: LastRouteSet,
     private val openDiagrams: OpenDiagrams,
     private val openSets: OpenRouteSets,
+    private val measures: MeasuresSession? = null,
+    private val lastMeasures: LastMeasures = LastMeasures.None,
 ) : Parking {
     override suspend fun park() {
         // Only the person's own: a pack's item is the pack's to close (PackWorkspace).
         val diagram = diagrams.active.value?.id?.takeIf { PackRef.parse(it) == null }
         val set = routes.active.value?.id?.takeIf { PackRef.parse(it) == null }
         // Written first, both: a write that fails throws here and keeps the document open, and owed.
+        val lines = measures?.active?.value?.id?.takeIf { PackRef.parse(it) == null }
         if (diagram != null) diagrams.flush()
         if (set != null) routes.flush()
+        if (lines != null) measures.flush()
         if (diagram != null) diagrams.closeIfOpen(diagram)
         if (set != null) routes.closeIfOpen(set)
+        if (lines != null) measures.closeIfOpen(lines)
     }
 
     override suspend fun unpark() {
         quietly { lastDiagram.id()?.takeIf { it in openDiagrams.ids.value && diagrams.active.value == null }?.let { diagrams.open(it) } }
         quietly { lastSet.id()?.takeIf { it in openSets.ids.value && routes.active.value == null }?.let { routes.open(it) } }
+        quietly {
+            val session = measures ?: return@quietly
+            lastMeasures.id()?.takeIf { session.active.value == null }?.let { if (!session.open(it)) lastMeasures.remember(null) }
+        }
     }
 
     /** A document that will not open (gone, or the database) leaves the person to start from the list, as a launch does. */

@@ -171,6 +171,17 @@ public object DiagramOps {
         return diagram.copy(graphics = withItems(diagram.graphics, collection, next))
     }
 
+    /**
+     * The graphic with [id] replaced whole by [item] (a merge could not take a field away: a backstop's arrow put back on its target has no `tip`). A missing id, or
+     * no graphic with it, changes nothing.
+     */
+    public fun replaceGraphic(diagram: Diagram, collection: String, id: JsonElement?, item: JsonObject): Diagram {
+        if (!diagram.canEditGraphics || id == null) return diagram
+        val current = items(diagram.graphics, collection) ?: return diagram
+        if (current.none { sameId(it, id) }) return diagram
+        return diagram.copy(graphics = withItems(diagram.graphics, collection, current.map { if (sameId(it, id)) item else it }))
+    }
+
     public fun removeGraphic(diagram: Diagram, collection: String, id: JsonElement?): Diagram {
         if (!diagram.canEditGraphics || id == null) return diagram
         val current = items(diagram.graphics, collection) ?: return diagram

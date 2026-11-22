@@ -51,6 +51,7 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import app.ezpztac.data.MeasureKind
 import app.ezpztac.designsystem.EzpzIcons
 import app.ezpztac.designsystem.PillButton
 import app.ezpztac.designsystem.PillStyle
@@ -87,6 +88,8 @@ data class HeldObjectUi(
     val pointType: PointTypeUi? = null,
     /** A helicopter's name (a chalk or tail number), typed into in the bar (the owner's request, 2026-10-22): "" with none; null for anything else. */
     val aircraftName: String? = null,
+    /** A backstop, FLOT or phase line: deleted, flipped or named in the bar itself; null for anything else. */
+    val measure: MeasureHeldUi? = null,
 )
 
 /**
@@ -115,7 +118,14 @@ data class AlsoOpenUi(val id: String, val name: String, val grid: String?, val w
  * What is held, from what the sheet's own screens already know of it: a planning graphic first, then a threat, then a point of a route, then a corner of the boundary,
  * then an open LZ/PZ not being worked on ([alsoOpen]), which is the order a tap on the map takes. Null when nothing is held.
  */
-fun heldObjectOf(graphics: GraphicsUiState, threats: ThreatsUiState, routes: RoutesUiState, corner: HeldCornerUi? = null, alsoOpen: AlsoOpenUi? = null): HeldObjectUi? {
+fun heldObjectOf(
+    graphics: GraphicsUiState,
+    threats: ThreatsUiState,
+    routes: RoutesUiState,
+    corner: HeldCornerUi? = null,
+    alsoOpen: AlsoOpenUi? = null,
+    measure: MeasureHeldUi? = null,
+): HeldObjectUi? {
     graphics.inspector?.let { held ->
         return HeldObjectUi(
             held.title, held.grid, held.rotation, locked = graphics.locked, doghouse = held.doghouse, aircraftName = held.name,
@@ -123,6 +133,8 @@ fun heldObjectOf(graphics: GraphicsUiState, threats: ThreatsUiState, routes: Rou
         )
     }
     threats.held?.let { return HeldObjectUi(it.name.ifBlank { "Threat" }, it.grid, heading = null) }
+    // A backstop, FLOT or phase line, after a threat and before a route: the order a tap on the map tries them in.
+    measure?.let { return HeldObjectUi(it.title, it.subtitle, heading = null, locked = it.locked, measure = it) }
     val detail = routes.detail
     val routeLocked = routes.open?.inPack?.reason
     val fixed = RoutesViewModel.MISSION_POINT_TYPES_ARE_THE_FILES.takeIf { detail?.isMission == true }
@@ -172,6 +184,10 @@ class HeldObjectActions(
     val setPointRole: (routeId: String, pointId: String, role: PointRole) -> String? = { _, _, _ -> null },
     /** A helicopter's name typed: null once it is taken, else the words for why not. */
     val setAircraftName: (String) -> String? = { null },
+    /** The backstop, FLOT or phase line held is deleted, its scallops flipped (a FLOT) or renamed (a phase line): null once done, else why not. */
+    val deleteMeasure: () -> String? = { null },
+    val flipMeasure: () -> String? = { null },
+    val renameMeasure: (String) -> String? = { null },
 )
 
 /** A heading typed in degrees, as the panel's inspector reads one: a number, or the words for what is wrong. */
@@ -195,12 +211,14 @@ fun HeldObjectBarHost(
     threats: ThreatsViewModel = hiltViewModel(),
     routes: RoutesViewModel = hiltViewModel(),
     boundary: BoundaryViewModel = hiltViewModel(),
+    measures: MeasuresViewModel = hiltViewModel(),
 ) {
     val g by graphics.state.collectAsStateWithLifecycle()
     val t by threats.state.collectAsStateWithLifecycle()
     val r by routes.state.collectAsStateWithLifecycle()
     val b by boundary.state.collectAsStateWithLifecycle()
-    val held = heldObjectOf(g, t, r, b.heldCorner, alsoOpen) ?: return
+    val m by measures.state.collectAsStateWithLifecycle()
+    val held = heldObjectOf(g, t, r, b.heldCorner, alsoOpen, m.held) ?: return
     HeldObjectBar(
         held,
         HeldObjectActions(
@@ -211,6 +229,7 @@ fun HeldObjectBarHost(
             setDoghouseDistance = { graphics.setDoghouseDistance(it, held.graphic) }, setDoghouseAirspeed = { graphics.setDoghouseAirspeed(it, held.graphic) },
             openOther = onOpenOther, hideOther = onHideOther, setPointRole = routes::setPointRole,
             setAircraftName = { graphics.setAircraftName(it, held.graphic) },
+            deleteMeasure = measures::delete, flipMeasure = measures::flip, renameMeasure = measures::rename,
         ),
         modifier,
     )
@@ -270,14 +289,20 @@ fun HeldObjectBar(held: HeldObjectUi, actions: HeldObjectActions, modifier: Modi
                 held.deleteNote?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
             }
             held.alsoOpen?.let { other -> AlsoOpenActions(other, actions) }
+            held.measure?.let { measure -> key(measure.key) { MeasureActions(measure, actions) } }
             held.pointType?.let { type ->
                 key(type.routeId, type.pointId) { PointTypeChips(type, enabled = typeChangeable) { role -> actions.setPointRole(type.routeId, type.pointId, role) } }
                 type.fixed?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
             }
             // A boundary corner has no options of its own to open in the sheet; a doghouse's are beside Done; an LZ/PZ also open is opened to be worked on.
-            if (held.deleteLabel == null && editable == null && held.alsoOpen == null) SecondaryButton("More options", onClick = actions.options)
+            if (held.deleteLabel == null && editable == null && held.alsoOpen == null && held.measure == null) SecondaryButton("More options", onClick = actions.options)
             Text(
-                held.locked ?: if (held.alsoOpen != null) "Drawn faded while another LZ/PZ is open." else "Press and hold to move it.",
+                held.locked ?: when {
+                    held.alsoOpen != null -> "Drawn faded while another LZ/PZ is open."
+                    held.measure?.kind == MeasureKind.BACKSTOP -> "Press and hold the arrow to move it, or its end to aim it."
+                    held.measure != null -> "Press and hold a point to move it."
+                    else -> "Press and hold to move it."
+                },
                 style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
@@ -335,6 +360,47 @@ private fun choiceSays(role: PointRole, type: PointTypeUi): String {
     if (role == PointRole.SHAPING) return "$what, and has no name"
     val name = PointRoles.nameFor(role, type.name)
     return if (name == type.name) what else "$what, named $name"
+}
+
+/**
+ * What the bar does to a backstop, FLOT or phase line (the web does it from the line's right-click menu): delete it, flip a FLOT's scallops, rename a phase line (its name
+ * after PL, in capitals). In a read-only pack nothing but its name is said. A refusal is said under them.
+ */
+@Composable
+private fun MeasureActions(measure: MeasureHeldUi, actions: HeldObjectActions) {
+    var refusal by remember { mutableStateOf<String?>(null) }
+    val locked = measure.locked != null
+    Column(verticalArrangement = Arrangement.spacedBy(Tokens.Spacing.xs.dp)) {
+        measure.name?.let { name ->
+            if (!locked) {
+                BarField(
+                    "Name", name, KeyboardType.Text, Modifier.fillMaxWidth(), prefix = "PL ", capitalization = KeyboardCapitalization.Characters,
+                    onSettled = { refusal = null },
+                ) { typed -> actions.renameMeasure(typed).also { refusal = it } }
+            }
+        }
+        if (!locked) {
+            Row(horizontalArrangement = Arrangement.spacedBy(Tokens.Spacing.sm.dp)) {
+                if (measure.kind == MeasureKind.FLOT) {
+                    SecondaryButton(
+                        "Flip", onClick = { refusal = actions.flipMeasure() },
+                        modifier = Modifier.weight(1f).semantics { contentDescription = "Flip the FLOT's scallops to its other side" },
+                    )
+                }
+                SecondaryButton(
+                    when (measure.kind) {
+                        MeasureKind.BACKSTOP -> "Delete backstop"
+                        MeasureKind.FLOT -> "Delete FLOT"
+                        MeasureKind.PHASE_LINE -> "Delete phase line"
+                    },
+                    onClick = { refusal = actions.deleteMeasure() }, modifier = Modifier.weight(1f),
+                )
+            }
+        }
+        refusal?.let {
+            Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error, modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite })
+        }
+    }
 }
 
 /** A helicopter's name in the bar (the owner's request, 2026-10-22): a chalk or tail number, taken as the inspector takes it, a refusal said under it. */
@@ -452,6 +518,7 @@ private fun BarField(
     modifier: Modifier,
     suffix: String? = null,
     placeholder: String? = null,
+    prefix: String? = null,
     capitalization: KeyboardCapitalization = KeyboardCapitalization.None,
     onSettled: () -> Unit = {},
     onCommit: (String) -> String?,
@@ -482,6 +549,7 @@ private fun BarField(
         },
         label = { Text(label, maxLines = 1) },
         suffix = suffix?.let { { Text(it) } },
+        prefix = prefix?.let { { Text(it) } },
         placeholder = placeholder?.let { { Text(it, maxLines = 1) } },
         singleLine = true,
         textStyle = MaterialTheme.typography.bodyMedium,

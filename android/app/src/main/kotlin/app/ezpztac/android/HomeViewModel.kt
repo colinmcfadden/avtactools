@@ -10,6 +10,9 @@ import app.ezpztac.data.AnalysisStatus
 import app.ezpztac.data.BoundaryCorners
 import app.ezpztac.data.BoundaryDraft
 import app.ezpztac.data.BoundaryDrawing
+import app.ezpztac.data.ControlMeasures
+import app.ezpztac.data.HeldMeasure
+import app.ezpztac.data.MeasureKind
 import app.ezpztac.data.DiagramSession
 import app.ezpztac.data.DiagramsOnMap
 import app.ezpztac.data.GraphicPlacement
@@ -41,6 +44,11 @@ import app.ezpztac.map.GraphicHitTest
 import app.ezpztac.map.LzScene
 import app.ezpztac.map.MapPointer
 import app.ezpztac.map.MapProjection
+import app.ezpztac.map.LineRef
+import app.ezpztac.map.MeasureDraftKind
+import app.ezpztac.map.MeasureHit
+import app.ezpztac.map.MeasuresHitTest
+import app.ezpztac.map.MeasuresScene
 import app.ezpztac.map.OtherLzHitTest
 import app.ezpztac.map.OtherLzScene
 import app.ezpztac.map.PersonColors
@@ -71,6 +79,7 @@ import javax.inject.Inject
 import kotlin.math.abs
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.channels.BufferOverflow
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
@@ -82,6 +91,7 @@ import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.distinctUntilChangedBy
 import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
@@ -130,6 +140,8 @@ class HomeViewModel @Inject constructor(
     otherDiagrams: OtherDiagrams,
     /** What draws a unit's symbol; handed to the composition under the map and the sheet. */
     val symbols: SymbolRenderer,
+    /** Backstops, FLOTs and phase lines: what is being drawn and held of them. None in a test that does not ask for them. */
+    private val controlMeasures: ControlMeasures? = null,
 ) : ViewModel() {
     private val _opened = MutableSharedFlow<OpenedDiagram>(extraBufferCapacity = 4, onBufferOverflow = BufferOverflow.DROP_OLDEST)
 
@@ -271,6 +283,30 @@ class HomeViewModel @Inject constructor(
     }.stateIn(viewModelScope, SharingStarted.Eagerly, RouteScene.EMPTY)
 
     /**
+     * What the map draws of the backstops (the open LZ/PZ's), the FLOTs and phase lines (of the open sets: [ControlMeasures.sets]) and a line being drawn, with
+     * what is held marked. A read-only pack's are drawn and held, never picked up. A backstop being drawn belongs to the LZ/PZ it was started on.
+     */
+    val measures: StateFlow<MeasuresScene> = controlMeasures?.let { cm ->
+        combine(session.active, cm.sets, cm.held, cm.draft, packLock) { diagram, sets, held, draft, lock ->
+            val draftKind = draft?.takeIf { it.kind != MeasureKind.BACKSTOP || it.diagramId == diagram?.id }?.kind?.let {
+                when (it) {
+                    MeasureKind.BACKSTOP -> MeasureDraftKind.BACKSTOP
+                    MeasureKind.FLOT -> MeasureDraftKind.FLOT
+                    MeasureKind.PHASE_LINE -> MeasureDraftKind.PHASE_LINE
+                }
+            }
+            MeasuresScene.of(
+                diagram, sets,
+                heldBackstop = (held as? HeldMeasure.Backstop)?.takeIf { it.diagramId == diagram?.id }?.id,
+                heldLine = (held as? HeldMeasure.Line)?.let { LineRef(it.setId, it.key, it.id) },
+                backstopsMovable = lock?.reasonFor(diagram?.id) == null,
+                setMovable = { lock?.reasonFor(it) == null },
+                draftKind = draftKind, draft = if (draftKind == null) emptyList() else draft.points,
+            )
+        }.stateIn(viewModelScope, SharingStarted.Eagerly, MeasuresScene.EMPTY)
+    } ?: MutableStateFlow(MeasuresScene.EMPTY)
+
+    /**
      * What the map draws for the local points: those of every set that is shown, each in its set's colour, the held one marked. A set that is hidden
      * is not drawn, and neither is a held point that is in one.
      */
@@ -314,6 +350,8 @@ class HomeViewModel @Inject constructor(
      */
     fun heldPanel(): Panel? = when {
         selection.selected.value != null -> Panel.Lz
+        measures.value.heldBackstop != null -> Panel.Lz
+        measures.value.heldLine != null -> Panel.Routes
         threatSelection.held.value?.let { id -> threats.entries.value.any { it.id == id && it.visible } } == true -> Panel.Threats
         routeSelection.held.value?.pointId != null -> Panel.Routes
         boundaryCorners.held.value != null -> Panel.Lz
@@ -322,22 +360,26 @@ class HomeViewModel @Inject constructor(
         else -> null
     }
 
+    // Which measure is being drawn (its kind, not its points: a point put down is not a new drawing).
+    private val measureDraft: Flow<MeasureKind?> = controlMeasures?.draft?.map { it?.kind }?.distinctUntilChanged() ?: flowOf(null)
+
     /**
      * Whether the map's taps are taken: a boundary or a route being drawn, or a planning tool's mode placing its graphic. The sheet goes down to its header
      * so the map is there to tap, and nothing on the map is held meanwhile.
      */
-    val isDrawing: StateFlow<Boolean> = combine(drawing.draft, sketching.draft, placement.placing) { boundary, route, placing ->
-        boundary != null || route != null || placing != null
+    val isDrawing: StateFlow<Boolean> = combine(drawing.draft, sketching.draft, placement.placing, measureDraft) { boundary, route, placing, measure ->
+        boundary != null || route != null || placing != null || measure != null
     }.stateIn(viewModelScope, SharingStarted.Eagerly, false)
 
     /**
      * What has the map's taps ([isDrawing]): a boundary, a route, or a planning tool by its tool, so that each start takes the sheet down again, the person
      * having raised it meanwhile. One tool's mode is finished as another begins without the taps ever being let go, so [isDrawing] does not change then.
      */
-    val drawingWhat: StateFlow<Any?> = combine(drawing.draft, sketching.draft, placement.placing) { boundary, route, placing ->
+    val drawingWhat: StateFlow<Any?> = combine(drawing.draft, sketching.draft, placement.placing, measureDraft) { boundary, route, placing, measure ->
         when {
             boundary != null -> "boundary"
             route != null -> "route"
+            measure != null -> measure
             else -> placing?.tool
         }
     }.stateIn(viewModelScope, SharingStarted.Eagerly, null)
@@ -389,6 +431,24 @@ class HomeViewModel @Inject constructor(
                 // A set that will not open is not a reason to stop the app: the person starts from the list.
             }
         }
+        // And the control measures last open, as the set of routes is (outside a pack only: ControlMeasures.restore asks).
+        viewModelScope.launch {
+            try {
+                controlMeasures?.restore()
+            } catch (e: CancellationException) {
+                throw e
+            } catch (_: Exception) {
+                // As for a set of routes: the person starts with none.
+            }
+        }
+        // What was held of a set of lines belonged to it: closed, or another opened, it goes.
+        viewModelScope.launch {
+            val cm = controlMeasures ?: return@launch
+            cm.sets.collect { sets ->
+                val held = cm.held.value as? HeldMeasure.Line ?: return@collect
+                if (sets.none { it.id == held.setId }) cm.release()
+            }
+        }
         viewModelScope.launch {
             // Kept when the session closes (sign-out), as the diagram is; a pack's set is the pack's, never the one the person's own work comes back to.
             routeSession.active.filterNotNull().distinctUntilChangedBy { it.id }.collect { if (PackRef.parse(it.id) == null) lastSet.remember(it.id) }
@@ -406,6 +466,8 @@ class HomeViewModel @Inject constructor(
                 if (diagram == null) {
                     placement.end()
                     onMap.release()
+                    controlMeasures?.dropBackstopNotOn(null)
+                    (controlMeasures?.held?.value as? HeldMeasure.Backstop)?.let { controlMeasures.release() }
                 }
             }
         }
@@ -424,8 +486,12 @@ class HomeViewModel @Inject constructor(
                         drawing.cancel()
                         stopped += "the boundary being drawn was not kept"
                     }
+                    controlMeasures?.draft?.value?.takeIf { it.kind == MeasureKind.BACKSTOP && it.diagramId == id }?.let {
+                        controlMeasures.cancel()
+                        stopped += "the backstop being drawn was not kept"
+                    }
                     val held = mapDrag.active.value
-                    if (held is DragTarget.Graphic || held is DragTarget.PzTip) {
+                    if (held is DragTarget.Graphic || held is DragTarget.PzTip || held is DragTarget.BackstopArrow || held is DragTarget.BackstopTip) {
                         // Ended where it is, not moved back: moving it back would itself be a change, refused. What the pack had not taken yet is put back by its own rule.
                         mapDrag.abandon()
                         stopped += "moving stopped"
@@ -466,6 +532,24 @@ class HomeViewModel @Inject constructor(
                     if (stopped.isNotEmpty()) _notices.tryEmit("${lock.stopped}: ${stopped.joinToString(", ")}.")
                 }
         }
+        // And its control measures: a FLOT or phase line being drawn would go into the pack, and a point of one being moved stops where it is.
+        viewModelScope.launch {
+            packLock.collect { lock ->
+                val cm = controlMeasures ?: return@collect
+                if (lock == null) return@collect
+                val stopped = mutableListOf<String>()
+                cm.draft.value?.takeIf { it.kind != MeasureKind.BACKSTOP }?.let {
+                    cm.cancel()
+                    stopped += "the ${it.kind.noun} being drawn was not kept"
+                }
+                val held = mapDrag.active.value
+                if (held is DragTarget.LineVertex && lock.reasonFor(held.setId) != null) {
+                    mapDrag.abandon()
+                    stopped += "moving stopped"
+                }
+                if (stopped.isNotEmpty()) _notices.tryEmit("${lock.stopped}: ${stopped.joinToString(", ")}.")
+            }
+        }
         // And a threat being moved: the pack's threats are the ones on the map.
         viewModelScope.launch {
             packLock.collect { lock ->
@@ -490,6 +574,8 @@ class HomeViewModel @Inject constructor(
                 onMap.release()                                                            // and so did an LZ/PZ held beside it (it may be this one)
                 onMap.shown(diagram.id)                                                    // opened, it was looked at: it stays on the map when another opens
                 drawing.cancel()                                                           // and so did a boundary half drawn
+                controlMeasures?.dropBackstopNotOn(diagram.id)                             // and a backstop half drawn
+                (controlMeasures?.held?.value as? HeldMeasure.Backstop)?.takeIf { it.diagramId != diagram.id }?.let { controlMeasures.release() }
                 if (placement.placing.value?.diagramId != diagram.id) placement.end()     // and a tool's mode (what it placed stays)
                 _opened.tryEmit(OpenedDiagram(diagram.id, diagram.target?.let { LatLon(it.lat, it.lon) }, diagram.view.mapStyle))
             }
@@ -510,6 +596,11 @@ class HomeViewModel @Inject constructor(
      * bar over the map, stays held, and does not keep the tap from being the frame's.
      */
     fun mapTapped(at: LatLon, view: MapProjection, touchRadiusPx: Double): Boolean {
+        // A backstop, a FLOT or a phase line being drawn takes the tap as its next point, as a boundary or a route does.
+        if (controlMeasures?.draft?.value != null) {
+            controlMeasures.addPoint(at)
+            return false
+        }
         if (drawing.draft.value != null) {
             drawing.addPoint(at)
             return false
@@ -531,6 +622,7 @@ class HomeViewModel @Inject constructor(
             pointSelection.clear()
             threatSelection.clear()
             onMap.release()
+            controlMeasures?.release()
             selection.select(hit)
             return false
         }
@@ -541,10 +633,22 @@ class HomeViewModel @Inject constructor(
             pointSelection.clear()
             routeSelection.releasePoint()
             onMap.release()
+            controlMeasures?.release()
             threatSelection.toggle(threat)
             return false
         }
         threatSelection.clear()
+        // Then a backstop, a FLOT or a phase line: over the routes, as the web draws them (a backstop is the LZ/PZ's, a line a control measure laid over the route).
+        val measure = controlMeasures?.let { MeasuresHitTest.pick(measures.value, view, at, touchRadiusPx) }
+        if (measure != null) {
+            boundaryCorners.clear()
+            pointSelection.clear()
+            routeSelection.releasePoint()
+            onMap.release()
+            heldOf(measure)?.let { controlMeasures.toggle(it) }
+            return false
+        }
+        controlMeasures?.release()
         val route = RouteHitTest.pick(routes.value, view, at, touchRadiusPx)
         if (route != null) {
             boundaryCorners.clear()
@@ -589,6 +693,7 @@ class HomeViewModel @Inject constructor(
         selection.selected.value != null ||
             threatSelection.held.value?.let { id -> threatsAllowed.value && threats.entries.value.any { it.id == id && it.visible } } == true ||
             routeSelection.held.value?.pointId != null ||
+            measures.value.heldBackstop != null || measures.value.heldLine != null ||
             boundaryCorners.held.value != null ||
             pointSelection.held.value != null ||
             heldOther.value != null                                                               // one held that has since gone (closed, hidden) is not on the map
@@ -604,13 +709,20 @@ class HomeViewModel @Inject constructor(
      * being drawn: taps are corners then.
      */
     fun dragStarted(at: LatLon, view: MapProjection, touchRadiusPx: Double): Boolean {
-        if (drawing.draft.value != null || sketching.draft.value != null || placement.placing.value != null) return false
+        if (drawing.draft.value != null || sketching.draft.value != null || placement.placing.value != null || controlMeasures?.draft?.value != null) return false
         press = null
         // What can be moved comes first: a read-only pack's LZ/PZ, set of routes and threats are left out.
         val graphics = if (lzLocked() != null) GraphicsScene.EMPTY else scene.value.graphics
         val routeScene = if (routesLocked() != null) RouteScene.EMPTY else routes.value
         val threats = if (threatsLocked()) ThreatScene.EMPTY else threatScene.value
-        DragHitTest.pick(graphics, threats, routeScene, view, at, touchRadiusPx, unitFootprints)?.let { target ->
+        // In the order a tap holds them: a graphic and a threat, then a backstop, FLOT or phase line, then a point of a route.
+        DragHitTest.pick(graphics, threats, RouteScene.EMPTY, view, at, touchRadiusPx, unitFootprints)?.let { target ->
+            hold(target)
+            if (mapDrag.start(target, at)) press = Press(at, view, touchRadiusPx * PRESS_SLOP)
+            return true
+        }
+        if (measureDragStarted(at, view, touchRadiusPx)) return true
+        DragHitTest.pick(GraphicsScene.EMPTY, ThreatScene.EMPTY, routeScene, view, at, touchRadiusPx, unitFootprints)?.let { target ->
             hold(target)
             if (mapDrag.start(target, at)) press = Press(at, view, touchRadiusPx * PRESS_SLOP)
             return true
@@ -626,6 +738,34 @@ class HomeViewModel @Inject constructor(
         releaseHeld()
         onMap.hold(other)
         return true
+    }
+
+    /**
+     * A long press on a backstop, a FLOT or a phase line: held as a tap holds it, and picked up where it may be ([MeasuresHitTest.dragTarget]: the arrow whole or by its
+     * tip, a point of a line). The dashed line of a backstop and a leg of a line are only held: the web moves neither. A read-only pack's is held, never picked up.
+     */
+    private fun measureDragStarted(at: LatLon, view: MapProjection, touchRadiusPx: Double): Boolean {
+        val cm = controlMeasures ?: return false
+        val scene = measures.value
+        val hit = MeasuresHitTest.pick(scene, view, at, touchRadiusPx) ?: return false
+        val held = heldOf(hit) ?: return false
+        selection.clear()
+        threatSelection.clear()
+        routeSelection.releasePoint()
+        boundaryCorners.clear()
+        pointSelection.clear()
+        onMap.release()
+        cm.hold(held)
+        val target = MeasuresHitTest.dragTarget(scene, hit) ?: return true
+        // The web's 20 px of the target and 24 px of the tail are CSS pixels: a dp here.
+        if (mapDrag.start(target, at) { a, b -> view.pixelsBetween(a, b) / view.density }) press = Press(at, view, touchRadiusPx * PRESS_SLOP)
+        return true
+    }
+
+    /** What holding [hit] holds: a backstop is the open LZ/PZ's, a line its set's. */
+    private fun heldOf(hit: MeasureHit): HeldMeasure? = when (hit) {
+        is MeasureHit.Backstop -> session.active.value?.id?.let { HeldMeasure.Backstop(it, hit.id) }
+        is MeasureHit.Line -> HeldMeasure.Line(hit.ref.setId, hit.ref.key, hit.ref.id)
     }
 
     /**
@@ -650,6 +790,7 @@ class HomeViewModel @Inject constructor(
         boundaryCorners.clear()
         pointSelection.clear()
         onMap.release()
+        if (target !is DragTarget.BackstopArrow && target !is DragTarget.BackstopTip && target !is DragTarget.LineVertex) controlMeasures?.release()
         when (target) {
             is DragTarget.Graphic -> {
                 threatSelection.clear()
@@ -669,6 +810,19 @@ class HomeViewModel @Inject constructor(
                 threatSelection.clear()
                 routeSelection.select(target.routeId, target.pointId)
             }
+            is DragTarget.BackstopArrow, is DragTarget.BackstopTip -> {
+                selection.clear()
+                threatSelection.clear()
+                routeSelection.releasePoint()
+                val ref = if (target is DragTarget.BackstopArrow) target.ref else (target as DragTarget.BackstopTip).ref
+                session.active.value?.id?.let { controlMeasures?.hold(HeldMeasure.Backstop(it, ref.key)) }
+            }
+            is DragTarget.LineVertex -> {
+                selection.clear()
+                threatSelection.clear()
+                routeSelection.releasePoint()
+                controlMeasures?.hold(HeldMeasure.Line(target.setId, target.key, target.lineId))
+            }
         }
     }
 
@@ -678,7 +832,7 @@ class HomeViewModel @Inject constructor(
      * gives a press there a longitude past ±180, which is brought back into range: it is the same place.
      */
     fun pressed(at: LatLon): MapMenuPlace? {
-        if (drawing.draft.value != null || sketching.draft.value != null || placement.placing.value != null) return null
+        if (drawing.draft.value != null || sketching.draft.value != null || placement.placing.value != null || controlMeasures?.draft?.value != null) return null
         if (at.lat !in -90.0..90.0 || !at.lon.isFinite()) return null                            // NaN is in no range
         val lon = if (at.lon in -180.0..180.0) at.lon else ((at.lon + 180.0) % 360.0 + 360.0) % 360.0 - 180.0
         return MapMenuPlace(LatLon(at.lat, lon), MgrsConverter.toMgrs(at.lat, lon)?.format() ?: "%.5f, %.5f".format(java.util.Locale.ROOT, at.lat, lon))
@@ -686,6 +840,7 @@ class HomeViewModel @Inject constructor(
 
     /** Puts down whatever is held on the map (the bar's Done): a graphic, a threat, a point of a route, a local point. A route being worked on stays the route. */
     fun releaseHeld() {
+        controlMeasures?.release()
         boundaryCorners.clear()
         selection.clear()
         threatSelection.clear()

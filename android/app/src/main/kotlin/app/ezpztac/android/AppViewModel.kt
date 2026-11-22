@@ -14,6 +14,7 @@ import app.ezpztac.android.packs.PackRuntime
 import app.ezpztac.auth.AuthLinks
 import app.ezpztac.auth.AuthRoute
 import app.ezpztac.auth.InviteLinks
+import app.ezpztac.data.ControlMeasures
 import app.ezpztac.data.AccountScope
 import app.ezpztac.data.BriefFlush
 import app.ezpztac.data.DiagramSession
@@ -86,6 +87,7 @@ class AppViewModel @Inject constructor(
     private val saved: SavedStateHandle,
     @Named("appVersion") private val version: String,
     private val notifications: NotificationShell,
+    private val measures: ControlMeasures? = null,
 ) : ViewModel() {
     private val config = MutableStateFlow<AppConfig?>(null)
     private val link = MutableStateFlow<AuthRoute?>(null)
@@ -311,6 +313,8 @@ class AppViewModel @Inject constructor(
         } catch (_: Exception) {
             // Likewise the set of routes.
         }
+        // And the control measures (their last change written), with a line half drawn.
+        quietly { measures?.signOut() }
         // The brief's waiting change, written under this account, and a pack's sent while the pack still takes it.
         quietly { briefs.flush() }
     }
