@@ -63,7 +63,7 @@ class WeatherAtTests(NativeAuthCase):
         super().setUp()
         self.make_account()
         self.head = {'Authorization': f'Bearer {self.login()["access_token"]}'}
-        self.asked = []
+        self.asked, self.params = [], []
         self.metars, self.tafs = METARS, TAFS
         for target, value in (('routes.weather_routes.requests.get', self.get),
                               ('routes.weather_routes.requests.post', lambda url, **kw: Reply({'notamList': []})),
@@ -72,8 +72,9 @@ class WeatherAtTests(NativeAuthCase):
             patcher.start()
             self.addCleanup(patcher.stop)
 
-    def get(self, url, **_kw):
+    def get(self, url, **kw):
         self.asked.append(url.rsplit('/', 1)[-1])
+        self.params.append(kw.get('params') or {})
         if url.endswith('/taf'):
             return Reply(self.tafs)
         return Reply(self.metars)
@@ -93,6 +94,18 @@ class WeatherAtTests(NativeAuthCase):
                                      'pressure', 'flight_category', 'raw_metar', 'distance_miles', 'notams'})
         self.assertEqual((body['station_id'], body['wind_dir'], body['temp_c']), ('KRYY', 270, 18))
         self.assertEqual(self.asked, ['metar'])                       # no TAF is asked for
+
+    def test_the_metars_are_asked_for_in_whole_hours(self):
+        # aviationweather.gov answers a fraction ("hours=1.5") with a 400, and every answer was then the defaults (2026-11-22).
+        self.weather()
+        hours = self.params[0].get('hours')
+        self.assertTrue(isinstance(hours, str) and hours.isdigit() and int(hours) >= 1, hours)
+        self.assertEqual(self.params[0].get('format'), 'json')
+
+    def test_the_flight_category_as_the_service_writes_it_now_and_before(self):
+        self.assertEqual(self.weather().get_json()['flight_category'], 'VFR')            # fltcat, as it once wrote it
+        self.metars = [{**{k: v for k, v in METARS[0].items() if k != 'fltcat'}, 'fltCat': 'IFR'}]
+        self.assertEqual(self.weather().get_json()['flight_category'], 'IFR')            # fltCat, as it writes it now
 
     def test_a_time_soon_or_past_is_the_observation(self):
         for epoch in (NOW, NOW + 1800, NOW - 2 * HOUR):
