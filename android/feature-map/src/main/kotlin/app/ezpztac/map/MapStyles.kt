@@ -7,7 +7,7 @@ import kotlinx.serialization.json.put
 import kotlinx.serialization.json.putJsonArray
 import kotlinx.serialization.json.putJsonObject
 
-/** One base map. The same three the web offers (`frontend/src/feature/mapStyles/mapStyles.js`), under the same ids, because a diagram saves its id. */
+/** One base map. The same four the web offers (`frontend/src/feature/mapStyles/mapStyles.js`), under the same ids and in its order, because a diagram saves its id. */
 data class MapBaseStyle(
     val id: String,
     val label: String,
@@ -36,12 +36,24 @@ object MapStyles {
     /** The VFR map's id, however it is drawn. */
     const val VFR_ID = "vfr-sectional"
 
+    /** USGS The National Map's topographic map, the web's `usgs-topo`. */
+    const val USGS_ID = "usgs-topo"
+
     private const val MAPBOX_ATTRIBUTION = "&copy; <a href=\"https://www.mapbox.com/about/maps/\">Mapbox</a>"
 
     private fun mapbox(id: String, label: String, styleId: String, token: String) = MapBaseStyle(
         id = id, label = label,
         tiles = "https://api.mapbox.com/styles/v1/mapbox/$styleId/tiles/512/{z}/{x}/{y}@2x?access_token=$token",
         attribution = MAPBOX_ATTRIBUTION, tileSize = 512, minZoom = 0, maxZoom = 20, needsMapboxToken = true,
+    )
+
+    // Contours, water, roads and names from USGS's own data: keyless and public domain, so it is drawn with or without a Mapbox token.
+    // Its tiles go to level 16 (17 and beyond answer 404), and the map stretches 16 past that, as the web's does. ArcGIS puts {y} before {x}.
+    private val USGS_TOPO = MapBaseStyle(
+        id = USGS_ID, label = "USGS",
+        tiles = "https://basemap.nationalmap.gov/arcgis/rest/services/USGSTopo/MapServer/tile/{z}/{y}/{x}",
+        attribution = "<a href=\"https://www.usgs.gov/programs/national-geospatial-program/national-map\">USGS The National Map</a>",
+        tileSize = 256, minZoom = 0, maxZoom = 16, needsMapboxToken = false,
     )
 
     private val ARCGIS_VFR = MapBaseStyle(
@@ -59,16 +71,16 @@ object MapStyles {
     )
 
     /**
-     * The base maps that can be drawn right now. Without a Mapbox token (the server was never reached and none was remembered) only
-     * the FAA chart can be, and the switcher shows just that rather than a style that would draw nothing.
+     * The base maps that can be drawn right now, in the web's order. Without a Mapbox token (the server was never reached and none was
+     * remembered) only USGS's map and the FAA chart can be, and the switcher shows just those rather than a style that would draw nothing;
+     * a diagram saved on satellite is then drawn on USGS's, the first of them, which has ground at every zoom where the chart stops at 12.
      */
     fun available(mapboxToken: String?, charts: VfrLive? = null): List<MapBaseStyle> {
         val token = mapboxToken?.takeIf { it.startsWith("pk.") }
         return buildList {
-            if (token != null) {
-                add(mapbox("satellite", "Satellite", "satellite-v9", token))
-                add(mapbox("topo", "Topo", "outdoors-v12", token))
-            }
+            if (token != null) add(mapbox("satellite", "Satellite", "satellite-v9", token))
+            add(USGS_TOPO)
+            if (token != null) add(mapbox("topo", "Topo", "outdoors-v12", token))
             add(vfr(charts))
         }
     }

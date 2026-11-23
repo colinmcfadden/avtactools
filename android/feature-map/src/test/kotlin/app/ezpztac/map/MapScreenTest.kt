@@ -604,11 +604,13 @@ class MapScreenTest {
     }
 
     @Test
-    fun `with no token only the FAA chart is in the menu`() {
+    fun `with no token only USGS's map and the FAA chart are in the menu`() {
         val only = MapStyles.available(null)
         show(MapUiState(styles = only, style = only.first()))
-        compose.onNodeWithContentDescription("Base map: VFR").performClick()
+        compose.onNodeWithContentDescription("Base map: USGS").performClick()
+        compose.onNodeWithText("VFR").assertIsDisplayed()
         compose.onNodeWithText("Satellite").assertDoesNotExist()
+        compose.onNodeWithText("Topo").assertDoesNotExist()
     }
 
     @Test
