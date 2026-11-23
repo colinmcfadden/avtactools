@@ -1,6 +1,7 @@
 import React, { useCallback, useRef, useState } from "react";
 import Icon from "../ui/Icon";
 import { useToast } from "../ui/Toast";
+import { randomId, uploadErrorMessage } from "../documents/documentsApi";
 import { detectImport } from "./detectImport";
 import ImportReviewDialog, { defaultDestination } from "./ImportReviewDialog";
 
@@ -11,11 +12,34 @@ import ImportReviewDialog, { defaultDestination } from "./ImportReviewDialog";
  * can list them; their threats live under Threats.
  *
  * `importers`: { msnx(file), lps(file, { name, parsed }), ths(file), routefile(parsed, { name }),
- * overlay(file, { name, parsed }) } that bring a file into the session and return what they made.
+ * overlay(file, { name, parsed }), document(file, { name, clientUuid }) } that bring a file into the session (a document: into the
+ * Library) and return what they made.
  * `destinations`: { library: { msnx(result, item), lps(set), routefile(result, item), overlay(made) },
- * pack: { lps(set), ths(file, options), routefile(parsed, options) } }.
+ * pack: { lps(set), ths(file, options), routefile(parsed, options), document(file, { name, item }) } }.
  * `onDone(kinds, imported)` hears which kinds came in and, for each file that did, where it went.
+ *
+ * `documents`: { on, saved, conversion }: whether the account has documents, whether it can keep them in a Library (cloud save),
+ * and whether the server turns Office files into PDFs. A document the account has nowhere to put, or an Office file the server
+ * cannot convert, is said in the review and left out. A document's upload has an id of its own (`clientUuid`), kept through every
+ * try, so one asked again after a lost answer is the same document.
  */
+
+
+/** What becomes of a detected document for this account and server: the item as it is, or one left out with the reason. */
+export const documentRules = (item, { documents, pack }) => {
+  if (item.kind !== "document") return item;
+  // An account without the feature is told what anyone is told of a file EZ/PZ does not take.
+  if (!documents?.on) return { ...item, kind: null, error: "Not supported. Nothing will be imported from this file." };
+  if (item.docType !== "pdf" && !documents.conversion) {
+    return { ...item, kind: null, error: "This server cannot turn Office files into PDFs. Save it as a PDF and upload that." };
+  }
+  // Without cloud save a document can go only into the open pack, and only one this person may change.
+  if (!documents.saved && (!pack || pack.finished || pack.role === "viewer")) {
+    const why = !pack ? "Open a Mission Pack to upload it there." : pack.finished ? "This pack is finished." : "You can only view this pack.";
+    return { ...item, kind: null, error: `Cloud save is off for this account, so a document has nowhere to go. ${why}` };
+  }
+  return { ...item, clientUuid: item.clientUuid ?? randomId() };
+};
 
 /**
  * Moves points just imported into this session over to the open pack. The session's copy is dropped
@@ -27,21 +51,29 @@ export const movePointsToPack = (set, { createItem, removePointSet }) => {
   removePointSet(set.id);
 };
 
-export const useImports = ({ pack, threatsSaved = false, overlaysSaved = false, importers, destinations, onDone }) => {
+export const useImports = ({ pack, threatsSaved = false, overlaysSaved = false, documents = null, importers, destinations, onDone }) => {
   const { show } = useToast();
   const [review, setReview] = useState(null);
   const [threatFiles, setThreatFiles] = useState([]);
   const [dragging, setDragging] = useState(false);
   const depth = useRef(0);
-  const deps = useRef({ importers, destinations, onDone, pack, threatsSaved, overlaysSaved });
-  deps.current = { importers, destinations, onDone, pack, threatsSaved, overlaysSaved };
+  // Each review is a dialog of its own (its key), so one opened again for the documents to retry starts from them.
+  const reviews = useRef(0);
+  const deps = useRef({ importers, destinations, onDone, pack, threatsSaved, overlaysSaved, documents });
+  deps.current = { importers, destinations, onDone, pack, threatsSaved, overlaysSaved, documents };
 
+  /** Reviews files. `prefer: "library"` sends a document to the Library where it may go there (the Library's own Upload). */
   const begin = useCallback(
-    async (files) => {
+    async (files, { prefer } = {}) => {
       const list = [...files];
       if (list.length === 0) return;
-      const detected = await Promise.all(list.map((file) => detectImport(file)));
-      setReview(detected.map((item) => ({ ...item, destination: item.kind ? defaultDestination(item.kind, deps.current.pack, deps.current.threatsSaved, deps.current.overlaysSaved) : null })));
+      const detected = (await Promise.all(list.map((file) => detectImport(file)))).map((item) => documentRules(item, deps.current));
+      const { pack: open, threatsSaved: threats, overlaysSaved: overlays } = deps.current;
+      reviews.current += 1;
+      const docsSaved = Boolean(deps.current.documents?.saved);
+      const where = (item) =>
+        item.kind === "document" && prefer === "library" && docsSaved ? "library" : defaultDestination(item.kind, open, threats, overlays);
+      setReview(detected.map((item) => ({ ...item, destination: item.kind ? where(item) : null })));
     },
     [],
   );
@@ -52,6 +84,8 @@ export const useImports = ({ pack, threatsSaved = false, overlaysSaved = false, 
       const failed = [];
       const imported = [];
       const kinds = new Set();
+      // A document that did not go is kept in the review with why, so trying again is the same upload (its clientUuid).
+      const retry = [];
       for (const item of items) {
         try {
           if (item.kind === "msnx") {
@@ -76,14 +110,22 @@ export const useImports = ({ pack, threatsSaved = false, overlaysSaved = false, 
           } else if (item.kind === "overlay") {
             const made = await imp.overlay(item.file, { name: item.name?.trim() || undefined, parsed: item.parsed });
             if (item.destination === "library") await dest.library.overlay(made);
+          } else if (item.kind === "document") {
+            const name = item.name?.trim() || undefined;
+            if (item.destination === "pack") await dest.pack.document(item.file, { name, item: `doc-${item.clientUuid}` });
+            else await imp.document(item.file, { name, clientUuid: item.clientUuid });
           }
           kinds.add(item.kind);
           imported.push({ kind: item.kind, destination: item.destination, fileName: item.file.name });
         } catch (err) {
-          failed.push(`${item.file.name}: ${err?.message || "it could not be imported"}`);
+          // A document's refusal is the server's sentence (the file's size, its password, a converter that is busy), in its words.
+          const why = item.kind === "document" ? uploadErrorMessage(err) : err?.message || "it could not be imported";
+          failed.push(`${item.file.name}: ${why}`);
+          if (item.kind === "document") retry.push({ ...item, failure: why });
         }
       }
-      setReview(null);
+      if (retry.length) reviews.current += 1;
+      setReview(retry.length ? retry : null);
       const ok = items.length - failed.length;
       if (ok > 0) show({ message: items.length === 1 ? `Imported ${items[0].file.name}` : `Imported ${ok} of ${items.length} files` });
       if (failed.length) show({ tone: "error", message: `Not imported. ${failed.join(" ")}`, duration: 9000 });
@@ -130,7 +172,16 @@ export const useImports = ({ pack, threatsSaved = false, overlaysSaved = false, 
   ) : null;
 
   const dialog = review ? (
-    <ImportReviewDialog items={review} pack={pack} threatsSaved={threatsSaved} overlaysSaved={overlaysSaved} onCancel={() => setReview(null)} onImport={run} />
+    <ImportReviewDialog
+      key={reviews.current}
+      items={review}
+      pack={pack}
+      threatsSaved={threatsSaved}
+      overlaysSaved={overlaysSaved}
+      documentsSaved={Boolean(documents?.saved)}
+      onCancel={() => setReview(null)}
+      onImport={run}
+    />
   ) : null;
 
   return { begin, dialog, overlay, dragProps, threatFiles };

@@ -10,7 +10,7 @@ import "./packs.css";
  * a pack, choosing several Library items to add to the open pack, and the banner a finished pack shows.
  */
 
-const KIND_WORDS = { lz: "LZ/PZ", route: "route set", pointset: "point set", threatset: "threat set" };
+const KIND_WORDS = { lz: "LZ/PZ", route: "route set", pointset: "point set", threatset: "threat set", document: "document" };
 
 // Everyone who can open the pack, the team it is shared with included, as the switcher counts them.
 const people = (p) => {
@@ -89,6 +89,7 @@ const TABS = [
   { key: "route", label: "Routes" },
   { key: "pointset", label: "Local points" },
   { key: "threatset", label: "Threats" },
+  { key: "document", label: "Documents" },
 ];
 
 /**
@@ -145,7 +146,7 @@ export const AddFromLibraryDialog = ({ packName, library, onAdd, onCancel }) => 
       }
     >
       <div className="packs-tabs" role="tablist" aria-label="What to show">
-        {TABS.map((t) => (
+        {TABS.filter((t) => library[t.key] !== undefined).map((t) => (
           <button key={t.key} type="button" role="tab" aria-selected={tab === t.key} className={`packs-tabs__tab${tab === t.key ? " packs-tabs__tab--on" : ""}`} onClick={() => setTab(t.key)}>
             {t.label}
             <span style={{ color: "#8a94a1", fontWeight: 600 }}>{(library[t.key] ?? []).length}</span>

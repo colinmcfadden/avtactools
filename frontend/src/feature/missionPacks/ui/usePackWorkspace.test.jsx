@@ -3,7 +3,7 @@ import React from "react";
 import LzPanel from "../../shell/LzPanel";
 import TopBar from "../../shell/TopBar";
 import { dateAtTime } from "../../ui/time";
-import { lookingAtPack, packAudience, topBarPack, UpdateFromOriginalDialog } from "./usePackWorkspace";
+import { followViewedDocument, lookingAtPack, packDocumentOf, packAudience, topBarPack, UpdateFromOriginalDialog } from "./usePackWorkspace";
 
 describe("the top bar while a pack opens", () => {
   const listed = [{ uuid: "a", name: "OP DK", status: "active" }];
@@ -130,5 +130,40 @@ describe("whether the Pack panel is being looked at", () => {
     expect(lookingAtPack({ ...shown, panel: "lz" })).toBe(false);
     expect(lookingAtPack({ ...shown, visible: false })).toBe(false);
     expect(lookingAtPack({ ...shown, loaded: null })).toBe(false);
+  });
+});
+
+describe("a pack's document being read, as the pack changes", () => {
+  const doc = (sha) => ({ uuid: "doc-1", kind: "document", name: "OPORD", data: { pdf: { sha256: sha } } });
+  const key = "pack:p-1:doc-1";
+
+  it("opens it again on a new version, and not before one", () => {
+    const first = followViewedDocument({ key, open: "p-1", loaded: true, items: [doc("a")], seen: null });
+    expect(first.action).toBeNull();
+    expect(followViewedDocument({ key, open: "p-1", loaded: true, items: [doc("a")], seen: first.seen }).action).toBeNull();
+    const moved = followViewedDocument({ key, open: "p-1", loaded: true, items: [doc("b")], seen: first.seen });
+    expect(moved).toMatchObject({ action: "reopen", item: { uuid: "doc-1" }, seen: { key, pdf: "b" } });
+  });
+
+  it("closes it once it is removed, or the pack is no longer the one open", () => {
+    expect(followViewedDocument({ key, open: "p-1", loaded: true, items: [], seen: null }).action).toBe("close");
+    expect(followViewedDocument({ key, open: "p-2", loaded: true, items: [doc("a")], seen: null }).action).toBe("close");
+    expect(followViewedDocument({ key, open: null, loaded: false, items: [], seen: null }).action).toBe("close");
+  });
+
+  it("decides nothing while the pack loads, and never touches a Library document's viewer", () => {
+    const seen = { key, pdf: "a" };
+    expect(followViewedDocument({ key, open: "p-1", loaded: false, items: [], seen })).toEqual({ action: null, seen });
+    expect(followViewedDocument({ key: "library:4", open: "p-1", loaded: true, items: [], seen })).toEqual({ action: null, seen: null });
+    expect(followViewedDocument({ key: null, open: "p-1", loaded: true, items: [], seen })).toEqual({ action: null, seen: null });
+  });
+});
+
+describe("which pack document a viewer's key names", () => {
+  it("reads an item id with a colon in it whole, and a key that is not a pack's as none", () => {
+    expect(packDocumentOf("pack:p-1:doc:1")).toEqual({ pack: "p-1", item: "doc:1" });
+    expect(followViewedDocument({ key: "pack:p-1:doc:1", open: "p-1", loaded: true, items: [{ uuid: "doc:1", kind: "document", data: {} }], seen: null }).action).toBeNull();
+    expect(packDocumentOf("library:4")).toBeNull();
+    expect(packDocumentOf("pack:nothing")).toBeNull();
   });
 });

@@ -11,6 +11,17 @@ describe("which requests are heavy", () => {
     }
   });
 
+  it("knows a document's upload by its method, so listing and reading one is not heavy", () => {
+    for (const path of ["/documents", "/documents/12/version", "/packs/p-1/documents", "/packs/p-1/items/doc-1/version"]) {
+      expect(isPriorityRequest(path, "post")).toBe(true);
+      expect(isPriorityRequest(path, "POST")).toBe(true);
+      expect(isPriorityRequest(path, "get")).toBe(false);
+    }
+    for (const path of ["/documents/12", "/documents/12/pdf", "/packs/p-1/items/doc-1/text", "/packs/p-1/items"]) {
+      expect(isPriorityRequest(path, "post")).toBe(false);
+    }
+  });
+
   it("leaves everything else alone", () => {
     for (const path of ["/lidar/build/0123456789abcdef", "/terrain/heights", "/weather",
                         "/auth/me", "/elevations"]) {

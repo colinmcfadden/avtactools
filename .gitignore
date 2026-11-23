@@ -59,9 +59,10 @@ LZ_Map_Layer_*
 /backend/dted/
 /topo/
 
-# Cesium static assets and generated LiDAR tilesets are build output, copied or
+# Cesium's and pdf.js's static assets and generated LiDAR tilesets are build output, copied or
 # generated on demand rather than committed.
 /frontend/public/cesium/
+/frontend/public/pdfjs/
 /frontend/public/tiles/
 
 # Downloaded LiDAR indexes: the USGS coverage GeoJSON (~8 MB) and the per-

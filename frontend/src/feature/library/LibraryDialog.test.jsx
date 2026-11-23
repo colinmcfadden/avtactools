@@ -91,3 +91,39 @@ describe("the Library", () => {
     expect(screen.getByRole("menuitem", { name: /Add to Mission Pack/ })).toBeInTheDocument();
   });
 });
+
+describe("the Library's documents", () => {
+  const opord = { id: 4, name: "OPORD 24-03", pages: 14, source_type: "docx", has_text: true, updated_at: "2026-11-20T12:00:00Z" };
+
+  it("lists each with its pages and source, uploads from the tab, and offers a new version and the PDF but no duplicate", () => {
+    const upload = vi.fn();
+    const newVersion = vi.fn();
+    const download = vi.fn();
+    const documents = source({
+      entries: [opord],
+      action: { icon: "upload", label: "Upload document", onClick: upload },
+      menu: (entry) => [
+        { icon: "upload", title: "New version…", onSelect: () => newVersion(entry) },
+        { icon: "download", title: "Download PDF", onSelect: () => download(entry) },
+      ],
+      duplicable: false,
+    });
+    show({ documents }, { initialTab: "documents" });
+    expect(screen.getByText("OPORD 24-03")).toBeInTheDocument();
+    expect(screen.getByText(/14 pages · from Word/)).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Upload document" }));
+    expect(upload).toHaveBeenCalledTimes(1);
+
+    fireEvent.click(screen.getByRole("button", { name: /More actions for OPORD 24-03/ }));
+    const titles = screen.getAllByRole("menuitem").map((item) => item.textContent);
+    expect(titles.some((t) => t.includes("Duplicate"))).toBe(false);
+    fireEvent.click(screen.getByRole("menuitem", { name: "New version…" }));
+    expect(newVersion).toHaveBeenCalledWith(opord);
+  });
+
+  it("says what to do when there are none yet", () => {
+    show({ documents: source() }, { initialTab: "documents" });
+    expect(screen.getByText(/No documents yet\. Upload an OPORD or any other paper/)).toBeInTheDocument();
+  });
+});

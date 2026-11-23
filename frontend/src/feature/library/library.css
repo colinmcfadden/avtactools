@@ -30,6 +30,7 @@
 .library__search svg { position: absolute; left: 11px; top: 10px; pointer-events: none; }
 .library__search .ui-input { padding-left: 34px; }
 .library__sort { width: 190px; flex: none; cursor: pointer; font-size: 12px; }
+.library__action { flex: none; white-space: nowrap; }
 
 .library__list { height: 340px; overflow-y: auto; padding-top: 2px; scrollbar-width: thin; }
 .library__row {
@@ -68,4 +69,8 @@
 @media (max-width: 820px) {
   .ui-dialog.library { width: calc(100vw - 24px); }
   .library__sort { width: 140px; }
+  /* A tab's own button (Upload document) goes to a line of its own rather than squeeze the search. */
+  .library__tools { flex-wrap: wrap; }
+  .library__search { flex: 1 1 180px; }
+  .library__action { flex: 1 1 100%; justify-content: center; }
 }

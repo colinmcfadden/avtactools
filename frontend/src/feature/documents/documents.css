@@ -1,0 +1,263 @@
+/* A document read as a PDF (DocumentViewer.jsx). It is one of the floating planning windows (.export-modal-container gives it their
+   place and layer, which layers.test.js holds: nothing here sets a z-index), taller than the forms so a page reads, and resized from
+   its corner. At 850 px and below it is the whole screen. */
+.export-modal-container.document-viewer {
+  width: min(720px, calc(100vw - 32px));
+  max-width: none;
+  height: min(860px, calc(100vh - 80px));
+  max-height: none;
+  min-width: 360px;
+  min-height: 320px;
+  resize: both;
+}
+
+.export-modal-container.document-viewer--full {
+  position: fixed;
+  inset: 0;
+  top: 0;
+  width: 100vw;
+  height: 100dvh;
+  min-width: 0;
+  min-height: 0;
+  max-height: none;
+  margin: 0;
+  border: 0;
+  border-radius: 0;
+  resize: none;
+}
+
+.document-viewer:not(.document-viewer--full)::after {
+  position: absolute;
+  right: 3px;
+  bottom: 2px;
+  color: rgba(255, 255, 255, 0.32);
+  content: "◢";
+  font-size: 0.62rem;
+  pointer-events: none;
+}
+
+.document-viewer__bar.modal-header {
+  gap: 8px;
+  justify-content: flex-start;
+  padding: 8px 8px 8px 14px;
+}
+
+.document-viewer--full .document-viewer__bar.modal-header {
+  padding-top: max(8px, env(safe-area-inset-top));
+  cursor: default;
+}
+
+.document-viewer__title {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.document-viewer__name {
+  overflow: hidden;
+  font-size: 14px;
+  font-weight: 650;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.document-viewer__detail {
+  overflow: hidden;
+  color: var(--ff-text-muted, #97a0ab);
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.document-viewer__tools {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 12px;
+  padding: 6px 10px;
+  border-bottom: 1px solid var(--hairline, rgba(255, 255, 255, 0.08));
+}
+
+.document-viewer__find {
+  display: flex;
+  flex: 1 1 220px;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+  color: var(--ff-text-muted, #97a0ab);
+}
+
+.document-viewer__find .document-viewer__find-input {
+  flex: 1 1 auto;
+  min-width: 0;
+  height: 30px;
+  margin-left: 4px;
+}
+
+.document-viewer__zoom {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+
+.document-viewer__zoom > span {
+  min-width: 40px;
+  text-align: center;
+}
+
+.document-viewer__pages {
+  color: var(--ff-text-muted, #97a0ab);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.document-viewer__found {
+  border-bottom: 1px solid var(--hairline, rgba(255, 255, 255, 0.08));
+  font-size: 12px;
+}
+
+.document-viewer__found-words {
+  padding: 6px 12px;
+  color: var(--ff-text-muted, #97a0ab);
+}
+
+.document-viewer__found-words:empty {
+  display: none;
+}
+
+.document-viewer__hits {
+  max-height: 148px;
+  margin: 0;
+  padding: 0 0 4px;
+  overflow-y: auto;
+  list-style: none;
+}
+
+.document-viewer__hit {
+  display: flex;
+  gap: 10px;
+  width: 100%;
+  padding: 5px 12px;
+  border: 0;
+  background: transparent;
+  color: var(--ff-text-main, #e7eaee);
+  cursor: pointer;
+  font: inherit;
+  text-align: left;
+}
+
+.document-viewer__hit:hover,
+.document-viewer__hit:focus-visible {
+  background: rgba(255, 255, 255, 0.06);
+  outline: none;
+}
+
+.document-viewer__hit--current {
+  background: rgba(90, 167, 212, 0.16);
+}
+
+.document-viewer__hit-page {
+  flex: 0 0 auto;
+  min-width: 34px;
+  color: var(--ff-text-muted, #97a0ab);
+  font-variant-numeric: tabular-nums;
+}
+
+.document-viewer__hit-text {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.document-viewer__hit mark {
+  padding: 0 1px;
+  border-radius: 2px;
+  background: #f0c56f;
+  color: #15181d;
+}
+
+/* The pages, on a grey ground as a desk is. Positioned, so a page's offsetTop is measured from here. A page wider than the window
+   (zoomed in) overflows to the right and scrolls, rather than being centred out of reach on the left. */
+.document-viewer__scroll {
+  position: relative;
+  flex: 1 1 auto;
+  min-height: 0;
+  padding: 12px;
+  overflow: auto;
+  background: #2b2f36;
+  overscroll-behavior: contain;
+}
+
+.document-viewer__page {
+  position: relative;
+  margin: 0 auto 12px;
+  background: #fff;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.45);
+}
+
+.document-viewer__page:last-child {
+  margin-bottom: 0;
+}
+
+.document-viewer__page canvas {
+  display: block;
+}
+
+.document-viewer__page-spinner {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  color: #6f7885;
+  transform: translate(-50%, -50%);
+}
+
+.document-viewer__state {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 160px;
+  padding: 24px;
+  color: #cfd8e2;
+  font-size: 13px;
+  text-align: center;
+}
+
+@media (max-width: 850px) {
+  .document-viewer__tools {
+    padding: 6px 8px;
+  }
+
+  .document-viewer .document-viewer__find-input {
+    min-height: 38px;
+  }
+
+  .document-viewer__hit {
+    min-height: 40px;
+    align-items: center;
+  }
+}
+
+/* A new version's file, chosen in its dialog (DocumentVersionDialog.jsx). */
+.documents-version {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  border: 1px solid var(--hairline-strong, rgba(255, 255, 255, 0.16));
+  border-radius: 8px;
+  color: var(--ff-text-muted, #97a0ab);
+}
+
+.documents-version__file {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow-wrap: anywhere;
+  color: var(--ff-text-main, #e7eaee);
+  font-size: 13px;
+}
+
+.documents-version__error {
+  color: #f3b1ac;
+}
