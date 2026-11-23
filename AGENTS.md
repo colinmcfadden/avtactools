@@ -33,7 +33,7 @@ mission planning system).
 - **Repo:** `github.com/colinmcfadden/avtactools` · default branch `develop`.
 - **Native apps:** Android (Kotlin) first, then iOS and iPadOS (Swift). Android
   has the plan's P0–P2 (§17; where it stands and what is next: `docs/HANDOFF.md`);
-  iOS has its pure core's first part (I0 and I1 of `docs/IOS_PLAN.md`, its build plan with the ForeFlight hand-off; §17, *iOS*).
+  iOS has its pure core's first part and its map and frames (I0, I1 and I3 of `docs/IOS_PLAN.md`, its build plan with the ForeFlight hand-off; §17, *iOS*).
   Read `docs/NATIVE_APPS_PLAN.md` before any mobile work.
 
 ---
@@ -3271,10 +3271,33 @@ client is built around not losing one:
 the app binary; no new dependency beyond what the plan's owner-approved list covers (ask first for anything else).
 
 **iOS** (`ios/`; the plan, its steps and the owner's decisions in `docs/IOS_PLAN.md`; how to build and test in `ios/README.md`).
-- **Where it stands: I1, the pure core's first part.** An app target that builds for iOS 26 and shows its version, and the `EZPZCore` Swift
-  package (Foundation only, so `swift test` runs it on the Mac with no simulator): `CoreJS`, `CoreModel`, `CoreGeo` and `CorePlanning` (Android's
-  core-model, core-geo and core-planning, file for file under the same type names, and the web's backstops, graphic scale, FLOT and phase lines,
-  which Android does not draw), `DesignTokens` and `CoreTesting`; 423 tests, held to the fixtures in any time zone. No screens yet.
+- **Where it stands: I1, the pure core's first part, and I3, the map and its frames** (I2, the network, sync and sign-in, is next). The
+  `EZPZCore` Swift package (Foundation only, so `swift test` runs it on the Mac with no simulator): `CoreJS`, `CoreModel`, `CoreGeo`,
+  `CorePlanning` and `CoreMap` (Android's core-model, core-geo, core-planning and feature-map's plain arithmetic, file for file under the same
+  type names, and the web's backstops, graphic scale, FLOT and phase lines, which Android does not draw), `DesignTokens` and `CoreTesting`, held
+  to the fixtures in any time zone; and the `EZPZFeatures` package beside it, which may import UIKit and MapLibre: `DesignSystem` (the
+  palettes as SwiftUI colours, Liquid Glass over the map, the 48 pt map control, toasts) and `FeatureMap` (`MapStore`, `MapLibreMap`, the
+  crosshair, readout, MGRS grid labels, Layers, the search with its readings, the long-press menu). The app (`App/`) lays the iPhone's frame
+  (a row of glass controls, a sheet with three detents over a tab control, hidden by a tap on the map) or, at 840 by 480 pt and up, the
+  iPad's (a glass sidebar, a toolbar with the search always open, an inspector) over **one** map view, so crossing the line moves nothing.
+  The panels say which build brings them. `/api/config` (the Mapbox token, the FAA charts' build) is read by `ServerConfig`, a stand-in
+  until I2's client.
+- **The map, things that bit in I3** (each found on a simulator; there is no GPU-free way to test them):
+  - MapLibre iOS adjusts its content inset to the safe area by itself (`automaticallyAdjustsContentInset`, on by default): turn it off, or
+    the crosshair and what the readout names part by the status bar's height.
+  - A new content inset keeps the map still and moves its middle, telling no region change: ask the camera again in
+    `setContentInset`'s completion, or the readout names the old middle. It also ends a flight under way, so a search's flight asked in the
+    last second is flown again (`MapStore.Flight`), as the keyboard going down moves the padding.
+  - The root is laid out once in window coordinates (`ignoresSafeArea`), every layer framed to the window: a layer as big as the window
+    inside a stack that also respects the safe area made the stack, and the map view, taller than the screen.
+  - What is drawn over the map at a place (the grid's labels) follows a counter of the map's reports (`MapStore.drawn`), not the camera,
+    which is the same at the end of an inset's easing while every point has moved.
+  - The grid takes the camera's middle across as the view's (Android's map has no side padding), so with the iPad's sidebar it is given
+    the place at the view's own middle; and MapLibre's attribution button is one of the boxes its labels keep off.
+  - **SwiftPM's download of MapLibre's binary hangs in an agent's sandbox**: fetch the zip with `curl` and put it in
+    `~/Library/Caches/org.swift.swiftpm/artifacts/` under SwiftPM's mangled name for its URL; CI downloads it as usual.
+- **Theme**: night when the person asks for it (the account menu; dark for the system, so no system sheet flashes white), else the
+  system's own appearance, dark or light (`appTheme(night:)`); the night palette also dims the map (`NightDim`).
 - **iOS follows the web where Android only carries a graphic** (the owner, 2026-11-21): backstops, the FLOT, phase lines, control measures and
   graphics drawn smaller as the map zooms out are ported from the web's files and held to `planning/backstops.json`, `graphicScale.json` and
   `controlMeasures.json` (the last two recorded by the web in I1), not from Android.
@@ -3296,7 +3319,7 @@ the app binary; no new dependency beyond what the plan's owner-approved list cov
   (`.debug` for debug builds): the real one is permanent once published and the owner's to choose.
 - **Design tokens**: `contracts/scripts/tokens.py` writes `Tokens.swift` (in `DesignTokens`) beside Android's `Tokens.kt`, and Android's contrast
   and night tests hold its palettes on the Mac.
-- **Format**: swift-format, which ships with the toolchain (`ios/.swift-format`, `--strict` in CI); Swift warnings are errors in the app.
+- **Format**: swift-format, which ships with the toolchain (`ios/.swift-format`, `--strict` in CI, both packages and the app); Swift warnings are errors in the app.
 - **CI**: `.github/workflows/ios.yaml` on `macos-26`, path-filtered; not yet run on GitHub, so the first PR that touches `ios/` shows
   whether the runner's Xcode is new enough (Xcode 26 or later).
 - **Agents can see the app**: the iOS Simulator runs on the owner's Mac and an agent can build, launch and screenshot it (I0's shell was
