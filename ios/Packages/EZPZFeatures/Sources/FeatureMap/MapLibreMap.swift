@@ -29,7 +29,9 @@ public struct MapLibreMap: UIViewRepresentable {
         // The frame draws its own north button and scale is not wanted; the attribution stays, as Mapbox's terms ask.
         view.compassView.compassVisibility = .hidden
         view.logoView.isHidden = true
-        view.attributionButtonPosition = .bottomLeft
+        // At the top of the map that shows (under the row, beside the iPad's sidebar): at the foot, the readout covered it at large
+        // text. MapLibre places it inside the content inset, and the grid's labels keep off it (`MapStore.settleGrid`).
+        view.attributionButtonPosition = .topLeft
         view.allowsTilting = false
         // The padding is the frame's alone. Left on, MapLibre sets it to the safe area itself and the middle it reports (the
         // readout, where things are put) is no longer the crosshair's (AGENTS.md §17, *The map*).

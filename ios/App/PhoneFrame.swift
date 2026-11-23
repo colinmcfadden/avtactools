@@ -31,7 +31,7 @@ struct PhoneFrame: View {
                 .position(x: window.width / 2, y: crosshairY)
             // The map's buttons stand under the row, at the end, wherever the row's search list reaches.
             MapButtons(store: map)
-                .mapChrome(map, "buttons")
+                .mapChrome(map, "phone.buttons")
                 .padding(.top, rowBottom + 16)
                 .padding(.trailing, 12 + safe.trailing)
                 .frame(maxWidth: .infinity, alignment: .trailing)
@@ -51,6 +51,7 @@ struct PhoneFrame: View {
             PhoneSheet(frame: frame, display: display) { top in sheetTop = top }
         }
         .onChange(of: covered, initial: true) { setPadding() }
+        .onDisappear { map.setAvoid("phone.status", nil) }
         .onChange(of: frame.hidden) { setPadding() }
         .onChange(of: window) { setPadding() }
         .onChange(of: map.toast) { _, words in show(words) }
@@ -72,10 +73,10 @@ struct PhoneFrame: View {
                 .offset(y: frame.hidden ? -(rowBottom + 20) : 0)
                 .allowsHitTesting(!frame.hidden)
                 .accessibilityHidden(frame.hidden)
-                .mapChrome(map, "row", shown: !frame.hidden)
+                .mapChrome(map, "phone.row", shown: !frame.hidden)
             Spacer()
             ReadoutPill(store: map)
-                .mapChrome(map, "readout")
+                .mapChrome(map, "phone.readout")
                 .padding(.horizontal, 24 + max(safe.leading, safe.trailing))
                 .padding(.bottom, (covered > 0 ? covered : safe.bottom) + 12)
         }
@@ -115,7 +116,7 @@ struct PhoneFrame: View {
         // middle of the map that shows. The map is drawn under the status bar, so the top counts it.
         map.setPadding(MapInsets(top: frame.hidden ? safe.top : rowBottom, bottom: covered > 0 ? covered : safe.bottom))
         // The status bar is told on its own: the row's box goes with the frame, the status bar's never does.
-        map.setAvoid("status", CGRect(x: 0, y: 0, width: window.width, height: safe.top))
+        map.setAvoid("phone.status", CGRect(x: 0, y: 0, width: window.width, height: safe.top))
     }
 
     private func show(_ words: String?) {

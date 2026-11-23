@@ -26,13 +26,15 @@ struct PadFrame: View {
     var body: some View {
         ZStack(alignment: .topLeading) {
             Crosshair()
-                .position(x: leading + (window.width - leading - trailing) / 2, y: toolbarBottom + (window.height - toolbarBottom) / 2)
+                .position(
+                    x: leading + (window.width - leading - trailing) / 2,
+                    y: toolbarBottom + (window.height - safe.bottom - toolbarBottom) / 2)
             // The map's own buttons stand at the foot of the map, the readout at its middle.
             VStack {
                 Spacer()
                 ZStack(alignment: .bottomTrailing) {
-                    ReadoutPill(store: map).mapChrome(map, "readout").frame(maxWidth: .infinity)
-                    MapButtons(store: map).mapChrome(map, "buttons")
+                    ReadoutPill(store: map).mapChrome(map, "pad.readout").frame(maxWidth: .infinity)
+                    MapButtons(store: map).mapChrome(map, "pad.buttons")
                 }
                 .padding(.bottom, safe.bottom + 24)
             }
@@ -73,6 +75,9 @@ struct PadFrame: View {
         .animation(.easeInOut(duration: 0.3), value: frame.sidebar)
         .animation(.easeInOut(duration: 0.3), value: frame.inspector)
         .onChange(of: leading, initial: true) { setPadding() }
+        // Each frame tells the grid of its own boxes under keys of its own, and takes them away as it goes: a window turned
+        // across 840 pt shows the other frame first, so a shared key was cleared by the frame leaving after the new one set it.
+        .onDisappear { for key in ["pad.status", "pad.row", "pad.sidebar", "pad.inspector"] { map.setAvoid(key, nil) } }
         .onChange(of: trailing) { setPadding() }
         .onChange(of: window) { setPadding() }
         .onChange(of: map.toast) { _, words in show(words) }
@@ -81,18 +86,28 @@ struct PadFrame: View {
     private var toolbar: some View {
         HStack(alignment: .top, spacing: 8) {
             MapButton(frame.sidebar ? "Hide the sidebar" : "Show the sidebar", symbol: "sidebar.leading") { frame.sidebar.toggle() }
+            // The search keeps room to read a grid; Import and the Library give up their words first (the phone's rule).
             MapSearchField(store: map, text: $frame.searchText, open: .constant(true), foldable: false)
-                .frame(maxWidth: 420)
+                .frame(minWidth: 160, maxWidth: 420)
             Spacer(minLength: 0)
-            RowButton(title: "Import", symbol: "square.and.arrow.down", showTitle: true) { soon("Import") }
-                .keyboardShortcut("i", modifiers: .command)
-            RowButton(title: "Library", symbol: "books.vertical", showTitle: true) { soon("The Library") }
-                .keyboardShortcut("l", modifiers: .command)
+            ViewThatFits(in: .horizontal) {
+                fileButtons(titled: true)
+                fileButtons(titled: false)
+            }
             MapButton(frame.inspector ? "Hide the inspector" : "Show the inspector", symbol: "sidebar.trailing", selected: frame.inspector)
             {
                 frame.inspector.toggle()
             }
             AccountMenu(display: display)
+        }
+    }
+
+    private func fileButtons(titled: Bool) -> some View {
+        HStack(spacing: 8) {
+            RowButton(title: "Import", symbol: "square.and.arrow.down", showTitle: titled) { soon("Import") }
+                .keyboardShortcut("i", modifiers: .command)
+            RowButton(title: "Library", symbol: "books.vertical", showTitle: titled) { soon("The Library") }
+                .keyboardShortcut("l", modifiers: .command)
         }
     }
 
@@ -126,10 +141,11 @@ struct PadFrame: View {
 
     private func setPadding() {
         map.setPadding(MapInsets(top: toolbarBottom, bottom: safe.bottom, leading: leading, trailing: trailing))
-        map.setAvoid("status", CGRect(x: 0, y: 0, width: window.width, height: safe.top))
-        map.setAvoid("row", CGRect(x: 0, y: 0, width: window.width, height: toolbarBottom))
-        map.setAvoid("sidebar", frame.sidebar ? CGRect(x: 0, y: 0, width: leading, height: window.height) : nil)
-        map.setAvoid("inspector", frame.inspector ? CGRect(x: window.width - trailing, y: 0, width: trailing, height: window.height) : nil)
+        map.setAvoid("pad.status", CGRect(x: 0, y: 0, width: window.width, height: safe.top))
+        map.setAvoid("pad.row", CGRect(x: 0, y: 0, width: window.width, height: toolbarBottom))
+        map.setAvoid("pad.sidebar", frame.sidebar ? CGRect(x: 0, y: 0, width: leading, height: window.height) : nil)
+        map.setAvoid(
+            "pad.inspector", frame.inspector ? CGRect(x: window.width - trailing, y: 0, width: trailing, height: window.height) : nil)
     }
 
     private func show(_ words: String?) {

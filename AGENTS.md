@@ -3293,7 +3293,13 @@ the app binary; no new dependency beyond what the plan's owner-approved list cov
   - What is drawn over the map at a place (the grid's labels) follows a counter of the map's reports (`MapStore.drawn`), not the camera,
     which is the same at the end of an inset's easing while every point has moved.
   - The grid takes the camera's middle across as the view's (Android's map has no side padding), so with the iPad's sidebar it is given
-    the place at the view's own middle; and MapLibre's attribution button is one of the boxes its labels keep off.
+    the place at the view's own middle; and MapLibre's attribution button (top left, inside the content inset, so the readout never
+    covers it) is one of the boxes its labels keep off.
+  - Each frame tells the grid of what floats over the map under keys of its own (`phone.*`, `pad.*`) and takes them away as it goes:
+    turning a window across 840 pt shows the new frame before the old one disappears, so a shared key was cleared by the leaving
+    frame after the new one had set it, and the labels went under the buttons.
+  - The root's geometry ignores the keyboard (`ignoresSafeArea(.keyboard)`): counted as a safe area it moved the map's padding, the
+    crosshair and the iPad's panes every time it came up. A tap on the map ends typing in the search.
   - **SwiftPM's download of MapLibre's binary hangs in an agent's sandbox**: fetch the zip with `curl` and put it in
     `~/Library/Caches/org.swift.swiftpm/artifacts/` under SwiftPM's mangled name for its URL; CI downloads it as usual.
 - **Theme**: night when the person asks for it (the account menu; dark for the system, so no system sheet flashes white), else the

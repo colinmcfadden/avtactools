@@ -23,11 +23,15 @@ struct RootView: View {
             ZStack(alignment: .topLeading) {
                 MapLibreMap(store: map) { _ in
                     // A tap on the map that is the frame's hides it, and the next shows it again (the owner's, 2026-10-13).
+                    // It also ends typing in the search, whose keyboard would otherwise stay up over the map (the iPad's search is
+                    // always open; the phone's folds as the frame hides).
+                    UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
                     if map.pressed != nil { map.pressed = nil } else if !pad { frame.toggleHidden() }
                 }
                 .frame(width: full.width, height: full.height)
-                NightDim().frame(width: full.width, height: full.height)
+                // The dim goes over the grid's labels too (Android's order): bright pills would light a cockpit at night.
                 GridLabels(store: map).frame(width: full.width, height: full.height)
+                NightDim().frame(width: full.width, height: full.height)
                 if pad {
                     PadFrame(map: map, display: display, frame: frame, window: full, safe: inset)
                 } else {
@@ -38,6 +42,9 @@ struct RootView: View {
             .background(palette.background)
             .ignoresSafeArea()
         }
+        // The keyboard is not a safe area here: counted in the insets it moved the map's padding, the crosshair and the iPad's
+        // panes each time it came up. It covers the map as the sheet at full height does.
+        .ignoresSafeArea(.keyboard)
     }
 }
 
@@ -122,7 +129,7 @@ struct AccountMenu: View {
             Section("Not signed in") {
                 Toggle("Night mode", systemImage: "moon", isOn: Binding(get: { display.night }, set: { display.night = $0 }))
             }
-            Section("EZ/PZ \(AppInfo.version) (\(AppInfo.build))") {}
+            Section { Text("EZ/PZ \(AppInfo.version) (\(AppInfo.build))") }
         } label: {
             Image(systemName: "person.crop.circle")
                 .font(.system(size: 20, weight: .semibold))
@@ -145,7 +152,8 @@ struct WorkspaceCapsule: View {
             Section("Workspace") {
                 Label("Personal", systemImage: "checkmark")
             }
-            Section("Mission Packs arrive with I5.") {}
+            // A menu drops a section with nothing in it, so the note is a row of its own.
+            Section { Text("Mission Packs arrive with I5.") }
         } label: {
             HStack(spacing: 6) {
                 Image(systemName: "person.fill").font(.system(size: 13, weight: .semibold))
