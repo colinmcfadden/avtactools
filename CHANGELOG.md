@@ -1,3 +1,9 @@
+## [1.11.1](https://github.com/colinmcfadden/avtactools/compare/v1.11.0...v1.11.1) (2026-11-23)
+
+### Bug Fixes
+
+* **backend:** weather fetches again from aviationweather.gov ([73da342](https://github.com/colinmcfadden/avtactools/commit/73da3425b3946b97a53083c9947390935a2bb815))
+
 ## [1.11.0](https://github.com/colinmcfadden/avtactools/compare/v1.10.0...v1.11.0) (2026-11-17)
 
 ### Features
