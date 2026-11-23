@@ -42,11 +42,15 @@ class PackCallsTest {
         val path: String,
         val query: Map<String, String> = emptyMap(),
         val body: String? = null,
+        /** A `multipart/form-data` body's text fields, and its file part's name and text: sent in place of [body]. */
+        val form: Map<String, String>? = null,
         val check: (Any?) -> Unit = {},
         val call: suspend ApiClient.() -> Any?,
     )
 
     private val p = "/api/packs/$pack"
+    private val docs = "a4f7e2c9-1b3d-4e85-9c60-8f2a5d7b0e13"
+    private val d = "/api/packs/$docs"
 
     private val cases = listOf(
         // Packs
@@ -113,6 +117,31 @@ class PackCallsTest {
             "savePackItemToLibrary, named", "item: save to the library", "POST", "$p/items/lz-1/library", body = """{"name": "LZ HAWK (OP EAGLE)"}""",
             check = { assertEquals("lz", (it as LibraryCopy).kind) },
         ) { savePackItemToLibrary(pack, "lz-1", name = "LZ HAWK (OP EAGLE)") },
+
+        // Documents: the server makes them from the file sent
+        Case(
+            "uploadPackDocument", "pack document: upload", "POST", "$d/documents",
+            form = mapOf("item" to "doc-1", "file" to "OPORD 24-03.pdf: %PDF-1.4"),
+            check = { val saved = it as Saved<*>; assertTrue(saved.created); assertEquals("document", (saved.value as PackItemReply).item.kind) },
+        ) { uploadPackDocument(docs, "doc-1", DocumentFile("OPORD 24-03.pdf", "%PDF-1.4".toByteArray())) },
+        Case(
+            "uploadPackDocument, named, again with its item", "pack document: upload again with the same item", "POST", "$d/documents",
+            form = mapOf("item" to "doc-1", "name" to "ANNEX C", "summary" to "Ray added ANNEX C.", "file" to "annex.docx: PK"),
+            check = { val saved = it as Saved<*>; assertFalse(saved.created); assertNull((saved.value as PackItemReply).event) },
+        ) { uploadPackDocument(docs, "doc-1", DocumentFile("annex.docx", "PK".toByteArray()), name = "ANNEX C", summary = "Ray added ANNEX C.") },
+        Case(
+            "newPackDocumentVersion", "pack document: a new version", "POST", "$d/items/doc-1/version",
+            form = mapOf("file" to "change1.pdf: %PDF-1.4"),
+            check = { assertEquals("item.replace", (it as PackItemReply).event?.type) },
+        ) { newPackDocumentVersion(docs, "doc-1", DocumentFile("change1.pdf", "%PDF-1.4".toByteArray())) },
+        Case(
+            "packDocumentPdf", "pack document: its PDF", "GET", "$d/items/doc-1/pdf",
+            check = { assertTrue(String(it as ByteArray, Charsets.ISO_8859_1).startsWith("%PDF-")) },
+        ) { packDocumentPdf(docs, "doc-1") },
+        Case(
+            "packDocumentText", "pack document: its text", "GET", "$d/items/doc-1/text",
+            check = { val text = it as DocumentText; assertEquals("OPORD 24-03 (OPERATION DARK KNIGHT)", text.pages.first()); assertFalse(text.truncated) },
+        ) { packDocumentText(docs, "doc-1") },
 
         // Members
         Case(
@@ -198,7 +227,9 @@ class PackCallsTest {
                     assertEquals(case.path, url.encodedPath)
                     assertEquals(case.query, url.queryParameterNames.associateWith { url.queryParameter(it) })
                     val sent = request.body.readUtf8()
-                    if (case.body == null) {
+                    if (case.form != null) {
+                        assertEquals(case.form, formParts(sent, request.getHeader("Content-Type").orEmpty()))
+                    } else if (case.body == null) {
                         assertEquals("", sent, "no body")
                     } else {
                         assertEquals(json(case.body), json(sent))
@@ -219,6 +250,18 @@ class PackCallsTest {
             .map { "${it.method} ${shape(it.path)}" }.toSet() - "GET /api/packs/{}/access"
         val called = cases.map { "${it.method} ${shape(it.path)}" }.toSet()
         assertEquals(emptySet<String>(), routes - called)
+    }
+
+    /** A multipart body's parts by name: a field's value, or a file's name and its text (`name: text`). */
+    private fun formParts(sent: String, contentType: String): Map<String, String> {
+        assertTrue(contentType.startsWith("multipart/form-data"), contentType)
+        val boundary = contentType.substringAfter("boundary=")
+        return sent.split("--$boundary").map { it.trim('\r', '\n') }.filter { it.isNotEmpty() && it != "--" }.associate { part ->
+            val (head, value) = part.split("\r\n\r\n", limit = 2)
+            val name = Regex("name=\"([^\"]*)\"").find(head)!!.groupValues[1]
+            val file = Regex("filename=\"([^\"]*)\"").find(head)?.groupValues?.get(1)
+            name to (if (file != null) "$file: $value" else value)
+        }
     }
 
     /** A path with its ids taken out: `/api/packs/{}/items/{}`. */

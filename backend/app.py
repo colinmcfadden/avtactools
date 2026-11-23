@@ -14,7 +14,8 @@ except ImportError:
 from database_url import database_uri, is_postgres
 from db_app import engine_options as db_engine_options
 from models import (
-    AccountToken, AircraftProfile, DataJob, LoginEvent, LzSurveyRevision, SavedBrief, SavedLZ, SavedPointSet, SavedRoute, SavedThreatSet, SurveyBook, User,
+    AccountToken, AircraftProfile, DataJob, LoginEvent, LzSurveyRevision, SavedBrief, SavedDocument, SavedLZ, SavedPointSet, SavedRoute,
+    SavedThreatSet, SurveyBook, User,
     db,
 )
 from affiliation_gate import enforce_affiliation_gate
@@ -45,6 +46,8 @@ from routes.saved_routes import saved_routes_bp
 from routes.point_sets import point_sets_bp
 from routes.overlay_routes import overlay_bp
 from routes.threat_set_routes import threat_set_bp
+from routes.document_routes import documents_bp
+from documents import files as document_files
 from routes.threat_routes import threat_bp
 from routes.route_share_routes import route_share_bp
 from routes.overlay_image_routes import overlay_image_bp
@@ -136,6 +139,7 @@ app.register_blueprint(saved_routes_bp)
 app.register_blueprint(point_sets_bp)
 app.register_blueprint(overlay_bp)
 app.register_blueprint(threat_set_bp)
+app.register_blueprint(documents_bp)
 app.register_blueprint(threat_bp)
 app.register_blueprint(route_share_bp)
 app.register_blueprint(overlay_image_bp)
@@ -161,6 +165,8 @@ if not (__name__ == "__main__" and os.environ.get("WERKZEUG_RUN_MAIN") != "true"
     chart_auto.start(app)
     # Keep the place search's index to the FAA's current NASR cycle; a no-op without PLACES_DIR.
     places_refresh.start()
+    # Documents' files that nothing names any more (a crash between a write and its commit), once a day; a no-op without DOCUMENTS_DIR.
+    document_files.start_sweeping(app)
     # Say at startup what the 3D view will lack, rather than leave it to be
     # found later as a "can't build" panel, or as terrain sitting 30 m off the
     # point cloud. Both have happened after a restart lost its settings.
@@ -173,6 +179,9 @@ if not (__name__ == "__main__" and os.environ.get("WERKZEUG_RUN_MAIN") != "true"
     if is_production(os.environ) and not os.environ.get("SURVEY_ASSETS_DIR"):
         app.logger.warning("LZ surveys: SURVEY_ASSETS_DIR is not set, so photos are kept in a temporary "
                            "directory and lost on redeploy. Point it at a persistent, backed-up mount.")
+    if is_production(os.environ) and not os.environ.get("DOCUMENTS_DIR"):
+        app.logger.warning("Documents: DOCUMENTS_DIR is not set, so documents are kept in a temporary directory and lost on "
+                           "redeploy. Point it at a persistent mount (docs/DOCUMENTS.md §5.1).")
 
 @app.route('/')
 def health_check():
@@ -260,7 +269,7 @@ with app.app_context():
     # Saved records (and a user's own aircraft profiles) gained the sync columns (client_uuid, revision, deleted_at,
     # change_seq, last_idem_key). The unique index that stops a retried create
     # duplicating has to be added by hand: create_all never alters an existing table.
-    for _model in (SavedLZ, SavedRoute, SavedPointSet, SavedBrief, SavedThreatSet, AircraftProfile):
+    for _model in (SavedLZ, SavedRoute, SavedPointSet, SavedBrief, SavedThreatSet, SavedDocument, AircraftProfile):
         sync_table_columns(db, _model)
         if not ensure_unique_index(
             db, _model, ('user_id', 'client_uuid'), f'ux_{_model.__tablename__}_user_client_uuid'

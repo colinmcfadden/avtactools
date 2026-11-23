@@ -27,12 +27,14 @@ from email_service import (
     send_welcome_email,
     send_mil_verification_email,
 )
+from documents import files as document_files
 from models import (
     AccountToken,
     AircraftProfile,
     LocalCredential,
     LoginEvent,
     SavedBrief,
+    SavedDocument,
     SavedThreatSet,
     SavedLZ,
     SavedPointSet,
@@ -969,8 +971,11 @@ def delete_account():
 
     uid = user.id
     # Packs they own pass to someone else in them, or go when nobody else is.
+    # The files their documents name, released once they are gone (docs/DOCUMENTS.md §5.3).
+    document_hashes = document_files.hashes_held_by(uid)
     pack_support.release_account(uid)
     SavedRoute.query.filter_by(user_id=uid).delete()
+    SavedDocument.query.filter_by(user_id=uid).delete()
     SavedLZ.query.filter_by(user_id=uid).delete()
     SavedPointSet.query.filter_by(user_id=uid).delete()
     SavedOverlay.query.filter_by(user_id=uid).delete()
@@ -981,4 +986,5 @@ def delete_account():
     SyncCounter.query.filter_by(user_id=uid).delete()
     db.session.delete(user)  # cascades the credential and every account token, refresh tokens included
     db.session.commit()
+    document_files.release(document_hashes)
     return jsonify({"status": "success", "message": "Your account has been deleted."})

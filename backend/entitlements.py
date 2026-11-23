@@ -20,7 +20,7 @@ import os
 # lz_surveys is not one to launch this way: it is the key to the LZ survey books, given person by person, never to everyone. Taken
 # out of this set it would let every account read every book for no team, and every team's owner and admins (anyone with Mission
 # Packs can make a team) edit and sign off their team's pages (survey/access.py, docs/LZ_SURVEYS.md §7).
-DEFAULT_OFF = frozenset({"mission_packs", "mission_brief", "lz_surveys", "place_search"})
+DEFAULT_OFF = frozenset({"mission_packs", "mission_brief", "lz_surveys", "place_search", "documents"})
 
 # Canonical feature keys and human labels for the admin UI. Add new keys here;
 # they default to enabled for everyone until an admin turns one off (or, while
@@ -43,6 +43,8 @@ FEATURES = (
     # edit. Admins always have it. Never launched to everyone (DEFAULT_OFF above).
     # Searching the FAA's airports, heliports, navaids and fixes by name in the map's search (docs/PLACE_SEARCH.md).
     ("place_search", "Place search", "Find airports, heliports, navaids and fixes by name or identifier in the map's search"),
+    # PDFs and Office files kept as PDFs, in the Library and in packs (docs/DOCUMENTS.md §9.3). Off until it launches.
+    ("documents", "Documents", "Upload PDFs and Word, Excel and PowerPoint files to your Library and Mission Packs, and read them as PDFs"),
     ("lz_surveys", "LZ surveys",
      "Open the LZ survey books: read the published pages of their team's books and of books for no team; "
      "a team's owner and admins also make, edit and sign off its books"),
