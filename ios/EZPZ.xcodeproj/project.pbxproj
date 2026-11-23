@@ -8,6 +8,9 @@
 
 /* Begin PBXBuildFile section */
 		E2A0000000000000000A0101 /* CoreJS in Frameworks */ = {isa = PBXBuildFile; productRef = E2A0000000000000000A0301 /* CoreJS */; };
+		E2A0000000000000000A0102 /* CoreMap in Frameworks */ = {isa = PBXBuildFile; productRef = E2A0000000000000000A0302 /* CoreMap */; };
+		E2A0000000000000000A0103 /* DesignSystem in Frameworks */ = {isa = PBXBuildFile; productRef = E2A0000000000000000A0303 /* DesignSystem */; };
+		E2A0000000000000000A0104 /* FeatureMap in Frameworks */ = {isa = PBXBuildFile; productRef = E2A0000000000000000A0304 /* FeatureMap */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -42,6 +45,9 @@
 			buildActionMask = 2147483647;
 			files = (
 				E2A0000000000000000A0101 /* CoreJS in Frameworks */,
+				E2A0000000000000000A0102 /* CoreMap in Frameworks */,
+				E2A0000000000000000A0103 /* DesignSystem in Frameworks */,
+				E2A0000000000000000A0104 /* FeatureMap in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -94,6 +100,9 @@
 			name = EZPZ;
 			packageProductDependencies = (
 				E2A0000000000000000A0301 /* CoreJS */,
+				E2A0000000000000000A0302 /* CoreMap */,
+				E2A0000000000000000A0303 /* DesignSystem */,
+				E2A0000000000000000A0304 /* FeatureMap */,
 			);
 			productName = EZPZ;
 			productReference = E2A0000000000000000A0011 /* EZPZ.app */;
@@ -125,6 +134,7 @@
 			minimizedProjectReferenceProxies = 1;
 			packageReferences = (
 				E2A0000000000000000A0311 /* XCLocalSwiftPackageReference "Packages/EZPZCore" */,
+				E2A0000000000000000A0312 /* XCLocalSwiftPackageReference "Packages/EZPZFeatures" */,
 			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = E2A0000000000000000A0022 /* Products */;
@@ -214,6 +224,7 @@
 				INFOPLIST_FILE = App/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = "EZ/PZ";
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.navigation";
+				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "EZ/PZ shows your position on the map while you plan. It is never stored or sent.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
@@ -245,6 +256,7 @@
 				INFOPLIST_FILE = App/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = "EZ/PZ";
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.navigation";
+				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "EZ/PZ shows your position on the map while you plan. It is never stored or sent.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
@@ -293,12 +305,30 @@
 			isa = XCLocalSwiftPackageReference;
 			relativePath = Packages/EZPZCore;
 		};
+		E2A0000000000000000A0312 /* XCLocalSwiftPackageReference "Packages/EZPZFeatures" */ = {
+			isa = XCLocalSwiftPackageReference;
+			relativePath = Packages/EZPZFeatures;
+		};
 /* End XCLocalSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
 		E2A0000000000000000A0301 /* CoreJS */ = {
 			isa = XCSwiftPackageProductDependency;
 			productName = CoreJS;
+		};
+		E2A0000000000000000A0302 /* CoreMap */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = CoreMap;
+		};
+		E2A0000000000000000A0303 /* DesignSystem */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = E2A0000000000000000A0312 /* XCLocalSwiftPackageReference "Packages/EZPZFeatures" */;
+			productName = DesignSystem;
+		};
+		E2A0000000000000000A0304 /* FeatureMap */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = E2A0000000000000000A0312 /* XCLocalSwiftPackageReference "Packages/EZPZFeatures" */;
+			productName = FeatureMap;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};

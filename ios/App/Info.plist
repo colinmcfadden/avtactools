@@ -4,5 +4,7 @@
 <dict>
 	<key>EZPZApiMajors</key>
 	<string>$(EZPZ_API_MAJORS)</string>
+	<key>EZPZApiURL</key>
+	<string>$(EZPZ_API_URL)</string>
 </dict>
 </plist>
