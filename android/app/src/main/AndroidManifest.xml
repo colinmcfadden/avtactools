@@ -77,6 +77,20 @@
                 <data android:mimeType="application/x-sqlite3" />
                 <data android:mimeType="application/vnd.sqlite3" />
             </intent-filter>
+            <!-- A document shared to the app (docs/DOCUMENTS.md §9.2): a PDF, or a Word, Excel or PowerPoint file the server turns into one. The share sheet
+                 only, never VIEW, which would offer EZ/PZ for every PDF on the phone. It goes to the same review as any file. -->
+            <intent-filter>
+                <action android:name="android.intent.action.SEND" />
+                <action android:name="android.intent.action.SEND_MULTIPLE" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="application/pdf" />
+                <data android:mimeType="application/msword" />
+                <data android:mimeType="application/vnd.ms-excel" />
+                <data android:mimeType="application/vnd.ms-powerpoint" />
+                <data android:mimeType="application/vnd.openxmlformats-officedocument.wordprocessingml.document" />
+                <data android:mimeType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" />
+                <data android:mimeType="application/vnd.openxmlformats-officedocument.presentationml.presentation" />
+            </intent-filter>
         </activity>
 
         <!-- Hands an exported mission to the share sheet. Not exported: another app is given one file by a temporary grant on one URI, never the folder. -->

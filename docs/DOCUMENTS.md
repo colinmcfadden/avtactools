@@ -342,20 +342,30 @@ pages counted before their text, so a hostile PDF costs at most the limits of §
 ### 9.2 Android
 
 - **core-network**: the routes' DTOs, held to the recordings by `DtoFixtureTest`; the upload a multipart call with the heavy read
-  timeout (190 s, since D1); holding background calls back while it converts waits for D3, because `PriorityGate` matches by path
-  alone and would hold back listing the documents too; the files read bounded (`Call.maxBytes`: 50 MB for a PDF, 9 MB for its text,
+  timeout (190 s, since D1); **built in D3:** an upload is heavy by its method as well as its path (`PriorityPaths.isHeavy(url, method)`,
+  the web's `UPLOADS`, both held to `contracts/fixtures/network/priority.json`), so background calls wait while it converts and listing
+  the documents does not; the files read bounded (`Call.maxBytes`: 50 MB for a PDF, 9 MB for its text,
   2,000,000 characters of up to four bytes each).
 - **core-sync**: `RecordKind.DOCUMENT`, pulled like any record, its document the JSON of §2; **never in the outbox** (§6): the Library's
-  rename and delete call the API directly and then ask for a sync. No database version is needed for the kind (Room keeps a kind by its
-  name); a device past the feed's `document` entries pulls them because none exist before the server has the kind.
+  upload, rename, new version and delete call the API directly, hold the server's answer as the next pull would bring it
+  (`SyncRepository.take`, an older answer changing nothing; `forget` for a delete) and then ask for a sync; `create`, `edit` and `delete`
+  refuse the kind. **Amended in D3: database version 6**, an automatic migration that only forgets the sync cursor once (`ForgetCursor`,
+  as version 5 did for threat sets): the plan said none was needed because no `document` entry exists before the server has the kind,
+  but staging had the kind before Android did, and a build from before D3 passes over the feed's `document` entries and moves its
+  cursor past them.
 - **core-data**: `DocumentFiles`, the PDFs and texts kept on the device by their hash in `noBackupFilesDir/documents/`, each downloaded
   whole, **its SHA-256 checked against its name** before it is renamed into place, at most 500 MB, the longest unopened let go first;
   *Keep on this device* pins one past that (per account). Everything is cleared at sign-out (a document is the account's), and a document
   deleted is removed from the device when its tombstone arrives. A pack's documents are kept the same way, by hash, so a Library
   document and its pack copy are one file.
 - **feature-documents** (new): the viewer page over `PdfRenderer` reading the kept file in place (one page drawn at a time behind a lock, as
-  `RendererBriefPdfs` does, its `Error`s caught, §14), the find box over the text, *Share PDF* (the share sheet, a read grant on a copy in
-  `cache/exports/`, as the brief's) and *Save to device*.
+  `RendererBriefPdfs` does, its `Error`s and an out-of-memory caught, §14; a page at most 4,096 pixels a side and 6 million in all), pinch
+  and double-tap zoom, a night veil over the paper, the find box over the text, *Share PDF* (the share sheet, a read grant on a copy in
+  `cache/exports/`, as the brief's), *Save to device* and *Keep on this device*. It follows its document as the web's does: a new version
+  opens again, a rename retitles it, one deleted or removed (or whose pack is left) closes with why. Drawn by `MapHome` over the frame, last,
+  as the 3D view is.
+- **A pack's uploads and its copy to the Library** go through the server's routes (`PackDocuments`: upload with the item id `doc-<uuid>`
+  kept for every try, new version, save to Library), never `LibraryPackKeeper`, since a client never writes a document's content.
 - **The Library** gains its Documents tab; the **Pack panel** its *Documents* group; **Import** its *Document* entry (the system picker with
   `application/pdf` and the Office types); and a PDF or Office file **shared to the app** (SEND, SEND_MULTIPLE; not VIEW, which would offer
   EZ/PZ for every PDF on the phone) goes to the same review. `FileKinds` must tell OOXML from a mission as the web must.
@@ -400,7 +410,7 @@ updated in the same commit, a PR to `develop`.
 | **D0** | This plan, and the owner's answers (§13) | — |
 | **D1 Server** | `saved_document`; `documents/` (the store's root, `convert` through Gotenberg, `pdf` checks and text with pypdf), `/api/documents` and its files, the feed's `document`, the pack routes and the `document` kind (`pack_ops`, `apply_ops`'s refusal, copy in and out, update from original, item files), deletion of files (§5.3) and the sweep, account deletion, `/api/config`'s `documentConversion`, the entitlement; on the web only `packOps.js`'s kind and the fixtures it writes (`ops-document.json`), since the server is held to them, and `packApi`'s calls for the pack's document routes (its test wants one for every pack route in the spec); OpenAPI 3.0.0 with recorded responses, and on Android only core-network's types for them (`DtoFixtureTest` decodes every recording strictly); tests (each limit, each refusal, a hostile PDF, idempotent upload, files deleted only when nothing names them) | D0 |
 | **D2 Web** | The Library's tab, the upload review, Import and a drop, the OOXML sniff, the Pack panel's group, the viewer (pdf.js), find in the document (`documentSearch.js`, `documents/search.json`), `apiSupport.json`; USER_GUIDE. No sentences of the client's: the server writes a document's (an upload, a copy, a new version), and a rename's or removal's are the kinds' shared ones (`packSentences.js`), so `describe.json` has none to add | D1 |
-| **D3 Android** | core-network, `RecordKind.DOCUMENT`, `DocumentFiles`, `feature-documents`, the Library tab, the Pack panel's group, Import and the share target, `FileKinds`, the ports held to the fixtures, `ezpz.apiMajors`; AGENTS.md §17, `docs/HANDOFF.md` | D1 (D2 for the fixtures it writes) |
+| **D3 Android** | core-network, `RecordKind.DOCUMENT`, `DocumentFiles`, `feature-documents`, the Library tab, the Pack panel's group, Import and the share target, `FileKinds`, the ports held to the fixtures, `ezpz.apiMajors`; AGENTS.md §17, `docs/HANDOFF.md`. **Built** (`feat/documents-android`), with database version 6 and the upload's priority by method (§9.2); not yet run on a device | D1 (D2 for the fixtures it writes) |
 | **D4 iOS** | The section of §9.4 in `docs/IOS_PLAN.md` | the iOS plan on `develop` |
 | launch | Take `documents` out of `DEFAULT_OFF` (the owner) | D2, D3 tried on a device |
 

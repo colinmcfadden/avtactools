@@ -21,9 +21,9 @@ import java.util.UUID
 /** The result of saving something that may already exist. */
 public data class Saved<T>(val value: T, val created: Boolean)
 
-private fun newKey(): String = UUID.randomUUID().toString()
+internal fun newKey(): String = UUID.randomUUID().toString()
 
-private fun revisionHeader(revision: Int?): Map<String, String> =
+internal fun revisionHeader(revision: Int?): Map<String, String> =
     if (revision == null) emptyMap() else mapOf("If-Match" to "\"$revision\"")
 
 /**

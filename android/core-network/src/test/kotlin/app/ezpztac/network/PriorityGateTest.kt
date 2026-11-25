@@ -88,10 +88,16 @@ class PriorityGateTest {
             recorded.getValue("heavyPaths").jsonArray.map { it.jsonPrimitive.content }.toSet(),
             setOf("/analyze-field", "/terrain-analysis", "/threat-mask", "/export-package", "/generate-excel", "/brief/pdf", "/overlay-image"),
         )
+        // The web writes its regular expressions' sources, each `/` escaped; the uploads here are the same three.
+        assertEquals(
+            listOf("/documents$", "/documents/[^/]+/version$", "/packs/[^/]+/items/[^/]+/version$"),
+            recorded.getValue("uploads").jsonArray.map { it.jsonPrimitive.content.replace("\\/", "/") },
+        )
         return recorded.getValue("cases").jsonArray.map { case ->
             val url = case.jsonObject.getValue("url").jsonPrimitive.content
+            val method = case.jsonObject["method"]?.jsonPrimitive?.content ?: "GET"
             val heavy = case.jsonObject.getValue("heavy").jsonPrimitive.content.toBoolean()
-            DynamicTest.dynamicTest("\"$url\" is ${if (heavy) "heavy" else "not heavy"}") { assertEquals(heavy, PriorityPaths.isHeavy(url)) }
+            DynamicTest.dynamicTest("$method \"$url\" is ${if (heavy) "heavy" else "not heavy"}") { assertEquals(heavy, PriorityPaths.isHeavy(url, method)) }
         }
     }
 

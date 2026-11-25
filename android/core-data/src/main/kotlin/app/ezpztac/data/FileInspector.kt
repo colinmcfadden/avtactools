@@ -8,6 +8,7 @@ import app.ezpztac.formats.MsnxReader
 import app.ezpztac.model.Mission
 import app.ezpztac.model.RoutePoint
 import app.ezpztac.model.Threat
+import app.ezpztac.network.DOCUMENT_UPLOAD_MAX_BYTES
 import javax.inject.Inject
 
 /** What a file somebody sent is, and what opening it would do: the answer a screen puts to the person before anything is imported. */
@@ -25,6 +26,13 @@ public sealed interface FilePreview {
         public val namedPoints: Int,
         public val aircraft: String?,
     ) : FilePreview
+
+    /**
+     * A document (docs/DOCUMENTS.md §9.1): uploaded as it is, and kept as a PDF. [type] is what its content says it is (`pdf`, `docx`, `xlsx`, `pptx`, `doc`,
+     * `xls`, `ppt`, or `office` for a legacy file its name does not settle); [name] what it would be called, its file's name less its extension. Nothing of it is
+     * read here but enough to say what it is: the server checks it.
+     */
+    public data class Document(val type: String, val name: String) : FilePreview
 
     /** Not something that can be opened; [message] says why, in words for the person. */
     public data class Problem(val message: String) : FilePreview
@@ -52,7 +60,15 @@ public class FileInspector @Inject constructor(private val threats: ThreatTransf
         } catch (e: FormatException) {
             FilePreview.Problem(e.message ?: "This doesn't look like an AMPS mission (.msnx) file.")
         }
-        FileKind.UNKNOWN -> FilePreview.Problem("EZ/PZ opens AMPS local points (.LPS), threat (.ths) and mission (.msnx) files. This is none of them.")
+        FileKind.DOCUMENT ->
+            if (bytes.size > DOCUMENT_UPLOAD_MAX_BYTES) {
+                FilePreview.Problem(DocumentRepository.TOO_LARGE)
+            } else {
+                FilePreview.Document(FileKinds.documentType(name, bytes) ?: "pdf", documentName(name))
+            }
+        FileKind.UNKNOWN -> FilePreview.Problem(
+            "EZ/PZ opens AMPS local points (.LPS), threat (.ths) and mission (.msnx) files, and PDF, Word, Excel and PowerPoint documents. This is none of them.",
+        )
     }
 
     /** What bringing [mission] in would do: only a route with a point has anything to draw, so only those count. */
@@ -66,7 +82,15 @@ public class FileInspector @Inject constructor(private val threats: ThreatTransf
         )
     }
 
-    private companion object {
+    internal companion object {
         const val DEFAULT_SET_NAME = "LOCAL POINTS"
+
+        /** A document's name from its file's (the web's and the server's rule): the name less its extension, at most 100 characters, else `DOCUMENT`. */
+        fun documentName(fileName: String): String {
+            val base = fileName.substringAfterLast('/').substringAfterLast('\\')
+            val at = base.lastIndexOf('.')
+            val name = (if (at > 0) base.substring(0, at) else base).trim()
+            return (if (name.codePointCount(0, name.length) > 100) name.substring(0, name.offsetByCodePoints(0, 100)) else name).ifEmpty { "DOCUMENT" }
+        }
     }
 }

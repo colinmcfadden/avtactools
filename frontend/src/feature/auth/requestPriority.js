@@ -22,7 +22,7 @@ export const PRIORITY_PATHS = [
 
 // A document's upload (docs/DOCUMENTS.md §9.1): the server checks the PDF and reads its text, or has LibreOffice turn an Office file
 // into one. By its method too, since the same paths list documents (GET) and read them.
-const UPLOADS = [
+export const UPLOADS = [
   /\/documents$/,                       // into the Library, or a pack's (/packs/<uuid>/documents)
   /\/documents\/[^/]+\/version$/,        // a new version in the Library
   /\/packs\/[^/]+\/items\/[^/]+\/version$/, // a new version of a pack's document

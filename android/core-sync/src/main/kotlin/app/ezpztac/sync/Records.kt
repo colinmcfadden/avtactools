@@ -9,9 +9,12 @@ import kotlinx.serialization.json.JsonObject
  * ([LocalRecord.file]), and the record's own `data` is only the display summary the server keeps beside it. A [BRIEF] record is a mission brief kept in the
  * Library (docs/MISSION_BRIEF.md §3): its document is the brief document, the person's answers (`/api/briefs`, which needs the `mission_brief` entitlement).
  * A [THREAT_SET] record is a named set of threats, the web's `{version: 1, threats: [...]}` (`/api/threatsets`, whose writes need the `threats` and `cloud_save`
- * entitlements, so nothing makes one for an account without them).
+ * entitlements, so nothing makes one for an account without them). A [DOCUMENT] record is a document in the Library (docs/DOCUMENTS.md §2): its document is
+ * the server's JSON naming its PDF and page text by their hashes, `{version, pdf, text, source, added_at}`, and the files themselves are fetched apart
+ * (`DocumentFiles`). **It is only ever pulled**: the server makes a document from a file it is sent, so a document is uploaded, renamed, replaced and deleted
+ * online (`/api/documents`) and never queued in the outbox ([SyncRepository] refuses to), and what the server answered is held with [SyncRepository.take].
  */
-public enum class RecordKind { LZ, AIRCRAFT, ROUTE, POINT_SET, MISSION, BRIEF, THREAT_SET }
+public enum class RecordKind { LZ, AIRCRAFT, ROUTE, POINT_SET, MISSION, BRIEF, THREAT_SET, DOCUMENT }
 
 /**
  * A file a record carries beside its document: an AMPS mission's `.msnx`. [id] is the SHA-256 of the file's bytes, so a file is kept once and can never change under

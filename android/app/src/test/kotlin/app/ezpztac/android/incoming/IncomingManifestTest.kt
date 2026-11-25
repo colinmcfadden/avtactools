@@ -51,8 +51,25 @@ class IncomingManifestTest {
     fun `the share sheet offers the app for one file or several of those types, and for nothing else`() {
         for (action in listOf(Intent.ACTION_SEND, Intent.ACTION_SEND_MULTIPLE)) {
             for (type in listOf("application/octet-stream", "application/x-sqlite3", "application/vnd.sqlite3")) assertTrue("$action $type", offered(send(action, type)))
-            for (type in listOf("text/plain", "image/jpeg", "application/pdf")) assertFalse("$action $type", offered(send(action, type)))
+            for (type in listOf("text/plain", "image/jpeg", "application/zip")) assertFalse("$action $type", offered(send(action, type)))
         }
+    }
+
+    @Test
+    fun `a PDF or an Office file is offered the app from the share sheet, never opened with it`() {
+        for (type in DOCUMENT_TYPES) {
+            for (action in listOf(Intent.ACTION_SEND, Intent.ACTION_SEND_MULTIPLE)) assertTrue("$action $type", offered(send(action, type)))
+            assertFalse("VIEW $type", offered(view("content://p/doc/1", type)))
+        }
+    }
+
+    private companion object {
+        val DOCUMENT_TYPES = listOf(
+            "application/pdf", "application/msword", "application/vnd.ms-excel", "application/vnd.ms-powerpoint",
+            "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+        )
     }
 
     @Test

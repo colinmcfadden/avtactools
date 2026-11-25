@@ -8,6 +8,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.WindowInsets
@@ -39,6 +40,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.PrimaryScrollableTabRow
 import androidx.compose.material3.PrimaryTabRow
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.SnackbarHostState
@@ -63,6 +65,7 @@ import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
@@ -77,6 +80,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.text.input.TextFieldValue
+import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -86,6 +90,7 @@ import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import app.ezpztac.designsystem.EzpzIcons
 import app.ezpztac.designsystem.EzpzTheme
+import app.ezpztac.designsystem.PillButton
 import app.ezpztac.designsystem.StateChip
 import app.ezpztac.designsystem.StatusTone
 import app.ezpztac.designsystem.ToastHost
@@ -108,6 +113,10 @@ class LibraryActions(
     val addToPack: ((LibraryRowUi) -> Unit)? = null,
     /** Adds a copy of the item to the pack open now: the Library's *Add to pack*, in place of *Open*, while one is open that this person can change. */
     val addToOpenPack: (LibraryRowUi) -> Unit = {},
+    /** A new version of a document, from a file the person chooses; none: not offered. */
+    val newVersion: ((LibraryRowUi) -> Unit)? = null,
+    /** The Documents tab's *Upload document*: a file chosen and put in the import review. None: not offered. */
+    val upload: (() -> Unit)? = null,
 )
 
 /**
@@ -124,6 +133,8 @@ fun LibraryHost(
     snackbars: SnackbarHostState? = null,
     /** A tablet's: a large dialog over the frame ([LargeDialog]), not a page that covers it. */
     large: Boolean = false,
+    /** The types a document's new version may be chosen as: a PDF, and the Office files where the server converts them. */
+    documentTypes: Array<String> = arrayOf(PDF_TYPE),
     /** The pack a copy of an item goes into, while one is open that this person can change: each item is added to it rather than opened. */
     addingTo: String? = null,
     /** The item being added to it now, if one is. */
@@ -148,10 +159,21 @@ fun LibraryHost(
     val focus = LocalFocusManager.current
     LaunchedEffect(Unit) { focus.clearFocus() }                                             // a field left focused under it keeps no keyboard up
     var renaming by rememberSaveable { mutableStateOf<String?>(null) }
+    // A document's new version: the file chosen in the system's picker, for the row it was asked for.
+    val pickVersion = rememberVersionPick(
+        documentTypes,
+        onRead = { uuid, name, bytes -> state.rows.firstOrNull { it.uuid == uuid && it.tab == LibraryTab.DOCUMENTS }?.let { viewModel.newVersion(it, name, bytes) } },
+        onFailed = viewModel::refuseVersion,
+    )
+    val withDocuments = actions.copyWith(
+        rename = { row, name, replacing -> if (row.tab == LibraryTab.DOCUMENTS) viewModel.renameDocument(row, name) else actions.rename(row, name, replacing) },
+        delete = { row -> if (row.tab == LibraryTab.DOCUMENTS) viewModel.deleteDocument(row) else actions.delete(row) },
+        newVersion = { row -> pickVersion(row.uuid) },
+    )
     val page: @Composable (Modifier) -> Unit = { pageModifier ->
         LibraryPage(
             state.copy(tabs = tabs),
-            pageActions(actions, viewModel::showTab, viewModel::search, viewModel::sortBy, viewModel::duplicate),
+            pageActions(withDocuments, viewModel::showTab, viewModel::search, viewModel::sortBy, viewModel::duplicate),
             pageModifier, snackbars, renaming = renaming, onRenaming = { renaming = it }, addingTo = addingTo, adding = adding,
         )
     }
@@ -202,6 +224,7 @@ private val LibraryTab.icon: Int
         LibraryTab.ROUTES -> EzpzIcons.route
         LibraryTab.POINTS -> EzpzIcons.scatterPlot
         LibraryTab.THREATS -> EzpzIcons.crisisAlert
+        LibraryTab.DOCUMENTS -> EzpzIcons.pictureAsPdf
     }
 
 /** What an item already shown says (`Open in session`), and what a set of points says, since opening one is showing it on the map. */
@@ -219,8 +242,22 @@ internal fun pageActions(
     duplicate: (LibraryRowUi) -> Unit,
 ) = LibraryActions(
     close = given.close, showTab = showTab, search = search, sortBy = sortBy, open = given.open, rename = given.rename, duplicate = duplicate,
-    delete = given.delete, resolve = given.resolve, addToPack = given.addToPack, addToOpenPack = given.addToOpenPack,
+    delete = given.delete, resolve = given.resolve, addToPack = given.addToPack, addToOpenPack = given.addToOpenPack, newVersion = given.newVersion,
+    upload = given.upload,
 )
+
+/** [this] with documents' own rename, delete and new version: the Library's, where documents are kept, never a panel's. */
+internal fun LibraryActions.copyWith(
+    rename: (row: LibraryRowUi, name: String, replacing: String?) -> Unit,
+    delete: (LibraryRowUi) -> Unit,
+    newVersion: (LibraryRowUi) -> Unit,
+) = LibraryActions(
+    close = close, showTab = showTab, search = search, sortBy = sortBy, open = open, rename = rename, duplicate = duplicate, delete = delete, resolve = resolve,
+    addToPack = addToPack, addToOpenPack = addToOpenPack, newVersion = newVersion, upload = upload,
+)
+
+/** The type a document's new version is chosen as, at least. */
+const val PDF_TYPE = "application/pdf"
 
 /** The page itself: its bar, the tabs with their counts, the search and the sort, the items, and how many there are. */
 @Composable
@@ -253,6 +290,12 @@ fun LibraryPage(
                 if (state.tabs.size > 1) Tabs(state, actions)
                 SearchField(state, actions)
                 SortChooser(state.sort, actions.sortBy)
+                if (state.tab == LibraryTab.DOCUMENTS) actions.upload?.let { upload ->
+                    PillButton(
+                        "Upload document", onClick = upload, icon = EzpzIcons.uploadFile,
+                        modifier = Modifier.padding(start = Tokens.Spacing.lg.dp, end = Tokens.Spacing.lg.dp, bottom = Tokens.Spacing.sm.dp),
+                    )
+                }
                 LazyColumn(Modifier.weight(1f).fillMaxWidth().imePadding()) {
                     items(state.rows, key = { it.uuid }) { row ->
                         LibraryRow(row, actions, busy = state.busy, addingTo, adding, onRename = { onRenaming(row.uuid) }, onDelete = { deleting = row.uuid })
@@ -296,39 +339,72 @@ fun LibraryPage(
     }
 }
 
-/** The three tabs, each with how many it holds. */
+/**
+ * The tabs, each with how many it holds. Side by side, each an equal share of the row, while every tab's longest word and its count fit its share (a label may
+ * take two lines); else, as with five on a narrow phone at large text, a row that scrolls, each tab as wide as its words, so no word is ever cut.
+ */
 @Composable
 private fun Tabs(state: LibraryUiState, actions: LibraryActions) {
     val accent = EzpzTheme.status.accent
-    PrimaryTabRow(
-        selectedTabIndex = state.tabs.indexOf(state.tab).coerceAtLeast(0), containerColor = MaterialTheme.colorScheme.background, contentColor = accent,
-        divider = { HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant) },
-    ) {
-        state.tabs.forEach { tab ->
-            val chosen = tab == state.tab
-            val count = state.counts[tab] ?: 0
-            Tab(
-                selected = chosen, onClick = { actions.showTab(tab) }, selectedContentColor = accent, unselectedContentColor = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.heightIn(min = 48.dp).semantics { contentDescription = "${tab.label}, $count" },
-            ) {
-                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    // The count is measured first, so a long label at large text takes a second line rather than pushing the count off.
-                    Text(
-                        tab.label, style = MaterialTheme.typography.labelLarge.copy(fontWeight = if (chosen) FontWeight.SemiBold else FontWeight.Medium), maxLines = 2,
-                        textAlign = TextAlign.Center, modifier = Modifier.weight(1f, fill = false),
-                    )
-                    Surface(
-                        shape = RoundedCornerShape(10.dp),
-                        color = if (chosen) MaterialTheme.colorScheme.secondaryContainer else MaterialTheme.colorScheme.surfaceContainerHighest,
-                        contentColor = if (chosen) MaterialTheme.colorScheme.onSecondaryContainer else MaterialTheme.colorScheme.onSurfaceVariant,
+    val labelStyle = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.SemiBold)
+    val countStyle = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.SemiBold)
+    val measurer = rememberTextMeasurer()
+    val density = LocalDensity.current
+    BoxWithConstraints {
+        val share = maxWidth / state.tabs.size.coerceAtLeast(1)
+        val fits = remember(state.tabs, state.counts, share, labelStyle, countStyle, density) {
+            state.tabs.all { tab ->
+                val word = tab.label.split(' ').maxOf { measurer.measure(it, labelStyle).size.width }
+                val count = measurer.measure("${state.counts[tab] ?: 0}", countStyle).size.width
+                with(density) { word.toDp() + count.toDp() } + TAB_CHROME <= share
+            }
+        }
+        val tabs: @Composable () -> Unit = {
+            state.tabs.forEach { tab ->
+                val chosen = tab == state.tab
+                val count = state.counts[tab] ?: 0
+                Tab(
+                    selected = chosen, onClick = { actions.showTab(tab) }, selectedContentColor = accent, unselectedContentColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.heightIn(min = 48.dp).semantics { contentDescription = "${tab.label}, $count" },
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp),
+                        // Material pads only its own text tabs: in a row that scrolls, where tabs sit end to end, these are padded as those are (its indicator assumes it).
+                        modifier = if (fits) Modifier else Modifier.padding(horizontal = 16.dp),
                     ) {
-                        Text("$count", style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.SemiBold), modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp))
+                        // Side by side the count is measured first, so a long label at large text takes a second line rather than pushing the count off; in a
+                        // row that scrolls a tab is as wide as its words, on one line.
+                        Text(
+                            tab.label, style = MaterialTheme.typography.labelLarge.copy(fontWeight = if (chosen) FontWeight.SemiBold else FontWeight.Medium),
+                            maxLines = if (fits) 2 else 1, textAlign = if (fits) TextAlign.Center else TextAlign.Start,
+                            modifier = if (fits) Modifier.weight(1f, fill = false) else Modifier,
+                        )
+                        Surface(
+                            shape = RoundedCornerShape(10.dp),
+                            color = if (chosen) MaterialTheme.colorScheme.secondaryContainer else MaterialTheme.colorScheme.surfaceContainerHighest,
+                            contentColor = if (chosen) MaterialTheme.colorScheme.onSecondaryContainer else MaterialTheme.colorScheme.onSurfaceVariant,
+                        ) {
+                            Text("$count", style = countStyle, modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp))
+                        }
                     }
                 }
             }
         }
+        val selected = state.tabs.indexOf(state.tab).coerceAtLeast(0)
+        val divider = @Composable { HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant) }
+        if (fits) {
+            PrimaryTabRow(selectedTabIndex = selected, containerColor = MaterialTheme.colorScheme.background, contentColor = accent, divider = divider, tabs = tabs)
+        } else {
+            PrimaryScrollableTabRow(
+                selectedTabIndex = selected, containerColor = MaterialTheme.colorScheme.background, contentColor = accent, edgePadding = 0.dp, divider = divider,
+                tabs = tabs,
+            )
+        }
     }
 }
+
+/** What a tab side by side holds beside its words: the 6 dp between the words and the count, and the count's own 6 dp each side. */
+private val TAB_CHROME = 6.dp + 6.dp * 2
 
 /** The search, a pill as the design draws it: by name, and an LZ/PZ by its grid too. */
 @Composable
@@ -454,6 +530,7 @@ private fun noun(row: LibraryRowUi) = when (row.tab) {
     LibraryTab.ROUTES -> if (row.isMission) "mission" else "set of routes"
     LibraryTab.POINTS -> "set of points"
     LibraryTab.THREATS -> "set of threats"
+    LibraryTab.DOCUMENTS -> "document"
 }
 
 @Composable
@@ -481,11 +558,24 @@ private fun RowMenu(row: LibraryRowUi, busy: Boolean, onRename: () -> Unit, onDe
             Icon(painterResource(EzpzIcons.moreVert), contentDescription = "More actions for ${row.name}", tint = MaterialTheme.colorScheme.onSurfaceVariant)
         }
         DropdownMenu(expanded = open, onDismissRequest = { open = false }, containerColor = MaterialTheme.colorScheme.surfaceContainerHigh) {
-            DropdownMenuItem(text = { Text("Rename") }, onClick = { open = false; onRename() }, leadingIcon = { Icon(painterResource(EzpzIcons.edit), contentDescription = null) })
             DropdownMenuItem(
-                text = { Text("Duplicate") }, onClick = { open = false; actions.duplicate(row) }, enabled = !busy,
-                leadingIcon = { Icon(painterResource(EzpzIcons.contentCopy), contentDescription = null) },
+                text = { Text("Rename") }, onClick = { open = false; onRename() }, enabled = !busy || row.tab != LibraryTab.DOCUMENTS,
+                leadingIcon = { Icon(painterResource(EzpzIcons.edit), contentDescription = null) },
             )
+            if (row.tab == LibraryTab.DOCUMENTS) {
+                // A document is changed online, one change at a time; a copy of it would name the same files, so there is no Duplicate.
+                actions.newVersion?.let { version ->
+                    DropdownMenuItem(
+                        text = { Text("New version…") }, onClick = { open = false; version(row) }, enabled = !busy,
+                        leadingIcon = { Icon(painterResource(EzpzIcons.uploadFile), contentDescription = null) },
+                    )
+                }
+            } else {
+                DropdownMenuItem(
+                    text = { Text("Duplicate") }, onClick = { open = false; actions.duplicate(row) }, enabled = !busy,
+                    leadingIcon = { Icon(painterResource(EzpzIcons.contentCopy), contentDescription = null) },
+                )
+            }
             val addToPack = actions.addToPack
             if (offerPack && addToPack != null && !row.isMission && row.conflictOf == null) {
                 DropdownMenuItem(
@@ -495,7 +585,7 @@ private fun RowMenu(row: LibraryRowUi, busy: Boolean, onRename: () -> Unit, onDe
             }
             HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
             DropdownMenuItem(
-                text = { Text("Delete", color = MaterialTheme.colorScheme.error) }, onClick = { open = false; onDelete() },
+                text = { Text("Delete", color = MaterialTheme.colorScheme.error) }, onClick = { open = false; onDelete() }, enabled = !busy || row.tab != LibraryTab.DOCUMENTS,
                 leadingIcon = { Icon(painterResource(EzpzIcons.delete), contentDescription = null, tint = MaterialTheme.colorScheme.error) },
             )
         }
@@ -510,12 +600,14 @@ private fun Empty(state: LibraryUiState) {
             LibraryTab.ROUTES -> "No saved route set matches that name."
             LibraryTab.POINTS -> "No saved point set matches that name."
             LibraryTab.THREATS -> "No saved threat set matches that name."
+            LibraryTab.DOCUMENTS -> "No document matches that name."
         }
         else -> when (state.tab) {
             LibraryTab.LZ -> "No LZ/PZs saved yet. Make one in the LZ/PZ panel."
             LibraryTab.ROUTES -> "No route sets saved yet. Sketch a route, or import an AMPS mission file."
             LibraryTab.POINTS -> "No sets of points saved yet. Import an AMPS .LPS file."
             LibraryTab.THREATS -> "No threats saved yet. Add one in the Threats panel, or import an AMPS .ths file."
+            LibraryTab.DOCUMENTS -> "No documents yet. Upload an OPORD or any other paper: a PDF, or a Word, Excel or PowerPoint file."
         }
     }
     Text(
@@ -567,7 +659,8 @@ internal fun LibraryRenameContent(row: LibraryRowUi, others: List<Pair<String, S
     var replace by rememberSaveable(row.uuid) { mutableStateOf(false) }
     var tried by rememberSaveable(row.uuid) { mutableStateOf(false) }
     val typed = cleanName(row.tab, field.text)
-    val clash = others.firstOrNull { it.second.trim().equals(typed, ignoreCase = true) }
+    // Documents may share a name, as on the web: one is told apart by what it is, never replaced by a rename.
+    val clash = if (row.tab == LibraryTab.DOCUMENTS) null else others.firstOrNull { it.second.trim().equals(typed, ignoreCase = true) }
     val keepBoth = if (clash == null) typed else LzNames.free(typed, others.map { it.second })
     val refusal = when {
         typed.isEmpty() -> "Give it a name."
@@ -606,7 +699,12 @@ internal fun LibraryRenameContent(row: LibraryRowUi, others: List<Pair<String, S
                     )
                 },
                 keyboardOptions = KeyboardOptions(
-                    capitalization = if (row.tab == LibraryTab.ROUTES || row.tab == LibraryTab.THREATS) KeyboardCapitalization.Characters else KeyboardCapitalization.None, imeAction = ImeAction.Done,
+                    capitalization = when (row.tab) {
+                        LibraryTab.ROUTES, LibraryTab.THREATS -> KeyboardCapitalization.Characters
+                        LibraryTab.DOCUMENTS -> KeyboardCapitalization.Sentences
+                        else -> KeyboardCapitalization.None
+                    },
+                    imeAction = ImeAction.Done,
                 ),
                 keyboardActions = KeyboardActions(onDone = { submit() }), shape = RoundedCornerShape(Tokens.Radius.sm.dp),
                 modifier = Modifier.fillMaxWidth().focusRequester(focus),

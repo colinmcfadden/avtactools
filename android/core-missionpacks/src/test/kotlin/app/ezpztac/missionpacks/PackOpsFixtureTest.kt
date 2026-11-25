@@ -19,14 +19,16 @@ import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.TestFactory
 
 /**
- * Every case of `contracts/fixtures/packs/ops.json`, `packs/ops-brief.json` (the brief item kind, docs/MISSION_BRIEF.md §3) and `packs/ops-threatset.json`, which the
+ * Every case of `contracts/fixtures/packs/ops.json`, `packs/ops-brief.json` (the brief item kind, docs/MISSION_BRIEF.md §3), `packs/ops-threatset.json` and
+ * `packs/ops-document.json` (the document item kind, docs/DOCUMENTS.md §7), which the
  * web's `packOps.js` wrote, held strictly: the status, the reason, and the items afterwards with null and absent kept apart, numbers as
  * written, and every object's keys in the order JavaScript would enumerate them (a key edited keeps its place, a new one goes last).
  */
 class PackOpsFixtureTest {
     private val briefCases = Fixtures.load("packs/ops-brief.json").getValue("cases").jsonArray.map { it.jsonObject }
     private val threatSetCases = Fixtures.load("packs/ops-threatset.json").getValue("cases").jsonArray.map { it.jsonObject }
-    private val cases = Fixtures.load("packs/ops.json").getValue("cases").jsonArray.map { it.jsonObject } + briefCases + threatSetCases
+    private val documentCases = Fixtures.load("packs/ops-document.json").getValue("cases").jsonArray.map { it.jsonObject }
+    private val cases = Fixtures.load("packs/ops.json").getValue("cases").jsonArray.map { it.jsonObject } + briefCases + threatSetCases + documentCases
 
     private fun items(json: JsonElement): Map<String, PackItemState> = json.jsonObject.mapValues { (_, item) ->
         val fields = item.jsonObject
@@ -144,6 +146,15 @@ class PackOpsFixtureTest {
     fun `a set of threats is a kind of its own, and every case of it is held`() {
         assertTrue("threatset" in PackOps.ITEM_KINDS)
         assertTrue(threatSetCases.count { text(it, "status") == "applied" } >= 3)
+    }
+
+    @Test
+    fun `a document is a kind of its own, made and given a new version in the server's events, and every case of it is held`() {
+        assertTrue("document" in PackOps.ITEM_KINDS)
+        assertEquals(10, documentCases.size)
+        assertEquals("bad_data", text(documentCases.single { name(it) == "a document whose content is a list is malformed" }, "reason"))
+        assertEquals("not_an_object", text(documentCases.single { name(it) == "a document cannot be replaced by a list" }, "reason"))
+        assertTrue(documentCases.any { name(it) == "a document is given a new version" && text(it, "status") == "applied" })
     }
 
     @Test

@@ -71,6 +71,12 @@ class PackSharedFixtureTest {
         assertValue(case.getValue("saved"), PackActions.libraryData(kind, case["data"]), name(case))
     }
 
+    @Test
+    fun `a document has no library form a client makes`() {
+        val data = JsonObject(mapOf("version" to JsonPrimitive(1), "pdf" to JsonObject(mapOf("sha256" to JsonPrimitive("a".repeat(64))))))
+        assertNull(PackActions.libraryData("document", data))
+    }
+
     // -- The name a kept version is saved under -------------------------------------------------------------------------------------
 
     @TestFactory

@@ -169,7 +169,7 @@ class LibraryToPack(
 
     companion object {
         /** What can go in a pack, as the server names it: an imported mission cannot yet. */
-        val KINDS = mapOf(RecordKind.LZ to "lz", RecordKind.ROUTE to "route", RecordKind.POINT_SET to "pointset", RecordKind.THREAT_SET to "threatset")
+        val KINDS = mapOf(RecordKind.LZ to "lz", RecordKind.ROUTE to "route", RecordKind.POINT_SET to "pointset", RecordKind.THREAT_SET to "threatset", RecordKind.DOCUMENT to "document")
 
         /** The server has this version: it has the record, and nothing changed here since. A conflict copy counts once it is up. */
         fun uploaded(record: LocalRecord): Boolean = record.serverId != null && !record.dirty && !record.deleted
