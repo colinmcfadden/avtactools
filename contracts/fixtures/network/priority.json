@@ -1,7 +1,8 @@
 {
-  "description": "Whether each URL is heavy server work (isPriorityRequest in feature/auth/requestPriority.js): the end of the path, with any query string left off, is one of the listed paths. A native client holds background requests back while a heavy one is in flight.",
+  "description": "Whether each URL is heavy server work (isPriorityRequest in feature/auth/requestPriority.js): the end of the path, with any query string left off, is one of the listed paths, or the request is a POST whose path matches one of the uploads (a case with no method is a GET). A native client holds background requests back while a heavy one is in flight.",
   "generatedBy": "frontend/src/contracts/networkFixtures.test.js (UPDATE_CONTRACTS=1)",
   "heavyPaths": ["/analyze-field","/terrain-analysis","/threat-mask","/export-package","/generate-excel","/brief/pdf","/overlay-image"],
+  "uploads": ["\\/documents$","\\/documents\\/[^/]+\\/version$","\\/packs\\/[^/]+\\/items\\/[^/]+\\/version$"],
   "cases": [
     {"url":"/analyze-field","heavy":true},
     {"url":"/api/analyze-field","heavy":true},
@@ -20,6 +21,17 @@
     {"url":"/api/analyze-fields","heavy":false},
     {"url":"/api/not-analyze-field","heavy":false},
     {"url":"/api/convert-grid?next=/api/analyze-field","heavy":false},
-    {"url":"","heavy":false}
+    {"url":"","heavy":false},
+    {"url":"/api/documents","method":"POST","heavy":true},
+    {"url":"/api/documents","method":"GET","heavy":false},
+    {"url":"/api/documents/12/version","method":"POST","heavy":true},
+    {"url":"/api/documents/12/pdf","method":"GET","heavy":false},
+    {"url":"/api/documents/12","method":"PUT","heavy":false},
+    {"url":"/api/packs/a4f7e2c9/documents","method":"POST","heavy":true},
+    {"url":"/api/packs/a4f7e2c9/items/doc-1/version","method":"POST","heavy":true},
+    {"url":"/api/packs/a4f7e2c9/items/doc-1/pdf","method":"GET","heavy":false},
+    {"url":"https://example.com/api/documents?x=1","method":"post","heavy":true},
+    {"url":"/api/documents/12/version/extra","method":"POST","heavy":false},
+    {"url":"/api/lz","method":"POST","heavy":false}
   ]
 }

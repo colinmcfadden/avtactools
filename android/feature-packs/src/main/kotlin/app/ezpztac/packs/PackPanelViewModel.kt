@@ -2,6 +2,8 @@ package app.ezpztac.packs
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import app.ezpztac.data.DocumentOutcome
+import app.ezpztac.data.PackDocuments
 import app.ezpztac.data.PackFacts
 import app.ezpztac.missionpacks.PackHistory
 import app.ezpztac.missionpacks.PackItemView
@@ -63,7 +65,11 @@ internal data class Seen(val pack: String? = null, val seen: Long? = null, val s
  * or an account no longer here is not shown. Who is here changes many times a second while people point; the history is not worked out again for it.
  */
 @HiltViewModel
-class PackPanelViewModel @Inject constructor(private val door: PackDoor, private val panel: PackPanelDoor) : ViewModel() {
+class PackPanelViewModel @Inject constructor(
+    private val door: PackDoor,
+    private val panel: PackPanelDoor,
+    private val documents: PackDocuments = PackDocuments.None,
+) : ViewModel() {
     private data class History(
         val pack: String? = null,
         val user: Int? = null,
@@ -273,6 +279,29 @@ class PackPanelViewModel @Inject constructor(private val door: PackDoor, private
         if (!act { removeNow(uuid) }) _notices.tryEmit(STILL_WORKING)
     }
 
+    /** A new version of the open pack's document [uuid] from a file the person chose (docs/DOCUMENTS.md §7): made on the server, which logs it for everyone. */
+    fun newDocumentVersion(uuid: String, fileName: String, bytes: ByteArray) {
+        val state = door.open.value ?: return
+        val item = state.item(uuid)?.takeIf { it.kind == "document" } ?: return
+        if (!act {
+                _notices.tryEmit("Uploading the new version of “${item.name}”…")
+                _notices.tryEmit(
+                    when (val outcome = documents.newVersion(state.uuid, uuid, fileName, bytes)) {
+                        is DocumentOutcome.Done -> "“${item.name}” is now the version from $fileName."
+                        is DocumentOutcome.Refused -> outcome.message
+                    },
+                )
+            }
+        ) {
+            _notices.tryEmit(STILL_WORKING)
+        }
+    }
+
+    /** A file chosen for a new version that could not be read, said as the others are. */
+    fun refuse(message: String) {
+        _notices.tryEmit(message)
+    }
+
     private suspend fun removeNow(uuid: String) {
         val refused = try {
             panel.removeItem(uuid)
@@ -456,7 +485,7 @@ class PackPanelViewModel @Inject constructor(private val door: PackDoor, private
         val original = ItemInfo.original(item)
         val fromLibrary = ItemInfo.source(item) != null
         val withIt = others.filter { text((it["focus"] as? JsonObject)?.get("item")) == item.uuid }.mapNotNull { text(it["name"]) }.map(PackPanelWords::shortName).distinct()
-        val canOpen = item.kind == "lz" || item.kind == "route"
+        val canOpen = item.kind == "lz" || item.kind == "route" || item.kind == "document"
         val description = buildString {
             append(item.name)
             if (isNew) append(", changed in the pack since you looked")
@@ -476,7 +505,7 @@ class PackPanelViewModel @Inject constructor(private val door: PackDoor, private
             if (fromLibrary) append(if (original == "changed") " From Library, original changed." else " From Library.")
             if (withIt.isNotEmpty()) append(' ').append(PackPanelWords.hasItOpen(withIt)).append('.')
             if (item.uuid in open) append(" Open here.")
-            if (canOpen) append(" Show on the map")
+            if (canOpen) append(if (item.kind == "document") " Read it" else " Show on the map")
         }
         return PackItemUi(item.uuid, item.kind, item.name, isNew, who, meta, fromLibrary, original, withIt, item.uuid in open, item.pendingCreate, canOpen, description)
     }

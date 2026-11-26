@@ -17,6 +17,7 @@ import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.DynamicTest
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.TestFactory
+import org.junit.jupiter.api.assertThrows
 
 /**
  * Every case of `contracts/fixtures/packs/describe.json`, which the web wrote: the sentence a client sends with each change for the
@@ -158,5 +159,17 @@ class PackDescribeFixtureTest {
         )
         assertEquals(2, summaries("newPointSetOp").count { it.getValue("made").jsonObject["refused"] is JsonPrimitive && text(it.getValue("made").jsonObject["refused"]) != null })
         sentences.keys.forEach { assertTrue(cases(it).size > 20, it) }
+    }
+
+    // describe.json has no document: the server makes a document's item (docs/DOCUMENTS.md §7), and a client only names it, so an
+    // upload asked again is the same item, and copies one from the Library. Each answer is the web's packSentences.js in Node.
+    @Test
+    fun `a document's item is named doc- and called a document, and has no default name or sentence of its own`() {
+        assertEquals("doc-u-1", PackSentences.packItemId("document", "u-1"))
+        assertEquals("Sam B. added \"DOCUMENT\" (a copy from their library).", PackSentences.copySummary("Sam B.", "document", ""))
+        assertEquals("Sam B. added \"ANNEX C\" (a copy from their library).", PackSentences.copySummary("Sam B.", "document", "ANNEX C"))
+        // The web throws for a blank name too: no client makes a document with item.create.
+        assertThrows<IllegalArgumentException> { PackSentences.newItemName("document", " ", 0) }
+        assertEquals("ANNEX C", PackSentences.newItemName("document", " ANNEX C ", 0))
     }
 }

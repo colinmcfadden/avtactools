@@ -66,6 +66,22 @@ class DtoFixtureTest {
         "threatset: list" to ListSerializer(ThreatSetSummary.serializer()),
         "threatset: get" to ThreatSetFull.serializer(),
         "threatset: update" to ThreatSetSummary.serializer(),
+        "document: upload" to DocumentSummary.serializer(),
+        "document: upload again with the same identity" to DocumentSummary.serializer(),
+        "document: an Excel file" to DocumentSummary.serializer(),
+        "document: a scan" to DocumentSummary.serializer(),
+        "document: list" to ListSerializer(DocumentSummary.serializer()),
+        "document: get" to DocumentFull.serializer(),
+        "document: its text" to DocumentText.serializer(),
+        "document: rename" to DocumentSummary.serializer(),
+        "document: a new version" to DocumentSummary.serializer(),
+        "pack document: upload" to PackItemReply.serializer(),
+        "pack document: upload again with the same item" to PackItemReply.serializer(),
+        "pack document: its text" to DocumentText.serializer(),
+        "pack document: a new version" to PackItemReply.serializer(),
+        "pack document: copied in from the Library" to PackItemReply.serializer(),
+        "pack document: saved to the Library" to LibraryCopy.serializer(),
+        "pack document: a pack with documents" to Pack.serializer(),
         "aircraft: list with no profiles of my own" to ListSerializer(AircraftProfileDto.serializer()),
         "aircraft: create" to AircraftProfileDto.serializer(),
         "aircraft: list" to ListSerializer(AircraftProfileDto.serializer()),
@@ -97,6 +113,7 @@ class DtoFixtureTest {
         "sync: nothing new" to ChangeFeed.serializer(),
         "sync: changes, with a brief" to ChangeFeed.serializer(),
         "sync: changes, with a set of threats" to ChangeFeed.serializer(),
+        "sync: changes, with a document" to ChangeFeed.serializer(),
         // Mission packs, teams, invitations and finding people
         "packs" to PacksBody.serializer(),
         "pack: create" to Pack.serializer(),
@@ -198,7 +215,7 @@ class DtoFixtureTest {
             .filter { it.status in 200..202 && it.body != null && it.body !is JsonNull && it.name !in decoders }
             .map { it.name }
             // Bodies that are a status word only, not a record.
-            .filterNot { it in setOf("logout", "lz: delete", "route: delete", "pointset: delete", "brief: delete", "threatset: delete", "aircraft: delete", "account deletion") }
+            .filterNot { it in setOf("logout", "lz: delete", "route: delete", "pointset: delete", "brief: delete", "threatset: delete", "document: delete", "aircraft: delete", "account deletion") }
             .filterNot { it in documents }
         assertTrue(uncovered.isEmpty(), "recorded responses with no type decoding them: $uncovered")
     }
@@ -223,6 +240,7 @@ class DtoFixtureTest {
         assertEquals(PackItemCounts(1, 2, 0, 0), strict.decodeFromString(PackItemCounts.serializer(), """{"lz": 1, "route": 2, "pointset": 0}"""))
         assertEquals(3, strict.decodeFromString(PackItemCounts.serializer(), """{"lz": 1, "route": 2, "pointset": 0, "brief": 3}""").brief)
         assertEquals(4, strict.decodeFromString(PackItemCounts.serializer(), """{"lz": 1, "route": 2, "pointset": 0, "threatset": 4}""").threatset)
+        assertEquals(5, strict.decodeFromString(PackItemCounts.serializer(), """{"lz": 1, "route": 2, "pointset": 0, "document": 5}""").document)
     }
 
     @Test

@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import api from "../auth/api";
 import { useToast } from "../ui/Toast";
 import { APP_TOO_OLD, SERVER_TOO_OLD, servedMajors, standingWith } from "./apiStanding";
@@ -24,9 +24,12 @@ const NOTICE = {
  * Looks at the server's API (GET /api/config) when the app opens, and again when the tab comes back to
  * the front after a while, and says so once if this build and the server have no API major in common.
  * A failed look says nothing: the calls themselves say what is wrong.
+ *
+ * Returns `{ services }`: which of the server's optional services are up, as the last look found them (null until one answers).
  */
 export default function useApiCompat() {
   const { show } = useToast();
+  const [services, setServices] = useState(null);
   const said = useRef(null);
   const lookedAt = useRef(0);
 
@@ -37,6 +40,7 @@ export default function useApiCompat() {
       try {
         const { data } = await api.get("/config");
         if (!alive) return;
+        setServices(data?.services && typeof data.services === "object" ? data.services : {});
         const standing = standingWith(servedMajors(data));
         if (NOTICE[standing] && said.current !== standing) {
           said.current = standing;
@@ -56,4 +60,6 @@ export default function useApiCompat() {
       document.removeEventListener("visibilitychange", onVisible);
     };
   }, [show]);
+
+  return { services };
 }

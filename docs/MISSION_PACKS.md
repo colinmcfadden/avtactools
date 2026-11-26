@@ -62,7 +62,7 @@ No existing table is altered.
 | `mission_pack` | The pack: owner, optional team share (`team_id`, `team_role`), status (`active` / `finished`), and `head_seq`, its own change counter. Deleting it leaves a tombstone with the content gone |
 | `mission_pack_member` | Who is in it and as what (owner, editor, viewer) |
 | `mission_pack_invite` | Invitations to a pack or a team: an email address (or, for a team, none: a single-use link), a SHA-256 token, role, status, expiry |
-| `mission_pack_item` | An item: `kind` (`lz`, `route`, `pointset`, `brief`, `threatset`), `name`, and `data`, **exactly the JSON the library keeps** (`lz_data`, `route_data`, `points_data`), so every editor, exporter and native normalizer works on it unchanged. `source_*` records where a copy came from |
+| `mission_pack_item` | An item: `kind` (`lz`, `route`, `pointset`, `brief`, `threatset`, `document`), `name`, and `data`, **exactly the JSON the library keeps** (`lz_data`, `route_data`, `points_data`), so every editor, exporter and native normalizer works on it unchanged. `source_*` records where a copy came from |
 | `mission_pack_event` | The log: one row per operation, numbered by `seq` within the pack, with who, a sentence, the operation, and whether it was applied or skipped (and why). A change sent as several operations is several rows with its one sentence; the history shows them as one line |
 | `mission_pack_seen` | How far each person has looked in a pack (`seen_seq`, `seen_at`): what "changed since you looked" is measured from on every device, and a member's "Seen" time. Not part of the log |
 
@@ -97,7 +97,7 @@ cd frontend; $env:UPDATE_CONTRACTS="1"; npx vitest run src/contracts/pack
 
 | Operation | Fields | Does |
 |---|---|---|
-| `item.create` | `kind`, `name`, `data` | Adds an item. `data` is an object for `lz`, `route`, `brief` and `threatset`, a list for `pointset` |
+| `item.create` | `kind`, `name`, `data` | Adds an item. `data` is an object for `lz`, `route`, `brief`, `threatset` and `document`, a list for `pointset`. A `document` is the server's alone to make (below) |
 | `item.rename` | `name` | |
 | `item.delete` | | Deletes it; name and content go too. Its uuid is never used again |
 | `set` | `path` (not empty), `value` | Sets a field. Objects missing or null on the way are made |
@@ -378,6 +378,7 @@ Its docstring has the `docker run` line.
 - **The log is the record.** `mission_pack_event` is append-only. Pack-level changes are events too: `pack.create`, `pack.update`, `pack.share`, `pack.finish`, `pack.reopen`, `pack.transfer`, `member.add`, `member.join`, `member.role`, `member.remove`, `invite.create`, `invite.revoke`. `actor_name` is kept as written, so the log still reads after an account is deleted.
 - **Nothing reaches back into the library.** A copy is the pack's. Pack edits never touch the original, and only the person who copied an item in can see whether their original changed.
 - **Threats are a pack's as a set, kind `threatset`** (the owner, 2026-10-12: shared in packs, where every member can edit them). `data` is the Library's document, `{version: 1, threats: […]}`. **A terrain mask is never sent**, though the Library keeps one with its threat: every operation stays in `mission_pack_event` for good and a mask is a picture of 100 to 400 KB that any member can work out again. One that came with a copy is in the item and is drawn while it fits. A copy's threat ids are made the item's own (`pack_routes._threats_of_copy`), the same original giving the same ids, so an update from it lands on them and two copies never move together. A copy in or out needs `threats`.
+- **A document is a pack's as an item of kind `document`, and only the server makes or changes one** (docs/DOCUMENTS.md §7). Its `data` is the JSON that names the PDF and its page text by their hashes, which the server checked: an upload (`POST /api/packs/<uuid>/documents`) or a copy from the Library logs `item.create`, a new version (`…/items/<item>/version`) logs `item.replace`, and a client sends only `item.rename` and `item.delete` for one. An `item.create` of kind `document`, or any other operation on a document item, is refused whole (400 `invalid_op`, reason `bad_kind`). Its files (`…/pdf`, `…/text`) open for every member in every state of the pack, and go once no pack item and no Library record names them (`documents.files`).
 - **Finished means read-only for everyone**, the owner included, until the owner reopens it. The server enforces it from step 1, so a client that forgets cannot get round it.
 - **Deleting an account** calls `pack_support.release_account` before the user row goes, from both `DELETE /api/auth/me` and the admin dashboard. `mission_pack.owner_id` has no `ON DELETE` on purpose: Postgres refuses to delete an owner that was not released. `tests/test_packs.py` turns on SQLite's foreign keys so the tests catch this too.
 - **The admin dashboard is read only** here (`/admin/packs`, `/admin/teams`). It shows who owns what and who is in it, never what a pack holds.

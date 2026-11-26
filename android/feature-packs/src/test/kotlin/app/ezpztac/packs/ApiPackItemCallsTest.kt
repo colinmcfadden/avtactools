@@ -1,5 +1,6 @@
 package app.ezpztac.packs
 
+import app.ezpztac.data.PackDocuments
 import app.ezpztac.missionpacks.KeptOutcome
 import app.ezpztac.missionpacks.KeptVersion
 import app.ezpztac.missionpacks.PackKeeper
@@ -48,7 +49,7 @@ class ApiPackItemCallsTest {
 
     private val keeper = Keeper()
     private val scheduler = Scheduler()
-    private val calls = ApiPackItemCalls(client, keeper, scheduler)
+    private val calls = ApiPackItemCalls(client, keeper, scheduler, PackDocuments.None)
 
     @After
     fun after() = server.shutdown()

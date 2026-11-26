@@ -72,6 +72,7 @@ include(":feature-workspace")
 include(":feature-packs")                                     // the mission-pack screens (P1-P4)
 include(":feature-viewer3d")                                  // the 3D LZ view (docs/ANDROID_3D_PLAN.md)
 include(":feature-brief")                                     // the mission brief's screens (B8, B9)
+include(":feature-documents")                                 // the document viewer (docs/DOCUMENTS.md, D3)
 
 // Test support: reads ../contracts/fixtures. Not part of the shipped app.
 include(":core-testing")

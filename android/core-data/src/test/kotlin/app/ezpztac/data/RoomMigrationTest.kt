@@ -223,6 +223,36 @@ class RoomMigrationTest {
         // 5 changes no table: its migration only forgets the cursor.
         assertEquals(tables(4), tables(5))
         assertEquals(5, schema(5).getValue("version").jsonPrimitive.content.toInt())
+
+        // 6 is 5 again, for documents: its migration only forgets the cursor.
+        assertEquals(tables(5), tables(6))
+        assertEquals(6, schema(6).getValue("version").jsonPrimitive.content.toInt())
+    }
+
+    @Test
+    fun `an installed version 5 database forgets its cursor once more, so documents it passed over come down`() = runBlocking<Unit> {
+        makeVersion(5) { db ->
+            db.execSQL(
+                "INSERT INTO record (kind, uuid, serverId, baseRevision, name, data, dirty, deleted, localVersion, conflictOf, fileId, fileName, updatedAt) " +
+                    "VALUES ('THREAT_SET', 'ts-1', 3, 2, 'THREATS', '{\"version\":1,\"threats\":[]}', 0, 0, 2, NULL, NULL, NULL, '2026-11-09T10:00:00Z')",
+            )
+            db.execSQL("INSERT INTO sync_state (`key`, value) VALUES ('cursor', 640)")
+        }
+        var database = EzpzDatabase.open(context)
+        try {
+            val store = RoomSyncStore(database)
+            assertEquals(0, store.transaction { cursor() })
+            assertEquals("THREATS", store.transaction { record(RecordKind.THREAT_SET, "ts-1") }!!.name)
+            store.transaction { setCursor(11) }
+        } finally {
+            database.close()
+        }
+        database = EzpzDatabase.open(context)
+        try {
+            assertEquals(11, RoomSyncStore(database).transaction { cursor() })
+        } finally {
+            database.close()
+        }
     }
 
     @Test

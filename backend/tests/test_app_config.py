@@ -29,7 +29,7 @@ class BuildConfigTests(unittest.TestCase):
         self.assertEqual(config["serverVersion"], "1.7.7")
         self.assertEqual(config["minAppVersion"], {"android": None, "ios": None})
         self.assertEqual(config["maintenance"], {"active": False, "message": None})
-        self.assertEqual(config["services"], {"lidarBuilds": False, "packs": False})
+        self.assertEqual(config["services"], {"lidarBuilds": False, "packs": False, "documentConversion": False})
         self.assertEqual(config["mapbox"], {"publicToken": DEFAULT_TOKEN})
 
     def test_minimum_versions_are_per_platform(self):

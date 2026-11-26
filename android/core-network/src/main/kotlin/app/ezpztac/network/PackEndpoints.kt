@@ -215,6 +215,57 @@ public suspend fun ApiClient.savePackItemToLibrary(uuid: String, item: String, n
     execute(call("POST", "${PackPaths.item(uuid, item)}/library", body = buildJsonObject { if (name != null) put("name", name) }, asUser = asUser)),
 )
 
+// -- Documents (docs/DOCUMENTS.md §7) -------------------------------------------------
+// The server makes a document from the file it is sent: a client never sends a document's content, and renames or removes one with
+// the ordinary item operations.
+
+/**
+ * Uploads [file] into the pack (an editor; the pack not finished), where the server reads it and turns a Word, Excel or PowerPoint
+ * file into a PDF. [item] is this device's id for the new item, so an upload sent again after a lost answer is the same item
+ * ([Saved.created] false, with no event) and nothing is converted twice. [name] defaults to the file's name less its extension.
+ */
+public suspend fun ApiClient.uploadPackDocument(
+    uuid: String,
+    item: String,
+    file: DocumentFile,
+    name: String? = null,
+    summary: String? = null,
+    asUser: Int? = null,
+): Saved<PackItemReply> {
+    PackPaths.item(uuid, item)
+    val form = buildMap {
+        put("item", item)
+        if (name != null) put("name", name)
+        if (summary != null) put("summary", summary)
+    }
+    val response = execute(documentCall("${PackPaths.pack(uuid)}/documents", form, file, asUser))
+    return Saved(decode(response), created = response.status == 201)
+}
+
+/** A new version of a pack's document, under the same name and item; logged as the server's `item.replace`. The same file again changes nothing. */
+public suspend fun ApiClient.newPackDocumentVersion(
+    uuid: String,
+    item: String,
+    file: DocumentFile,
+    summary: String? = null,
+    asUser: Int? = null,
+): PackItemReply = decode(
+    execute(documentCall("${PackPaths.item(uuid, item)}/version", buildMap { if (summary != null) put("summary", summary) }, file, asUser)),
+)
+
+/** A pack's document's PDF, to any member in any state of the pack. */
+public suspend fun ApiClient.packDocumentPdf(uuid: String, item: String, asUser: Int? = null): ByteArray = execute(
+    ApiClient.Call("GET", "${PackPaths.item(uuid, item)}/pdf", binary = true, maxBytes = DOCUMENT_PDF_MAX_BYTES, asUser = asUser),
+).bytes
+
+/** A pack's document's page text, for search. A scan has none: [ApiException] with `no_text` (404). */
+public suspend fun ApiClient.packDocumentText(uuid: String, item: String, asUser: Int? = null): DocumentText =
+    documentTextAt("${PackPaths.item(uuid, item)}/text", asUser)
+
+/** A pack's document's page text file as the server keeps it, to check against the hash its item names. */
+public suspend fun ApiClient.packDocumentTextFile(uuid: String, item: String, asUser: Int? = null): ByteArray =
+    documentTextFileAt("${PackPaths.item(uuid, item)}/text", asUser)
+
 // -- Members ------------------------------------------------------------------------
 
 /** Adds someone who shares a team with the owner (the owner only). Anyone else is invited by email ([inviteToPack]). */

@@ -6,6 +6,7 @@ import NameDialog from "../../ui/NameDialog";
 import { dateAtTime } from "../../ui/time";
 import { copyFromLibrary, deleteItemOp, droppedVersions, myEditsName, saveVersionToLibrary } from "../packActions";
 import * as packApi from "../packApi";
+import { documentDetail } from "../../documents/documentWords";
 import { packDiagramId } from "../packLz";
 import { packLocalRef } from "../packRef";
 import { actorName, renameSummary, updateFromOriginalSummary } from "../packSentences";
@@ -177,6 +178,36 @@ export const UpdateFromOriginalDialog = ({ packUuid, item, me, getItem = packApi
 
 const NO_THREATS = { on: false, packSets: null, setPackSets: () => {}, fetchMasks: () => {} };
 
+/** The viewer's key for a pack's document. */
+export const packDocumentKey = (packUuid, itemUuid) => `pack:${packUuid}:${itemUuid}`;
+
+/**
+ * What the document viewer does as the open pack changes, for the document it shows (`key`, the viewer's): closes it when it is
+ * another pack's or no longer in this one, opens it again on a new version (its PDF's hash moved on), else nothing. A Library
+ * document's viewer is never touched, and nothing is decided while the pack is still loading. `seen` is the PDF last seen for the
+ * key, which the caller keeps for the next look.
+ */
+/** The pack and item a viewer's key names, or null for a key that is not a pack's (a pack's uuid has no colon; an item's id might). */
+export const packDocumentOf = (key) => {
+  if (!key?.startsWith("pack:")) return null;
+  const rest = key.slice("pack:".length);
+  const at = rest.indexOf(":");
+  return at < 0 ? null : { pack: rest.slice(0, at), item: rest.slice(at + 1) };
+};
+
+export const followViewedDocument = ({ key, open, loaded, items, seen }) => {
+  const of = packDocumentOf(key);
+  if (!of) return { action: null, seen: null };
+  const { pack: packOf, item: itemOf } = of;
+  if (packOf !== open) return { action: "close", seen: null };
+  if (!loaded) return { action: null, seen };
+  const item = items.find((i) => i.uuid === itemOf);
+  if (!item || item.kind !== "document") return { action: "close", seen: null };
+  const pdf = item.data?.pdf?.sha256 ?? null;
+  const moved = seen?.key === key && seen.pdf !== pdf;
+  return { action: moved ? "reopen" : null, item, seen: { key, pdf } };
+};
+
 export const usePackWorkspace = ({
   enabled,
   user,
@@ -193,6 +224,8 @@ export const usePackWorkspace = ({
   // A ref that is true while the map is showing a place a grid link asked for: the pack's first LZ/PZ is not
   // opened over it (the map would fly away from the grid the person followed).
   keepMap = null,
+  // The documents' viewer and new-version dialog (feature/documents/useDocuments), which read a pack's documents through its routes.
+  documents = null,
 }) => {
   const me = user?.id ?? null;
   const actor = actorName(user);
@@ -450,8 +483,12 @@ export const usePackWorkspace = ({
 
   // -- Items ---------------------------------------------------------------------------------------
 
+  const viewedKey = documents?.viewing?.key ?? null;
   const openIds = useMemo(() => {
     const ids = new Set(packRoutes.open);
+    // The document being read is this pack's open document: its row says so, and its menu offers Close here.
+    const viewed = packDocumentOf(viewedKey);
+    if (open && viewed?.pack === open) ids.add(viewed.item);
     if (open) {
       (lz.workspace?.diagramOrder ?? []).forEach((id) => {
         const ref = packLocalRef(id);
@@ -467,12 +504,26 @@ export const usePackWorkspace = ({
       });
     }
     return ids;
-  }, [open, packRoutes.open, lz.workspace, points.pointSets, threats.packSets]);
+  }, [open, packRoutes.open, lz.workspace, points.pointSets, threats.packSets, viewedKey]);
+
+  // A pack's document read in the viewer: its PDF and text through the pack's routes (docs/DOCUMENTS.md §7).
+  const documentTarget = useCallback(
+    (item) => ({
+      key: packDocumentKey(open, item.uuid),
+      title: item.name,
+      detail: documentDetail(item.data),
+      loadPdf: () => packApi.getDocumentPdf(open, item.uuid),
+      loadText: () => packApi.getDocumentText(open, item.uuid),
+    }),
+    [open],
+  );
 
   const openItem = useCallback(
     (item) => {
       closedHere.current.delete(item.uuid);
-      if (item.kind === "lz") {
+      if (item.kind === "document") {
+        documents?.open(documentTarget(item));
+      } else if (item.kind === "lz") {
         packLz.openItem(item.uuid);
         dock.show("lz");
       } else if (item.kind === "route") {
@@ -481,12 +532,12 @@ export const usePackWorkspace = ({
       } else if (item.kind === "threatset") {
         packThreats.openItem(item.uuid);
         dock.show("threats");
-      } else {
+      } else if (item.kind === "pointset") {
         packPoints.openItem(item.uuid);
         dock.show("imports");
       }
     },
-    [packLz, packRoutes, packPoints, packThreats, dock],
+    [packLz, packRoutes, packPoints, packThreats, dock, documents, documentTarget],
   );
 
   const closeItem = useCallback(
@@ -495,10 +546,26 @@ export const usePackWorkspace = ({
       if (item.kind === "lz") lz.removeDiagram(packDiagramId(open, item.uuid));
       else if (item.kind === "route") packRoutes.closeItem(item.uuid);
       else if (item.kind === "threatset") packThreats.closeItem(item.uuid);
-      else packPoints.closeItem(item.uuid);
+      else if (item.kind === "pointset") packPoints.closeItem(item.uuid);
+      else if (item.kind === "document" && documents?.viewing?.key === packDocumentKey(open, item.uuid)) documents.close();
     },
-    [lz, open, packRoutes, packPoints, packThreats],
+    [lz, open, packRoutes, packPoints, packThreats, documents],
   );
+
+  // A document being read follows the pack: a new version (item.replace) opens again on it, and one removed, or of a pack no longer
+  // open, closes. Only a pack's own viewer is touched (its key), never the Library's.
+  const viewingKey = documents?.viewing?.key ?? null;
+  const viewingPdf = useRef(null);
+  useEffect(() => {
+    const { action, item, seen } = followViewedDocument({ key: viewingKey, open, loaded: fresh, items, seen: viewingPdf.current });
+    viewingPdf.current = seen;
+    if (action === "close") documents?.close();
+    if (action === "reopen") documents?.open(documentTarget(item));
+    // A rename moves no PDF: the window's title follows it without reading the document again.
+    if (!action && item) documents?.retitle(viewingKey, { title: item.name, detail: documentDetail(item.data) });
+    // documents and documentTarget change with every render of their owners; what is read here is the key, the pack and its items.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [viewingKey, open, fresh, items]);
 
   const refreshAll = useCallback(() => {
     live.refresh?.();
@@ -534,6 +601,18 @@ export const usePackWorkspace = ({
         library.refreshAll?.();
         setDialog({ kind: "addFromLibrary" });
       },
+      newVersion: (item) =>
+        documents?.askNewVersion({
+          key: packDocumentKey(open, item.uuid),
+          name: item.name,
+          where: `everyone in ${meta?.name ?? "the pack"}`,
+          reopen: false,
+          upload: async (file) => {
+            await packApi.newDocumentVersion(open, item.uuid, file);
+            live.refresh?.();
+          },
+        }),
+      download: (item) => documents?.download(() => packApi.getDocumentPdf(open, item.uuid), item.name),
       finish: () => setDialog({ kind: "finish" }),
       reopen: () => setDialog({ kind: "reopen" }),
       duplicate: () => setDialog({ kind: "duplicate" }),
@@ -542,7 +621,17 @@ export const usePackWorkspace = ({
       leavePack: () => setDialog({ kind: "leavePack" }),
       deletePack: () => setDialog({ kind: "deletePack" }),
     }),
-    [openItem, closeItem, library],
+    [openItem, closeItem, library, documents, open, meta, live],
+  );
+
+  /** Uploads a file as a document of the open pack (the import review's "the pack"); `item` is the upload's own id, kept for a retry. */
+  const uploadDocument = useCallback(
+    async (file, { name, item }) => {
+      const made = await packApi.uploadDocument(open, file, { item, name });
+      live.refresh?.();
+      return made;
+    },
+    [open, live],
   );
 
   // Leaving or deleting the open pack: back to the Library, and the switcher asked again so it is no
@@ -575,7 +664,9 @@ export const usePackWorkspace = ({
     let saved = 0;
     for (const version of versions) {
       try {
-        await saveVersionToLibrary({ kind: version.kind, name: myEditsName(version.name), data: version.data });
+        // A document is the server's to copy (a client never sends one's content, docs/DOCUMENTS.md §7): the pack's copy under the name kept.
+        if (version.kind === "document") await packApi.saveItemToLibrary(open, version.uuid, myEditsName(version.name));
+        else await saveVersionToLibrary({ kind: version.kind, name: myEditsName(version.name), data: version.data });
         saved += 1;
       } catch {
         // Counted below.
@@ -588,7 +679,7 @@ export const usePackWorkspace = ({
         ? { message: `Saved your version of ${saved === 1 ? `“${versions[0].name}”` : `${saved} items`} to your Library`, action: { label: "Open Library", onClick: onOpenLibrary } }
         : { tone: "error", message: `Saved ${saved} of ${versions.length}. Check the connection and try again.` },
     );
-  }, [session, dropped, library, toast, onOpenLibrary]);
+  }, [session, dropped, library, toast, onOpenLibrary, open]);
 
   // -- Who can open it ---------------------------------------------------------------------------------------
 
@@ -667,7 +758,13 @@ export const usePackWorkspace = ({
     dialogs = (
       <AddFromLibraryDialog
         packName={meta.name}
-        library={{ lz: library.history ?? [], route: library.savedRoutes ?? [], pointset: library.savedPointSets ?? [], threatset: library.savedThreatSets }}
+        library={{
+          lz: library.history ?? [],
+          route: library.savedRoutes ?? [],
+          pointset: library.savedPointSets ?? [],
+          threatset: library.savedThreatSets,
+          document: library.savedDocuments,
+        }}
         onCancel={close}
         onAdd={async (chosen) => {
           let added = 0;
@@ -862,7 +959,8 @@ export const usePackWorkspace = ({
         subtitle="Everyone in the pack sees the new name."
         initialName={item.name}
         confirmLabel="Rename"
-        upperCase
+        // A document keeps its name as written (an OPORD's title); the planning items are named in capitals.
+        upperCase={item.kind !== "document"}
         onCancel={close}
         onConfirm={(name) => {
           if (name !== item.name) {
@@ -1012,6 +1110,7 @@ export const usePackWorkspace = ({
     enabled,
     open,
     copyIn,
+    uploadDocument,
     parkedUnsaved,
     meta,
     status: liveStatus,

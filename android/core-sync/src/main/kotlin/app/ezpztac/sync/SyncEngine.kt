@@ -464,6 +464,7 @@ public class SyncEngine(
             "pointset" -> RecordKind.POINT_SET
             "brief" -> RecordKind.BRIEF
             "threatset" -> RecordKind.THREAT_SET
+            "document" -> RecordKind.DOCUMENT
             else -> return SyncReport()                                    // a collection a newer server adds: not ours to read
         }
         val local = record(kind, change.clientUuid)

@@ -1,7 +1,7 @@
 openapi: 3.0.3
 info:
   title: EZ/PZ API (the parts the native apps call)
-  version: 2.1.0
+  version: 3.0.0
   description: |
     The contract between the Flask API and the web and native clients. It holds
     the routes the apps call, one at a time as each arrives; a route missing from
@@ -1256,6 +1256,309 @@ paths:
         "409":
           $ref: "#/components/responses/ThreatSetConflict"
 
+  /api/documents:
+    get:
+      operationId: listDocuments
+      summary: The caller's documents (summaries, without deleted ones)
+      description: |
+        Documents kept in the Library (docs/DOCUMENTS.md): a PDF and its page text, read here as the server keeps them.
+        Every `/api/documents` route needs the `documents` entitlement and answers 403 `feature_disabled` without it; an
+        upload, a rename and a new version need `cloud_save` too. A client never writes a document's content: it sends a
+        file, and the server reads it and makes the PDF. So a change to a document is made online, never queued.
+      security:
+        - bearer: []
+      responses:
+        "200":
+          description: Summaries, newest change first.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/DocumentSummary"
+        "403":
+          $ref: "#/components/responses/SimpleError"
+    post:
+      operationId: uploadDocument
+      summary: Upload a document to the Library
+      description: |
+        `multipart/form-data`: `file` (a PDF, or a Word, Excel or PowerPoint file, which the server turns into a PDF with
+        LibreOffice in Gotenberg), and optionally `name` (else the file's name less its extension) and `client_uuid`. The
+        type is read from the file's content, never its name. The PDF is kept as sent; an Office file's original is not
+        kept. Its page text is read for search; a scan has none (`has_text: false`).
+
+        As `POST /api/lz`, a `client_uuid` the device chose makes the upload repeatable: one already made answers 200 with
+        the first record, before the file is read, so a retry after a lost answer converts nothing twice; one made and
+        deleted since answers 410 `document_deleted`. A heavy request: an Office file can take a minute to convert.
+
+        Refusals (`code`): 400 `missing_file`, `empty_file`, `invalid_name`, `invalid_client_uuid`; 410 `document_deleted`;
+        413 `file_too_large` (an upload over 25 MB), `pdf_too_large` (a PDF over 50 MB, as sent or as LibreOffice made it),
+        `too_many_pages` (over 500), `library_full` (200 documents or 1 GB); 415 `unsupported_type`; 422 `unreadable`,
+        `password_protected`, `no_pages`, `conversion_refused` (LibreOffice could not read it); 502 `conversion_failed`;
+        503 `conversion_unavailable` (no Gotenberg here, or one older than 8.34.0: `services.documentConversion` of
+        `/api/config` says so first; a PDF is still taken), `converter_busy` (Gotenberg's queue is full, or the server is
+        reading other uploads; try again in a minute).
+      security:
+        - bearer: []
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [file]
+              properties:
+                file: { type: string, format: binary }
+                name: { type: string, minLength: 1, maxLength: 100 }
+                client_uuid: { type: string }
+      responses:
+        "201":
+          description: Kept.
+          headers:
+            ETag: { $ref: "#/components/headers/ETag" }
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DocumentSummary"
+        "200":
+          description: A record with this `client_uuid` already existed; here it is.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DocumentSummary"
+        "400":
+          $ref: "#/components/responses/SimpleError"
+        "403":
+          $ref: "#/components/responses/SimpleError"
+        "410":
+          $ref: "#/components/responses/SimpleError"
+        "413":
+          $ref: "#/components/responses/SimpleError"
+        "415":
+          $ref: "#/components/responses/SimpleError"
+        "422":
+          $ref: "#/components/responses/SimpleError"
+        "502":
+          $ref: "#/components/responses/SimpleError"
+        "503":
+          $ref: "#/components/responses/SimpleError"
+
+  /api/documents/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema: { type: integer }
+    get:
+      operationId: getDocument
+      summary: One document, with the JSON that describes its files
+      security:
+        - bearer: []
+      responses:
+        "200":
+          description: The record.
+          headers:
+            ETag: { $ref: "#/components/headers/ETag" }
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DocumentFull"
+        "404":
+          $ref: "#/components/responses/SimpleError"
+    put:
+      operationId: renameDocument
+      summary: Rename a document
+      description: |
+        JSON `{name}`: the one thing about a document a person changes (its content changes only by a new version). As
+        `PUT /api/lz/{id}`: send `If-Match: "<revision>"`; a server that has moved on renames nothing and answers 409 with
+        its copy. A retry with the same `Idempotency-Key` is answered, not refused. 400 `missing_fields` without a name.
+      security:
+        - bearer: []
+      parameters:
+        - $ref: "#/components/parameters/IfMatch"
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name]
+              properties:
+                name: { type: string, minLength: 1, maxLength: 100 }
+      responses:
+        "200":
+          description: Renamed (or recognised as a retry, which answers the whole record).
+          headers:
+            ETag: { $ref: "#/components/headers/ETag" }
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DocumentSummary"
+        "400":
+          $ref: "#/components/responses/SimpleError"
+        "403":
+          $ref: "#/components/responses/SimpleError"
+        "404":
+          $ref: "#/components/responses/SimpleError"
+        "409":
+          $ref: "#/components/responses/DocumentConflict"
+    delete:
+      operationId: deleteDocument
+      summary: Delete a document
+      description: |
+        Leaves a tombstone, with the content gone, so devices learn of the deletion through `/api/sync/changes`; the files
+        go once nothing else names them (another record, a pack's copy). Deleting twice is not an error. A stale `If-Match`
+        is a 409 and deletes nothing.
+      security:
+        - bearer: []
+      parameters:
+        - $ref: "#/components/parameters/IfMatch"
+        - $ref: "#/components/parameters/IdempotencyKey"
+      responses:
+        "200":
+          description: Deleted.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [status]
+                properties:
+                  status: { type: string, enum: [deleted] }
+                  revision: { type: integer }
+        "403":
+          $ref: "#/components/responses/SimpleError"
+        "404":
+          $ref: "#/components/responses/SimpleError"
+        "409":
+          $ref: "#/components/responses/DocumentConflict"
+
+  /api/documents/{id}/version:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema: { type: integer }
+    post:
+      operationId: newDocumentVersion
+      summary: A new version of a document, under the same name and identity
+      description: |
+        `multipart/form-data` with `file`, read as an upload is (with its refusals), and `If-Match` as an edit, decided
+        again once the file is converted: a document renamed meanwhile is a 409 for the revision sent, and one deleted
+        meanwhile a 404. The old version's files go once nothing names them; a pack's copy keeps naming the version it was
+        copied as (its `source.original` becomes `changed`).
+      security:
+        - bearer: []
+      parameters:
+        - $ref: "#/components/parameters/IfMatch"
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [file]
+              properties:
+                file: { type: string, format: binary }
+      responses:
+        "200":
+          description: Replaced (or recognised as a retry).
+          headers:
+            ETag: { $ref: "#/components/headers/ETag" }
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DocumentSummary"
+        "400":
+          $ref: "#/components/responses/SimpleError"
+        "403":
+          $ref: "#/components/responses/SimpleError"
+        "404":
+          $ref: "#/components/responses/SimpleError"
+        "409":
+          $ref: "#/components/responses/DocumentConflict"
+        "413":
+          $ref: "#/components/responses/SimpleError"
+        "415":
+          $ref: "#/components/responses/SimpleError"
+        "422":
+          $ref: "#/components/responses/SimpleError"
+        "502":
+          $ref: "#/components/responses/SimpleError"
+        "503":
+          $ref: "#/components/responses/SimpleError"
+
+  /api/documents/{id}/pdf:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema: { type: integer }
+    get:
+      operationId: getDocumentPdf
+      summary: The document's PDF
+      description: |
+        The file, `inline` (an `attachment` with `?download=1`). `Range` is answered (206), so a viewer can read a large
+        PDF a part at a time. `Cache-Control: private, no-cache` with an `ETag`: a new version is a new file at the same
+        address, so a kept copy is asked about with `If-None-Match` (304 when it is still the one). Served with
+        `X-Content-Type-Options: nosniff` and `Content-Security-Policy: sandbox`. 404 `file_missing` when the server has
+        lost the file.
+      security:
+        - bearer: []
+      parameters:
+        - name: download
+          in: query
+          schema: { type: string, enum: ["1"] }
+      responses:
+        "200":
+          description: The PDF.
+          content:
+            application/pdf:
+              schema: { type: string, format: binary }
+        "206":
+          description: The part of the PDF asked for.
+          content:
+            application/pdf:
+              schema: { type: string, format: binary }
+        "304":
+          description: The copy the client holds is the one.
+        "403":
+          $ref: "#/components/responses/SimpleError"
+        "404":
+          $ref: "#/components/responses/SimpleError"
+
+  /api/documents/{id}/text:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema: { type: integer }
+    get:
+      operationId: getDocumentText
+      summary: The document's page text, for search
+      description: |
+        Each page's text as the server read it, every run of white space one space; a client searches it on its own
+        (docs/DOCUMENTS.md §8, the rules held to `contracts/fixtures/documents/search.json`). Cached as the PDF is.
+        404 `no_text` for a document with none (`has_text: false`, a scan).
+      security:
+        - bearer: []
+      responses:
+        "200":
+          description: The text.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DocumentText"
+        "304":
+          description: The copy the client holds is the one.
+        "403":
+          $ref: "#/components/responses/SimpleError"
+        "404":
+          $ref: "#/components/responses/SimpleError"
+
   /api/brief/pdf:
     post:
       operationId: printBrief
@@ -2223,11 +2526,13 @@ paths:
       summary: Apply a batch of edits, in order, each numbered and logged
       description: |
         Each operation is applied, or logged as `skipped` when what it edits is gone or in the
-        way; the rules are `contracts/fixtures/packs/ops.json` (and `ops-brief.json`, `ops-threatset.json`). Each carries a `client_op_id`
+        way; the rules are `contracts/fixtures/packs/ops.json` (and `ops-brief.json`, `ops-threatset.json`, `ops-document.json`). Each carries a `client_op_id`
         (printable ASCII, 64 at most): one the pack has seen is answered from the log and not
         applied again, so a batch whose answer was lost is safe to send again. A malformed
         operation refuses the whole batch (400 `invalid_op`, with `index` and `reason`) before
-        anything is applied. `item.replace` is the server's own and is refused.
+        anything is applied. `item.replace` is the server's own and is refused. A `document` item is the server's to make
+        and to change (`POST .../documents`, `.../version`): a client only renames and deletes one, and any other operation
+        on one, or an `item.create` of kind `document`, is refused (400 `invalid_op`, reason `bad_kind`).
 
         With `base_seq`, `events` is everything after it (up to 500; `has_more` says there is
         more), so the client can rebase its unconfirmed edits; without it, just this batch's.
@@ -2363,7 +2668,8 @@ paths:
         The copy is the pack's; the original is never changed by it. The item remembers its
         `source` so whoever copied it in can later update it from the original. Sketched routes
         only: an imported AMPS mission (`kind: mission`) is refused with `mission_not_supported`.
-        Send `item` (the new item's uuid) so a retry returns the first copy (200).
+        Send `item` (the new item's uuid) so a retry returns the first copy (200). A document whose
+        file is not on the server is refused 409 `file_missing`; one the pack has no room for, 413 `pack_full`.
       security:
         - bearer: []
       requestBody:
@@ -2379,7 +2685,7 @@ paths:
                   required: [kind]
                   description: The library record, by `id` or by `client_uuid`.
                   properties:
-                    kind: { type: string, enum: [lz, route, pointset, threatset] }
+                    kind: { type: string, enum: [lz, route, pointset, threatset, document] }
                     id: { type: integer }
                     client_uuid: { type: string }
                 item: { type: string }
@@ -2444,7 +2750,9 @@ paths:
         Only the member who copied it in may (`not_your_original` otherwise): the original is
         their private record. Logged as an `item.replace` event carrying the new content.
         `original_gone` (409) when the original has been deleted; `original_unknown` (409) for a
-        copy whose `source.uuid` is null, which cannot say which record it came from.
+        copy whose `source.uuid` is null, which cannot say which record it came from. A document's
+        original whose file is not on the server is 409 `file_missing`, and one the pack has no room
+        for 413 `pack_full`.
       security:
         - bearer: []
       requestBody:
@@ -2478,7 +2786,10 @@ paths:
     post:
       operationId: savePackItemToLibrary
       summary: Save a copy of an item to the caller's own library (any member; works on a finished pack)
-      description: Needs the `cloud_save` entitlement too. The new record syncs like any other.
+      description: |
+        Needs the `cloud_save` entitlement too (and `documents` for a document). The new record syncs like any other. A
+        document names the same files as the pack's copy; one whose file is not on the server is 400
+        `unreadable_source`, and one the Library has no room for 413 `library_full`.
       security:
         - bearer: []
       requestBody:
@@ -2498,6 +2809,170 @@ paths:
           $ref: "#/components/responses/PackError"
         "403":
           $ref: "#/components/responses/PackError"
+        "404":
+          $ref: "#/components/responses/PackError"
+        "413":
+          $ref: "#/components/responses/PackError"
+
+  /api/packs/{uuid}/documents:
+    parameters:
+      - $ref: "#/components/parameters/PackUuid"
+    post:
+      operationId: uploadDocumentToPack
+      summary: Upload a document straight into a pack
+      description: |
+        `multipart/form-data`: `file`, read as `POST /api/documents` reads it (with its refusals), and optionally `name`,
+        `summary` and `item` (the client's id for the new item: send one, so a retry after a lost answer is the same item,
+        200 with `event` null, and nothing is converted twice). An editor (403 `pack_read_only` for a viewer); a finished
+        pack 423. Needs `mission_packs` and `documents`. 413 `pack_full` past 100 documents or 1 GB in the pack; 409
+        `item_exists` for an `item` someone else's item has. Logged as an `item.create` of kind `document`, made by the
+        server: a client never makes a document item with `/ops`.
+      security:
+        - bearer: []
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [file]
+              properties:
+                file: { type: string, format: binary }
+                name: { type: string, minLength: 1, maxLength: 100 }
+                item: { type: string, pattern: '^[A-Za-z0-9][A-Za-z0-9_.:-]{0,63}$' }
+                summary: { type: string }
+      responses:
+        "201":
+          description: Added.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/PackItemReply" }
+        "200":
+          description: This upload was already made under this `item`; here it is (`event` is null).
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/PackItemReply" }
+        "400":
+          $ref: "#/components/responses/PackError"
+        "403":
+          $ref: "#/components/responses/PackError"
+        "404":
+          $ref: "#/components/responses/PackError"
+        "409":
+          $ref: "#/components/responses/PackError"
+        "413":
+          $ref: "#/components/responses/PackError"
+        "415":
+          $ref: "#/components/responses/PackError"
+        "422":
+          $ref: "#/components/responses/PackError"
+        "423":
+          $ref: "#/components/responses/PackError"
+        "502":
+          $ref: "#/components/responses/PackError"
+        "503":
+          $ref: "#/components/responses/PackError"
+
+  /api/packs/{uuid}/items/{item}/version:
+    parameters:
+      - $ref: "#/components/parameters/PackUuid"
+      - $ref: "#/components/parameters/PackItemUuid"
+    post:
+      operationId: newPackDocumentVersion
+      summary: A new version of a pack's document, under the same name and item
+      description: |
+        `multipart/form-data` with `file` (and optionally `summary`), read as an upload is. An editor; a finished pack 423.
+        Logged as the server's `item.replace`, which every client applies. The same file again is a retry: 200 with
+        `event` null and nothing logged. 400 `not_a_document` for an item of another kind.
+      security:
+        - bearer: []
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [file]
+              properties:
+                file: { type: string, format: binary }
+                summary: { type: string }
+      responses:
+        "200":
+          description: Replaced, or this version already.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/PackItemReply" }
+        "400":
+          $ref: "#/components/responses/PackError"
+        "403":
+          $ref: "#/components/responses/PackError"
+        "404":
+          $ref: "#/components/responses/PackError"
+        "413":
+          $ref: "#/components/responses/PackError"
+        "415":
+          $ref: "#/components/responses/PackError"
+        "422":
+          $ref: "#/components/responses/PackError"
+        "423":
+          $ref: "#/components/responses/PackError"
+        "502":
+          $ref: "#/components/responses/PackError"
+        "503":
+          $ref: "#/components/responses/PackError"
+
+  /api/packs/{uuid}/items/{item}/pdf:
+    parameters:
+      - $ref: "#/components/parameters/PackUuid"
+      - $ref: "#/components/parameters/PackItemUuid"
+    get:
+      operationId: getPackDocumentPdf
+      summary: A pack's document's PDF
+      description: |
+        To any member, viewers included, in every state of the pack; needs `mission_packs` only. Served as
+        `GET /api/documents/{id}/pdf` is (`?download=1`, `Range`, `ETag`, the same headers). 404 `item_not_found` for an
+        item that is not a live document.
+      security:
+        - bearer: []
+      parameters:
+        - name: download
+          in: query
+          schema: { type: string, enum: ["1"] }
+      responses:
+        "200":
+          description: The PDF.
+          content:
+            application/pdf:
+              schema: { type: string, format: binary }
+        "206":
+          description: The part of the PDF asked for.
+          content:
+            application/pdf:
+              schema: { type: string, format: binary }
+        "304":
+          description: The copy the client holds is the one.
+        "404":
+          $ref: "#/components/responses/PackError"
+
+  /api/packs/{uuid}/items/{item}/text:
+    parameters:
+      - $ref: "#/components/parameters/PackUuid"
+      - $ref: "#/components/parameters/PackItemUuid"
+    get:
+      operationId: getPackDocumentText
+      summary: A pack's document's page text, for search
+      description: As `GET /api/documents/{id}/text`, to any member. 404 `no_text` for a scan.
+      security:
+        - bearer: []
+      responses:
+        "200":
+          description: The text.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DocumentText"
+        "304":
+          description: The copy the client holds is the one.
         "404":
           $ref: "#/components/responses/PackError"
 
@@ -3444,6 +3919,23 @@ components:
               server:
                 $ref: "#/components/schemas/ThreatSetFull"
 
+    DocumentConflict:
+      description: |
+        The document changed on the server since the revision the edit was based on.
+        Nothing was overwritten; `server` is the current copy.
+      headers:
+        ETag: { $ref: "#/components/headers/ETag" }
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [error, code, server]
+            properties:
+              error: { type: string }
+              code: { type: string, enum: [revision_conflict] }
+              server:
+                $ref: "#/components/schemas/DocumentFull"
+
     AircraftConflict:
       description: |
         The profile changed on the server since the revision the edit was based on.
@@ -3602,7 +4094,7 @@ components:
         error: { type: string }
         code:
           type: string
-          description: "`invalid_client_uuid`, `invalid_if_match`, `invalid_cursor`, `revision_conflict`; for briefs `missing_fields`, `invalid_name`, `invalid_data`; for the weather `invalid_at`; for notifications `invalid_ids`, `invalid_settings`"
+          description: "`invalid_client_uuid`, `invalid_if_match`, `invalid_cursor`, `revision_conflict`; for briefs `missing_fields`, `invalid_name`, `invalid_data`; for the weather `invalid_at`; for notifications `invalid_ids`, `invalid_settings`; for documents those of `POST /api/documents`, `not_found`, `file_missing`, `no_text`"
 
     Error:
       type: object
@@ -3824,6 +4316,84 @@ components:
         revision: { type: integer, minimum: 1 }
         data: { type: object, description: "`{version: 1, threats: [...]}`. Each threat may carry its terrain mask." }
 
+    DocumentSummary:
+      type: object
+      additionalProperties: false
+      required: [id, name, pages, bytes, source_type, has_text, created_at, updated_at, client_uuid, revision]
+      properties:
+        id: { type: integer }
+        name: { type: string }
+        pages: { type: integer, minimum: 1 }
+        bytes: { type: integer, minimum: 1, description: The PDF's size. }
+        source_type: { type: string, enum: [pdf, docx, xlsx, pptx, doc, xls, ppt], description: What was uploaded. }
+        has_text: { type: boolean, description: "False for a PDF with no text (a scan): there is nothing to search." }
+        created_at: { type: string }
+        updated_at: { type: string }
+        client_uuid: { type: string, description: "The record's identity: the device's own if it sent one." }
+        revision: { type: integer, minimum: 1, description: Bumped by every change. }
+
+    DocumentFull:
+      type: object
+      additionalProperties: false
+      required: [id, name, pages, bytes, source_type, has_text, created_at, updated_at, client_uuid, revision, data]
+      properties:
+        id: { type: integer }
+        name: { type: string }
+        pages: { type: integer, minimum: 1 }
+        bytes: { type: integer, minimum: 1 }
+        source_type: { type: string, enum: [pdf, docx, xlsx, pptx, doc, xls, ppt] }
+        has_text: { type: boolean }
+        created_at: { type: string }
+        updated_at: { type: string }
+        client_uuid: { type: string }
+        revision: { type: integer, minimum: 1 }
+        data: { $ref: "#/components/schemas/DocumentData" }
+
+    DocumentData:
+      type: object
+      required: [version, pdf, text, source, added_at]
+      description: |
+        What a Library record and a pack's document item hold (docs/DOCUMENTS.md §2): the files by their hashes, never
+        their bytes. Written by the server only. A client reads `pdf.pages` and `text` (null: nothing to search), and
+        fetches the files from the record's or the item's own routes, never by hash.
+      properties:
+        version: { type: integer, enum: [1] }
+        pdf:
+          type: object
+          required: [sha256, bytes, pages]
+          properties:
+            sha256: { type: string, pattern: '^[0-9a-f]{64}$' }
+            bytes: { type: integer, minimum: 1 }
+            pages: { type: integer, minimum: 1 }
+        text:
+          type: object
+          nullable: true
+          required: [sha256, chars]
+          properties:
+            sha256: { type: string, pattern: '^[0-9a-f]{64}$' }
+            chars: { type: integer, minimum: 0 }
+        source:
+          type: object
+          required: [type, name, bytes]
+          properties:
+            type: { type: string, enum: [pdf, docx, xlsx, pptx, doc, xls, ppt] }
+            name: { type: string, nullable: true, description: The uploaded file's name. }
+            bytes: { type: integer, minimum: 1 }
+        added_at: { type: string, description: "When this version was uploaded, in UTC." }
+
+    DocumentText:
+      type: object
+      required: [version, pages, truncated]
+      properties:
+        version: { type: integer, enum: [1] }
+        pages:
+          type: array
+          description: Each page's text, in order, one entry a page (empty for a page with none).
+          items: { type: string }
+        truncated:
+          type: boolean
+          description: "Reading stopped short (2,000,000 characters, or a minute): the later pages' text is missing, so a search may miss them."
+
     WeatherReport:
       type: object
       required: [station_id, name, temp_c, dewp_c, wind_spd_kts, wind_dir, wind_gust_kts, vis_sm, pressure, flight_category, raw_metar, distance_miles, notams]
@@ -3939,12 +4509,12 @@ components:
       required: [type, id, client_uuid, revision, deleted, name, seq, data]
       description: |
         One changed record. `type` says which collection: `lz`, `route`, `pointset`,
-        `aircraft` (the caller's own profiles; the master list does not sync), `brief` or `threatset`.
+        `aircraft` (the caller's own profiles; the master list does not sync), `brief`, `threatset` or `document`.
         A device passes over a `type` it does not know, which a newer server may add.
         A tombstone has `deleted: true`, an empty `name` and empty `data`. A route also
         has `kind`, `file_name` and `has_file`; fetch the mission file separately.
       properties:
-        type: { type: string, enum: [lz, route, pointset, aircraft, brief, threatset] }
+        type: { type: string, enum: [lz, route, pointset, aircraft, brief, threatset, document] }
         id: { type: integer }
         client_uuid: { type: string }
         revision: { type: integer, minimum: 1 }
@@ -3956,7 +4526,7 @@ components:
         kind: { type: string, description: "Routes only: `sketch` or `mission`." }
         file_name: { type: string, nullable: true }
         has_file: { type: boolean }
-        data: { description: "lz_data, route_data, the points, the profile or the brief document, per `type`." }
+        data: { description: "lz_data, route_data, the points, the profile, the brief document, the threats or the document's JSON (DocumentFull's `data`), per `type`." }
 
     ChangeFeed:
       type: object
@@ -4035,6 +4605,11 @@ components:
             packs:
               type: boolean
               description: The map-pack service (offline maps and terrain for an area; docs/NATIVE_APPS_PLAN.md) is configured. Not built yet. Unrelated to mission packs, the shared containers under /api/packs.
+            documentConversion:
+              type: boolean
+              description: |
+                Word, Excel and PowerPoint files can be uploaded as documents (Gotenberg is configured). Without it only a PDF
+                is taken, so a client offers PDFs alone. Absent from a server from before documents: read that as false.
         mapbox:
           type: object
           additionalProperties: false
@@ -4437,6 +5012,7 @@ components:
         `not_in_team`, `invalid_role`, `invalid_source`, `invalid_item`, `source_not_found`,
         `mission_not_supported`, `unreadable_source`, `item_exists`, `item_not_found`,
         `not_your_original`, `original_gone`, `original_unknown`, `empty_point_set`, `feature_disabled`,
+        for documents those of `POST /api/documents` and `pack_full` (413), `not_a_document`, `no_text`, `file_missing`,
         `not_a_teammate`, `already_member`, `member_not_found`, `owner_must_transfer`,
         `invalid_email`, `invite_not_found`, `invite_gone` / `invite_expired` (410),
         `rate_limited` (429), `team_not_found`, `team_managers_only`, `invalid_query`.
@@ -4552,6 +5128,7 @@ components:
         route: { type: integer, minimum: 0 }
         pointset: { type: integer, minimum: 0 }
         threatset: { type: integer, minimum: 0 }
+        document: { type: integer, minimum: 0 }
 
     PackMember:
       type: object
@@ -4578,7 +5155,7 @@ components:
       required: [uuid, kind, name, revision, seq, created_by, updated_by, created_at, updated_at, source]
       properties:
         uuid: { type: string }
-        kind: { type: string, enum: [lz, route, pointset, brief, threatset] }
+        kind: { type: string, enum: [lz, route, pointset, brief, threatset, document] }
         name: { type: string }
         revision: { type: integer, minimum: 1, description: Bumped by every applied operation. }
         seq: { type: integer, minimum: 0, description: The event that last changed it. }
@@ -4597,7 +5174,7 @@ components:
           description: Where a copy from someone's library came from. Null for an item made in the pack.
           required: [kind, uuid, revision, original, original_updated_at, pack_changes, last_pack_change]
           properties:
-            kind: { type: string, enum: [lz, route, pointset, threatset] }
+            kind: { type: string, enum: [lz, route, pointset, threatset, document] }
             uuid:
               type: string
               nullable: true
@@ -4645,7 +5222,7 @@ components:
                 summary: { type: string, description: The edit's sentence in the History panel. }
                 created_at: { type: string }
         data:
-          description: The same JSON the library keeps (lz_data, route_data, or the list of points). Present wherever the item is returned whole.
+          description: "The same JSON the library keeps (lz_data, route_data, the list of points, or a document's, DocumentFull's `data`). Present wherever the item is returned whole."
 
     PackEvent:
       type: object
@@ -4734,7 +5311,7 @@ components:
       additionalProperties: false
       required: [kind, id, client_uuid, name, revision]
       properties:
-        kind: { type: string, enum: [lz, route, pointset, brief, threatset] }
+        kind: { type: string, enum: [lz, route, pointset, brief, threatset, document] }
         id: { type: integer }
         client_uuid: { type: string }
         name: { type: string }

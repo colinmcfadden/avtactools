@@ -59,13 +59,13 @@ jobs:
       # Mapbox token from export_service, which pulls in rasterio, numpy and mercantile; the recorded terrain and
       # threat responses need OpenCV, headless, and a slope analysis's contour lines contourpy; the 3D view's LiDAR
       # routes pyproj, and streaming them from USGS's octree laspy, lazrs and scipy. Not torch, which the SAM,
-      # terrain and LiDAR build tests need and these do not.) The live service's websockets and the Postgres
+      # terrain and LiDAR build tests need and these do not. Documents read PDFs with pypdf.) The live service's websockets and the Postgres
       # driver for the live chain come from their own pins.
       - name: Install
         run: |
           { for p in Flask flask-cors Flask-JWT-Extended Flask-SQLAlchemy SQLAlchemy google-auth PyJWT requests \
                      python-dotenv PyYAML openpyxl pillow pygeodesy rasterio numpy mercantile affine \
-                     opencv-python-headless contourpy pyproj laspy lazrs scipy psycopg2-binary; do
+                     opencv-python-headless contourpy pyproj laspy lazrs scipy psycopg2-binary pypdf; do
               grep -i "^$p==" backend/requirements.txt
             done
             grep -i "^websockets==" backend/realtime/requirements.txt
@@ -86,5 +86,5 @@ jobs:
           tests/test_api_version.py tests/test_lidar_stream.py tests/test_lidar_photo.py tests/test_lidar_api.py tests/test_lidar_catalog.py
           tests/test_survey_measure.py tests/test_surveys.py tests/test_survey_books.py tests/test_survey_page.py tests/test_survey_revisions.py
           tests/test_survey_book_import.py tests/test_survey_import.py tests/test_survey_book_pdf.py tests/test_survey_obstacles.py tests/test_mask_rings.py tests/test_places.py
-          tests/test_mission_overlay.py tests/test_threat_export.py
+          tests/test_mission_overlay.py tests/test_threat_export.py tests/test_documents.py
           tests/test_charts.py tests/test_chart_jobs.py tests/test_chart_auto.py tests/test_chart_serve.py tests/test_brief_chart_figures.py

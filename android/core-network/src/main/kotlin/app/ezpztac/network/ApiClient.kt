@@ -311,7 +311,7 @@ public class ApiClient(
 
     internal suspend fun execute(call: Call): ApiResponse {
         if (call.callPriority == CallPriority.BACKGROUND) priority.whenIdle()
-        val ticket = if (PriorityPaths.isHeavy(call.path)) priority.begin() else null
+        val ticket = if (PriorityPaths.isHeavy(call.path, call.method)) priority.begin() else null
         try {
             val raw = if (call.auth) executeSigned(call) else send(call, accessToken = null)
             if (raw.status !in 200..299) throw map(raw)
@@ -381,7 +381,7 @@ public class ApiClient(
                 if (accessToken != null) header("Authorization", "Bearer $accessToken")
             }
             .build()
-        val timeout = call.readTimeoutSeconds ?: if (PriorityPaths.isHeavy(call.path)) HEAVY_READ_TIMEOUT_SECONDS else null
+        val timeout = call.readTimeoutSeconds ?: if (PriorityPaths.isHeavy(call.path, call.method)) HEAVY_READ_TIMEOUT_SECONDS else null
         val client = timeout?.let { http.newBuilder().readTimeout(it, TimeUnit.SECONDS).build() } ?: http
         // The answer is read whole inside the call, on OkHttp's own threads. Not on the thread that asked: from a screen that is the main thread, where Android
         // refuses it (NetworkOnMainThreadException). And not after the call has handed the response over: a read blocks without looking at the coroutine, so a call

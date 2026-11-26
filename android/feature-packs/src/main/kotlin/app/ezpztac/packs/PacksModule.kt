@@ -1,17 +1,23 @@
 package app.ezpztac.packs
 
 import app.ezpztac.data.DiagramRepository
+import app.ezpztac.data.DocumentOutcome
+import app.ezpztac.data.PackDocuments
 import app.ezpztac.data.PackWorkspace
 import app.ezpztac.data.PointSetRepository
 import app.ezpztac.data.RouteRepository
+import app.ezpztac.missionpacks.KeptOutcome
+import app.ezpztac.missionpacks.KeptVersion
 import app.ezpztac.missionpacks.PackEngine
+import app.ezpztac.missionpacks.PackKeeper
 import app.ezpztac.missionpacks.PackNotice
 import app.ezpztac.missionpacks.PackState
 import app.ezpztac.network.ApiClient
-import app.ezpztac.network.OtherAccountException
 import app.ezpztac.network.Invite
 import app.ezpztac.network.InviteAccepted
+import app.ezpztac.network.OtherAccountException
 import app.ezpztac.network.PackEventPage
+import app.ezpztac.network.PackItemSource
 import app.ezpztac.network.PackSummary
 import app.ezpztac.network.Team
 import app.ezpztac.network.TeamShare
@@ -19,47 +25,42 @@ import app.ezpztac.network.TeamSummary
 import app.ezpztac.network.UserBrief
 import app.ezpztac.network.acceptInvite
 import app.ezpztac.network.addPackMember
+import app.ezpztac.network.changePackMember
 import app.ezpztac.network.changeTeamMember
 import app.ezpztac.network.createPack
 import app.ezpztac.network.createTeam
-import app.ezpztac.network.deleteTeam
 import app.ezpztac.network.declineInvite
+import app.ezpztac.network.deleteTeam
 import app.ezpztac.network.duplicatePack
 import app.ezpztac.network.finishPack
 import app.ezpztac.network.inviteToPack
 import app.ezpztac.network.inviteToTeam
 import app.ezpztac.network.listPacks
 import app.ezpztac.network.listTeams
+import app.ezpztac.network.markPackSeen
+import app.ezpztac.network.myInvites
 import app.ezpztac.network.pack
+import app.ezpztac.network.packEvents
 import app.ezpztac.network.packInvites
-import app.ezpztac.network.changePackMember
+import app.ezpztac.network.packItem
 import app.ezpztac.network.removePackMember
 import app.ezpztac.network.removeTeamMember
 import app.ezpztac.network.renameTeam
+import app.ezpztac.network.reopenPack
 import app.ezpztac.network.resendPackInvite
 import app.ezpztac.network.revokePackInvite
 import app.ezpztac.network.revokeTeamInvite
-import app.ezpztac.network.markPackSeen
-import app.ezpztac.network.myInvites
-import app.ezpztac.network.packEvents
-import app.ezpztac.network.reopenPack
 import app.ezpztac.network.searchPeople
 import app.ezpztac.network.team
 import app.ezpztac.network.teamInvites
-import app.ezpztac.network.updatePack
-import app.ezpztac.missionpacks.KeptOutcome
-import app.ezpztac.missionpacks.KeptVersion
-import app.ezpztac.missionpacks.PackKeeper
-import app.ezpztac.network.PackItemSource
-import app.ezpztac.network.packItem
 import app.ezpztac.network.updateFromOriginal
+import app.ezpztac.network.updatePack
 import app.ezpztac.sync.SyncScheduler
-import java.util.UUID
-import kotlinx.serialization.json.JsonElement
 import dagger.Binds
 import dagger.Module
 import dagger.hilt.InstallIn
 import dagger.hilt.components.SingletonComponent
+import java.util.UUID
 import javax.inject.Inject
 import javax.inject.Singleton
 import kotlinx.coroutines.CancellationException
@@ -72,6 +73,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
+import kotlinx.serialization.json.JsonElement
 
 /** The pack calls over the API client. */
 class ApiPacksApi @Inject constructor(private val api: ApiClient) : PacksApi {
@@ -170,6 +172,7 @@ class ApiPackItemCalls @Inject constructor(
     private val api: ApiClient,
     private val keeper: PackKeeper,
     private val scheduler: SyncScheduler,
+    private val documents: PackDocuments,
 ) : PackItemCalls {
     override suspend fun source(pack: String, item: String, user: Int): PackItemSource? = api.packItem(pack, item, asUser = user).source
 
@@ -184,6 +187,9 @@ class ApiPackItemCalls @Inject constructor(
         if (kept is KeptOutcome.Saved) scheduler.requestSync()
         return kept
     }
+
+    override suspend fun saveDocumentToLibrary(pack: String, item: String, name: String): String? =
+        (documents.saveToLibrary(pack, item, name) as? DocumentOutcome.Refused)?.message
 }
 
 /** Teams' calls over the API client, each for the account asked for. */

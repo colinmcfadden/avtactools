@@ -22,7 +22,9 @@ import copy
 import math
 import re
 
-ITEM_KINDS = ('lz', 'route', 'pointset', 'brief', 'threatset')
+# A ``document`` (docs/DOCUMENTS.md §7) is made and replaced only by the server, which checked its files; a client renames and removes
+# one. These rules are the same for every kind: what a client may send is pack_routes.apply_ops's to refuse.
+ITEM_KINDS = ('lz', 'route', 'pointset', 'brief', 'threatset', 'document')
 # What a client may send. ``item.replace`` is the server's own (update from original).
 CLIENT_OP_TYPES = ('item.create', 'item.delete', 'item.rename', 'set', 'patch', 'upsert', 'insert', 'remove')
 SERVER_OP_TYPES = ('item.replace',)

@@ -11,6 +11,7 @@ import copy
 import json
 import re
 import uuid as uuid_lib
+from contextlib import nullcontext
 
 from flask import Blueprint, jsonify, request
 from flask_jwt_extended import get_jwt_identity, jwt_required
@@ -25,17 +26,22 @@ import sync_support as sync
 from auth_rate_limit import check_rate_limits
 from email_service import send_pack_added_email, send_pack_invite_email
 from entitlements import account_active, has_feature, require_feature
+from documents import core as document_core
+from documents import files as document_files
 from models import (
     MissionPack, MissionPackEvent, MissionPackInvite, MissionPackItem, MissionPackMember,
-    SavedBrief, SavedLZ, SavedPointSet, SavedRoute, SavedThreatSet, User, db,
+    SavedBrief, SavedDocument, SavedLZ, SavedPointSet, SavedRoute, SavedThreatSet, User, db,
 )
+from routes import document_routes
 from routes.auth import _normalize_email, _valid_email
 
 pack_bp = Blueprint('packs', __name__)
 
 _CLIENT_OP_ID = re.compile(r'^[\x21-\x7e]{1,64}\Z')       # printable ASCII, as an Idempotency-Key
 _CONTROL = re.compile(r'[\x00-\x1f\x7f]')
-_KIND_WORDS = {'lz': 'LZ', 'route': 'routes', 'pointset': 'points', 'brief': 'brief', 'threatset': 'threats'}
+_KIND_WORDS = {'lz': 'LZ', 'route': 'routes', 'pointset': 'points', 'brief': 'brief', 'threatset': 'threats', 'document': 'document'}
+# What a client may do to a document: rename and remove it. The server makes one and gives it a new version (docs/DOCUMENTS.md §7).
+_DOCUMENT_CLIENT_OPS = ('item.rename', 'item.delete')
 
 
 # -- Helpers --------------------------------------------------------------------
@@ -331,7 +337,8 @@ def delete_pack(pack_uuid):
     _role, refused = _lock(pack, me.id, 'owner')
     if refused:
         return refused
-    # A tombstone, so a device that asks learns it was deleted; everything in it is gone.
+    # A tombstone, so a device that asks learns it was deleted; everything in it is gone, its documents' files once nothing names them.
+    document_hashes = document_files.pack_hashes(pack.id)
     for model in packs.PACK_CONTENT:
         model.query.filter_by(pack_id=pack.id).delete(synchronize_session=False)
     notify.withdraw(pack_uuid=pack.uuid)
@@ -339,6 +346,7 @@ def delete_pack(pack_uuid):
     pack.deleted_at = packs.now()
     packs.announce_deleted(pack.uuid)
     db.session.commit()
+    document_files.release(document_hashes)
     return _reply({'status': 'deleted'})
 
 
@@ -397,15 +405,18 @@ def duplicate_pack(pack_uuid):
     if name is None:
         return _error('Give the pack a name of 1 to 100 characters.', 400, 'invalid_name')
 
-    pack = _new_pack(me, name, source.description or '')
-    who = packs.actor_name(me)
-    items = (MissionPackItem.query.filter_by(pack_id=source.id, deleted_at=None)
-             .order_by(MissionPackItem.created_at, MissionPackItem.id).all())
-    for item in items:
-        # Not linked to any library original: that link is only for whoever copied it in.
-        _add_item(pack, me, item.uuid, item.kind, item.name, item.data,
-                  f'{who} copied "{item.name}" from the pack "{source.name}".')
-    db.session.commit()
+    # The items are read and the copy committed under the documents' files lock: an item removed meanwhile, or the pack deleted,
+    # releases its files only once the copy names them, so they stay (docs/DOCUMENTS.md §5.3).
+    with document_files.held():
+        pack = _new_pack(me, name, source.description or '')
+        who = packs.actor_name(me)
+        items = (MissionPackItem.query.filter_by(pack_id=source.id, deleted_at=None)
+                 .order_by(MissionPackItem.created_at, MissionPackItem.id).all())
+        for item in items:
+            # Not linked to any library original: that link is only for whoever copied it in.
+            _add_item(pack, me, item.uuid, item.kind, item.name, item.data,
+                      f'{who} copied "{item.name}" from the pack "{source.name}".')
+        db.session.commit()
     return _reply(_full(pack, me.id), 201)
 
 
@@ -494,6 +505,8 @@ def apply_ops(pack_uuid):
         reason = pack_ops.validate(op)
         if reason:
             return malformed(reason)
+        if op['type'] == 'item.create' and op['kind'] == 'document':
+            return malformed('bad_kind')               # the server makes a document, from a file it checked
         if 'summary' in op and not isinstance(op['summary'], str):
             return malformed('bad_summary')
 
@@ -511,6 +524,11 @@ def apply_ops(pack_uuid):
     # Deleted items too: a uuid is never reused.
     rows = {i.uuid: i for i in MissionPackItem.query.filter(
         MissionPackItem.pack_id == pack.id, MissionPackItem.uuid.in_({op['item'] for op in ops})).all()}
+    # A document's content is the files the server checked: a client renames and removes one, never edits what it names.
+    for index, op in enumerate(ops):
+        row = rows.get(op['item'])
+        if row is not None and row.kind == 'document' and op['type'] not in _DOCUMENT_CLIENT_OPS:
+            return _error(f'Operation {index} is malformed (bad_kind).', 400, 'invalid_op', index=index, reason='bad_kind')
     if (role not in packs.EDIT_ROLES or pack.status == 'finished') and \
             not _only_briefs(ops, {u: r.kind for u, r in rows.items()}):
         if role not in packs.EDIT_ROLES:
@@ -520,13 +538,17 @@ def apply_ops(pack_uuid):
              for u, r in rows.items()}
 
     results, created, applied = [], [], {}
+    released = set()                                       # the files of documents this batch removes
     for op in ops:
         if op['client_op_id'] in done:
             results.append(_result(done[op['client_op_id']]))
             continue
         payload = {k: v for k, v in op.items() if k not in ('client_op_id', 'summary')}
         name_before = state[op['item']]['name'] if op['item'] in state else None
+        data_before = state[op['item']]['data'] if op['item'] in state else None
         status, reason = pack_ops.apply(state, payload)
+        if status == pack_ops.APPLIED and op['type'] == 'item.delete' and state[op['item']]['kind'] == 'document':
+            released |= document_core.hashes_of(data_before)
         summary = packs.clean_summary(op.get('summary')) or _default_summary(me, op, name_before)
         event = packs.append(pack, me, payload, summary, item_uuid=op['item'],
                              client_op_id=op['client_op_id'], status=status, reason=reason)
@@ -556,6 +578,7 @@ def apply_ops(pack_uuid):
         if after['deleted'] and row.deleted_at is None:
             row.deleted_at = packs.now()
     db.session.commit()
+    document_files.release(released)
 
     has_more = False
     if base_seq is not None:
@@ -667,6 +690,8 @@ def _library_data(kind, record):
         return record.route_data
     if kind == 'threatset':
         return record.threat_data
+    if kind == 'document':
+        return record.doc_data
     return record.points_data
 
 
@@ -689,8 +714,8 @@ def copy_in(pack_uuid):
     source = body.get('source') if isinstance(body.get('source'), dict) else {}
     kind = source.get('kind')
     if kind not in packs.LIBRARY_MODELS:
-        return _error('source.kind must be lz, route, pointset or threatset.', 400, 'invalid_source')
-    if kind == 'threatset' and not has_feature(me, 'threats'):
+        return _error('source.kind must be lz, route, pointset, threatset or document.', 400, 'invalid_source')
+    if (kind == 'threatset' and not has_feature(me, 'threats')) or (kind == 'document' and not has_feature(me, 'documents')):
         return _error("This feature isn't enabled for your account.", 403, 'feature_disabled')
     item_uuid = body.get('item') if body.get('item') is not None else str(uuid_lib.uuid4())
     if not isinstance(item_uuid, str) or pack_ops.validate({'type': 'item.delete', 'item': item_uuid}):
@@ -701,16 +726,35 @@ def copy_in(pack_uuid):
     pack, _role, refused = _load(pack_uuid, me.id, need='edit')
     if refused:
         return refused
+    # A document's files are named by the new item: the record is read, and the item committed, under the files lock, so the
+    # record deleted meanwhile is either seen as gone here or releases its files only once the item names them.
+    with document_files.held() if kind == 'document' else nullcontext():
+        return _copy_in(pack, me, kind, source, item_uuid, body)
+
+
+def _files_present(data):
+    """Whether every file a document's data names is on this server's disk."""
+    return all(document_files.path_of(digest) for digest in document_core.hashes_of(data))
+
+
+def _file_missing(status=409):
+    return _error("That document's file is not on this server.", status, 'file_missing')
+
+
+def _copy_in(pack, me, kind, source, item_uuid, body):
     record = _library_record(kind, me.id, source)
     if record is None:
         return _error('That is not in your library.', 404, 'source_not_found')
     if kind == 'route' and record.kind != 'sketch':
         return _error('Imported AMPS missions cannot go in a pack yet; sketched routes can.', 400, 'mission_not_supported')
     data = _library_data(kind, record)
-    if (kind == 'pointset') != isinstance(data, list) or not isinstance(data, (dict, list)):
+    if (kind == 'pointset') != isinstance(data, list) or not isinstance(data, (dict, list)) or \
+            (kind == 'document' and not document_core.hashes_of(data)):
         return _error('That record cannot be read.', 400, 'unreadable_source')
     if _too_large(data):
         return _error('That is larger than 5 MB.', 413, 'item_too_large')
+    if kind == 'document' and not _files_present(data):
+        return _file_missing()
     if record.client_uuid is None:
         # Saved before sync: the item finds its original again by this name, and without one it would
         # match whichever of the person's unnamed records came first.
@@ -727,6 +771,10 @@ def copy_in(pack_uuid):
             db.session.commit()
             return _item_reply(pack, existing, None, me.id, 200)                # the same copy, asked again
         return _error('The pack already has an item with that id.', 409, 'item_exists')
+    if kind == 'document':
+        refused = _pack_has_room(pack, document_core.pdf_bytes_of(data))
+        if refused:
+            return refused
 
     name = body['name'] if 'name' in body else ((record.name or '')[:100].strip() or _KIND_WORDS[kind].upper())
     summary = packs.clean_summary(body.get('summary')) or \
@@ -739,8 +787,13 @@ def copy_in(pack_uuid):
     return _item_reply(pack, item, event, me.id, 201)
 
 
-def _live_item(pack, item_uuid):
-    return MissionPackItem.query.filter_by(pack_id=pack.id, uuid=item_uuid, deleted_at=None).first()
+def _live_item(pack, item_uuid, fresh=False):
+    """The pack's live item ``item_uuid``, or None. ``fresh`` reads it from the database again even when this request already holds
+    it (the pack's lock refreshes only the pack), as a write does once it has the lock after slow work."""
+    query = MissionPackItem.query.filter_by(pack_id=pack.id, uuid=item_uuid, deleted_at=None)
+    if fresh:
+        query = query.execution_options(populate_existing=True)
+    return query.first()
 
 
 @pack_bp.route('/api/packs/<pack_uuid>/items/<item_uuid>', methods=['GET'])
@@ -767,6 +820,12 @@ def update_from_original(pack_uuid, item_uuid):
     pack, _role, refused = _load(pack_uuid, me.id, need='edit')
     if refused:
         return refused
+    # Under the documents' files lock, as a copy in is: the original deleted meanwhile releases its files only once the copy names them.
+    with document_files.held():
+        return _update_from_original(pack, me, item_uuid)
+
+
+def _update_from_original(pack, me, item_uuid):
     _role, refused = _lock(pack, me.id, 'edit')
     if refused:
         return refused
@@ -791,6 +850,13 @@ def update_from_original(pack_uuid, item_uuid):
         data = _threats_of_copy(data, item.uuid)
     if _too_large(data):
         return _error('The original is larger than 5 MB.', 413, 'item_too_large')
+    if item.kind == 'document':
+        if not _files_present(data):
+            return _file_missing()
+        refused = _pack_has_room(pack, document_core.pdf_bytes_of(data), replacing=item.data)
+        if refused:
+            return refused
+    released = document_core.hashes_of(item.data) if item.kind == 'document' else set()
 
     payload = {'type': 'item.replace', 'item': item.uuid, 'data': copy.deepcopy(data), 'source_revision': original.revision}
     state = {item.uuid: {'kind': item.kind, 'name': item.name, 'data': item.data, 'deleted': False}}
@@ -808,6 +874,7 @@ def update_from_original(pack_uuid, item_uuid):
     item.updated_at = packs.now()
     item.source_revision = original.revision
     db.session.commit()
+    document_files.release(released - document_core.hashes_of(item.data))
     return _item_reply(pack, item, event, me.id, 200)
 
 
@@ -829,11 +896,24 @@ def save_to_library(pack_uuid, item_uuid):
     name = body['name'] if 'name' in body else item.name
     if pack_ops.validate({'type': 'item.rename', 'item': 'x', 'name': name}):
         return _error('The name must be 1 to 100 characters.', 400, 'invalid_name')
+    if item.kind != 'document':
+        return _save_to_library(me, item, name)
+    # A document's files are named by the new record: the item is read again, and the record committed, under the files lock, so
+    # the item removed meanwhile is seen as gone here or releases its files only once the record names them.
+    with document_files.held():
+        item = _live_item(pack, item_uuid, fresh=True)
+        if item is None:
+            return _error('Not found', 404, 'item_not_found')
+        return _save_to_library(me, item, name)
 
+
+def _save_to_library(me, item, name):
     data = copy.deepcopy(item.data)
     if item.kind == 'brief' and not has_feature(me, 'mission_brief'):
         return _error("This feature isn't enabled for your account.", 403, 'feature_disabled')
     if item.kind == 'threatset' and not has_feature(me, 'threats'):
+        return _error("This feature isn't enabled for your account.", 403, 'feature_disabled')
+    if item.kind == 'document' and not has_feature(me, 'documents'):
         return _error("This feature isn't enabled for your account.", 403, 'feature_disabled')
     if item.kind == 'lz':
         record = SavedLZ(user_id=me.id, name=name, lz_data=data)
@@ -849,6 +929,19 @@ def save_to_library(pack_uuid, item_uuid):
         if not isinstance(data.get('threats'), list):
             return _error('That set of threats cannot be read.', 400, 'unreadable_source')
         record = SavedThreatSet(user_id=me.id, name=name, threat_data=data, threat_count=len(data['threats']))
+    elif item.kind == 'document':
+        refused = _document_record_refusal(me.id, data)
+        if refused:
+            return refused
+        if not _files_present(data):
+            return _error('That document cannot be read.', 400, 'unreadable_source')
+        pdf, text = data['pdf'], data.get('text') if isinstance(data.get('text'), dict) else None
+        source = data.get('source') if isinstance(data.get('source'), dict) else {}
+        # The same files, named again: a copy costs no bytes, and keeps them while either is live.
+        record = SavedDocument(user_id=me.id, name=name, doc_data=data, pdf_sha256=pdf['sha256'],
+                               text_sha256=text['sha256'] if text else None, page_count=pdf.get('pages') or 0,
+                               pdf_bytes=document_core.pdf_bytes_of(data),
+                               source_type=source.get('type') if source.get('type') in document_core.KINDS else None)
     else:
         return _error('That item cannot be saved to a library.', 400, 'unreadable_source')
     record.client_uuid = sync.new_client_uuid()
@@ -857,6 +950,205 @@ def save_to_library(pack_uuid, item_uuid):
     db.session.commit()
     return _reply({'kind': item.kind, 'id': record.id, 'client_uuid': record.client_uuid,
                    'name': record.name, 'revision': record.revision}, 201)
+
+
+# -- Documents (docs/DOCUMENTS.md §7) --------------------------------------------------
+
+def _pack_documents(pack):
+    """``(count, bytes)`` of a pack's live documents."""
+    rows = (MissionPackItem.query.filter_by(pack_id=pack.id, kind='document', deleted_at=None)
+            .with_entities(MissionPackItem.data).all())
+    return len(rows), sum(document_core.pdf_bytes_of(data) for (data,) in rows)
+
+
+def _pack_has_room(pack, adding_bytes, replacing=None):
+    """The refusal for a document that would take the pack past its limits, or None. ``replacing`` is the data of one it replaces."""
+    count, used = _pack_documents(pack)
+    if replacing is not None:
+        count -= 1
+        used -= document_core.pdf_bytes_of(replacing)
+    if count + 1 > document_core.PACK_MAX_DOCUMENTS or used + adding_bytes > document_core.PACK_MAX_BYTES:
+        return _error('This pack has no room for this document: remove one first.', 413, 'pack_full')
+    return None
+
+
+def _document_record_refusal(user_id, data):
+    """Why a pack's document cannot be saved to the caller's Library, or None."""
+    pdf = data.get('pdf') if isinstance(data, dict) else None
+    if not isinstance(pdf, dict) or not document_core.hashes_of(data) or pdf.get('sha256') not in document_core.hashes_of(data):
+        return _error('That document cannot be read.', 400, 'unreadable_source')
+    count, used = document_routes.library_use(user_id)
+    if count >= document_core.LIBRARY_MAX_DOCUMENTS or used + document_core.pdf_bytes_of(data) > document_core.LIBRARY_MAX_BYTES:
+        return _error('Your Library has no room for this document: delete one first.', 413, 'library_full')
+    return None
+
+
+def _same_upload(existing, me):
+    """A pack upload asked again after its answer was lost: the item it made, by the same person, still there."""
+    return existing.deleted_at is None and existing.kind == 'document' and existing.created_by == me.id \
+        and existing.source_kind is None
+
+
+@pack_bp.route('/api/packs/<pack_uuid>/documents', methods=['POST'])
+@jwt_required()
+@require_feature('mission_packs')
+@require_feature('documents')
+def upload_document(pack_uuid):
+    """Upload a document straight into a pack: multipart ``file``, optional ``name``, and ``item`` (the client's id for the new item,
+    so a retry after a lost answer is the same item). An editor, the pack not finished. A heavy request: an Office file is converted."""
+    me = _me()
+    refused = document_routes.parse_form()
+    if refused:
+        return refused
+    item_uuid = request.form.get('item') or str(uuid_lib.uuid4())
+    if pack_ops.validate({'type': 'item.delete', 'item': item_uuid}):
+        return _error('item must be an id of letters, digits and _ . : -, 64 at most.', 400, 'invalid_item')
+    name = request.form.get('name')
+    if name is not None and pack_ops.validate({'type': 'item.rename', 'item': 'x', 'name': name}):
+        return _error('The name must be 1 to 100 characters.', 400, 'invalid_name')
+
+    pack, _role, refused = _load(pack_uuid, me.id, need='edit')
+    if refused:
+        return refused
+    existing = MissionPackItem.query.filter_by(pack_id=pack.id, uuid=item_uuid).first()
+    if existing is not None:
+        if _same_upload(existing, me):
+            return _item_reply(pack, existing, None, me.id, 200)     # asked again: nothing converted twice
+        return _error('The pack already has an item with that id.', 409, 'item_exists')
+    if pack.status == 'finished':
+        return _finished(pack)
+    data, filename, refused = document_routes.read_upload()
+    if refused:
+        return refused
+    refused = _pack_has_room(pack, 0)
+    if refused:
+        return refused
+    try:
+        prepared = document_core.prepare(data, filename)
+    except document_core.DocumentError as error:
+        return document_routes.refusal(error)
+    name = name if name is not None else document_core.default_name(filename)
+
+    with document_files.held():
+        _role, refused = _lock(pack, me.id, 'edit')
+        if refused:
+            return refused
+        if pack.status == 'finished':
+            return _finished(pack)
+        existing = MissionPackItem.query.filter_by(pack_id=pack.id, uuid=item_uuid).first()
+        if existing is not None:
+            if _same_upload(existing, me):
+                db.session.commit()
+                return _item_reply(pack, existing, None, me.id, 200)
+            return _error('The pack already has an item with that id.', 409, 'item_exists')
+        refused = _pack_has_room(pack, len(prepared.pdf))
+        if refused:
+            return refused
+        document_files.keep(prepared)
+        doc = document_core.describe(prepared, filename, len(data))
+        summary = packs.clean_summary(request.form.get('summary')) or \
+            f'{packs.actor_name(me)} added the document "{name}".'
+        item, event = _add_item(pack, me, item_uuid, 'document', name, doc, summary)
+        db.session.commit()
+    return _item_reply(pack, item, event, me.id, 201)
+
+
+@pack_bp.route('/api/packs/<pack_uuid>/items/<item_uuid>/version', methods=['POST'])
+@jwt_required()
+@require_feature('mission_packs')
+@require_feature('documents')
+def new_document_version(pack_uuid, item_uuid):
+    """A new version of a pack's document, under the same name and item: multipart ``file`` as an upload. An editor, the pack not
+    finished. Logged as the server's ``item.replace``, which every client applies; the same file again changes nothing."""
+    me = _me()
+    refused = document_routes.parse_form()
+    if refused:
+        return refused
+    pack, _role, refused = _load(pack_uuid, me.id, need='edit')
+    if refused:
+        return refused
+    item = _live_item(pack, item_uuid)
+    if item is None:
+        return _error('Not found', 404, 'item_not_found')
+    if item.kind != 'document':
+        return _error('Only a document has versions.', 400, 'not_a_document')
+    if pack.status == 'finished':
+        return _finished(pack)
+    data, filename, refused = document_routes.read_upload()
+    if refused:
+        return refused
+    try:
+        prepared = document_core.prepare(data, filename)
+    except document_core.DocumentError as error:
+        return document_routes.refusal(error)
+
+    with document_files.held():
+        _role, refused = _lock(pack, me.id, 'edit')
+        if refused:
+            return refused
+        if pack.status == 'finished':
+            return _finished(pack)
+        item = _live_item(pack, item_uuid, fresh=True)          # read before the conversion: someone may have changed it since
+        if item is None:
+            return _error('Not found', 404, 'item_not_found')
+        before = document_core.hashes_of(item.data)
+        if prepared.pdf_sha256 in before:
+            db.session.commit()
+            return _item_reply(pack, item, None, me.id, 200)         # this version already: a retry after a lost answer
+        refused = _pack_has_room(pack, len(prepared.pdf), replacing=item.data)
+        if refused:
+            return refused
+        document_files.keep(prepared)
+        doc = document_core.describe(prepared, filename, len(data))
+        payload = {'type': 'item.replace', 'item': item.uuid, 'data': doc}
+        state = {item.uuid: {'kind': item.kind, 'name': item.name, 'data': item.data, 'deleted': False}}
+        status, reason = pack_ops.apply(state, payload)
+        if status != pack_ops.APPLIED:
+            return _error('That document cannot be replaced.', 400, reason)
+        summary = packs.clean_summary(request.form.get('summary')) or \
+            f'{packs.actor_name(me)} replaced "{item.name}" with a new version.'
+        event = packs.append(pack, me, payload, summary, item_uuid=item.uuid)
+        item.data = state[item.uuid]['data']
+        flag_modified(item, 'data')
+        item.revision += 1
+        item.change_seq = pack.head_seq
+        item.updated_by = me.id
+        item.updated_at = packs.now()
+        db.session.commit()
+    document_files.release(before - document_core.hashes_of(item.data))
+    return _item_reply(pack, item, event, me.id, 200)
+
+
+def _document_file(pack_uuid, item_uuid, part):
+    """A pack's document's PDF or text, to any member in any state of the pack."""
+    user_id = int(get_jwt_identity())
+    pack, _role, refused = _load(pack_uuid, user_id)
+    if refused:
+        return refused
+    item = _live_item(pack, item_uuid)
+    if item is None or item.kind != 'document' or not isinstance(item.data, dict):
+        return _error('Not found', 404, 'item_not_found')
+    value = item.data.get(part)
+    digest = value.get('sha256') if isinstance(value, dict) else None
+    if part == 'text' and digest is None:
+        return _error('This document has no text to search (a scan?).', 404, 'no_text')
+    if digest not in document_core.hashes_of(item.data):
+        return _error('That file is not on this server.', 404, 'file_missing')
+    return document_routes.serve(digest, item.name, 'application/pdf' if part == 'pdf' else 'application/json')
+
+
+@pack_bp.route('/api/packs/<pack_uuid>/items/<item_uuid>/pdf', methods=['GET'])
+@jwt_required()
+@require_feature('mission_packs')
+def document_item_pdf(pack_uuid, item_uuid):
+    return _document_file(pack_uuid, item_uuid, 'pdf')
+
+
+@pack_bp.route('/api/packs/<pack_uuid>/items/<item_uuid>/text', methods=['GET'])
+@jwt_required()
+@require_feature('mission_packs')
+def document_item_text(pack_uuid, item_uuid):
+    return _document_file(pack_uuid, item_uuid, 'text')
 
 
 # -- Members --------------------------------------------------------------------

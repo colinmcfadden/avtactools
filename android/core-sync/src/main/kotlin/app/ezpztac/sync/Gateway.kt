@@ -96,6 +96,7 @@ public class ApiSyncApi(private val client: ApiClient) : SyncApi {
         }
         RecordKind.BRIEF -> client.createBrief(record.name, record.data, record.uuid, key).let { Remote(it.value.id, it.value.revision, it.created) }
         RecordKind.THREAT_SET -> client.createThreatSet(record.name, record.data, record.uuid, key).let { Remote(it.value.id, it.value.revision, it.created) }
+        RecordKind.DOCUMENT -> neverSent()
     }
 
     override suspend fun update(record: LocalRecord, baseRevision: Int, key: String, file: FilePart?): Remote {
@@ -109,6 +110,7 @@ public class ApiSyncApi(private val client: ApiClient) : SyncApi {
             RecordKind.MISSION -> client.updateMission(id, baseRevision, record.name, record.data, file?.name, file?.bytes, key).let { Remote(it.id, it.revision, created = false) }
             RecordKind.BRIEF -> client.updateBrief(id, baseRevision, record.name, record.data, key).let { Remote(it.id, it.revision, created = false) }
             RecordKind.THREAT_SET -> client.updateThreatSet(id, baseRevision, record.name, record.data, key).let { Remote(it.id, it.revision, created = false) }
+            RecordKind.DOCUMENT -> neverSent()
         }
     }
 
@@ -122,8 +124,12 @@ public class ApiSyncApi(private val client: ApiClient) : SyncApi {
             RecordKind.MISSION -> client.deleteRoute(id, baseRevision, key)
             RecordKind.BRIEF -> client.deleteBrief(id, baseRevision, key)
             RecordKind.THREAT_SET -> client.deleteThreatSet(id, baseRevision, key)
+            RecordKind.DOCUMENT -> neverSent()
         }
     }
+
+    /** A document is changed online and never queued ([RecordKind.DOCUMENT]), so no outbox entry can name one. */
+    private fun neverSent(): Nothing = error("a document is never sent from the outbox: it is uploaded, renamed and deleted online")
 
     override suspend fun changes(since: Int): ChangeFeed = client.changes(since)
 
@@ -162,6 +168,7 @@ public fun serverCopyOf(kind: RecordKind, server: JsonObject): ServerCopy? {
         RecordKind.MISSION -> server["route_data"] as? JsonObject ?: return null
         RecordKind.BRIEF -> server["data"] as? JsonObject ?: return null
         RecordKind.THREAT_SET -> server["data"] as? JsonObject ?: return null
+        RecordKind.DOCUMENT -> server["data"] as? JsonObject ?: return null
     }
     val hasFile = (server["has_file"] as? JsonPrimitive)?.booleanOrNull == true
     return ServerCopy(

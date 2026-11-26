@@ -6,7 +6,7 @@
   "outputDirectory": "dist",
   "rewrites": [
     {
-      "source": "/((?!cesium/|tiles/|icons/|img/|sounds/|assets/|\\.well-known/)[^.]*)",
+      "source": "/((?!cesium/|pdfjs/|tiles/|icons/|img/|sounds/|assets/|\\.well-known/)[^.]*)",
       "destination": "/index.html"
     }
   ]
