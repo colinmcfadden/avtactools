@@ -33,7 +33,7 @@ mission planning system).
 - **Repo:** `github.com/colinmcfadden/avtactools` · default branch `develop`.
 - **Native apps:** Android (Kotlin) first, then iOS and iPadOS (Swift). Android
   has the plan's P0–P2 (§17; where it stands and what is next: `docs/HANDOFF.md`);
-  iOS has its foundations (I0 of `docs/IOS_PLAN.md`, its build plan with the ForeFlight hand-off; §17, *iOS*).
+  iOS has its pure core's first part (I0 and I1 of `docs/IOS_PLAN.md`, its build plan with the ForeFlight hand-off; §17, *iOS*).
   Read `docs/NATIVE_APPS_PLAN.md` before any mobile work.
 
 ---
@@ -3271,21 +3271,31 @@ client is built around not losing one:
 the app binary; no new dependency beyond what the plan's owner-approved list covers (ask first for anything else).
 
 **iOS** (`ios/`; the plan, its steps and the owner's decisions in `docs/IOS_PLAN.md`; how to build and test in `ios/README.md`).
-- **Where it stands: I0, the foundations.** An app target that builds for iOS 26 and shows its version, and the `EZPZCore` Swift package
-  (Foundation only, so `swift test` runs it on the Mac with no simulator) with `CoreJS` and `CoreTesting`. Nothing plans yet.
+- **Where it stands: I1, the pure core's first part.** An app target that builds for iOS 26 and shows its version, and the `EZPZCore` Swift
+  package (Foundation only, so `swift test` runs it on the Mac with no simulator): `CoreJS`, `CoreModel`, `CoreGeo` and `CorePlanning` (Android's
+  core-model, core-geo and core-planning, file for file under the same type names, and the web's backstops, graphic scale, FLOT and phase lines,
+  which Android does not draw), `DesignTokens` and `CoreTesting`; 423 tests, held to the fixtures in any time zone. No screens yet.
+- **iOS follows the web where Android only carries a graphic** (the owner, 2026-11-21): backstops, the FLOT, phase lines, control measures and
+  graphics drawn smaller as the map zooms out are ported from the web's files and held to `planning/backstops.json`, `graphicScale.json` and
+  `controlMeasures.json` (the last two recorded by the web in I1), not from Android.
 - **`CoreJS` is what every Swift port reads JSON and numbers with**, the Kotlin ports' `Js`, `JsValue` and `JsNumber` together, and more:
   `JSONTree` keeps JSON as the web does (JSON.parse's grammar, an object's keys in JavaScript's order kept by the object itself, a number's
   literal text, null apart from absent) with objects and lists as immutable final classes, so `===` tells an untouched value from a new one
   as kotlinx's instances do. Never `JSONSerialization` or `Codable` for a document the web wrote: they lose all three. Text that stands for
   JavaScript text is compared by its UTF-16 units (`UTF16Key`), never Swift's `==`, which takes `"é"` written two ways for one.
-- **Swift traps found in I0** (each with a test): a deeply nested tree ends the app *as it is freed* (Swift releases a nested object inside
+- **Swift traps found in I0 and I1** (each with a test; the whole list is docs/IOS_PLAN.md §6): a deeply nested tree ends the app *as it is freed* (Swift releases a nested object inside
   its parent's release), so parsing is bounded at 64 levels and the parser keeps a stack of its own; appending to a list taken out of an
-  enum's payload copies it at every element (half a million numbers took minutes); a lone surrogate cannot be held and reads as U+FFFD.
+  enum's payload copies it at every element (half a million numbers took minutes); a lone surrogate cannot be held and reads as U+FFFD;
+  Swift's synthesised `==` and a `String` key compare text canonically, so ids and typed text compare by UTF-16 units; a `Character` joins a
+  `#` or `=` to a combining mark, so text is split on scalars; `Swift.min`/`max` drop a NaN that Java's keep (`javaMin`); `Int(_:)` and `+` trap
+  where Kotlin saturates or wraps; Foundation's calendar is Julian before 1582, so dates are counted by hand.
 - **`JsNumber.toText` lays Swift's shortest digits out JavaScript's way**, held to `formats/number_text.json` and checked against Node on
   461,755 doubles (`ios/Scripts/number_text_sample.mjs`, when the writer changes).
 - **Versions**: `ios/Config/Version.xcconfig` holds the app's own (0.x until its first release), `EZPZ_API_MAJORS` (read by
   `contracts/scripts/api_version.py check`, as Android's and the web's are) and the placeholder bundle id `app.ezpztac.unreleased`
   (`.debug` for debug builds): the real one is permanent once published and the owner's to choose.
+- **Design tokens**: `contracts/scripts/tokens.py` writes `Tokens.swift` (in `DesignTokens`) beside Android's `Tokens.kt`, and Android's contrast
+  and night tests hold its palettes on the Mac.
 - **Format**: swift-format, which ships with the toolchain (`ios/.swift-format`, `--strict` in CI); Swift warnings are errors in the app.
 - **CI**: `.github/workflows/ios.yaml` on `macos-26`, path-filtered; not yet run on GitHub, so the first PR that touches `ios/` shows
   whether the runner's Xcode is new enough (Xcode 26 or later).

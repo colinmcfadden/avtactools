@@ -34,6 +34,14 @@ on:
       - "frontend/src/feature/terrain/**"
       # The MGRS grid (mgrs/grid.json), which the brief's strip charts are gridded with too (brief/strip-grid.json).
       - "frontend/src/feature/mgrsGrid/**"
+      # The LZ/PZ's other graphics and the control measures (planning/backstops.json, graphicScale.json, controlMeasures.json),
+      # and the zoom-0 projection the graphic scale measures an LZ with.
+      - "frontend/src/feature/backstops/**"
+      - "frontend/src/feature/flot/**"
+      - "frontend/src/feature/phaseLines/**"
+      - "frontend/src/feature/setLines/**"
+      - "frontend/src/feature/graphicScale/**"
+      - "frontend/src/feature/missionOverlay/overlayPlan.js"
       - "backend/requirements.txt"
       - "backend/ths_export.py"
       - "backend/threat_template.ths"
@@ -65,6 +73,14 @@ on:
       - "frontend/src/feature/terrain/**"
       # The MGRS grid (mgrs/grid.json), which the brief's strip charts are gridded with too (brief/strip-grid.json).
       - "frontend/src/feature/mgrsGrid/**"
+      # The LZ/PZ's other graphics and the control measures (planning/backstops.json, graphicScale.json, controlMeasures.json),
+      # and the zoom-0 projection the graphic scale measures an LZ with.
+      - "frontend/src/feature/backstops/**"
+      - "frontend/src/feature/flot/**"
+      - "frontend/src/feature/phaseLines/**"
+      - "frontend/src/feature/setLines/**"
+      - "frontend/src/feature/graphicScale/**"
+      - "frontend/src/feature/missionOverlay/overlayPlan.js"
       - "backend/requirements.txt"
       - "backend/ths_export.py"
       - "backend/threat_template.ths"

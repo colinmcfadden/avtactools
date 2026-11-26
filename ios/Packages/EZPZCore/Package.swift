@@ -9,15 +9,32 @@ let package = Package(
     platforms: [.iOS("26.0"), .macOS("26.0")],
     products: [
         .library(name: "CoreJS", targets: ["CoreJS"]),
+        .library(name: "CoreModel", targets: ["CoreModel"]),
+        .library(name: "CoreGeo", targets: ["CoreGeo"]),
+        .library(name: "CorePlanning", targets: ["CorePlanning"]),
+        .library(name: "DesignTokens", targets: ["DesignTokens"]),
         .library(name: "CoreTesting", targets: ["CoreTesting"]),
     ],
     targets: [
         // What JavaScript does that every port has to do the same way: JSON as the web keeps it, its numbers' text, `Number()`,
         // `trim`, `Math.round`, `toFixed`, the order of an object's keys.
         .target(name: "CoreJS"),
+        // Android's core-model: the domain types in the web's saved-JSON shape and what can be done to them.
+        .target(name: "CoreModel", dependencies: ["CoreJS"]),
+        // Android's core-geo: MGRS both ways, the grid over the map, reading what is typed as a place, sharing a grid.
+        .target(name: "CoreGeo", dependencies: ["CoreModel", "CoreJS"]),
+        // Android's core-planning: aircraft geometry, capacity, separation, the graphics' placement, routes planned, backstops.
+        .target(name: "CorePlanning", dependencies: ["CoreModel", "CoreGeo", "CoreJS"]),
+        // The design tokens, generated from contracts/tokens/tokens.json by contracts/scripts/tokens.py (as Android's Tokens.kt):
+        // plain numbers, so the palettes are held to WCAG here on the Mac.
+        .target(name: "DesignTokens"),
         // Reads contracts/fixtures and compares JSON with a tolerance. Test support only.
         .target(name: "CoreTesting", dependencies: ["CoreJS"]),
         .testTarget(name: "CoreJSTests", dependencies: ["CoreJS", "CoreTesting"]),
+        .testTarget(name: "CoreModelTests", dependencies: ["CoreModel", "CoreJS", "CoreTesting"]),
+        .testTarget(name: "CoreGeoTests", dependencies: ["CoreGeo", "CoreModel", "CoreJS", "CoreTesting"]),
+        .testTarget(name: "DesignTokensTests", dependencies: ["DesignTokens"]),
+        .testTarget(name: "CorePlanningTests", dependencies: ["CorePlanning", "CoreGeo", "CoreModel", "CoreJS", "CoreTesting"]),
     ],
     swiftLanguageModes: [.v6]
 )

@@ -14,7 +14,7 @@ contracts/
 ├─ fixtures/        golden inputs and expected outputs, one JSON file per domain
 │  ├─ mgrs/         forward.json, inverse.json      reference: PyGeodesy; grid.json: the web
 │  ├─ coords/       parse.json, reading.json        reference: the web app (coordParse.js; targetReading.js, the target field)
-│  ├─ planning/     aircraft.json, route.json, summary.json, graphics.json, backstops.json   reference: the web app
+│  ├─ planning/     aircraft.json, route.json, summary.json, graphics.json, backstops.json, graphicScale.json, controlMeasures.json   reference: the web app
 │  ├─ workspace/    diagram.json, ops.json, doghouses.json   reference: the web app
 │  ├─ routes/       sketch.json, winds.json, handoff.json, handoff-set.json   reference: the web app (sketchOps, routeWinds, foreflight.js)
 │  ├─ formats/      number_text.json                reference: the web app (JavaScript's `String(n)`)
@@ -60,7 +60,9 @@ reference is.
 | `coords/parse.json` | `frontend/src/contracts/webFixtures.test.js` | — | `core-geo` |
 | `coords/reading.json` | `frontend/src/contracts/webFixtures.test.js` | — | `core-geo` (`PlaceSearch.read`, `nearestFirst`, `formatLatLong`) |
 | `planning/*.json` | `frontend/src/contracts/webFixtures.test.js` | — | `core-planning` (`summary.json`: `LzSummary`; `graphics.json`: `PlanningGraphics`) |
-| `planning/backstops.json` | `frontend/src/contracts/backstopFixtures.test.js` | — | not ported yet: Android carries a backstop and does not draw one |
+| `planning/backstops.json` | `frontend/src/contracts/backstopFixtures.test.js` | — | not ported: Android carries a backstop and does not draw one; iOS: `CorePlanning`'s `Backstops` |
+| `planning/graphicScale.json` | `frontend/src/contracts/graphicScaleFixtures.test.js` | — | not ported: Android does not scale graphics; iOS: `CorePlanning`'s `GraphicScale` |
+| `planning/controlMeasures.json` | `frontend/src/contracts/controlMeasuresFixtures.test.js` | — | not ported: Android carries FLOTs and phase lines and does not draw them; iOS: `CorePlanning`'s `SetLines`, `Flots`, `PhaseLines` |
 | `workspace/diagram.json` | `frontend/src/contracts/webFixtures.test.js` | — | `core-model` |
 | `brief/compile.json` | `frontend/src/contracts/briefCompileFixtures.test.js` | `backend/tests/test_brief_pdf.py` (prints its first model) | `core-brief` (`CompileBrief`: every case, strictly: null kept apart from absent, numbers in JavaScript's digits, keys in JavaScript's order, the strips' numbers and the slope calls too; `CompileFixtureTest`) |
 | `brief/light.json` | `frontend/src/contracts/briefLightFixtures.test.js` | — (reference: Skyfield, `scripts/light_fixtures.py`) | `core-brief` (`Light`, within the file's tolerances; `LightFixtureTest`) |
@@ -103,9 +105,11 @@ reference is.
 | `viewer3d/geodesy.json` | — (PROJ's own transform, by `contracts/scripts/geodesy_fixtures.py`) | — | `core-scene3d` (`geodeticToEcef`, `ecefToGeodetic`, `LocalFrame`) |
 
 iOS reads the same files through `CoreTesting` (`ios/Packages/EZPZCore`, found from its own path, `EZPZ_CONTRACTS` to name another
-folder). So far (I0 of `docs/IOS_PLAN.md`): `formats/number_text.json` (`CoreJS`'s `JsNumber.toText`), `workspace/doghouses.json`'s
-`jsParse` (`JsNumber.parseInt`, `parseFloat`), and every JSON fixture here read and written back unchanged by `JSONTree`. Each later step
-names the files it ports to here.
+folder). So far: in I0 `formats/number_text.json` (`CoreJS`'s `JsNumber.toText`), `workspace/doghouses.json`'s `jsParse`
+(`JsNumber.parseInt`, `parseFloat`), and every JSON fixture here read and written back unchanged by `JSONTree`; in I1 `mgrs/*` and `coords/*`
+(`CoreGeo`), `workspace/*`, `symbols/sidc.json`, `aircraft/limits.json`, `localpoints/match.json` and `threats/sets.json` (`CoreModel`), and
+`planning/*` (with `backstops.json`, `graphicScale.json` and `controlMeasures.json`), `routes/sketch.json` and `routes/winds.json`
+(`CorePlanning`). Each later step names the files it ports to here.
 
 ### The `msnx/` fixtures
 
@@ -313,7 +317,8 @@ without the fixture diff in the same PR — and the Android tests then fail unti
 
 `tokens/tokens.json` is the one place a colour, a spacing step or a type size is decided. The clients keep the same
 names, so "primary" or "touchTarget" means the same on every platform. `scripts/tokens.py write` generates the Android
-`Tokens.kt` (the iOS file joins when iOS starts) and `tokens.py check` fails if the generated file is stale; CI runs it.
+`Tokens.kt` and the iOS `Tokens.swift` (`ios/Packages/EZPZCore/Sources/DesignTokens`), and `tokens.py check` fails if either is
+stale; CI runs it, and `ios.yaml` too.
 
 The palettes start from the web app's colours (the navy `#092137` app background, the blues, and its red, amber and
 green). The **night** palette is dimmed and red-shifted for a night cockpit. Android's `TokenContrastTest` holds every

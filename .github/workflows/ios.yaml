@@ -43,6 +43,11 @@ jobs:
       - name: Format
         run: swift format lint --strict --recursive App Packages/EZPZCore/Sources Packages/EZPZCore/Tests Packages/EZPZCore/Package.swift
 
+      # Tokens.swift is generated from contracts/tokens/tokens.json, as Android's Tokens.kt is; a hand edit fails here. Standard
+      # library only, so the runner's own Python does.
+      - name: Design tokens are generated, not edited
+        run: python3 ../contracts/scripts/tokens.py check
+
       # The pure modules, held to contracts/fixtures, on the Mac: no simulator needed.
       - name: The pure modules' tests
         run: swift test --package-path Packages/EZPZCore
