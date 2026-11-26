@@ -115,7 +115,8 @@ describe("the live sandtable", () => {
   it("shows a step's facts, a blank as a line to write on, and the mission constants", () => {
     begin();
     act(() => latest.go(MODEL.steps.findIndex((s) => s.id === "4.e@lz:lz-hawk")));
-    expect(within(card()).getByText("203°")).toBeInTheDocument();
+    // ALDERAAN's course in from BLUEBIRD, its leg standing in for the landing doghouse (whose 203° is not briefed).
+    expect(within(card()).getByText("223°")).toBeInTheDocument();
     expect(card().querySelectorAll(".brief-writein").length).toBeGreaterThan(0);
     const constants = screen.getByRole("region", { name: "Mission constants" });
     MODEL.constants.filter((c) => c.value).forEach((c) => expect(within(constants).getAllByText(c.value).length).toBeGreaterThan(0));

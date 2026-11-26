@@ -9,6 +9,7 @@ import {
 import { landingHeadingOf, slopeCallFor } from "../feature/terrain/slopeCall";
 import { slopeProfileFor } from "../feature/terrain/groundProfile";
 import SlopeProfile from "../feature/terrain/SlopeProfile";
+import { legWords } from "../feature/routeDoghouses/lzLegs";
 import { slopeWindFor } from "../feature/weather/useWeather";
 
 /**
@@ -29,7 +30,7 @@ export const lzAreaAndCapacity = (detectedLZ, profile = FALLBACK_PROFILE) => {
 };
 
 const MissionSummary = ({
-  detectedLZ, terrainData, targetLocation, mapData, setActiveNotams, winds, loadingWeather, aircraftProfile, landingHdg,
+  detectedLZ, terrainData, targetLocation, mapData, setActiveNotams, winds, loadingWeather, aircraftProfile, landingHdg, landingLeg = null,
 }) => {
   const profile = aircraftProfile || FALLBACK_PROFILE;
 
@@ -80,6 +81,8 @@ const MissionSummary = ({
         {slopeStatus.lines.map((line) => (
           <div key={line} className="slope-advice">{line}</div>
         ))}
+        {/* The heading judged is a route's leg into the LZ/PZ, standing in for its landing doghouse (lzLegs.js): say whose. */}
+        {slopeStatus.heading !== null && landingLeg && <div className="slope-advice">{legWords(landingLeg)}</div>}
       </div>
 
       <SlopeProfile profile={groundProfile} />

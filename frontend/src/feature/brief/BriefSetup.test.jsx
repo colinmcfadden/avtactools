@@ -142,7 +142,7 @@ describe("brief setup, step 3", () => {
     fireEvent.click(within(pages).getByRole("button", { name: /4\.e Landing sequence · LZ HAWK/ }));
     const sheet = screen.getByRole("article");
     expect(sheet).toHaveTextContent("UNCLASSIFIED");
-    expect(sheet).toHaveTextContent("Landing 203°");
+    expect(sheet).toHaveTextContent("Landing 223°");
     fireEvent.click(screen.getByRole("switch", { name: /Nav logs/ }));
     expect(lastDoc.options).toEqual({ navLogs: false });
   });

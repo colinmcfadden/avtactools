@@ -105,10 +105,14 @@ const OP_DK = {
 // A slope table as /api/terrain-analysis gives it: every whole heading, each limit's steepest slope there ([at] of the heading).
 const byHeading = (at) => Array.from({ length: 360 }, (_, heading) => ({ heading, ...at(heading) }));
 const SLOPES = {
-  // Steep somewhere (11.3°), but within every limit at 306°: CAUTION, and no wind report for this stop.
-  "lz-bluebird": { stats: { maxDeg: 11.3 }, byHeading: byHeading((h) => ({ noseHighMaxDeg: 2.4, noseLowMaxDeg: h === 306 ? 5.9 : 1.8, crossSlopeMaxDeg: 3.1 })) },
-  // Nose down 5.2° at 203°: inside the 6° limit in calm air, over the 4° the 6 kt wind leaves.
-  "lz-hawk": { stats: { maxDeg: 7.5 }, byHeading: byHeading((h) => ({ noseHighMaxDeg: 1.2, noseLowMaxDeg: h === 203 ? 5.2 : 0.8, crossSlopeMaxDeg: 2 })) },
+  // Steep somewhere (11.3°), but within every limit at 035°: CAUTION, and no wind report for this stop. 035° is the course ALDERAAN
+  // flies in on, whose leg stands in for the landing doghouse (306° in its flight data: feature/routeDoghouses/lzLegs.js).
+  "lz-bluebird": { stats: { maxDeg: 11.3 }, byHeading: byHeading((h) => ({ noseHighMaxDeg: 2.4, noseLowMaxDeg: h === 35 ? 5.9 : 1.8, crossSlopeMaxDeg: 3.1 })) },
+  // Nose down 5.2° at 223°, ALDERAAN's course in from BLUEBIRD (its flight data says 203°): inside the 6° limit in calm air, over the
+  // 4° the 6 kt wind leaves.
+  "lz-hawk": { stats: { maxDeg: 7.5 }, byHeading: byHeading((h) => ({ noseHighMaxDeg: 1.2, noseLowMaxDeg: h === 223 ? 5.2 : 0.8, crossSlopeMaxDeg: 2 })) },
+  // No route reaches FARP BUCEES, so its own landing heading (340°) is judged: nose up 16° there, over the 15° limit.
+  "farp-bucees": { stats: { maxDeg: 16 }, byHeading: byHeading((h) => ({ noseHighMaxDeg: h === 340 ? 16 : 4, noseLowMaxDeg: 2, crossSlopeMaxDeg: 3 })) },
   // A table, and no landing heading to judge it at: the steepest slope alone.
   "lz-decoy": { stats: { maxDeg: 16.2 }, byHeading: byHeading(() => ({ noseHighMaxDeg: 9, noseLowMaxDeg: 7.5, crossSlopeMaxDeg: 16.2 })) },
   // A server from before byHeading: the steepest slope alone, though PZ IBIS has a landing heading.
@@ -331,6 +335,20 @@ export const CASES = [
     plan: {
       ...OP_DK,
       lzs: OP_DK.lzs.map((lz) => (SLOPES[lz.id] ? { ...lz, diagram: { ...lz.diagram, analysis: { ...lz.diagram.analysis, terrainData: SLOPES[lz.id] } } } : lz)),
+    },
+    context: CONTEXT,
+  },
+  {
+    // A route hidden on the map stands in for no LZ/PZ's doghouse (feature/routeDoghouses/lzLegs.js): with ALDERAAN hidden, LZ
+    // BLUEBIRD and LZ HAWK have their own flight data's headings (306° and 126°, 203° and 157°), while BESPIN, shown, still gives
+    // PZ IBIS its courses in and out.
+    name: "a hidden route stands in for no LZ/PZ's doghouses",
+    format: "amb",
+    document: { options: { navLogs: false, strips: false, iimc: false } },
+    plan: {
+      ...OP_DK,
+      lzs: OP_DK.lzs.map((lz) => (SLOPES[lz.id] ? { ...lz, diagram: { ...lz.diagram, analysis: { ...lz.diagram.analysis, terrainData: SLOPES[lz.id] } } } : lz)),
+      routeSets: [{ id: "set-opdk", name: "OP DK ROUTES", data: { version: 1, routes: [{ ...alderaan, visible: false }, bespin] } }],
     },
     context: CONTEXT,
   },

@@ -77,8 +77,10 @@ const Controls = ({
   setActiveNotams,
   winds,
   loadingWeather,
-  // The flight data's landing heading (the landing doghouse's), which the slope tile judges.
+  // The landing heading the slope tile judges: the landing doghouse's, or the course of a route's leg into the LZ/PZ while one
+  // stands in for it (landingLeg, lzLegs.js), which the tile then names.
   landingHdg,
+  landingLeg = null,
   // Diagram lifecycle controls. They intentionally default to the legacy
   // behavior so Controls can still be used outside the diagram workspace.
   canAnalyze: canAnalyzeProp,
@@ -232,6 +234,7 @@ const Controls = ({
               winds={winds}
               loadingWeather={loadingWeather}
               landingHdg={landingHdg}
+              landingLeg={landingLeg}
             />
           </div>
 

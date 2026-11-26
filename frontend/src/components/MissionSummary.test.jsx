@@ -68,6 +68,17 @@ describe("the slope tile", () => {
     expect(container.querySelector(".slope-alert-tile")).toHaveClass("status-safe");
   });
 
+  it("names the route whose leg into the LZ/PZ gives the heading it judges", () => {
+    const leg = { routeId: "r2", routeName: "ROUTE 2", from: "RP", to: "TGT", courseDeg: 270.2, heading: "270°", metres: 12 };
+    expect(advice(slopeTile({ terrainData: EAST8, landingHdg: "270°", landingLeg: leg }))).toEqual([
+      "Landing 270°: nose down 8.0°, limit 6°",
+      "No wind report: limits not reduced for wind",
+      "From ROUTE 2, RP to TGT",
+    ]);
+    // Nothing judged at a heading (an older server's analysis), nothing to say whose it is.
+    expect(advice(slopeTile({ terrainData: { stats: { maxDeg: 15 } }, landingHdg: "270°", landingLeg: leg }))).not.toContain("From ROUTE 2, RP to TGT");
+  });
+
   it("says an older server's analysis was not judged by heading", () => {
     const tile = slopeTile({ terrainData: { stats: { maxDeg: 15 } }, landingHdg: "090°" });
     expect(tile).toHaveClass("status-warning");

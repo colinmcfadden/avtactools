@@ -58,6 +58,7 @@ import useVfrCharts from "./feature/vfrCharts/useVfrCharts";
 import { VFR_STYLE_ID } from "./feature/vfrCharts/vfrCharts";
 import useMgrsGrid from "./feature/mgrsGrid/useMgrsGrid";
 import useRouteDoghouses from "./feature/routeDoghouses/useRouteDoghouses";
+import { doghousesBesideLegs, flightDataWithLegs, lzLegs } from "./feature/routeDoghouses/lzLegs";
 import useSlopeOpacity from "./feature/terrain/slopeOpacity";
 import { useLocalPoints } from "./feature/localPoints/useLocalPoints";
 import { useThreats } from "./feature/threats/useThreats";
@@ -1765,6 +1766,15 @@ function App() {
     : phaseLineTools.phaseLines.filter((line) => !line.setId || !packLocalRef(line.setId));
   const shownSketches = inPack ? sketchedRoutes.filter((r) => ofOpenPack(r.setId)) : sketchedRoutes.filter((r) => !r.setId || !packLocalRef(r.setId));
   const shownImported = inPack ? [] : importedRoutes;
+  // The legs of the routes shown that fly into and out of the LZ/PZ stand in for its own doghouses (lzLegs.js, the owner's of
+  // 2026-11-26): those are not drawn while they do, and the slope tile, the LZ card and the brief go by the legs' courses.
+  // Worked out from what is on the map each time, never written into the LZ/PZ.
+  const lzLegsNow = useMemo(
+    () => lzLegs(activeDiagram?.target, [...shownImported, ...shownSketches]),
+    [activeDiagram?.target, shownImported, shownSketches],
+  );
+  const judgedFlightData = useMemo(() => flightDataWithLegs(flightData, lzLegsNow), [flightData, lzLegsNow]);
+  const doghousesShown = useMemo(() => doghousesBesideLegs(doghouses, lzLegsNow), [doghouses, lzLegsNow]);
 
   // Undo and redo (feature/undo): the LZ/PZ showing and the route sets on the map, in this workspace.
   const undoControls = useUndo({
@@ -2100,7 +2110,8 @@ function App() {
           setActiveNotams={setActiveNotams}
           winds={winds}
           loadingWeather={loadingWeather}
-          landingHdg={flightData.landing_hdg}
+          landingHdg={judgedFlightData.landing_hdg}
+          landingLeg={lzLegsNow.landing}
           canAnalyze={canAnalyze && editable}
           canDrawBoundary={hasActiveTarget && editable}
           canUseDiagramTools={canEditGraphics && editable}
@@ -2266,7 +2277,7 @@ function App() {
           showHeatmap={showHeatmap}
           slopeOpacity={slopeOpacity}
           terrainData={terrainData}
-          doghouses={doghouses}
+          doghouses={doghousesShown}
           updateDoghouse={mapEdit(updateDoghouse)}
           goArounds={goAround}
           updateGoAround={mapEdit(updateGoAround)}
@@ -2800,7 +2811,7 @@ function App() {
           elevation: gridElevation,
           latLong: latLong,
         }}
-        flightData={flightData}
+        flightData={judgedFlightData}
         proximityAlerts={proximityAlerts}
         activeNotams={activeNotams}
       />
