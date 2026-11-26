@@ -102,7 +102,10 @@ reference is.
 | `viewer3d/tileset/` | — (py3dtiles's own output, by `contracts/scripts/tileset_fixture.py`) | `backend/tests/test_network_fixtures.py` (served as the recorded tileset) | `core-scene3d` (`TilesetReader`, `PntsReader`) |
 | `viewer3d/geodesy.json` | — (PROJ's own transform, by `contracts/scripts/geodesy_fixtures.py`) | — | `core-scene3d` (`geodeticToEcef`, `ecefToGeodetic`, `LocalFrame`) |
 
-iOS joins this table when it starts; it reads the same files.
+iOS reads the same files through `CoreTesting` (`ios/Packages/EZPZCore`, found from its own path, `EZPZ_CONTRACTS` to name another
+folder). So far (I0 of `docs/IOS_PLAN.md`): `formats/number_text.json` (`CoreJS`'s `JsNumber.toText`), `workspace/doghouses.json`'s
+`jsParse` (`JsNumber.parseInt`, `parseFloat`), and every JSON fixture here read and written back unchanged by `JSONTree`. Each later step
+names the files it ports to here.
 
 ### The `msnx/` fixtures
 

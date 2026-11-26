@@ -33,7 +33,8 @@ mission planning system).
 - **Repo:** `github.com/colinmcfadden/avtactools` · default branch `develop`.
 - **Native apps:** Android (Kotlin) first, then iOS and iPadOS (Swift). Android
   has the plan's P0–P2 (§17; where it stands and what is next: `docs/HANDOFF.md`);
-  iOS is not started. Read `docs/NATIVE_APPS_PLAN.md` before any mobile work.
+  iOS has its foundations (I0 of `docs/IOS_PLAN.md`, its build plan with the ForeFlight hand-off; §17, *iOS*).
+  Read `docs/NATIVE_APPS_PLAN.md` before any mobile work.
 
 ---
 
@@ -165,6 +166,7 @@ avtactools/
 │  ├─ index.html, vite.config.mts  The page Vite builds from (entry src/index.jsx); port 3000 and base "/" are load-bearing
 │  └─ scripts/copy-cesium.js prestart/predev/prebuild: copies Cesium's static build into public/
 ├─ android/                  Gradle project for the Android app (§17): pure-Kotlin core modules, Android libraries, the app
+├─ ios/                      The iOS and iPadOS app (§17, *iOS*): `EZPZ.xcodeproj`, `App/`, `Config/Version.xcconfig`, Swift packages under `Packages/`
 ├─ contracts/                Golden fixtures the web, backend and native apps are all tested against (§17); briefs/: the mission brief's formats as data
 ├─ tools/                    Operator CLIs for LiDAR (find_lidar.py, build_lz.py); import_survey_book.py (the old HLZ survey book into a bundle)
 ├─ docs/                     USER_GUIDE.md; plans: INVITE_ONLY_LOGIN_PLAN.md, 3D_PLANNING_GRAPHICS_PLAN.md, NATIVE_APPS_PLAN.md, MISSION_PACKS.md, ANDROID_MISSION_PACKS_PLAN.md, DATA_ADMIN_AND_PREBUILT_3D_PLAN.md, TAK_INTEGRATION_PLAN.md; HANDOFF.md (where the Android build stands, what is next); native-design/ (the menu redesign for Android and iOS, phone and tablet: screenshots, outlines, sources, tokens; read its README before native UI work)
@@ -648,6 +650,7 @@ cd backend;  python -m pytest tests -q
 cd frontend; npm test                        # vitest run (`npm run test:watch` to watch)
 cd frontend; npm run build                    # the production bundle into dist/; then `npm run preview` serves it
 cd android;  .\gradlew.bat test               # Kotlin core modules, against ../contracts
+swift test --package-path ios/Packages/EZPZCore  # the iOS app's pure modules, against ../contracts (on a Mac)
 python contracts/scripts/mgrs_fixtures.py check   # MGRS fixtures vs PyGeodesy (~20 s)
 python contracts/scripts/light_fixtures.py check  # brief light data vs Skyfield (pip install skyfield==1.55; downloads DE421 once)
 python contracts/scripts/place_fixtures.py check  # the place index and its answers (stdlib only; the backend test runs it too)
@@ -657,7 +660,8 @@ python contracts/scripts/place_fixtures.py check  # the place index and its answ
   (SQLAlchemy app registration). Report it; don't "fix" it as a side effect.
 - The geoid test skips without `PROJ_NETWORK=ON` — PROJ returns heights
   unchanged, and *reports success*, when grids are missing.
-- **CI runs four test sets:** `android.yaml` (the Kotlin modules),
+- **CI runs five test sets:** `android.yaml` (the Kotlin modules), `ios.yaml` (the Swift
+  packages, swift-format and the app's simulator build, on a macOS runner),
   `contracts.yaml` (the fixtures, on the web and PyGeodesy sides),
   `backend.yaml` (the backend's contract tests: a named list of pytest files that
   need no SAM weights, terrain data or GPU) and `api.yaml` (the API version, §6),
@@ -1331,7 +1335,7 @@ simplifying can fold them, so rings are split and re-checked).
 - If a section here disagrees with the code, the code wins — fix this file.
 - Deeper detail belongs in the focused docs it links to: `AUTHENTICATION.md`,
   `backend/TERRAIN_DATA.md`, `backend/lidar/SERVER_SETUP.md`, `docs/USER_GUIDE.md`,
-  `docs/NATIVE_APPS_PLAN.md`, `docs/MISSION_PACKS.md`, `docs/ANDROID_MISSION_PACKS_PLAN.md`, `docs/ANDROID_SCREENS_PLAN.md`, `docs/ANDROID_3D_PLAN.md` (the 3D view on Android), `docs/MISSION_BRIEF.md` (the mission brief: B0 to B9 done), `docs/native-design/README.md`, `docs/DATA_ADMIN_AND_PREBUILT_3D_PLAN.md` (3D streamed from USGS's octree, the admin's data map, uploads, warmed areas, organizations; decided 2026-10-23; the admin's Data section planned again in its §10 and its map and DEM downloads built, 2026-11-04; the rest not built yet), `docs/TAK_INTEGRATION_PLAN.md` (TAK: map sources and overlays in, data packages out, a live connection from the Android app; proposed 2026-10-26, decisions open), `docs/GRID_SHARING.md` (sending a grid to someone: the share sheet, a QR code, a link, in the app, ATAK; options 1 to 3 built, option 4 waits on its server work), `docs/LZ_SURVEYS.md` (LZ surveys and the HLZ survey books: editors make, sign off and print them, readers open them, web only; every step built), `docs/NOTIFICATIONS.md` (notifications: which ones, delivery on Android and the web, the server's outbox; decided 2026-10-28, N0 the server and N1 Android built), `docs/VFR_CHARTS.md` (the VFR base map built from the FAA's own sectional, TAC and helicopter GeoTIFFs, stacked, CONUS only, served by build, built and switched each cycle by itself on production and watched, switched and rolled back from the admin's Data tab; decided 2026-11-05; C0, the outlines and the build run by hand, C1, the build as a Data tab job in a process of its own, C2, the tiles served with `/api/config`'s `charts`, the tab's actions and the automatic cycle, and the clients' C3 and C4, built; C5, a real cycle change on production, rehearsed and left to the owner, its steps in §9 there), `docs/PLACE_SEARCH.md` (searchable places in the grid search: FAA NASR and USGS GNIS in one index, searched by the API for the web and on the device by Android; addresses weighed and left out, Mapbox ruled out by its terms; proposed 2026-11-05, NASR and GNIS on the web built the same day and refreshed by the API itself, §0 there; Android and the layer not built), `android/README.md`, `contracts/README.md`. `docs/HANDOFF.md` is the
+  `docs/NATIVE_APPS_PLAN.md`, `docs/MISSION_PACKS.md`, `docs/ANDROID_MISSION_PACKS_PLAN.md`, `docs/ANDROID_SCREENS_PLAN.md`, `docs/ANDROID_3D_PLAN.md` (the 3D view on Android), `docs/MISSION_BRIEF.md` (the mission brief: B0 to B9 done), `docs/native-design/README.md`, `docs/DATA_ADMIN_AND_PREBUILT_3D_PLAN.md` (3D streamed from USGS's octree, the admin's data map, uploads, warmed areas, organizations; decided 2026-10-23; the admin's Data section planned again in its §10 and its map and DEM downloads built, 2026-11-04; the rest not built yet), `docs/TAK_INTEGRATION_PLAN.md` (TAK: map sources and overlays in, data packages out, a live connection from the Android app; proposed 2026-10-26, decisions open), `docs/GRID_SHARING.md` (sending a grid to someone: the share sheet, a QR code, a link, in the app, ATAK; options 1 to 3 built, option 4 waits on its server work), `docs/LZ_SURVEYS.md` (LZ surveys and the HLZ survey books: editors make, sign off and print them, readers open them, web only; every step built), `docs/NOTIFICATIONS.md` (notifications: which ones, delivery on Android and the web, the server's outbox; decided 2026-10-28, N0 the server and N1 Android built), `docs/VFR_CHARTS.md` (the VFR base map built from the FAA's own sectional, TAC and helicopter GeoTIFFs, stacked, CONUS only, served by build, built and switched each cycle by itself on production and watched, switched and rolled back from the admin's Data tab; decided 2026-11-05; C0, the outlines and the build run by hand, C1, the build as a Data tab job in a process of its own, C2, the tiles served with `/api/config`'s `charts`, the tab's actions and the automatic cycle, and the clients' C3 and C4, built; C5, a real cycle change on production, rehearsed and left to the owner, its steps in §9 there), `docs/IOS_PLAN.md` (the iPhone and iPad app in Swift: features against the web and Android, the backstops, FLOT and phase lines as on the web, libraries, Swift porting traps, sending to ForeFlight, build steps; proposed 2026-11-21, I0 built), `docs/PLACE_SEARCH.md` (searchable places in the grid search: FAA NASR and USGS GNIS in one index, searched by the API for the web and on the device by Android; addresses weighed and left out, Mapbox ruled out by its terms; proposed 2026-11-05, NASR and GNIS on the web built the same day and refreshed by the API itself, §0 there; Android and the layer not built), `android/README.md`, `contracts/README.md`. `docs/HANDOFF.md` is the
   "where things stand, what is next" note for whoever picks the Android work up; refresh it with each commit that moves either.
 
 ---
@@ -1343,7 +1347,7 @@ exists and the rules for working on it.
 
 **Layout.** `android/` is a Gradle project (Kotlin 2.4, Gradle 9.8, Android Gradle
 Plugin 9.4; compiles to JDK 17, and builds and tests on JDK 21 or later, which Robolectric's SDK 36 sandbox needs); `contracts/` holds the golden fixtures and the
-design tokens. iOS is not started.
+design tokens. `ios/` is the iOS app (*iOS*, at the end of this section).
 
 | Module | What it is | State |
 |---|---|---|
@@ -3266,3 +3270,25 @@ client is built around not losing one:
 
 **Rules that carry over unchanged:** unclassified only; threats are saved and synced like other records (§2; an account without `cloud_save` keeps them on the device, and an explicit online viewshed/KMZ/QR action sends coordinates transiently); no secret in
 the app binary; no new dependency beyond what the plan's owner-approved list covers (ask first for anything else).
+
+**iOS** (`ios/`; the plan, its steps and the owner's decisions in `docs/IOS_PLAN.md`; how to build and test in `ios/README.md`).
+- **Where it stands: I0, the foundations.** An app target that builds for iOS 26 and shows its version, and the `EZPZCore` Swift package
+  (Foundation only, so `swift test` runs it on the Mac with no simulator) with `CoreJS` and `CoreTesting`. Nothing plans yet.
+- **`CoreJS` is what every Swift port reads JSON and numbers with**, the Kotlin ports' `Js`, `JsValue` and `JsNumber` together, and more:
+  `JSONTree` keeps JSON as the web does (JSON.parse's grammar, an object's keys in JavaScript's order kept by the object itself, a number's
+  literal text, null apart from absent) with objects and lists as immutable final classes, so `===` tells an untouched value from a new one
+  as kotlinx's instances do. Never `JSONSerialization` or `Codable` for a document the web wrote: they lose all three. Text that stands for
+  JavaScript text is compared by its UTF-16 units (`UTF16Key`), never Swift's `==`, which takes `"é"` written two ways for one.
+- **Swift traps found in I0** (each with a test): a deeply nested tree ends the app *as it is freed* (Swift releases a nested object inside
+  its parent's release), so parsing is bounded at 64 levels and the parser keeps a stack of its own; appending to a list taken out of an
+  enum's payload copies it at every element (half a million numbers took minutes); a lone surrogate cannot be held and reads as U+FFFD.
+- **`JsNumber.toText` lays Swift's shortest digits out JavaScript's way**, held to `formats/number_text.json` and checked against Node on
+  461,755 doubles (`ios/Scripts/number_text_sample.mjs`, when the writer changes).
+- **Versions**: `ios/Config/Version.xcconfig` holds the app's own (0.x until its first release), `EZPZ_API_MAJORS` (read by
+  `contracts/scripts/api_version.py check`, as Android's and the web's are) and the placeholder bundle id `app.ezpztac.unreleased`
+  (`.debug` for debug builds): the real one is permanent once published and the owner's to choose.
+- **Format**: swift-format, which ships with the toolchain (`ios/.swift-format`, `--strict` in CI); Swift warnings are errors in the app.
+- **CI**: `.github/workflows/ios.yaml` on `macos-26`, path-filtered; not yet run on GitHub, so the first PR that touches `ios/` shows
+  whether the runner's Xcode is new enough (Xcode 26 or later).
+- **Agents can see the app**: the iOS Simulator runs on the owner's Mac and an agent can build, launch and screenshot it (I0's shell was
+  looked at so on an iPad Pro 13-inch simulator).

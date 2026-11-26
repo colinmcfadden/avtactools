@@ -15,8 +15,8 @@ Where each version lives:
 - the spec's `info.version`, and `API_VERSION` in `backend/api_version.py`, which must agree; that file's
   `API_MAJORS_SERVED` lists the majors the server still answers (the current one, and any kept for apps
   not yet updated);
-- each client's own build: `ezpz.apiMajors` in `android/gradle.properties`, `apiMajors` in
-  `frontend/src/apiSupport.json` (iOS joins when it starts).
+- each client's own build: `ezpz.apiMajors` in `android/gradle.properties`, `EZPZ_API_MAJORS` in
+  `ios/Config/Version.xcconfig`, `apiMajors` in `frontend/src/apiSupport.json`.
 
     python contracts/scripts/api_version.py check [--base REF]   # what CI runs; REF is the branch merged into
     python contracts/scripts/api_version.py bump  [--base REF]   # writes the bump the diff needs
@@ -48,6 +48,7 @@ SPEC_IN_GIT = "contracts/openapi.yaml"
 BACKEND = ROOT / "backend" / "api_version.py"
 ANDROID = ROOT / "android" / "gradle.properties"
 WEB = ROOT / "frontend" / "src" / "apiSupport.json"
+IOS = ROOT / "ios" / "Config" / "Version.xcconfig"
 
 METHODS = ("get", "put", "post", "delete", "patch", "head", "options")
 SEMVER = re.compile(r"^(\d+)\.(\d+)\.(\d+)$")
@@ -85,7 +86,7 @@ def majors_list(text: str, where: str) -> list[int]:
     return majors
 
 
-def read_clients(android: Path = ANDROID, web: Path = WEB) -> dict[str, list[int]]:
+def read_clients(android: Path = ANDROID, web: Path = WEB, ios: Path = IOS) -> dict[str, list[int]]:
     """The API majors each client build says it supports. A client whose file is missing is left out."""
     clients = {}
     if android.exists():
@@ -93,6 +94,12 @@ def read_clients(android: Path = ANDROID, web: Path = WEB) -> dict[str, list[int
         if not match:
             raise ValueError(f"{android}: no ezpz.apiMajors")
         clients["android"] = majors_list(match.group(1), str(android))
+    if ios.exists():
+        # An xcconfig line: `EZPZ_API_MAJORS = 1 2`, a comment after `//` left out.
+        match = re.search(r"^\s*EZPZ_API_MAJORS\s*=\s*([^/\n]+)", ios.read_text(encoding="utf-8"), re.M)
+        if not match:
+            raise ValueError(f"{ios}: no EZPZ_API_MAJORS")
+        clients["ios"] = majors_list(match.group(1), str(ios))
     if web.exists():
         majors = json.loads(web.read_text(encoding="utf-8")).get("apiMajors")
         if not isinstance(majors, list) or not majors or not all(isinstance(n, int) for n in majors):

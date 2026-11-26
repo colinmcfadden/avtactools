@@ -1,0 +1,56 @@
+name: iOS
+
+# Runs only for changes the iOS app depends on (docs/IOS_PLAN.md §12). Nothing here deploys: a build reaches anyone only when the
+# owner uploads a signed one to TestFlight (AGENTS.md §2). macOS minutes cost about ten times Linux ones, hence the path filter.
+on:
+  push:
+    branches: [develop]
+    paths:
+      - "ios/**"
+      - "contracts/**"
+      - ".github/workflows/ios.yaml"
+  pull_request:
+    paths:
+      - "ios/**"
+      - "contracts/**"
+      - ".github/workflows/ios.yaml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ios-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  swift:
+    name: Swift tests, format and the app's build
+    # The packages and the app need the iOS 26 SDK (Xcode 26 or later) and Swift 6.2 tools; the owner's Mac has Xcode 27.2.
+    runs-on: macos-26
+    timeout-minutes: 30
+    defaults:
+      run:
+        working-directory: ios
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Which Xcode and Swift
+        run: |
+          xcodebuild -version
+          swift --version
+
+      # swift-format ships with the toolchain, so nothing is installed for it (docs/IOS_PLAN.md §4). Its settings: ios/.swift-format.
+      - name: Format
+        run: swift format lint --strict --recursive App Packages/EZPZCore/Sources Packages/EZPZCore/Tests Packages/EZPZCore/Package.swift
+
+      # The pure modules, held to contracts/fixtures, on the Mac: no simulator needed.
+      - name: The pure modules' tests
+        run: swift test --package-path Packages/EZPZCore
+
+      - name: The app builds for the simulator
+        run: |
+          xcodebuild -project EZPZ.xcodeproj -scheme EZPZ \
+            -destination 'generic/platform=iOS Simulator' \
+            -derivedDataPath "$RUNNER_TEMP/derived" \
+            CODE_SIGNING_ALLOWED=NO CURRENT_PROJECT_VERSION=${{ github.run_number }} \
+            build

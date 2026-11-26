@@ -1,0 +1,12 @@
+// The iOS app's own version (docs/IOS_PLAN.md §13), apart from the product's: 0.x until its first App Store release, bumped by hand.
+// It is what `X-EZPZ-Client: ios/<version> (<build>)` and the server's MIN_APP_VERSION_IOS compare, so a minimum set there must be
+// an iOS version. The build number is CI's run number (passed as CURRENT_PROJECT_VERSION), 1 locally.
+MARKETING_VERSION = 0.1.0
+CURRENT_PROJECT_VERSION = 1
+
+// The API majors this build talks (AGENTS.md §6), the twin of `ezpz.apiMajors` in android/gradle.properties. Read by
+// contracts/scripts/api_version.py, which fails while a client supports none the server serves.
+EZPZ_API_MAJORS = 1 2
+
+// A placeholder, as Android's: the bundle id is permanent once published and is the owner's to choose (docs/IOS_PLAN.md §15).
+EZPZ_BUNDLE_ID = app.ezpztac.unreleased

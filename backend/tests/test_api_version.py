@@ -165,6 +165,23 @@ class CheckTests(unittest.TestCase):
         errors, _, _ = script.problems(REAL, None, script.read_backend(), script.read_clients())
         self.assertEqual(errors, [])
 
+    def test_every_client_is_read_ios_among_them(self):
+        clients = script.read_clients()
+        self.assertEqual(set(clients), {"android", "web", "ios"})
+        self.assertTrue(all(clients[name] for name in clients))
+
+    def test_the_ios_line_is_read_without_its_comment(self):
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as folder:
+            config = Path(folder) / "Version.xcconfig"
+            config.write_text("// EZPZ_API_MAJORS = 9\nMARKETING_VERSION = 0.1.0\nEZPZ_API_MAJORS = 1 2 // the ones it talks\n", encoding="utf-8")
+            missing = Path(folder) / "none"
+            self.assertEqual(script.read_clients(android=missing, web=missing, ios=config), {"ios": [1, 2]})
+            config.write_text("MARKETING_VERSION = 0.1.0\n", encoding="utf-8")
+            with self.assertRaises(ValueError):
+                script.read_clients(android=missing, web=missing, ios=config)
+
     def test_a_break_without_a_new_major_fails(self):
         errors, _, report = script.problems(self.broken_real(), REAL, self.SERVED, self.CLIENTS)
         self.assertTrue(any("serverVersion: removed" in b for b in report.breaking), report.breaking)
