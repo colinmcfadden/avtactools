@@ -337,7 +337,7 @@ class SandtableViewModelTest {
         val shown = env.shown!!
         assertEquals("stop", shown.view!!.kind)
         assertEquals(1, shown.scene.areas.size)
-        assertTrue(shown.scene.marks.any { it is FigureMark.Arrow && it.fromTip && it.heading == 203.0 })
+        assertTrue(shown.scene.marks.any { it is FigureMark.Arrow && it.fromTip && it.heading == 223.0 })     // the course of the route's leg into HAWK
         assertEquals("LZ HAWK", shown.current!!.title)
         assertEquals("Flight lead", shown.step!!.who)
     }

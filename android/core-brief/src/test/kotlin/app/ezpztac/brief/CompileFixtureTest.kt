@@ -78,7 +78,7 @@ class CompileFixtureTest {
     fun `finds what the plan holds`() {
         val hawk = amb.step("4.e@lz:lz-hawk")
         fun fact(key: String) = hawk["facts"]!!.jsonArray.map { it.jsonObject }.first { it.text("key") == key }.text("value")
-        assertEquals("203°", fact("stop.landingHeading"))
+        assertEquals("223°", fact("stop.landingHeading"))          // the course of the route's leg into HAWK, standing in for its landing doghouse
         assertEquals("2,230 ft MSL", fact("stop.elevation"))
         assertEquals("right", fact("stop.goAround"))
         assertEquals("16S GD 59833 44327", hawk.item("4.e.i").text("text"))

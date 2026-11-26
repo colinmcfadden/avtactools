@@ -139,7 +139,7 @@ class SandtableScreenTest {
         compose.onNode(SemanticsMatcher.expectValue(SemanticsProperties.LiveRegion, androidx.compose.ui.semantics.LiveRegionMode.Polite) and hasText("LZ HAWK")).assertExists()
         val sentence = BriefReading.sentence(hawk.step!!.script.first())
         compose.onNodeWithText(sentence, substring = true).assertExists()
-        compose.onNodeWithText("203°").assertExists()
+        compose.onNodeWithText("223°").assertExists()                      // HAWK's landing heading: the course of the route's leg into it
         // The constants, each value or a write-in line.
         compose.onNodeWithText("Mission constants").assertIsDisplayed()
         compose.onNodeWithText("Enroute airspeed").assertIsDisplayed()

@@ -22,9 +22,12 @@ import app.ezpztac.model.DiagramNormalizer
 import app.ezpztac.model.DiagramTarget
 import app.ezpztac.model.Doghouses
 import app.ezpztac.model.JsNumber
+import app.ezpztac.model.LatLon
 import app.ezpztac.model.PlanPoint
 import app.ezpztac.model.PlanResult
 import app.ezpztac.model.RoutePoint
+import app.ezpztac.planning.LegRoute
+import app.ezpztac.planning.LzLegs
 import app.ezpztac.planning.LzSummary
 import app.ezpztac.planning.RouteCalc
 import app.ezpztac.planning.RoutePlans
@@ -94,8 +97,13 @@ public object CompileBrief {
 // ---------------------------------------------------------------------------------------------------------------------------------------
 // The plan, as the brief reads it.
 
-/** An LZ/PZ of the plan. */
-internal class StopItem(val ref: String, val id: String, val name: String, val diagram: Diagram, val target: DiagramTarget?)
+/**
+ * An LZ/PZ of the plan. [flightData] is its diagram's, with the courses of the routes' legs into and out of it while they stand in for its doghouses
+ * ([LzLegs], the web's lzLegs.js), as the map's slope tile says them: set once the routes are read.
+ */
+internal class StopItem(val ref: String, val id: String, val name: String, val diagram: Diagram, val target: DiagramTarget?) {
+    var flightData: JsonObject = diagram.flightData
+}
 
 /** A named (AMPS) point of a route, as the route holds it: what `===` compares and what a rally point names. */
 internal class NamedPoint(val raw: JsonObject, val point: RoutePoint)
@@ -537,12 +545,13 @@ private class Compiler(
             inbound = parts.joinToString(", ")
         }
 
-        val landing = Doghouses.landingHeadingOf(diagram.flightData["landing_hdg"])
-        val takeoff = Doghouses.landingHeadingOf(diagram.flightData["takeoff_hdg"])
+        val flight = stop.item.flightData
+        val landing = Doghouses.landingHeadingOf(flight["landing_hdg"])
+        val takeoff = Doghouses.landingHeadingOf(flight["takeoff_hdg"])
         val report = (Js.path(context, "weather", "stops") as? JsonObject)?.get(stop.item.id)
         var slope: String? = null
         if (Js.truthy(Js.prop(analysis.terrainData, "stats"))) {
-            val call = slopeCall(analysis.terrainData as JsonObject, diagram.flightData["landing_hdg"], report)
+            val call = slopeCall(analysis.terrainData as JsonObject, flight["landing_hdg"], report)
             slope = (listOf(call.label) + call.lines).filter { it.isNotEmpty() }.joinToString(". ")
         }
 
@@ -940,6 +949,13 @@ private class Compiler(
         }
         val missionDate = datedRoute?.let { Js.text(Js.path(it, "plan", "date")) } ?: localDateOf(Js.present(context["generatedAt"]), offset)
         val routes = routeSets.filter { it is JsonObject && it["id"] != null }.flatMap { readRoutes(it as JsonObject, missionDate) }
+        // A stop's headings are its flight data's, or the courses of the routes' legs into and out of it while they stand in for its doghouses
+        // (LzLegs, the web's lzLegs.js), as the map's slope tile and the LZ card say them. A route hidden on the map stands in for nothing.
+        val shown = routes.filter { Js.prop(it.raw, "visible") != JsonPrimitive(false) }.map { r ->
+            val name = r.raw["name"]?.takeUnless { it is JsonNull }?.let(Js::text) ?: ""
+            LegRoute(r.id, name, r.named.map { it.point }, r.result.legs)
+        }
+        stops.forEach { stop -> stop.flightData = LzLegs.ofPlanned(stop.target?.let { LatLon(it.lat, it.lon) }, shown).judged(stop.diagram.flightData) }
         val flow = resolveFlow(stops, routes)
 
         val brief = briefBindings(flow, routes, missionDate)
@@ -1354,8 +1370,8 @@ private class Compiler(
                         },
                     ),
                 )
-                put("landingHeading", Doghouses.landingHeadingOf(diagram.flightData["landing_hdg"])?.let(::JsonPrimitive) ?: JsonNull)
-                put("takeoffHeading", Doghouses.landingHeadingOf(diagram.flightData["takeoff_hdg"])?.let(::JsonPrimitive) ?: JsonNull)
+                put("landingHeading", Doghouses.landingHeadingOf(stop.item.flightData["landing_hdg"])?.let(::JsonPrimitive) ?: JsonNull)
+                put("takeoffHeading", Doghouses.landingHeadingOf(stop.item.flightData["takeoff_hdg"])?.let(::JsonPrimitive) ?: JsonNull)
                 putValue("goAround", str(goAroundSide(diagram)))
             }
         }

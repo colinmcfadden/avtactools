@@ -99,6 +99,7 @@ import app.ezpztac.data.session.EncryptedSessionStore
 import app.ezpztac.data.session.KeystoreSecretBox
 import app.ezpztac.map.CameraMemory
 import app.ezpztac.map.GridMemory
+import app.ezpztac.map.RouteDoghouseMemory
 import app.ezpztac.map.LocationSource
 import app.ezpztac.map.MapTokenSource
 import app.ezpztac.map.PlatformLocationSource
@@ -385,6 +386,9 @@ interface AppBindings {
 
     @Binds
     fun gridMemory(impl: MapPreferences): GridMemory
+
+    @Binds
+    fun routeDoghouseMemory(impl: MapPreferences): RouteDoghouseMemory
 
     @Binds
     fun slopeOpacityMemory(impl: MapPreferences): SlopeOpacityMemory
