@@ -102,7 +102,7 @@ api.interceptors.response.use(
 // loading back until it finishes, so the two do not compete for the server.
 // See requestPriority.
 api.interceptors.request.use((config) => {
-  if (isPriorityRequest(config.url)) config.endPriority = beginPriority();
+  if (isPriorityRequest(config.url, config.method)) config.endPriority = beginPriority();
   return config;
 });
 api.interceptors.response.use(

@@ -16,6 +16,7 @@
     "jszip": "^3.10.1",
     "leaflet": "^1.9.4",
     "milsymbol": "^3.0.4",
+    "pdfjs-dist": "6.5.438",
     "qrcode": "^1.5.4",
     "react": "^19.2.4",
     "react-dom": "^19.2.4",
@@ -30,9 +31,9 @@
     "preview": "vite preview",
     "test": "vitest run",
     "test:watch": "vitest",
-    "prestart": "node scripts/copy-cesium.js",
-    "predev": "node scripts/copy-cesium.js",
-    "prebuild": "node scripts/copy-cesium.js"
+    "prestart": "node scripts/copy-cesium.js && node scripts/copy-pdfjs.js",
+    "predev": "node scripts/copy-cesium.js && node scripts/copy-pdfjs.js",
+    "prebuild": "node scripts/copy-cesium.js && node scripts/copy-pdfjs.js"
   },
   "devDependencies": {
     "@vitejs/plugin-react": "^6.1.2",

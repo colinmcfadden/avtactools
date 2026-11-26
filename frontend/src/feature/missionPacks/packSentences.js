@@ -5,13 +5,15 @@
  * packActions.js re-exports what was there first.
  */
 
-const PREFIX = { lz: "lz", route: "rt", pointset: "ps", threatset: "ts" };
-const KIND_WORDS = { lz: "LZ/PZ", route: "route set", pointset: "point set", threatset: "threat set" };
+// A document's item is made by the server, from the file it checked (docs/DOCUMENTS.md §7): the client still names it, so an upload
+// asked again after a lost answer is the same item.
+const PREFIX = { lz: "lz", route: "rt", pointset: "ps", threatset: "ts", document: "doc" };
+const KIND_WORDS = { lz: "LZ/PZ", route: "route set", pointset: "point set", threatset: "threat set", document: "document" };
 
 /** Who a person is in the history: their name, else their sign-in address, else "Someone". */
 export const actorName = (user) => user?.name || user?.email || "Someone";
 
-/** A new item's uuid in a pack: its kind's prefix (lz-, rt-, ps-, ts-) and an id chosen by the client. */
+/** A new item's uuid in a pack: its kind's prefix (lz-, rt-, ps-, ts-, doc-) and an id chosen by the client. */
 export const packItemId = (kind, id) => `${PREFIX[kind]}-${id}`;
 
 const DEFAULT_NAMES = {

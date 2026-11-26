@@ -7,6 +7,7 @@ import MoreMenu from "../ui/MoreMenu";
 import NameDialog from "../ui/NameDialog";
 import { dateAndTime } from "../ui/time";
 import { useToast } from "../ui/Toast";
+import { documentDetail } from "../documents/documentWords";
 import { duplicateRecord, renameRecord } from "./libraryApi";
 import "./library.css";
 
@@ -15,6 +16,10 @@ import "./library.css";
  * tabs. Opening one adds it to this session and never replaces unsaved work; one already open says
  * so. Each row's ⋯ renames, duplicates, adds to a Mission Pack or deletes (asked first: it is gone
  * from every device). Saving happens on the things themselves, never here.
+ *
+ * A source may add to that: `action` ({ icon, label, onClick }) a button beside the search (the Documents tab's Upload document),
+ * `menu(entry)` items of its own after Rename, and `duplicable: false` to offer no Duplicate (a document is the paper as sent: a
+ * second copy of it in the same Library is no use, docs/DOCUMENTS.md §6).
  */
 
 const TABS = [
@@ -23,6 +28,7 @@ const TABS = [
   { key: "points", label: "Local points", icon: "mapPin", noun: ["saved point set", "saved point sets"], search: "Search point sets by name" },
   { key: "threats", label: "Threats", icon: "diamond", noun: ["saved set of threats", "saved sets of threats"], search: "Search threats by name" },
   { key: "overlays", label: "Overlays", icon: "image", noun: ["saved map overlay", "saved map overlays"], search: "Search overlays by name" },
+  { key: "documents", label: "Documents", icon: "file", noun: ["document", "documents"], search: "Search documents by name" },
 ];
 
 const SORTS = [
@@ -36,6 +42,7 @@ const metaFor = (kind, entry) => {
   if (kind === "points") return `${entry.point_count ?? 0} points · ${updated}`;
   if (kind === "threats") return `${entry.threat_count ?? 0} ${entry.threat_count === 1 ? "threat" : "threats"} · ${updated}`;
   if (kind === "overlays") return `${entry.summary || entry.file_name || "Map overlay"} · ${updated}`;
+  if (kind === "documents") return [documentDetail(entry), updated].filter(Boolean).join(" · ");
   return updated;
 };
 
@@ -180,6 +187,12 @@ const LibraryDialog = ({ initialTab = "lz", sources, onClose, onAddToPack, onOpe
               <option key={s.key} value={s.key}>{s.label}</option>
             ))}
           </select>
+          {source.action && (
+            <button type="button" className="ui-btn ui-btn--38 library__action" onClick={source.action.onClick}>
+              <Icon name={source.action.icon} size={15} />
+              <span>{source.action.label}</span>
+            </button>
+          )}
         </div>
         <div className="library__list" id="library-panel" role="tabpanel" aria-labelledby={`library-tab-${tab}`}>
           {/* A list that failed to load must not read as an empty Library: the person would think their
@@ -215,7 +228,9 @@ const LibraryDialog = ({ initialTab = "lz", sources, onClose, onAddToPack, onOpe
                       ? "No saved threats yet. Add one from the Threats panel and it is saved here."
                       : tab === "overlays"
                         ? "No saved overlays yet. Import a .kmz or .kml file and choose Library."
-                        : "No saved point sets yet. Make some, or import an .LPS file, and save them from the Imports panel."}
+                        : tab === "documents"
+                          ? "No documents yet. Upload an OPORD or any other paper: a PDF, or a Word, Excel or PowerPoint file."
+                          : "No saved point sets yet. Make some, or import an .LPS file, and save them from the Imports panel."}
             </div>
           ) : (
             rows.map((entry) => {
@@ -244,7 +259,8 @@ const LibraryDialog = ({ initialTab = "lz", sources, onClose, onAddToPack, onOpe
                     size={34}
                     items={[
                       { icon: "pencil", title: "Rename", onSelect: () => setRenaming(entry) },
-                      { icon: "copy", title: "Duplicate", onSelect: () => duplicate(entry) },
+                      ...(source.menu?.(entry) ?? []),
+                      { icon: "copy", title: "Duplicate", onSelect: () => duplicate(entry), hidden: source.duplicable === false },
                       { icon: "layers", title: "Add to Mission Pack…", onSelect: () => onAddToPack(tab, entry), hidden: !onAddToPack || tab === "overlays" || (tab === "routes" && entry.kind === "mission"), text: undefined },
                       { divider: true },
                       { icon: "trash", title: "Delete", danger: true, onSelect: () => setDeleting(entry) },

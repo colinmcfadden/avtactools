@@ -32,6 +32,8 @@ on:
       # The mission brief: its compiler and light data (brief/*.json) and the template copies held to contracts/briefs.
       - "frontend/src/feature/brief/**"
       - "frontend/src/feature/terrain/**"
+      # Find in a document (documentSearch.js, held to documents/search.json).
+      - "frontend/src/feature/documents/**"
       # The MGRS grid (mgrs/grid.json), which the brief's strip charts are gridded with too (brief/strip-grid.json).
       - "frontend/src/feature/mgrsGrid/**"
       - "backend/requirements.txt"
@@ -63,6 +65,8 @@ on:
       # The mission brief: its compiler and light data (brief/*.json) and the template copies held to contracts/briefs.
       - "frontend/src/feature/brief/**"
       - "frontend/src/feature/terrain/**"
+      # Find in a document (documentSearch.js, held to documents/search.json).
+      - "frontend/src/feature/documents/**"
       # The MGRS grid (mgrs/grid.json), which the brief's strip charts are gridded with too (brief/strip-grid.json).
       - "frontend/src/feature/mgrsGrid/**"
       - "backend/requirements.txt"

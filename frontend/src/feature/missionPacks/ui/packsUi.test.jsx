@@ -252,3 +252,64 @@ describe("adding a Library item to a pack", () => {
     expect(screen.getByText("Finished Sep 22. Reopen it to add items.")).toBeInTheDocument();
   });
 });
+
+describe("a pack's documents (docs/DOCUMENTS.md §7)", () => {
+  const pack = { uuid: "p", name: "OP DK", role: "editor", status: "active", head_seq: 4 };
+  const opord = {
+    uuid: "doc-1",
+    kind: "document",
+    name: "OPORD 24-03",
+    seq: 4,
+    data: { version: 1, pdf: { sha256: "a", bytes: 1, pages: 14 }, source: { type: "docx", name: "OPORD.docx", bytes: 2 } },
+    updated_by: { id: 2, name: "Sam Bell" },
+    updated_at: minutesAgo(5),
+  };
+  const actionsWith = (extra = {}) => ({
+    ...Object.fromEntries(["open", "close", "rename", "saveCopy", "updateFromOriginal", "remove", "addFromLibrary", "newVersion", "download"].map((k) => [k, vi.fn()])),
+    ...extra,
+  });
+  const renderDocs = ({ role = "editor", readOnly = false, actions = actionsWith(), items = [opord] } = {}) =>
+    render(
+      <ToastProvider>
+        <PackPanel pack={{ ...pack, role }} members={[]} items={items} openIds={new Set()} me={1} readOnly={readOnly} actions={actions} tab="items" setTab={() => {}} />
+      </ToastProvider>,
+    );
+
+  it("says a document by its pages and what it was made from", () => {
+    expect(itemDetail(opord)).toBe("14 pages · from Word");
+    expect(itemDetail({ kind: "document", data: {} })).toBeNull();
+  });
+
+  it("lists them under Documents, read from the row, with a new version and the PDF in its menu", () => {
+    const actions = actionsWith({ uploadDocument: vi.fn() });
+    renderDocs({ actions });
+    expect(screen.getByText("Documents")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Read OPORD 24-03" }));
+    expect(actions.open).toHaveBeenCalledWith(expect.objectContaining({ uuid: "doc-1" }));
+
+    fireEvent.click(screen.getByRole("button", { name: "More actions for OPORD 24-03" }));
+    fireEvent.click(screen.getByRole("menuitem", { name: "New version…" }));
+    expect(actions.newVersion).toHaveBeenCalledWith(expect.objectContaining({ uuid: "doc-1" }));
+    fireEvent.click(screen.getByRole("button", { name: "More actions for OPORD 24-03" }));
+    fireEvent.click(screen.getByRole("menuitem", { name: "Download PDF" }));
+    expect(actions.download).toHaveBeenCalledWith(expect.objectContaining({ uuid: "doc-1" }));
+
+    fireEvent.click(screen.getByRole("button", { name: "Upload a document" }));
+    expect(actions.uploadDocument).toHaveBeenCalledTimes(1);
+  });
+
+  it("gives a viewer the PDF to read and download, but no new version and no upload", () => {
+    renderDocs({ role: "viewer", readOnly: true, actions: actionsWith({ uploadDocument: vi.fn() }) });
+    fireEvent.click(screen.getByRole("button", { name: "More actions for OPORD 24-03" }));
+    const titles = screen.getAllByRole("menuitem").map((item) => item.textContent);
+    expect(titles.some((t) => t.includes("Download PDF"))).toBe(true);
+    expect(titles.some((t) => t.includes("New version"))).toBe(false);
+    expect(screen.queryByRole("button", { name: "Upload a document" })).toBeNull();
+  });
+
+  it("offers no upload where the account has no documents", () => {
+    renderDocs({ items: [] });
+    expect(screen.queryByRole("button", { name: "Upload a document" })).toBeNull();
+    expect(screen.getByText(/sketch a route, add a threat or import local points/)).toBeInTheDocument();
+  });
+});

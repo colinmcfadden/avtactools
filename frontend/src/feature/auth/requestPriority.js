@@ -20,11 +20,20 @@ export const PRIORITY_PATHS = [
   "/overlay-image",      // a mission overlay cut into tiles
 ];
 
+// A document's upload (docs/DOCUMENTS.md §9.1): the server checks the PDF and reads its text, or has LibreOffice turn an Office file
+// into one. By its method too, since the same paths list documents (GET) and read them.
+const UPLOADS = [
+  /\/documents$/,                       // into the Library, or a pack's (/packs/<uuid>/documents)
+  /\/documents\/[^/]+\/version$/,        // a new version in the Library
+  /\/packs\/[^/]+\/items\/[^/]+\/version$/, // a new version of a pack's document
+];
+
 let active = 0;
 let waiters = [];
 
-export const isPriorityRequest = (url = "") => {
+export const isPriorityRequest = (url = "", method = "get") => {
   const path = String(url).split("?")[0];
+  if (String(method).toLowerCase() === "post" && UPLOADS.some((upload) => upload.test(path))) return true;
   return PRIORITY_PATHS.some((priority) => path.endsWith(priority));
 };
 
