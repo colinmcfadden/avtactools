@@ -67,23 +67,42 @@ class MapViewModelTest {
         override fun setGridShown(shown: Boolean) { this.shown = shown; writes += shown }
     }
 
+    private class Legs(var shown: Boolean = true) : RouteDoghouseMemory {
+        val writes = mutableListOf<Boolean>()
+        override fun routeDoghousesShown() = shown
+        override fun setRouteDoghousesShown(shown: Boolean) { this.shown = shown; writes += shown }
+    }
+
     private fun fix(lat: Double = 34.78, lon: Double = -84.08, accuracy: Float? = 5f) = UserLocation(LatLon(lat, lon), accuracy, null, null, 0L)
+
+    @Test
+    fun `the routes' leg doghouses are on until turned off, then remembered on the device both ways`() = runTest(dispatcher) {
+        val legs = Legs()
+        val vm = MapViewModel(Tokens(null), FakeLocation(), Memory(), Grid(), Charts(), legs)
+        assertTrue(vm.state.value.routeDoghouses)
+        vm.toggleRouteDoghouses()
+        assertFalse(vm.state.value.routeDoghouses)
+        vm.toggleRouteDoghouses()
+        assertTrue(vm.state.value.routeDoghouses)
+        assertEquals(listOf(false, true), legs.writes)
+        assertFalse(MapViewModel(Tokens(null), FakeLocation(), Memory(), Grid(), Charts(), Legs(shown = false)).state.value.routeDoghouses)   // as it was left
+    }
 
     @Test
     fun `the MGRS grid is off until turned on, then remembered on the device both ways`() = runTest(dispatcher) {
         val grid = Grid()
-        val vm = MapViewModel(Tokens(null), FakeLocation(), Memory(), grid, Charts())
+        val vm = MapViewModel(Tokens(null), FakeLocation(), Memory(), grid, Charts(), Legs())
         assertFalse(vm.state.value.grid)
         vm.toggleGrid()
         assertTrue(vm.state.value.grid)
         vm.toggleGrid()
         assertFalse(vm.state.value.grid)
         assertEquals(listOf(true, false), grid.writes)
-        assertTrue(MapViewModel(Tokens(null), FakeLocation(), Memory(), Grid(shown = true), Charts()).state.value.grid)   // as it was left
+        assertTrue(MapViewModel(Tokens(null), FakeLocation(), Memory(), Grid(shown = true), Charts(), Legs()).state.value.grid)   // as it was left
     }
 
     private fun TestScope.model(token: String? = "pk.t", location: FakeLocation = FakeLocation(), memory: Memory = Memory()) =
-        MapViewModel(Tokens(token), location, memory, Grid(), Charts()).also { advanceUntilIdle() } to location
+        MapViewModel(Tokens(token), location, memory, Grid(), Charts(), Legs()).also { advanceUntilIdle() } to location
 
     private fun TestScope.commandsOf(vm: MapViewModel): MutableList<MapCommand> {
         val seen = mutableListOf<MapCommand>()
@@ -145,7 +164,7 @@ class MapViewModelTest {
     @Test
     fun `a build that goes live is drawn on the VFR map with nothing else moved, and one taken away goes back to ArcGIS`() = runTest(dispatcher) {
         val charts = Charts()
-        val vm = MapViewModel(Tokens(null), FakeLocation(), Memory(), Grid(), charts)
+        val vm = MapViewModel(Tokens(null), FakeLocation(), Memory(), Grid(), charts, Legs())
         advanceUntilIdle()
         vm.selectStyle(MapStyles.VFR_ID)
         assertEquals("vfr-sectional", vm.state.value.style.id)
@@ -166,7 +185,7 @@ class MapViewModelTest {
 
     @Test
     fun `choosing the VFR map from another draws the live build`() = runTest(dispatcher) {
-        val vm = MapViewModel(Tokens("pk.t"), FakeLocation(), Memory(), Grid(), Charts(VfrCharts(build)))
+        val vm = MapViewModel(Tokens("pk.t"), FakeLocation(), Memory(), Grid(), Charts(VfrCharts(build)), Legs())
         advanceUntilIdle()
         vm.selectStyle("satellite")
         vm.selectStyle(MapStyles.VFR_ID)
@@ -176,7 +195,7 @@ class MapViewModelTest {
     @Test
     fun `the coverage coming changes what is said, and is no new style for the map`() = runTest(dispatcher) {
         val charts = Charts(VfrCharts(build))
-        val vm = MapViewModel(Tokens(null), FakeLocation(), Memory(), Grid(), charts)
+        val vm = MapViewModel(Tokens(null), FakeLocation(), Memory(), Grid(), charts, Legs())
         advanceUntilIdle()
         vm.selectStyle(MapStyles.VFR_ID)
         val style = vm.state.value.style
@@ -189,7 +208,7 @@ class MapViewModelTest {
     @Test
     fun `a token that arrives later brings satellite back without the person doing anything`() = runTest(dispatcher) {
         val tokens = Tokens(null)
-        val vm = MapViewModel(tokens, FakeLocation(), Memory(), Grid(), Charts())
+        val vm = MapViewModel(tokens, FakeLocation(), Memory(), Grid(), Charts(), Legs())
         advanceUntilIdle()
         assertEquals("usgs-topo", vm.state.value.style.id)
         tokens.token.value = "pk.arrived"

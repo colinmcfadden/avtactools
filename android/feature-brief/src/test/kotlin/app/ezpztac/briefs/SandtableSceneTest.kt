@@ -71,7 +71,7 @@ class SandtableSceneTest {
             listOf(
                 FigureMark.Arrow(at, 0.0, 30.0, Colours.AIRCRAFT, fromTip = false, rank = RANK_AIRCRAFT),
                 FigureMark.Arrow(at, 0.0, 30.0, Colours.AIRCRAFT, fromTip = false, rank = RANK_AIRCRAFT),
-                FigureMark.Arrow(at, 203.0, 96.0, SandtableScene.WHITE, fromTip = true, rank = RANK_LANDING),
+                FigureMark.Arrow(at, 223.0, 96.0, SandtableScene.WHITE, fromTip = true, rank = RANK_LANDING),   // the course of the route's leg into HAWK
             ),
             arrows,
         )

@@ -300,6 +300,7 @@ class HomeViewModelTest {
             session, analysis, selection, aircraft, drawing, routeSession, routeSelection, sketching, last, openSet, lastSet, openRouteSets, localPoints, pointSelection,
             threats, threatSelection, weather, mapDrag, slopeVisibility, corners, masks, placement, packs, mapFocus, onMap, others,
             symbols = SymbolRenderer { _, _ -> SymbolOutcome.Unavailable },
+            routeLegs = app.ezpztac.data.RouteLegs.of(session, routeSession),
         )
         val seen = mutableListOf<OpenedDiagram>()
         private val testScope = scope
@@ -1716,6 +1717,28 @@ class HomeViewModelTest {
         advanceUntilIdle()
         assertNull(r.routeSelection.held.value)
         assertNull(r.sketching.draft.value)
+    }
+
+    @Test
+    fun `a route's leg into the open LZ stands in for its landing doghouse, which is neither drawn nor held while it does`() = runTest(dispatcher) {
+        val r = Rig(this)
+        advanceUntilIdle()
+        r.session.open(r.analysed())
+        val made = r.routes.create("MISSION", listOf(route("r1", point("p1", north, name = ".RP"), point("p2", here))))
+        r.routeSession.open(made.id)
+        advanceUntilIdle()
+        // The route flies in from the north: its leg's doghouse is drawn, and the LZ/PZ's own landing doghouse steps aside; its takeoff one stays.
+        assertEquals(listOf("RP:TGT"), r.model.legDoghouses.value.map { it.key.substringAfter(":0:").replace("p1", "RP").replace("p2", "TGT") })
+        val drawn = r.model.scene.value.graphics.doghouses
+        assertEquals(1, drawn.size)
+        assertEquals("[SP1]", drawn.single().label)
+        assertEquals(2, r.session.active.value!!.graphics.doghouses.size)                       // nothing is taken out of the LZ/PZ itself
+
+        // Hidden on the map, the route stands in for nothing: both doghouses are drawn again, and the route has none.
+        r.routeSession.edit("Hide") { set -> set.mapRoute("r1") { it.copy(visible = false) } }
+        advanceUntilIdle()
+        assertEquals(2, r.model.scene.value.graphics.doghouses.size)
+        assertTrue(r.model.legDoghouses.value.isEmpty())
     }
 
     @Test

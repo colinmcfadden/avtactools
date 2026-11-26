@@ -85,6 +85,10 @@ internal object DataModule {
      */
     @Provides
     @Singleton
+    fun routeLegs(diagrams: DiagramSession, routes: RouteSession): RouteLegs = RouteLegs.of(diagrams, routes)
+
+    @Provides
+    @Singleton
     fun measuresSession(repository: RouteRepository, engine: PackEngine, store: PackStore): MeasuresSession =
         MeasuresSession(
             repository,

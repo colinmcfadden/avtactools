@@ -61,7 +61,8 @@ describe("compileBrief", () => {
   it("finds what the plan holds", () => {
     const hawk = step(amb, "4.e@lz:lz-hawk");
     const fact = (key) => hawk.facts.find((f) => f.key === key).value;
-    expect(fact("stop.landingHeading")).toBe("203°");
+    // The course ALDERAAN flies in on, whose leg stands in for the landing doghouse (its flight data says 203°).
+    expect(fact("stop.landingHeading")).toBe("223°");
     expect(fact("stop.elevation")).toBe("2,230 ft MSL");
     expect(fact("stop.goAround")).toBe("right");
     expect(hawk.items.find((i) => i.id === "4.e.i").text).toBe("16S GD 59833 44327");

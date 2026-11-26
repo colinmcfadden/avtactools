@@ -5,6 +5,14 @@ rules that bit once, what cannot be verified without a device); this file is the
 Read both, then `docs/NATIVE_APPS_PLAN.md` for the plan and its phases. Refresh this file in the same commit as any change
 that moves the "where things stand" or "next" sections.
 
+**Leg doghouses, and a route's leg standing in for an LZ/PZ's doghouse (2026-11-26, on `feat/lz-doghouses-follow-routes`).** The owner's decision, for every platform
+(web first, then Android; iOS in `docs/IOS_PLAN.md` §1.4): a leg of a route shown that flies into an LZ/PZ (its named point there within 500 m of the target) stands in for
+the LZ/PZ's landing doghouse, and one flying out for its takeoff doghouse: the LZ/PZ's own is not drawn, and the slope tile, its profile, the LZ card and the brief go by
+the leg's true course, the tile saying whose. Android also draws the web's doghouse on each route leg now, with *Route doghouses* in the Layers menu (AGENTS.md §17, *Leg
+doghouses on Android*). Every test and lint pass; none of it has run on a device. **To try first on a device:** a route sketched into an analysed LZ/PZ (its landing
+doghouse gives way, the slope tile names the route), the route hidden and shown again, the leg doghouses at a few zooms and with the map turned, and *Route doghouses*
+switched off and on across a restart.
+
 **Backstops, FLOTs and phase lines (2026-11-22, on `claude/android-phase-lines-backstops-5cbf8a`).** The web's three lines drawn across the map are on Android: ported to
 core-planning and held to the web's fixtures, drawn on the 2D map in the web's look, held, dragged (a backstop's arrow whole or by its tip, a line's points), and started from
 the LZ/PZ panel's tools and the tool rail (a backstop), the Routes panel's foot (FLOT, phase line) and the map's long press (*Draw a line here*). FLOTs and phase lines are kept

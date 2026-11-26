@@ -16,7 +16,7 @@ contracts/
 │  ├─ coords/       parse.json, reading.json        reference: the web app (coordParse.js; targetReading.js, the target field)
 │  ├─ planning/     aircraft.json, route.json, summary.json, graphics.json, backstops.json   reference: the web app
 │  ├─ workspace/    diagram.json, ops.json, doghouses.json   reference: the web app
-│  ├─ routes/       sketch.json, winds.json, handoff.json, handoff-set.json   reference: the web app (sketchOps, routeWinds, foreflight.js)
+│  ├─ routes/       sketch.json, winds.json, handoff.json, handoff-set.json, doghouses.json   reference: the web app (sketchOps, routeWinds, foreflight.js, routeDoghouses)
 │  ├─ formats/      number_text.json                reference: the web app (JavaScript's `String(n)`)
 │  ├─ aircraft/     limits.json                     reference: the backend (`_apply_fields`, probed)
 │  ├─ symbols/      sidc.json, presets.json, script.json, svg/*.svg   reference: the web app (milsymbol)
@@ -74,6 +74,7 @@ reference is.
 | `routes/winds.json` | `frontend/src/contracts/routeWindsFixtures.test.js` | — | `core-planning` (`RouteWinds`: the question a route asks for winds and how the answer is merged into the plan; times are wall-clock to the millisecond, so the fixture does not depend on the zone it was made in) |
 | `routes/handoff.json` | `frontend/src/contracts/handoffFixtures.test.js` | — | `core-formats` (`RouteHandoff`: the Garmin FPL, the GPX, the ForeFlight route string and URL a route is handed to other apps as; byte for byte, with the FPL's clock fixed) |
 | `routes/handoff-set.json` | `frontend/src/contracts/handoffSetFixtures.test.js` | — | not ported yet: Android sends one route at a time. What a whole route set is handed over as: one GPX with a `<rte>` for each route of two points or more, in the set's order, each `<rte>` what `handoff.json` says of that route alone (`expected.written` lists which of `routes` the file holds). A file of its own because every case of `handoff.json` is one route with a flight plan and a URL, and `RouteHandoffFixtureTest` reads every case that way |
+| `routes/doghouses.json` | `frontend/src/contracts/routeDoghouseFixtures.test.js` | — | `core-planning` (`RouteDoghouses`, `LzLegs`; `RouteDoghousesFixtureTest`): a doghouse on each leg of the routes shown (its place, turn, offset off the line, length on the screen at zoom 0 and what it says), its offset and size rules and texts, and the legs into and out of an LZ/PZ that stand in for its doghouses (the headings judged, the doghouses still drawn, what the slope tile says). Places and turns to a billionth, so x86-64 and ARM write the same file; one case (`aPointThatIsNoPlace`) reads differently on Android, which takes a place written as text as its number |
 | `aircraft/limits.json` | — | `backend/tests/test_contract_fixtures.py` (`AircraftLimitsTests`; `UPDATE_CONTRACTS=1` regenerates) | `core-model` (`AircraftDraft`) |
 | `symbols/*` | `frontend/src/contracts/symbolFixtures.test.js` | — | `core-model` (`Sidc`, `SymbolPresets`, `UnitMarkers`), `core-symbols` (`ScriptAnswer`, `PresetSymbols`; the `svg/` files are the app's assets) |
 | `msnx/edits.json`, `msnx/edits/*.msnx` | `frontend/src/contracts/msnxEditFixtures.test.js` | — | `core-formats` (`MsnxMutator`: what the web writes when an imported mission is edited, compared as parsed documents) |

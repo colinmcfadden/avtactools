@@ -28,6 +28,7 @@ import app.ezpztac.data.OtherDiagrams
 import app.ezpztac.data.PackFacts
 import app.ezpztac.data.PackLock
 import app.ezpztac.data.PointSelection
+import app.ezpztac.data.RouteLegs
 import app.ezpztac.data.RouteSelection
 import app.ezpztac.data.RouteSession
 import app.ezpztac.data.RouteSketching
@@ -70,9 +71,13 @@ import app.ezpztac.map.UnitFootprints
 import app.ezpztac.missionpacks.PackRef
 import app.ezpztac.missionpacks.PackState
 import app.ezpztac.model.BoundaryCornerRef
+import app.ezpztac.model.Diagram
 import app.ezpztac.model.DragTarget
 import app.ezpztac.model.GraphicRef
 import app.ezpztac.model.LatLon
+import app.ezpztac.planning.LegDoghouse
+import app.ezpztac.planning.LzLegs
+import app.ezpztac.planning.RouteDoghouses
 import app.ezpztac.network.TerrainAnalysis
 import app.ezpztac.packs.PackDoor
 import app.ezpztac.symbols.SymbolRenderer
@@ -147,6 +152,8 @@ class HomeViewModel @Inject constructor(
     private val controlMeasures: ControlMeasures? = null,
     /** Which threats' rings and terrain masks this device leaves off; none in a test that does not ask (all are drawn). */
     private val threatDisplay: ThreatDisplay = ThreatDisplay(InMemoryThreatDisplayStore()),
+    /** The legs of the routes on the map that fly into and out of the open LZ/PZ; none in a test that does not ask for them. */
+    private val routeLegs: RouteLegs = RouteLegs.None,
 ) : ViewModel() {
     private val _opened = MutableSharedFlow<OpenedDiagram>(extraBufferCapacity = 4, onBufferOverflow = BufferOverflow.DROP_OLDEST)
 
@@ -224,7 +231,8 @@ class HomeViewModel @Inject constructor(
      * airframe it was placed as, the same as the sheet measures it; one placed with a profile that is not known here is drawn as the chosen one.
      */
     val scene: StateFlow<LzScene> = combine(
-        session.active, analysis.slopes,
+        // While a route's leg flies into (or out of) the LZ/PZ, its own landing (or takeoff) doghouse is neither drawn nor held: the leg's stands in for it.
+        combine(session.active, routeLegs.open) { diagram, legs -> diagram?.besideLegs(legs.of(diagram)) }, analysis.slopes,
         combine(selection.selected, drawing.draft, slopeVisibility.shown, boundaryCorners.held, packLock) { held, draft, shown, corner, lock -> HeldView(held, draft, shown, corner, lock) },
         aircraft.profiles, aircraft.active,
     ) { diagram, slopes, view, profiles, active ->
@@ -238,6 +246,17 @@ class HomeViewModel @Inject constructor(
             locked = view.lock?.reasonFor(diagram?.id) != null,
         )
     }.stateIn(viewModelScope, SharingStarted.Eagerly, LzScene.EMPTY)
+
+    private fun Diagram.besideLegs(legs: LzLegs): Diagram =
+        if (!legs.any) this else copy(graphics = graphics.copy(doghouses = legs.doghousesBeside(graphics.doghouses)))
+
+    /**
+     * A doghouse on each leg of the routes on the map (the open set's visible ones), worked out from their plans (the web's routeDoghouses.js): drawn while the
+     * Layers menu has them on.
+     */
+    val legDoghouses: StateFlow<List<LegDoghouse>> = routeSession.active.map { it?.routes }.distinctUntilChanged()
+        .map { routes -> RouteDoghouses.of(routes.orEmpty()) }
+        .stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
 
     /**
      * The open LZ/PZs other than the one being worked on, drawn faded under it (the owner's request of 2026-10-21): the person's own open ones, or the pack's while

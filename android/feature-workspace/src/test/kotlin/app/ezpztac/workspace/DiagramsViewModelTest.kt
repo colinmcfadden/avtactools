@@ -35,6 +35,8 @@ import app.ezpztac.network.SlopeThresholds
 import app.ezpztac.network.TerrainAnalysis
 import app.ezpztac.network.Uh60Limits
 import app.ezpztac.network.WeatherReportDto
+import app.ezpztac.planning.LzLeg
+import app.ezpztac.planning.LzLegs
 import app.ezpztac.planning.LzSummary
 import app.ezpztac.sync.ConflictResolver
 import app.ezpztac.sync.Device
@@ -173,10 +175,13 @@ class DiagramsViewModelTest {
         val open = OpenDiagrams(openStore)
         val slopeVisibility = SlopeVisibility(InMemorySlopeOpacity())
         val fresh = app.ezpztac.data.FreshDiagrams()
+        /** The legs of the routes on the map into and out of the open LZ/PZ, as a test sets them. */
+        val legs = kotlinx.coroutines.flow.MutableStateFlow(app.ezpztac.data.OpenLzLegs.NONE)
         val model = DiagramsViewModel(
             repository, session,
             resolver ?: if (realEngine) device.engine else ConflictResolver { kind, uuid, how -> resolutions += Triple(kind, uuid, how) },
             analysis, aircraft, weather, open, slopeVisibility, pack, buildOnSave, fresh,
+            object : app.ezpztac.data.RouteLegs { override val open = legs },
         )
         val rows get() = model.state.value.rows
 
@@ -584,6 +589,36 @@ class DiagramsViewModelTest {
         assertEquals("HEADING REQUIRED", call.label)
         assertEquals(LzSummary.SlopeLevel.WARNING, call.level)
         assertEquals(listOf(LzSummary.HEADINGS_NOT_CHECKED), call.lines)
+    }
+
+    @Test
+    fun `while a route's leg flies into the LZ, the slope and its profile are judged on the leg's course, and the tile says whose`() = runTest(dispatcher) {
+        val r = rig()
+        r.terrain.measure = { slope(8.0, byHeading = plane(8.0, toward = 90), profiles = profiles(8.0, toward = 90)) }
+        r.model.create("LZ HAWK", grid)
+        advanceUntilIdle()
+        r.model.analyze()
+        advanceUntilIdle()
+        fun tile() = r.model.state.value.current!!.summary!!.slope as SlopeTileUi.Measured
+        val id = r.session.active.value!!.id
+        assertEquals(0, tile().call.heading)                                                    // the landing doghouse's 000°
+        assertNull(tile().fromRoute)
+
+        // ROUTE IN arrives from the east, flying 270°: down the slope, 8° nose down, over the 6° limit. Nothing is written into the LZ/PZ.
+        val leg = LzLeg("route-in", "ROUTE IN", "RP", "TGT", 270.4, "270°", 12.0)
+        r.legs.value = app.ezpztac.data.OpenLzLegs(id, LzLegs(landing = leg))
+        advanceUntilIdle()
+        assertEquals("LIMIT EXCEEDED", tile().call.label)
+        assertEquals(270, tile().call.heading)
+        assertEquals("From ROUTE IN, RP to TGT", tile().fromRoute)
+        assertTrue(r.model.state.value.current!!.summary!!.profile!!.along.words.startsWith("Along 270°"))
+        assertEquals(JsonPrimitive("000°"), r.session.active.value!!.flightData["landing_hdg"])
+
+        // Legs worked out for another LZ/PZ stand in for nothing here; and with none, its own doghouse is judged again.
+        r.legs.value = app.ezpztac.data.OpenLzLegs("another", LzLegs(landing = leg))
+        advanceUntilIdle()
+        assertEquals(0, tile().call.heading)
+        assertNull(tile().fromRoute)
     }
 
     @Test

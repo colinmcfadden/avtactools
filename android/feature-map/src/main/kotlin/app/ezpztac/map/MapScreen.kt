@@ -209,6 +209,8 @@ fun MapScreen(
     belowChips: @Composable () -> Unit = {},
     /** Turns the MGRS grid on or off, from the Layers menu; null: not offered. */
     onToggleGrid: (() -> Unit)? = null,
+    /** Turns the routes' leg doghouses on or off, from the Layers menu; null: not offered (an account with no routes). */
+    onToggleRouteDoghouses: (() -> Unit)? = null,
     /** Where what floats over the map is told, so the grid's labels keep off it ([MgrsGridLayer]). */
     chrome: MapChromeBoxes? = null,
     /** A place chosen from the list under the search: the map goes there. */
@@ -255,7 +257,7 @@ fun MapScreen(
             buttons.chromeBox(chrome, "buttons").onGloballyPositioned { buttonsBox = it.boundsInParent() },
             verticalArrangement = Arrangement.spacedBy(Tokens.Spacing.md.dp),
         ) {
-            LayersButton(state, onSelectStyle, onToggleGrid)
+            LayersButton(state, onSelectStyle, onToggleGrid, onToggleRouteDoghouses)
             GpsButton(gps, onToggleGps, onGpsPermissionResult, onLocateMe)
             slope?.let {
                 MapButton(
@@ -566,11 +568,11 @@ private fun MapButton(icon: Int, description: String, modifier: Modifier = Modif
 }
 
 /**
- * The map's layers: the base maps, and below them the MGRS grid's switch (the web's Layers control), which goes over any of them. The button
- * says the grid is on while it is, as the web's says *MGRS* on its collapsed control.
+ * The map's layers: the base maps, and below them the switches of what goes over any of them (the web's Layers control): the MGRS grid, and a
+ * doghouse on each route leg. The button says the grid is on while it is, as the web's says *MGRS* on its collapsed control.
  */
 @Composable
-private fun LayersButton(state: MapUiState, onSelect: (String) -> Unit, onToggleGrid: (() -> Unit)?) {
+private fun LayersButton(state: MapUiState, onSelect: (String) -> Unit, onToggleGrid: (() -> Unit)?, onToggleRouteDoghouses: (() -> Unit)?) {
     var open by remember { mutableStateOf(false) }
     Box {
         val described = "Base map: ${state.style.label}" + if (onToggleGrid != null && state.grid) ". MGRS grid on" else ""
@@ -582,21 +584,25 @@ private fun LayersButton(state: MapUiState, onSelect: (String) -> Unit, onToggle
                     onClick = { open = false; onSelect(style.id) },
                 )
             }
-            onToggleGrid?.let { toggle ->
-                HorizontalDivider()
-                // The menu stays open: turning the grid on is looked at with the menu, and turned off again from it.
-                DropdownMenuItem(
-                    text = { Text("MGRS grid") },
-                    trailingIcon = { Switch(checked = state.grid, onCheckedChange = null) },
-                    onClick = toggle,
-                    modifier = Modifier.semantics(mergeDescendants = true) {
-                        role = Role.Switch
-                        toggleableState = if (state.grid) ToggleableState.On else ToggleableState.Off
-                    },
-                )
-            }
+            if (onToggleGrid != null || onToggleRouteDoghouses != null) HorizontalDivider()
+            // The menu stays open: what is turned on is looked at with the menu, and turned off again from it.
+            onToggleGrid?.let { LayerSwitch("MGRS grid", state.grid, it) }
+            onToggleRouteDoghouses?.let { LayerSwitch("Route doghouses", state.routeDoghouses, it) }
         }
     }
+}
+
+@Composable
+private fun LayerSwitch(label: String, on: Boolean, onToggle: () -> Unit) {
+    DropdownMenuItem(
+        text = { Text(label) },
+        trailingIcon = { Switch(checked = on, onCheckedChange = null) },
+        onClick = onToggle,
+        modifier = Modifier.semantics(mergeDescendants = true) {
+            role = Role.Switch
+            toggleableState = if (on) ToggleableState.On else ToggleableState.Off
+        },
+    )
 }
 
 @Composable

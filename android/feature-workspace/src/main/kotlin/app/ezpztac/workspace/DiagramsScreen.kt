@@ -214,7 +214,7 @@ private fun SlopeTile(slope: SlopeTileUi) {
                 LzSummary.SlopeLevel.DANGER -> MaterialTheme.colorScheme.error
             }
             Surface(
-                modifier = Modifier.fillMaxWidth().semantics { contentDescription = slopeSpoken(slope.call) },
+                modifier = Modifier.fillMaxWidth().semantics { contentDescription = slopeSpoken(slope.call, slope.fromRoute) },
                 shape = RoundedCornerShape(Tokens.Radius.sm.dp), color = MaterialTheme.colorScheme.surfaceContainerHighest, border = BorderStroke(2.dp, color),
             ) {
                 Column(Modifier.padding(horizontal = 10.dp, vertical = Tokens.Spacing.sm.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
@@ -225,7 +225,8 @@ private fun SlopeTile(slope: SlopeTileUi) {
                         Text(slope.call.label, style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold), color = color)
                     }
                     // What was judged at the landing heading and the wind the limits are for (the web's smaller lines under the slope).
-                    slope.call.lines.forEach { line ->
+                    // A route's leg into the LZ/PZ, standing in for its landing doghouse, gave the heading judged: say whose (lzLegs.js).
+                    (slope.call.lines + listOfNotNull(slope.fromRoute)).forEach { line ->
                         Text(line, style = MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.SemiBold), color = MaterialTheme.colorScheme.onSurface)
                     }
                     Text(
@@ -242,9 +243,9 @@ private fun SlopeTile(slope: SlopeTileUi) {
  * What a screen reader hears for the slope tile: the slope, its call and the lines under it, with the degree and minus signs in words
  * ("Landing 270 degrees: nose down 8.0 degrees, limit 6 degrees. Wind 12 knots: limits minus 4 degrees.").
  */
-internal fun slopeSpoken(call: LzSummary.SlopeCall): String {
+internal fun slopeSpoken(call: LzSummary.SlopeCall, fromRoute: String? = null): String {
     fun spoken(line: String) = line.replace("\u2212", "minus ").replace(" kt", " knots").replace("°", " degrees")
-    val lines = call.lines.joinToString("") { " ${spoken(it)}." }
+    val lines = (call.lines + listOfNotNull(fromRoute)).joinToString("") { " ${spoken(it)}." }
     return "Maximum terrain slope ${oneDecimal(call.maxDeg)} degrees. ${call.label}.$lines"
 }
 

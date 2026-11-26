@@ -125,6 +125,7 @@ import app.ezpztac.map.MgrsGridLayer
 import app.ezpztac.map.OtherLzLayer
 import app.ezpztac.map.OtherLzScene
 import app.ezpztac.map.PinLabelsLayer
+import app.ezpztac.map.RouteDoghousesLayer
 import app.ezpztac.map.PointLayer
 import app.ezpztac.map.PointScene
 import app.ezpztac.map.PointersLayer
@@ -275,6 +276,7 @@ fun MapHome(
     }
     val scene by home.scene.collectAsStateWithLifecycle()
     val routeScene by home.routes.collectAsStateWithLifecycle()
+    val legDoghouses by home.legDoghouses.collectAsStateWithLifecycle()
     val measuresScene by home.measures.collectAsStateWithLifecycle()
     val pointScene by home.points.collectAsStateWithLifecycle()
     // The open LZ/PZs not being worked on, drawn faded; those hidden with the eye on their rows; and the one a tap holds.
@@ -730,6 +732,7 @@ fun MapHome(
                     onToggleGps = viewModel::toggleGps, onGpsPermissionResult = viewModel::permissionResult, onLocateMe = viewModel::locateMe,
                     onFaceNorth = viewModel::faceNorth,
                     onToggleGrid = viewModel::toggleGrid, chrome = chrome, onChoosePlace = viewModel::goTo,
+                    onToggleRouteDoghouses = if (Panel.Routes in panels) viewModel::toggleRouteDoghouses else null,
                     slope = slopeToggle, onToggleSlope = home::toggleSlope,
                     onCopyReadout = copyGrid,
                     padding = frame.padding,
@@ -859,6 +862,8 @@ fun MapHome(
                         sandtable?.let { SandtableMarksLayer(host, it.scene) }
                     } else {
                         ContourLabelsLayer(host, scene.slope)          // the slope map's heights, under every other label
+                        // A doghouse on each route leg, under the LZ/PZ's own labels; an account offered no routes has none on its map.
+                        if (state.routeDoghouses && Panel.Routes in panels) RouteDoghousesLayer(host, legDoghouses)
                         GraphicLabelsLayer(host, scene.graphics, footprints = home.unitFootprints)
                         MeasuresLabelsLayer(host, measuresScene)       // a backstop's arrow, a FLOT's scallops, a phase line's names
                         PinLabelsLayer(host, routeScene, pointScene, others = others)

@@ -13,6 +13,7 @@ import app.ezpztac.data.FreshDiagrams
 import app.ezpztac.data.DiagramSummary
 import app.ezpztac.data.OpenDiagrams
 import app.ezpztac.data.OpenPack
+import app.ezpztac.data.RouteLegs
 import app.ezpztac.data.PackFacts
 import app.ezpztac.data.PackGlance
 import app.ezpztac.data.PackLock
@@ -39,6 +40,7 @@ import app.ezpztac.model.JsNumber
 import app.ezpztac.model.LatLon
 import app.ezpztac.model.Notams
 import app.ezpztac.planning.AircraftGeometry
+import app.ezpztac.planning.LzLegs
 import app.ezpztac.planning.LzSummary
 import app.ezpztac.planning.RouteCalc
 import app.ezpztac.planning.SlopeProfile
@@ -186,7 +188,8 @@ sealed interface SlopeTileUi {
     data class Unavailable(val message: String) : SlopeTileUi
 
     /** [source] and [resolutionM] say where the numbers came from, so two sources are never mixed silently. */
-    data class Measured(val call: LzSummary.SlopeCall, val source: String, val resolutionM: Double) : SlopeTileUi
+    /** [fromRoute] says whose course the heading judged is when a route's leg into the LZ/PZ stands in for its landing doghouse (`From ROUTE 2, RP to TGT`). */
+    data class Measured(val call: LzSummary.SlopeCall, val source: String, val resolutionM: Double, val fromRoute: String? = null) : SlopeTileUi
 }
 
 /** One airframe in the picker: the web's `DESIGNATION — Name`, and `(yours)` for one the user made. */
@@ -351,6 +354,8 @@ class DiagramsViewModel @Inject constructor(
     private val buildOnSave: BuildOnSave = BuildOnSave.None,
     /** A new LZ/PZ is noted there, so the bar over the map offers its first step (analyse it, or draw its boundary). */
     private val fresh: FreshDiagrams = FreshDiagrams(),
+    /** The legs of the routes on the map that fly into and out of the open LZ/PZ: while one does, its slope is judged on the leg's course. */
+    private val routeLegs: RouteLegs = RouteLegs.None,
 ) : ViewModel() {
     private val local = MutableStateFlow(DiagramsUiState())
     private val page = MutableStateFlow(LzPage.HOME)
@@ -405,7 +410,7 @@ class DiagramsViewModel @Inject constructor(
     private val lzKind = LzPackKind()
 
     val state: StateFlow<DiagramsUiState> =
-        combine(inputs, analyses, airframes, weather.states) { inputs, look, (entries, chosen), weatherStates ->
+        combine(inputs, analyses, airframes, weather.states, routeLegs.open) { inputs, look, (entries, chosen), weatherStates, legs ->
             val (summaries, active, local, open, page) = inputs
             val glance = inputs.pack
             val byId = summaries.associateBy { it.uuid }
@@ -415,7 +420,7 @@ class DiagramsViewModel @Inject constructor(
             val diagrams = diagramsOf(glance)
             val packList = glance?.let { packListOf(it, active, diagrams) }
             val current = active?.let {
-                inPack(currentOf(it, look, byId[it.id], aircraftOf(entries, chosen), chosen, weatherStates[it.id] ?: WeatherState()), glance)
+                inPack(currentOf(it, look, byId[it.id], aircraftOf(entries, chosen), chosen, weatherStates[it.id] ?: WeatherState(), legs.of(it)), glance)
             }
             local.copy(
                 current = current,
@@ -793,7 +798,7 @@ class DiagramsViewModel @Inject constructor(
     fun dismissAnalysisError() = analysis.dismiss()
 
     private fun currentOf(
-        diagram: Diagram, look: Analyses, listed: DiagramSummary?, airframes: AircraftUi, chosen: AircraftProfile, weatherState: WeatherState,
+        diagram: Diagram, look: Analyses, listed: DiagramSummary?, airframes: AircraftUi, chosen: AircraftProfile, weatherState: WeatherState, legs: LzLegs,
     ): ActiveDiagramUi = ActiveDiagramUi(
         uuid = diagram.id,
         name = diagram.name,
@@ -807,7 +812,7 @@ class DiagramsViewModel @Inject constructor(
                 else -> AnalysisUi.Idle
             }
         },
-        summary = summaryOf(diagram, look.slopes[diagram.id], chosen, weatherState),
+        summary = summaryOf(diagram, look.slopes[diagram.id], chosen, weatherState, legs),
         weather = if (diagram.canEditGraphics) weatherOf(weatherState) else null,           // the web shows the weather once there is an analysis
         aircraft = airframes,
         sync = listed?.sync,
@@ -841,24 +846,24 @@ class DiagramsViewModel @Inject constructor(
 
     /**
      * The tiles for an analysed diagram, for the mission aircraft ([aircraft]): how many of them fit is what the capacity tile says. The slope
-     * is judged at the flight data's landing heading, in the steady wind of the report the weather tiles show for this LZ/PZ ([weather]).
+     * is judged at the flight data's landing heading, in the steady wind of the report the weather tiles show for this LZ/PZ ([weather]); while a
+     * route's leg into the LZ/PZ stands in for its landing doghouse ([legs]), at that leg's course, and the tile says whose.
      */
-    private fun summaryOf(diagram: Diagram, slope: SlopeState?, aircraft: AircraftProfile, weather: WeatherState): SummaryUi? {
+    private fun summaryOf(diagram: Diagram, slope: SlopeState?, aircraft: AircraftProfile, weather: WeatherState, legs: LzLegs = LzLegs.NONE): SummaryUi? {
         val boundary = DiagramGeometry.boundary(diagram)
         if (diagram.status != DiagramStatus.ANALYZED || boundary.isEmpty()) return null
         val fit = LzSummary.areaAndCapacity(boundary, aircraft)
         val key = analysis.boundaryKey(diagram)
         val measured = (slope as? SlopeState.Ready)?.takeIf { it.boundaryKey == key }
+        val landing = Doghouses.landingHeading(legs.judged(diagram.flightData))
         val profile = measured?.analysis?.profiles?.let { p ->
             SlopeProfile.Ground(p.stepM, p.halfLengthM, p.headingStepDeg, p.lines.map { SlopeProfile.GroundLine(it.heading, it.elevationsFt, it.lz) })
-        }.let { SlopeProfile.slopeProfileFor(it, Doghouses.landingHeading(diagram.flightData)) }
+        }.let { SlopeProfile.slopeProfileFor(it, landing) }
         val tile = when {
             slope is SlopeState.Ready && slope.boundaryKey == key -> {
                 val byHeading = slope.analysis.byHeading?.map { LzSummary.HeadingSlope(it.heading, it.noseHighMaxDeg, it.noseLowMaxDeg, it.crossSlopeMaxDeg) }
-                val call = LzSummary.slopeCall(
-                    slope.analysis.stats.maxDeg, byHeading, Doghouses.landingHeading(diagram.flightData), LzSummary.slopeWindOf(weather.snapshot?.observation),
-                )
-                SlopeTileUi.Measured(call, slope.analysis.source, slope.analysis.resolutionM)
+                val call = LzSummary.slopeCall(slope.analysis.stats.maxDeg, byHeading, landing, LzSummary.slopeWindOf(weather.snapshot?.observation))
+                SlopeTileUi.Measured(call, slope.analysis.source, slope.analysis.resolutionM, fromRoute = legs.landing?.words?.takeIf { call.heading != null })
             }
             slope is SlopeState.Unavailable -> SlopeTileUi.Unavailable(slope.message)
             else -> SlopeTileUi.Measuring                               // not asked for yet, in flight, or measured for a boundary that has since moved

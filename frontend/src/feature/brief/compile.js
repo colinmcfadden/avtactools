@@ -16,6 +16,7 @@ import { computeRoutePlan, distanceNm, ensureRoutePlan, planPoints, trueCourseDe
 import { landingHeadingOf, slopeCallFor, slopeWindOf } from "../terrain/slopeCall";
 import { findProfile } from "../aircraft/aircraftProfiles";
 import { toMgrs } from "../../utils/mgrs";
+import { flightDataWithLegs, lzLegs } from "../routeDoghouses/lzLegs";
 import { lightData } from "./light";
 import { ROLE_NAMES, ROLES } from "./templates";
 
@@ -364,12 +365,12 @@ const stopBindings = (stop, flow, context, plan) => {
     inbound = parts.join(", ");
   }
 
-  const landing = landingHeadingOf(diagram.flightData?.landing_hdg);
-  const takeoff = landingHeadingOf(diagram.flightData?.takeoff_hdg);
+  const landing = landingHeadingOf(stop.flightData?.landing_hdg);
+  const takeoff = landingHeadingOf(stop.flightData?.takeoff_hdg);
   const report = isObject(context.weather?.stops) ? context.weather.stops[stop.id] : null;
   let slope = null;
   if (diagram.analysis?.terrainData?.stats) {
-    const call = slopeCallFor(diagram.analysis.terrainData, { landingHdg: diagram.flightData?.landing_hdg, wind: slopeWindOf(report) });
+    const call = slopeCallFor(diagram.analysis.terrainData, { landingHdg: stop.flightData?.landing_hdg, wind: slopeWindOf(report) });
     slope = [call.label, ...call.lines].filter(Boolean).join(". ");
   }
 
@@ -686,6 +687,12 @@ export const compileBrief = (format, document = {}, plan = {}, context = {}) => 
   const routes = (Array.isArray(plan.routeSets) ? plan.routeSets : [])
     .filter((s) => isObject(s) && s.id !== undefined)
     .flatMap((s) => readRoutes(s, missionDate));
+  // A stop's headings are its flight data's, or the courses of the routes' legs into and out of it while they stand in for its
+  // doghouses (feature/routeDoghouses/lzLegs.js), as the map's slope tile and the LZ card say them.
+  const routesShown = routes.map((r) => r.route);
+  stops.forEach((stop) => {
+    stop.flightData = flightDataWithLegs(stop.diagram.flightData, lzLegs(stop.target, routesShown));
+  });
   const flow = resolveFlow(doc.flow, stops, routes, problems);
 
   const brief = briefBindings({
@@ -936,8 +943,8 @@ const geometryOf = (flow, plan, doc) => {
   flow.filter((f) => f.kind === "stop" && f.target).forEach((stop) => {
     const { diagram } = stop;
     const boundary = diagram.analysis?.customLZ || diagram.analysis?.detectedLZ;
-    const landing = landingHeadingOf(diagram.flightData?.landing_hdg);
-    const takeoff = landingHeadingOf(diagram.flightData?.takeoff_hdg);
+    const landing = landingHeadingOf(stop.flightData?.landing_hdg);
+    const takeoff = landingHeadingOf(stop.flightData?.takeoff_hdg);
     stops[stop.ref] = {
       name: stop.name,
       role: stop.role,

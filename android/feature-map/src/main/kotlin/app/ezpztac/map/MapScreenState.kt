@@ -40,6 +40,15 @@ interface GridMemory {
     fun setGridShown(shown: Boolean)
 }
 
+/**
+ * Whether the map draws a doghouse on each leg of the routes shown ([RouteDoghousesLayer]): on until the person turns them off, then remembered on
+ * this device (the web remembers it per browser, `ezpz.routeDoghouses`). How this person likes the map, never saved with a plan or synced.
+ */
+interface RouteDoghouseMemory {
+    fun routeDoghousesShown(): Boolean
+    fun setRouteDoghousesShown(shown: Boolean)
+}
+
 /** What the GPS button shows, and what is going on behind it. */
 sealed interface GpsState {
     data object Off : GpsState
@@ -66,6 +75,8 @@ data class MapUiState(
     val center: LatLon? = null,
     /** The MGRS grid is over the map (Layers, *MGRS grid*). */
     val grid: Boolean = false,
+    /** Each leg of the routes shown has its doghouse (Layers, *Route doghouses*). */
+    val routeDoghouses: Boolean = true,
     /** Which build of the FAA's charts draws the VFR map, and what it holds. */
     val charts: VfrCharts = VfrCharts(),
 )
@@ -87,8 +98,11 @@ class MapViewModel @Inject constructor(
     private val memory: CameraMemory,
     private val gridMemory: GridMemory,
     private val charts: VfrChartSource,
+    private val legMemory: RouteDoghouseMemory,
 ) : ViewModel() {
-    private val _state = MutableStateFlow(stylesState(tokens.token.value, null).copy(grid = gridMemory.gridShown()))
+    private val _state = MutableStateFlow(
+        stylesState(tokens.token.value, null).copy(grid = gridMemory.gridShown(), routeDoghouses = legMemory.routeDoghousesShown()),
+    )
     val state: StateFlow<MapUiState> = _state.asStateFlow()
 
     private val _commands = MutableSharedFlow<MapCommand>(extraBufferCapacity = 8, onBufferOverflow = BufferOverflow.DROP_OLDEST)
@@ -187,6 +201,13 @@ class MapViewModel @Inject constructor(
         val shown = !_state.value.grid
         _state.update { it.copy(grid = shown) }
         gridMemory.setGridShown(shown)
+    }
+
+    /** Draws a doghouse on each leg of the routes shown, or stops, and remembers which on this device. */
+    fun toggleRouteDoghouses() {
+        val shown = !_state.value.routeDoghouses
+        _state.update { it.copy(routeDoghouses = shown) }
+        legMemory.setRouteDoghousesShown(shown)
     }
 
     fun selectStyle(id: String) {
