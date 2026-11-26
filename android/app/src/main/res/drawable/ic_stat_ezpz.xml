@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- The notifications' small icon: the launcher's mark (a landing-zone circle with a crosshair) in one colour, as the system draws it. -->
+<!-- The notifications' small icon: the launcher's EZ/PZ mark (the open ring with its dot, a contour and the centre) in one colour, as the system draws it. -->
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
     android:width="24dp"
     android:height="24dp"
@@ -9,10 +9,17 @@
         android:fillColor="#00000000"
         android:strokeColor="#FFFFFFFF"
         android:strokeWidth="2"
-        android:pathData="M12,12m-7,0a7,7 0,1 1,14 0a7,7 0,1 1,-14 0" />
+        android:strokeLineCap="round"
+        android:pathData="M12,3A9,9 0,1 1,4.21,7.5" />
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M12,3m-2,0a2,2 0,1 1,4 0a2,2 0,1 1,-4 0" />
     <path
         android:fillColor="#00000000"
         android:strokeColor="#FFFFFFFF"
-        android:strokeWidth="2"
-        android:pathData="M12,2L12,22M2,12L22,12" />
+        android:strokeWidth="1.8"
+        android:pathData="M12,12.3m-4.6,0a4.6,4.6 0,1 1,9.2 0a4.6,4.6 0,1 1,-9.2 0" />
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M12,12.3m-1.5,0a1.5,1.5 0,1 1,3 0a1.5,1.5 0,1 1,-3 0" />
 </vector>

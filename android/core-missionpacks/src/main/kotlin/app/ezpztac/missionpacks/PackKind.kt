@@ -148,9 +148,11 @@ public class LzPackKind(private val env: DiagramNormalizer.Environment = Diagram
      * the old one, a length and direction nobody gave it; together, the later stands whole. A sector's corners and a boundary's are lists without ids,
      * which [PackDiff] sends whole already. The web drags a graphic, which changes both coordinates; it turns a PZ marker by its tip alone.
      *
-     * What an analysis found is one value too ([analysisWhole]): its boundary, its results, the grid's elevation and the position in words.
+     * What an analysis found is one value too ([analysisWhole]): its boundary, its results, the grid's elevation and the position in words. So is a
+     * backstop's arrow ([arrowWhole]): its tail and its tip, or its tail alone when it points at the target.
      */
-    override fun keepWhole(ops: List<JsonObject>, after: JsonElement?): List<JsonObject> = analysisWhole(keptWhole(ops, after, WHOLES), after)
+    override fun keepWhole(ops: List<JsonObject>, after: JsonElement?): List<JsonObject> =
+        analysisWhole(arrowWhole(keptWhole(ops, after, WHOLES), after), after)
 
     // The view kept on the device, read as the web reads one (a value it does not understand is the default), without the clock.
     private fun viewOf(diagram: Diagram, view: JsonElement): DiagramView = DiagramNormalizer.normalize(
@@ -173,6 +175,56 @@ public class LzPackKind(private val env: DiagramNormalizer.Environment = Diagram
             WholeValue(listOf("lat", "lon", "tipLat", "tipLon")) { path -> isGraphic(path) { it == "pzMarkers" } },
             WholeValue(listOf("lat", "lon")) { path -> isGraphic(path) { it in PLACED } },
         )
+
+        // `["graphics", "backstops", {id}, ...]`, at least [size] long: a backstop, or what is inside it.
+        private fun inBackstop(path: JsonArray, size: Int): Boolean =
+            path.size >= size && isField(path[0], "graphics") && isField(path[1], "backstops") && path[2] is JsonObject
+
+        // The backstop an operation changes the arrow of, by its path's id segment; null for any other operation.
+        private fun arrowOf(op: JsonObject): JsonObject? {
+            val path = pathOf(op) ?: return null
+            if (inBackstop(path, 4) && isField(path[3], "arrow")) return path[2] as JsonObject
+            val atBackstop = path.size == 3 && inBackstop(path, 3) && (op["type"] as? JsonPrimitive)?.content == "patch"
+            if (!atBackstop || (op["value"] as? JsonObject)?.containsKey("arrow") != true) return null
+            return path[2] as JsonObject
+        }
+
+        /**
+         * [ops] with a backstop's arrow sent whole: wherever an operation changes some of it (its tail moved, its tip aimed, or taken away as it is put back on
+         * the target), one patch of the backstop carries the arrow as [after] has it (null when it has none), in the place of the first such operation (a patch
+         * of the backstop keeps its other fields), and the rest go. The arrow is one thing a person moves: its tail and tip moved by one person while another
+         * aims its tip would otherwise leave a tail of one and a tip of the other. The web sends the part of it that changed.
+         */
+        fun arrowWhole(ops: List<JsonObject>, after: JsonElement?): List<JsonObject> {
+            if (ops.none { arrowOf(it) != null }) return ops
+            val backstops = ((after as? JsonObject)?.get("graphics") as? JsonObject)?.get("backstops") as? JsonArray
+            val done = ArrayList<JsonElement>()
+            return ops.mapNotNull { op ->
+                val segment = arrowOf(op) ?: return@mapNotNull op
+                if (done.any { Js.strictEquals(it, segment["id"]) }) {
+                    // What else a patch of the backstop changed stays; only its arrow has gone with the first.
+                    val path = pathOf(op)!!
+                    val value = op["value"] as? JsonObject
+                    if (path.size != 3 || value == null) return@mapNotNull null
+                    val rest = value.filterKeys { it != "arrow" }
+                    return@mapNotNull if (rest.isEmpty()) null else JsonObject(LinkedHashMap(op).apply { put("value", JsonObject(rest)) })
+                }
+                done += segment["id"] ?: JsonNull
+                val backstop = backstops?.firstOrNull { it is JsonObject && "id" in it && Js.strictEquals(it["id"], segment["id"]) } as? JsonObject
+                val path = pathOf(op)!!
+                val own = (op["value"] as? JsonObject)?.takeIf { path.size == 3 }
+                val value = LinkedHashMap<String, JsonElement>(own ?: emptyMap())
+                value["arrow"] = backstop?.get("arrow") ?: JsonNull
+                JsonObject(
+                    LinkedHashMap(op).apply {
+                        remove("after")
+                        put("type", JsonPrimitive("patch"))
+                        put("path", JsonArray(path.take(3)))
+                        put("value", JsonObject(value))
+                    },
+                )
+            }
+        }
 
         // What one analysis finds, or a corner deleted from what it found: its boundary, its results, the grid's elevation and the position in words.
         private val RESULT = listOf("detectedLZ", "results", "gridElevation", "latLong")
@@ -249,6 +301,11 @@ public object RoutePackKind : PackKind<RouteSet> {
 
     private const val OWN_HIDDEN = "hidden"
 
+    // A route set's own lines (core-planning's `SetLines.FLOTS` and `SetLines.PHASE_LINES`, the web's `flots` and `phaseLines`).
+    private const val FLOTS = "flots"
+    private const val PHASE_LINES = "phaseLines"
+    private val LINE_KEYS = listOf(FLOTS, PHASE_LINES)
+
     override fun shared(data: JsonElement?): JsonElement = PackRoutes.sharedRouteData(data)
 
     override fun fromItem(localId: String, item: PackItemView, own: JsonObject?): RouteSet {
@@ -263,17 +320,36 @@ public object RoutePackKind : PackKind<RouteSet> {
         val after = typed(document)
         val measured = measuredAgainst(shape, read, after)
         val before = JsonObject(mapOf("routes" to JsonArray(measured.map { it.version })))
-        if (PackDiff.sameData(before, after)) return shape
+        if (PackDiff.sameData(before, after)) return withLines(shape, document)
         // Two routes with one id: an operation addressed by it reaches the first, whichever of them the editor changed, so they go whole.
-        if (!addressable(shape)) return wholeRoutes(shape, measured, after)
+        if (!addressable(shape)) return withLines(wholeRoutes(shape, measured, after), document)
         var data: JsonElement = shape
         for (op in PackDiff.diffData(before, after)) {
             // An operation on the set itself is on its routes, which are then not a list it can address: they go whole. Any other is
             // never dropped: one that does not apply to the JSON is made coarser until it does.
             val next = if ((op.getValue("path") as JsonArray).isEmpty()) null else applied(data, op) ?: coarsened(data, op, after)?.let { applied(data, it) }
-            data = next ?: return wholeRoutes(shape, measured, after)
+            data = next ?: return withLines(wholeRoutes(shape, measured, after), document)
         }
-        return data
+        return withLines(data, document)
+    }
+
+    /**
+     * [data] with the set's FLOTs and phase lines as [document] has them (`flots`, `phaseLines`: the set's own fields, kept in [RouteSet.extras], which the
+     * routes' diff above does not see): each put where it was, a new one before `routes` (a FLOT's before a phase line's, as the web's `routeSetData` writes
+     * them), one that went left out. Unchanged, [data] comes back as it was, so a set whose lines did not change sends nothing for them.
+     */
+    private fun withLines(data: JsonElement, document: RouteSet): JsonElement {
+        val obj = data as? JsonObject ?: return data
+        if (LINE_KEYS.all { obj[it] == document.extras[it] }) return data
+        val out = LinkedHashMap<String, JsonElement>()
+        fun putMissing() = LINE_KEYS.forEach { key -> if (key !in obj && key !in out) document.extras[key]?.let { out[key] = it } }
+        for ((key, value) in obj) {
+            // A FLOT's key, new, goes before a phase line's already there; both before the routes.
+            if (key == "routes" || (key == PHASE_LINES && FLOTS !in obj)) putMissing()
+            if (key in LINE_KEYS) document.extras[key]?.let { out[key] = it } else out[key] = value
+        }
+        putMissing()
+        return JsonObject(out)
     }
 
     override fun nameOf(document: RouteSet): String = document.name

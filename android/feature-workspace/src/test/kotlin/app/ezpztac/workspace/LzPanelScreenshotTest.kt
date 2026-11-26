@@ -10,12 +10,17 @@ import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.test.junit4.v2.createComposeRule
+import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.onRoot
+import androidx.compose.ui.test.performClick
 import androidx.compose.ui.unit.dp
 import app.ezpztac.data.PlaceTool
 import app.ezpztac.designsystem.EzpzTheme
 import app.ezpztac.designsystem.ThemeMode
 import app.ezpztac.model.DiagramStatus
+import app.ezpztac.model.GraphicRef
+import app.ezpztac.model.Notams
+import app.ezpztac.planning.LzSummary
 import com.github.takahirom.roborazzi.captureRoboImage
 import org.junit.Rule
 import org.junit.Test
@@ -100,6 +105,50 @@ class LzPanelScreenshotTest {
     @Test fun planViewNight() = viewShot("plan-view-night", ThemeMode.Night, activeLz().copy(slopeOpacity = 30))
     @Test fun planViewLight() = viewShot("plan-view-light", ThemeMode.Light, activeLz(outlineShown = false))
     @Test fun planViewSlopeOff() = viewShot("plan-view-slope-off", ThemeMode.Dark, activeLz(slopeShown = false, outlineShown = false))
+
+    // The plan analysed, as a person opens it from a held object's options (the owner's request of 2026-11-22: a long page, hard to see where one was): each part a
+    // card that folds, the figures compact, three to a row.
+    private val analysed = activeLz().copy(
+        summary = SummaryUi(
+            "UH-60L", 13, 854_831, "4050",
+            SlopeTileUi.Measured(LzSummary.SlopeCall(LzSummary.SlopeLevel.SAFE, "LANDING", 4.2, lines = listOf("Landing 270°: within limits")), "local_highres_cog", 10.2),
+        ),
+        weather = WeatherUi(true, "12", "G20", 270, false, "15", "30.02", "KRYY · 4.1 nm", "VFR", 0L, false, null, Notams.Clear),
+    )
+    private val placed = GraphicsUiState(
+        listed = true, canEdit = true, undoDepth = 2,
+        rows = listOf(
+            GraphicRowUi(GraphicRef("helicopters", "h1"), GraphicKind.HELICOPTER, "Helicopter · UH-60L", GRID, "heading 90°", warning = false, selected = false),
+            GraphicRowUi(GraphicRef("pzMarkers", "p1"), GraphicKind.PZ_MARKER, "PZ marker", GRID, "reach 300 ft", warning = false, selected = false),
+        ),
+    )
+
+    private fun analysedShot(name: String, mode: ThemeMode = ThemeMode.Dark) = shot(name, mode) {
+        LzPlanContent(analysed, placed, BoundaryUiState(canStart = true, clears = true), null, LzPanelActions(), GraphicsActions(), GRID)
+    }
+
+    @Test fun planAnalysed() = analysedShot("plan-analysed")
+    @Test fun planAnalysedNight() = analysedShot("plan-analysed-night", ThemeMode.Night)
+    @Test fun planAnalysedLight() = analysedShot("plan-analysed-light", ThemeMode.Light)
+
+    @Test
+    @Config(qualifiers = "w360dp-h915dp-xxhdpi", fontScale = 1.3f)
+    fun planAnalysedNarrowLarge() = analysedShot("plan-analysed-360-1.3")
+
+    @Test
+    fun planFolded() {
+        compose.setContent {
+            EzpzTheme(ThemeMode.Dark) {
+                Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.surfaceContainerLow) {
+                    Box(Modifier.verticalScroll(rememberScrollState()).padding(horizontal = 16.dp, vertical = 4.dp)) {
+                        LzPlanContent(analysed, placed, BoundaryUiState(canStart = true, clears = true), null, LzPanelActions(), GraphicsActions(), GRID)
+                    }
+                }
+            }
+        }
+        listOf("LZ/PZ analysis", "Weather", "LZ/PZ tools").forEach { compose.onNodeWithText(it).performClick() }
+        compose.onRoot().captureRoboImage("build/screenshots/lz-plan-folded.png")
+    }
 
     @Test
     fun planNotAnalysed() = shot("plan-not-analysed") {

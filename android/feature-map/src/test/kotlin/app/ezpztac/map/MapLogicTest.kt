@@ -85,14 +85,30 @@ class MapLogicTest {
     @Test
     fun `a build changes the VFR map alone, and keeps its id and the name a diagram saves`() {
         val with = MapStyles.available(token, live)
-        assertEquals(listOf("satellite", "topo", MapStyles.VFR_ID), with.map { it.id })
-        assertEquals(MapStyles.available(token).take(2), with.take(2))
+        assertEquals(listOf("satellite", "usgs-topo", "topo", MapStyles.VFR_ID), with.map { it.id })
+        assertEquals(MapStyles.available(token).take(3), with.take(3))
         assertEquals("VFR", with.last().label)
     }
 
     @Test
-    fun `the three base maps have the ids a saved diagram uses`() {
-        assertEquals(listOf("satellite", "topo", "vfr-sectional"), MapStyles.available(token).map { it.id })
+    fun `the four base maps have the ids a saved diagram uses, in the web's order`() {
+        assertEquals(listOf("satellite", "usgs-topo", "topo", "vfr-sectional"), MapStyles.available(token).map { it.id })
+    }
+
+    @Test
+    fun `USGS's map is The National Map's keyless tiles to level 16, ArcGIS's y before x, credited to USGS`() {
+        val usgs = MapStyles.byId(MapStyles.USGS_ID, token)
+        assertEquals("https://basemap.nationalmap.gov/arcgis/rest/services/USGSTopo/MapServer/tile/{z}/{y}/{x}", usgs.tiles)
+        assertEquals("USGS", usgs.label)
+        assertEquals(256, usgs.tileSize)
+        assertEquals(0, usgs.minZoom)
+        assertEquals(16, usgs.maxZoom)                                      // 17 and beyond answer 404: the map stretches 16
+        assertFalse(usgs.needsMapboxToken)
+        assertTrue(usgs.attribution.contains("USGS The National Map"))
+        assertEquals(usgs, MapStyles.byId(MapStyles.USGS_ID, null))         // the same with no token
+        val source = Fixtures.json.parseToJsonElement(MapStyles.styleJson(usgs, 3.0)).jsonObject.getValue("sources").jsonObject.getValue("base").jsonObject
+        assertEquals("256", source.getValue("tileSize").jsonPrimitive.content)   // its labels are drawn for 256 points, as on the web
+        assertEquals("16", source.getValue("maxzoom").jsonPrimitive.content)
     }
 
     @Test
@@ -121,15 +137,17 @@ class MapLogicTest {
     }
 
     @Test
-    fun `with no token only the FAA chart is offered, and asking for satellite gets it rather than a blank map`() {
-        assertEquals(listOf("vfr-sectional"), MapStyles.available(null).map { it.id })
-        assertEquals("vfr-sectional", MapStyles.byId("satellite", null).id)
+    fun `with no token only USGS's map and the FAA chart are offered, and asking for satellite gets USGS's rather than a blank map`() {
+        assertEquals(listOf("usgs-topo", "vfr-sectional"), MapStyles.available(null).map { it.id })
+        assertEquals("usgs-topo", MapStyles.byId("satellite", null).id)
+        assertEquals("usgs-topo", MapStyles.byId("topo", null).id)
+        assertEquals("vfr-sectional", MapStyles.byId("vfr-sectional", null).id)
     }
 
     @Test
     fun `a token that is not a public one is not used`() {
-        assertEquals(listOf("vfr-sectional"), MapStyles.available("sk.a-secret-token").map { it.id })
-        assertEquals(listOf("vfr-sectional"), MapStyles.available("").map { it.id })
+        assertEquals(listOf("usgs-topo", "vfr-sectional"), MapStyles.available("sk.a-secret-token").map { it.id })
+        assertEquals(listOf("usgs-topo", "vfr-sectional"), MapStyles.available("").map { it.id })
     }
 
     @Test

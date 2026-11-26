@@ -95,10 +95,10 @@ class MapViewModelTest {
     // -- Base maps ---------------------------------------------------------------------------------------
 
     @Test
-    fun `it starts on satellite when it can, and offers all three`() = runTest(dispatcher) {
+    fun `it starts on satellite when it can, and offers all four`() = runTest(dispatcher) {
         val (vm, _) = model()
         assertEquals("satellite", vm.state.value.style.id)
-        assertEquals(3, vm.state.value.styles.size)
+        assertEquals(4, vm.state.value.styles.size)
     }
 
     @Test
@@ -110,11 +110,11 @@ class MapViewModelTest {
     }
 
     @Test
-    fun `with no token the FAA chart is drawn, but the diagram still remembers satellite`() = runTest(dispatcher) {
+    fun `with no token USGS's map is drawn, but the diagram still remembers satellite`() = runTest(dispatcher) {
         val (vm, _) = model(token = null)
-        assertEquals("vfr-sectional", vm.state.value.style.id)
+        assertEquals("usgs-topo", vm.state.value.style.id)
         assertEquals("satellite", vm.chosenStyleId())
-        assertEquals(1, vm.state.value.styles.size)
+        assertEquals(listOf("usgs-topo", "vfr-sectional"), vm.state.value.styles.map { it.id })
     }
 
     @Test
@@ -147,6 +147,7 @@ class MapViewModelTest {
         val charts = Charts()
         val vm = MapViewModel(Tokens(null), FakeLocation(), Memory(), Grid(), charts)
         advanceUntilIdle()
+        vm.selectStyle(MapStyles.VFR_ID)
         assertEquals("vfr-sectional", vm.state.value.style.id)
         assertTrue(vm.state.value.style.tiles.startsWith("https://tiles.arcgis.com/"))
 
@@ -177,6 +178,7 @@ class MapViewModelTest {
         val charts = Charts(VfrCharts(build))
         val vm = MapViewModel(Tokens(null), FakeLocation(), Memory(), Grid(), charts)
         advanceUntilIdle()
+        vm.selectStyle(MapStyles.VFR_ID)
         val style = vm.state.value.style
         charts.charts.value = VfrCharts(build, ChartCoverage("b", 5, emptyList()))
         advanceUntilIdle()
@@ -189,11 +191,11 @@ class MapViewModelTest {
         val tokens = Tokens(null)
         val vm = MapViewModel(tokens, FakeLocation(), Memory(), Grid(), Charts())
         advanceUntilIdle()
-        assertEquals("vfr-sectional", vm.state.value.style.id)
+        assertEquals("usgs-topo", vm.state.value.style.id)
         tokens.token.value = "pk.arrived"
         advanceUntilIdle()
         assertEquals("satellite", vm.state.value.style.id)
-        assertEquals(3, vm.state.value.styles.size)
+        assertEquals(4, vm.state.value.styles.size)
     }
 
     @Test

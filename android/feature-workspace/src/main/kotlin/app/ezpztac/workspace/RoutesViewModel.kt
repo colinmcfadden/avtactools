@@ -2,6 +2,7 @@ package app.ezpztac.workspace
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import app.ezpztac.data.ControlMeasures
 import app.ezpztac.data.ExportResult
 import app.ezpztac.data.HandoffFormat
 import app.ezpztac.data.LocalPoints
@@ -40,6 +41,7 @@ import app.ezpztac.planning.PlanPatch
 import app.ezpztac.planning.PointDraft
 import app.ezpztac.planning.PointSpec
 import app.ezpztac.planning.RouteCalc
+import app.ezpztac.planning.SetLines
 import app.ezpztac.planning.SketchOps
 import app.ezpztac.sync.ConflictResolver
 import app.ezpztac.sync.RecordKind
@@ -311,6 +313,8 @@ class RoutesViewModel @Inject constructor(
     private val openSets: OpenRouteSets,
     /** The open Mission Pack: while one is open its route sets are the panel's, and a new one goes into it. */
     private val pack: OpenPack = OpenPack.None,
+    /** Where a saved set of control measures opens (none in tests that do not need them: such a set then opens as routes). */
+    private val measures: ControlMeasures? = null,
 ) : ViewModel() {
     private data class Local(
         val error: String? = null, val fetching: PlanningKind? = null, val note: PlanningNote? = null, val noteFor: String? = null,
@@ -441,7 +445,8 @@ class RoutesViewModel @Inject constructor(
                 opening = if (unreachable) DiagramsViewModel.PACK_UNREACHABLE else "Opening the pack…",
             )
         }
-        val items = glance.items.filter { it.kind == "route" }
+        // The pack's control measures are no route set: the card under *Control measures* is theirs (`packRouteSetFor` passes them over).
+        val items = glance.items.filter { it.kind == "route" && !SetLines.isMeasures(it.data, it.name == SetLines.MEASURES_NAME) }
         val rows = items.filter { PackRef.localId(glance.uuid, it.uuid) != openId }.map { item ->
             val routes = ((item.data as? JsonObject)?.get("routes") as? JsonArray).orEmpty()
             val points = routes.sumOf { ((it as? JsonObject)?.get("points") as? JsonArray)?.size ?: 0 }
@@ -712,6 +717,9 @@ class RoutesViewModel @Inject constructor(
         // The person's own are set aside in a pack, and come back when it is left: one opened here would be edited beside the pack's, as if it were one of them.
         if (pack.state.value != null && PackRef.parse(uuid) == null) return fail(OWN_SETS_IN_PACK)
         run("The set could not be opened.") {
+            // A saved set of control measures (no routes, and lines) opens as them, beside the route sets, as the web opens one (`handleLoadSavedRoute`).
+            val row = state.value.sets.firstOrNull { it.uuid == uuid }
+            if (row != null && row.routeCount == 0 && !row.isMission) measures?.openIfMeasures(uuid)?.let { opened -> if (!opened) fail("That set is no longer here."); return@run }
             if (session.open(uuid)) openSets.add(uuid) else local.update { it.copy(error = "That set is no longer here.") }
         }
     }
@@ -1131,7 +1139,8 @@ class RoutesViewModel @Inject constructor(
      */
     private fun sketchInPack(first: LatLon?) = run("The routes could not be made.") {
         val state = pack.state.value ?: return@run
-        val sets = state.items.filter { it.kind == "route" }
+        // Never the pack's control measures, which take no route (`packRouteSetFor` passes them over).
+        val sets = state.items.filter { it.kind == "route" && !SetLines.isMeasures(it.data, it.name == SetLines.MEASURES_NAME) }
         val target = sets.firstOrNull { PackRef.localId(state.uuid, it.uuid) == lastPackSet } ?: sets.firstOrNull()
         val made = if (target != null) {
             if (!pack.openItem(target.uuid)) return@run fail("That set is no longer in the pack.")

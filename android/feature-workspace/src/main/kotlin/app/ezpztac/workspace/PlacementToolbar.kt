@@ -21,6 +21,7 @@ import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import app.ezpztac.designsystem.Banner
 import app.ezpztac.designsystem.BannerKind
+import app.ezpztac.designsystem.GlassSurface
 import app.ezpztac.designsystem.PrimaryButton
 import app.ezpztac.designsystem.SecondaryButton
 import app.ezpztac.designsystem.TextAction
@@ -53,8 +54,7 @@ fun PlacementToolbar(
     modifier: Modifier = Modifier,
 ) {
     val title = "Placing ${placing.tool.plural}"
-    Surface(
-        shape = RoundedCornerShape(Tokens.Radius.md.dp), color = MaterialTheme.colorScheme.surfaceContainerHigh, shadowElevation = 6.dp,
+    GlassSurface(
         modifier = modifier.padding(horizontal = Tokens.Spacing.md.dp).semantics { contentDescription = title },
     ) {
         Column(Modifier.padding(Tokens.Spacing.md.dp), verticalArrangement = Arrangement.spacedBy(Tokens.Spacing.sm.dp)) {

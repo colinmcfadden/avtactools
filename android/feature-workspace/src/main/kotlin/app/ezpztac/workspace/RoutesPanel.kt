@@ -49,6 +49,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.core.graphics.toColorInt
 import app.ezpztac.data.HandoffFormat
+import app.ezpztac.data.MeasureKind
 import app.ezpztac.designsystem.Banner
 import app.ezpztac.designsystem.BannerKind
 import app.ezpztac.designsystem.EzpzIcons
@@ -67,7 +68,14 @@ import app.ezpztac.designsystem.Tokens
  * Library. A conflict waiting for a choice is said at the top, because it is easy to miss on the list of everything.
  */
 @Composable
-fun RoutesHomeContent(state: RoutesUiState, actions: RoutesActions, modifier: Modifier = Modifier, threatCount: Int = 0) {
+fun RoutesHomeContent(
+    state: RoutesUiState,
+    actions: RoutesActions,
+    modifier: Modifier = Modifier,
+    threatCount: Int = 0,
+    /** The *Control measures* cards ([MeasuresSectionHost]), below the route sets as the web lists them. */
+    measures: @Composable () -> Unit = {},
+) {
     Column(modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(Tokens.Spacing.sm.dp)) {
         state.error?.takeIf { state.drawing == null }?.let { Banner(it, BannerKind.Error, actionLabel = "Dismiss", onAction = actions.dismissError) }
         // A conflict is the Library's: in a pack it would read as if one of the pack's sets had one.
@@ -118,6 +126,7 @@ fun RoutesHomeContent(state: RoutesUiState, actions: RoutesActions, modifier: Mo
                 )
             }
         }
+        measures()
         // In a read-only pack, why nothing here can be changed (the web's hint).
         pack?.hint?.let {
             Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = Tokens.Spacing.sm.dp))
@@ -501,11 +510,33 @@ internal fun RouteMoreMenu(
  * not into the pack.
  */
 @Composable
-fun RoutesFooter(state: RoutesUiState, actions: RoutesActions, modifier: Modifier = Modifier) {
+fun RoutesFooter(state: RoutesUiState, actions: RoutesActions, modifier: Modifier = Modifier, lines: LineButtons? = null) {
     // Nothing is drawn into a read-only pack (the web hides its foot); a sketch still under way keeps its Cancel.
     if (state.pack?.readOnly == true && state.drawing == null) return
+    var lineRefused by rememberSaveable { mutableStateOf<String?>(null) }
     Column(modifier.fillMaxWidth().background(MaterialTheme.colorScheme.surfaceContainerLow)) {
         HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+        // The FLOT and the phase line beside the route, as the web's Routes card has them (the three lines drawn across the map are together there).
+        if (lines != null && state.drawing == null) {
+            lineRefused?.let {
+                Text(
+                    it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error,
+                    modifier = Modifier.padding(start = Tokens.Spacing.lg.dp, top = Tokens.Spacing.sm.dp, end = Tokens.Spacing.lg.dp),
+                )
+            }
+            Row(
+                Modifier.fillMaxWidth().padding(start = Tokens.Spacing.lg.dp, top = 7.dp, end = Tokens.Spacing.lg.dp),
+                horizontalArrangement = Arrangement.spacedBy(Tokens.Spacing.sm.dp),
+            ) {
+                LINE_BUTTONS.forEach { (kind, idle, drawingIt) ->
+                    val on = lines.drawing == kind
+                    PillButton(
+                        if (on) drawingIt else idle, onClick = { lineRefused = lines.toggle(kind) }, icon = if (on) EzpzIcons.check else EzpzIcons.draw,
+                        style = if (on) PillStyle.Filled else PillStyle.Outlined, modifier = Modifier.weight(1f),
+                    )
+                }
+            }
+        }
         Row(
             Modifier.fillMaxWidth().padding(start = Tokens.Spacing.lg.dp, top = 7.dp, end = Tokens.Spacing.lg.dp, bottom = Tokens.Spacing.sm.dp),
             horizontalArrangement = Arrangement.spacedBy(Tokens.Spacing.sm.dp),
@@ -526,6 +557,15 @@ fun RoutesFooter(state: RoutesUiState, actions: RoutesActions, modifier: Modifie
         }
     }
 }
+
+/** The foot's FLOT and phase line ([RoutesFooter]): which of them is being drawn, and the button pressed (null once it is done, else why not, in words). */
+class LineButtons(val drawing: MeasureKind?, val toggle: (MeasureKind) -> String?)
+
+// Each line's button: its word, and what it says while that line is drawn (pressed again it finishes it, or puts it away while it has fewer than two points).
+private val LINE_BUTTONS = listOf(
+    Triple(MeasureKind.FLOT, "FLOT", "Finish FLOT"),
+    Triple(MeasureKind.PHASE_LINE, "Phase line", "Finish PL"),
+)
 
 /** A set's line in a screen reader's words, used by the headers: `2 route sets in this session`. */
 internal fun sessionLine(openCount: Int): String = when (openCount) {

@@ -5,6 +5,21 @@ rules that bit once, what cannot be verified without a device); this file is the
 Read both, then `docs/NATIVE_APPS_PLAN.md` for the plan and its phases. Refresh this file in the same commit as any change
 that moves the "where things stand" or "next" sections.
 
+**Backstops, FLOTs and phase lines (2026-11-22, on `claude/android-phase-lines-backstops-5cbf8a`).** The web's three lines drawn across the map are on Android: ported to
+core-planning and held to the web's fixtures, drawn on the 2D map in the web's look, held, dragged (a backstop's arrow whole or by its tip, a line's points), and started from
+the LZ/PZ panel's tools and the tool rail (a backstop), the Routes panel's foot (FLOT, phase line) and the map's long press (*Draw a line here*). FLOTs and phase lines are kept
+as the web keeps them, in control measures of their own beside the route sets, with a card in the Routes panel; in a pack they are its control measures item, and a backstop's
+arrow goes whole (AGENTS.md §17, *Backstops, FLOTs and phase lines*). The port found that Android never sent a change to a route set's own lines into a pack
+(`RoutePackKind.docOf`), fixed with it. Every test and lint pass; none of it has run on a device. **To try first on a device:** a backstop drawn on an analysed LZ/PZ, its arrow
+dragged and aimed back at the target; a FLOT and a phase line drawn, flipped and renamed, the app closed and opened; and the same in a pack on two devices and the web.
+
+**Threats' rings and masks by default, glass, and pages in cards (2026-11-22, the same branch).** The owner's requests: a threat's terrain mask is worked out by itself for
+each threat on the map (one at a time, once the threats are still), its rings and mask are both drawn unless turned off on the device from the threat's bar (*Range rings*,
+*Terrain mask*), the control measures card offers *Add to Mission Pack…*, the LZ/PZ's plan and a threat's form are cards that fold with compact figures, and the panel and the
+bars over the map are slightly see-through glass (AGENTS.md §17, *Threats*, *Glass, and long pages in cards*). **To try first on a device:** a `.ths` of several threats
+brought in (each mask comes, one after another), a threat dragged (asked for once, after), its rings and mask switched off and on from its bar; the panel raised to full height
+over satellite and the VFR chart, read in sunlight; the Import menu opened on an Android 12+ phone, to see whether the map behind it blurs.
+
 **Threats saved (2026-11-08, `docs/ANDROID_SCREENS_PLAN.md`, *T*).** On `feat/android-saved-threats`: threats are named sets in the Library, autosaved and synced, several open at once, their terrain masks with them, there
 again after a sign-out or a restart (AGENTS.md §17, *Threats*; database version 5 forgets the sync cursor once). A picture on the device from before becomes a set at that account's first launch after the update. An account without `threats` or `cloud_save` keeps the
 sealed file as before. **To try first on a device:** a threat added, the app closed and opened, signed out and in; then the same set on a second device and on the web.

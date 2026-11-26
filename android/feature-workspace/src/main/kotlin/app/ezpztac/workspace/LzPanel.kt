@@ -15,6 +15,7 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.CircularProgressIndicator
@@ -44,12 +45,14 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Fill
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.layout.Layout
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.clearAndSetSemantics
@@ -69,6 +72,7 @@ import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import app.ezpztac.data.AnalysisStatus
+import app.ezpztac.data.MeasureKind
 import app.ezpztac.data.PlaceTool
 import app.ezpztac.data.SlopeOpacity
 import app.ezpztac.designsystem.Banner
@@ -79,6 +83,7 @@ import app.ezpztac.designsystem.EzpzTheme
 import app.ezpztac.designsystem.ListRow
 import app.ezpztac.designsystem.PillButton
 import app.ezpztac.designsystem.PillStyle
+import app.ezpztac.designsystem.SectionCard
 import app.ezpztac.designsystem.SectionLabel
 import app.ezpztac.designsystem.StateChip
 import app.ezpztac.designsystem.StatusTone
@@ -124,6 +129,8 @@ class LzPanelActions(
     val dismissBoundaryError: () -> Unit = {},
     /** Adds a unit made in the unit builder at the crosshair. */
     val addUnit: (UnitDraft) -> Unit = {},
+    /** The backstop tool pressed: starts drawing one beyond the LZ/PZ, or finishes (or cancels) the one being drawn; null once done, else why not, in words. */
+    val drawBackstop: () -> String? = { null },
     /** Asks which Mission Pack a copy of the open LZ/PZ ([uuid], [name]) goes into; none: not offered (no packs here, or one is open). */
     val addToPack: ((uuid: String, name: String) -> Unit)? = null,
     /** Sends the open LZ/PZ's grid to someone (docs/GRID_SHARING.md), with its name and the grid it keeps: given where the host can share. */
@@ -162,11 +169,14 @@ fun LzPanelHost(
     viewModel: DiagramsViewModel = hiltViewModel(),
     graphics: GraphicsViewModel = hiltViewModel(),
     boundary: BoundaryViewModel = hiltViewModel(),
+    measures: MeasuresViewModel = hiltViewModel(),
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     val graphicsState by graphics.state.collectAsStateWithLifecycle()
     val boundaryState by boundary.state.collectAsStateWithLifecycle()
     val placing by graphics.placing.collectAsStateWithLifecycle()
+    val measuresState by measures.state.collectAsStateWithLifecycle()
+    val backstopOn = measuresState.draft?.kind == MeasureKind.BACKSTOP
     // How old the weather is is measured to this, moved on a minute at a time (an endless timer in the view model would never let a test settle).
     val now by produceState(System.currentTimeMillis()) { while (true) { delay(60_000); value = System.currentTimeMillis() } }
     var naming by rememberSaveable { mutableStateOf(false) }
@@ -178,7 +188,7 @@ fun LzPanelHost(
         setSlopeOpacity = viewModel::setSlopeOpacity, showOutline = viewModel::showOutline,
         beginTool = { tool -> graphics.beginPlacing(tool) }, drawBoundary = boundary::start, dismissBoundaryError = boundary::dismissError,
         addUnit = { draft -> graphics.addUnit(draft, crosshair) }, addToPack = onAddToPack, saveCopy = onSaveCopy, toggleOnMap = onToggleOnMap, view3d = viewModel::view3d,
-        shareGrid = onShareGrid,
+        shareGrid = onShareGrid, drawBackstop = { measures.toggle(MeasureKind.BACKSTOP) },
     )
     val graphicsActions = graphicsActionsOf(graphics, crosshair)
     when (pane.shows(state.page)) {
@@ -186,11 +196,11 @@ fun LzPanelHost(
             state, actions, crosshairGrid, modifier, hidden = hiddenOnMap,
             // The open LZ/PZ's tools under its card, unless its plan, which has them, stands beside the list (a tablet's pane); none in a read-only pack.
             tools = state.current?.takeIf { it.locked == null && (pane == LzPane.WHOLE || state.page != LzPage.PLAN) }?.let { current ->
-                { LzToolsSection(current, graphicsState, boundaryState, placing, actions, crosshairGrid) }
+                { LzToolsSection(current, graphicsState, boundaryState, placing, actions, crosshairGrid, backstopOn = backstopOn) }
             },
         )
         LzPage.PLAN -> state.current?.let {
-            LzPlanContent(it, graphicsState, boundaryState, placing, actions, graphicsActions, crosshairGrid, modifier, nowMillis = now)
+            LzPlanContent(it, graphicsState, boundaryState, placing, actions, graphicsActions, crosshairGrid, modifier, nowMillis = now, backstopOn = backstopOn)
         }
         LzPage.AIRCRAFT -> AircraftHost(canMake = canMakeAircraft, modifier = modifier)
         null -> Unit
@@ -499,6 +509,9 @@ private fun Buttons(content: @Composable () -> Unit) {
 /** How narrow the words saying where an LZ/PZ is saved may be beside its buttons before they go under them. */
 private val SAVED_WORDS_MIN = 112.dp
 
+/** The least width the analysis's words keep beside its button before the button goes under them. */
+private val ANALYSIS_WORDS_MIN = 168.dp
+
 /**
  * *3D*: the open LZ/PZ in 3D over the whole screen (its point cloud, built if it has none yet), as the web's card offers it; off with no target, which
  * leaves nothing to look at.
@@ -690,6 +703,8 @@ fun LzPlanContent(
     crosshairGrid: String?,
     modifier: Modifier = Modifier,
     nowMillis: Long = 0L,
+    /** A backstop is being drawn (its tool is marked). */
+    backstopOn: Boolean = false,
 ) {
     var confirmDelete by rememberSaveable(current.uuid) { mutableStateOf(false) }
     var renaming by rememberSaveable(current.uuid) { mutableStateOf<String?>(null) }
@@ -721,20 +736,49 @@ fun LzPlanContent(
         if (confirmDelete) DeleteConfirm(current.name, onDelete = { confirmDelete = false; actions.delete(current.uuid) }, onKeep = { confirmDelete = false })
         if (current.conflictOf != null) ConflictPanel("LZ/PZ") { actions.resolve(current.uuid, it) }
 
-        HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
-        AircraftRow(current.aircraft, actions.selectAircraft, onManage = { actions.showPage(LzPage.AIRCRAFT) })
-
-        HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
-        AnalysisSection(current, actions)
-        current.summary?.let { SummaryTiles(it) }
-        current.weather?.let { WeatherSection(it, nowMillis, actions.refreshWeather) }
-
-        HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
-        LzToolsSection(current, graphics, boundary, placing, actions, crosshairGrid)
-
-        HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
-        GraphicsContent(graphics, crosshairGrid, graphicsActions, placeButtons = false)
+        // Each part a card of its own that folds (the owner's request of 2026-11-22: a long page where it was hard to see where one was), all open to start.
+        val fold = "lz-plan:${current.uuid}"
+        SectionCard("Mission aircraft", icon = EzpzIcons.flight) {
+            AircraftRow(current.aircraft, actions.selectAircraft, onManage = { actions.showPage(LzPage.AIRCRAFT) })
+        }
+        SectionCard("LZ/PZ analysis", icon = EzpzIcons.terrain, summary = analysisSummary(current), foldKey = "$fold:analysis") {
+            // What was measured first, then how it is drawn.
+            AnalysisSection(current, actions, titled = false, measured = { current.summary?.let { SummaryTiles(it) } })
+        }
+        current.weather?.let { weather ->
+            SectionCard(
+                "Weather", icon = EzpzIcons.air, summary = weatherSummary(weather), foldKey = "$fold:weather",
+                action = { WeatherRefresh(weather, actions.refreshWeather) },
+            ) { WeatherSection(weather, nowMillis, titled = false, onRefresh = actions.refreshWeather) }
+        }
+        SectionCard("LZ/PZ tools", icon = EzpzIcons.tune, summary = placing?.let { "Placing ${it.tool.plural}" }, foldKey = "$fold:tools") {
+            LzToolsSection(current, graphics, boundary, placing, actions, crosshairGrid, backstopOn = backstopOn, titled = false)
+        }
+        SectionCard(
+            "Planning graphics", icon = EzpzIcons.layers, summary = graphicsSummary(graphics), foldKey = "$fold:graphics",
+            action = { GraphicsUndoRedo(graphics, graphicsActions) },
+        ) { GraphicsContent(graphics, crosshairGrid, graphicsActions, placeButtons = false, titled = false) }
     }
+}
+
+/** What the analysis card says while folded: where the analysis stands, and once measured, the capacity and the slope's call. */
+internal fun analysisSummary(current: ActiveDiagramUi): String = when (current.analysis) {
+    is AnalysisUi.Running -> "Analyzing…"
+    is AnalysisUi.Failed -> "The analysis failed"
+    AnalysisUi.Idle -> if (current.status != DiagramStatus.ANALYZED) "Not analyzed" else buildList {
+        add("Analyzed")
+        current.summary?.let { summary ->
+            add("capacity ${summary.capacity}")
+            (summary.slope as? SlopeTileUi.Measured)?.let { add("${oneDecimal(it.call.maxDeg)}° ${it.call.label}") }
+        }
+    }.joinToString(" · ")
+}
+
+/** What the planning graphics' card says while folded. */
+internal fun graphicsSummary(graphics: GraphicsUiState): String? = when {
+    !graphics.listed -> null
+    graphics.rows.isEmpty() -> "Nothing placed"
+    else -> "${graphics.rows.size} placed" + if (graphics.alerts.isNotEmpty()) " · ${graphics.alerts.size} alert${if (graphics.alerts.size == 1) "" else "s"}" else ""
 }
 
 /**
@@ -751,8 +795,14 @@ internal fun LzToolsSection(
     actions: LzPanelActions,
     crosshairGrid: String?,
     modifier: Modifier = Modifier,
+    /** A backstop is being drawn (its tool is marked, and finishes it when tapped again). */
+    backstopOn: Boolean = false,
+    /** Its own heading: not inside a card that has one. */
+    titled: Boolean = true,
 ) {
     var addingUnit by rememberSaveable(current.uuid) { mutableStateOf(false) }
+    // Why the backstop tool did nothing, said where it was pressed; the next press, or the LZ/PZ changing, puts it away.
+    var backstopRefused by rememberSaveable(current.uuid) { mutableStateOf<String?>(null) }
     var newUnit by rememberSaveable(stateSaver = UnitDraftSaver) { mutableStateOf(UnitDraft()) }
     var confirmDraw by rememberSaveable(current.uuid) { mutableStateOf(false) }
     // The pack finished (or this person made a viewer) while something was being started here: it goes, and does not come back by itself on a reopen.
@@ -760,10 +810,11 @@ internal fun LzToolsSection(
         if (current.locked != null) {
             addingUnit = false
             confirmDraw = false
+            backstopRefused = null
         }
     }
     Column(modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(Tokens.Spacing.md.dp)) {
-        SectionLabel("LZ/PZ tools")
+        if (titled) SectionLabel("LZ/PZ tools")
         // In a read-only pack every tool is off, and this says why (the design's "Off in a finished pack").
         current.inPack?.short?.let { off ->
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -772,16 +823,19 @@ internal fun LzToolsSection(
             }
         }
         boundary.error?.let { Banner(it, BannerKind.Error, actionLabel = "Dismiss", onAction = actions.dismissBoundaryError) }
+        backstopRefused?.let { Banner(it, BannerKind.Error, actionLabel = "Dismiss", onAction = { backstopRefused = null }) }
         ToolGrid(
             canPlace = graphics.canEdit, canDraw = boundary.canStart, drawing = boundary.drawing, placing = placing?.tool, addingUnit = addingUnit,
             onDraw = { if (boundary.clears) confirmDraw = true else actions.drawBoundary() },
             onTool = actions.beginTool,
             onUnit = { addingUnit = !addingUnit },
+            backstopOn = backstopOn,
+            onBackstop = { backstopRefused = actions.drawBackstop() },
         )
         if (current.locked == null) {
             Text(
                 when {
-                    !graphics.canEdit -> "Analyze the LZ/PZ to place helicopters, PZs, sectors, units and go-arounds. Draw LZ draws its boundary yourself."
+                    !graphics.canEdit -> "Analyze the LZ/PZ to place helicopters, PZs, sectors, backstops, units and go-arounds. Draw LZ draws its boundary yourself."
                     else -> "Tools place where you tap the map, or at the crosshair. Done and Cancel finish the mode."
                 },
                 style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -829,21 +883,16 @@ private fun AircraftRow(aircraft: AircraftUi, onSelect: (String) -> Unit, onMana
     Column(verticalArrangement = Arrangement.spacedBy(Tokens.Spacing.xs.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Box(Modifier.weight(1f)) {
+                // Its card names it and has its icon: the row is what it is, its numbers and the choice.
                 Row(
-                    Modifier.fillMaxWidth().heightIn(min = 64.dp)
+                    Modifier.fillMaxWidth().heightIn(min = 48.dp)
                         .clickable(onClickLabel = "Choose the mission aircraft", role = Role.Button) { choosing = true }
                         .semantics(mergeDescendants = true) { contentDescription = "Mission aircraft: ${aircraft.activeLabel}" }
-                        .padding(vertical = Tokens.Spacing.sm.dp),
+                        .padding(vertical = Tokens.Spacing.xs.dp),
                     verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(Tokens.Spacing.lg.dp),
+                    horizontalArrangement = Arrangement.spacedBy(Tokens.Spacing.sm.dp),
                 ) {
-                    Surface(shape = RoundedCornerShape(50), color = MaterialTheme.colorScheme.secondaryContainer, modifier = Modifier.size(40.dp)) {
-                        Box(contentAlignment = Alignment.Center) {
-                            Icon(painterResource(EzpzIcons.flight), null, tint = MaterialTheme.colorScheme.onSecondaryContainer, modifier = Modifier.size(20.dp))
-                        }
-                    }
                     Column(Modifier.weight(1f)) {
-                        Text("Aircraft", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         Text(aircraft.activeLabel, style = MaterialTheme.typography.bodyLarge, maxLines = 1, overflow = TextOverflow.Ellipsis)
                         Text(
                             "${aircraft.spacingM} m spacing · ${aircraft.cruiseKts} kt", style = MaterialTheme.typography.bodyMedium,
@@ -883,9 +932,9 @@ private fun AircraftRow(aircraft: AircraftUi, onSelect: (String) -> Unit, onMana
  * switch once there is a slope, with its opacity while it is drawn, and the *LZ box* switch once there is a boundary.
  */
 @Composable
-private fun AnalysisSection(current: ActiveDiagramUi, actions: LzPanelActions) {
+private fun AnalysisSection(current: ActiveDiagramUi, actions: LzPanelActions, titled: Boolean = true, measured: @Composable () -> Unit = {}) {
     Column(verticalArrangement = Arrangement.spacedBy(Tokens.Spacing.sm.dp)) {
-        if (current.analysis != AnalysisUi.Idle) SectionLabel("LZ/PZ analysis")
+        if (titled && current.analysis != AnalysisUi.Idle) SectionLabel("LZ/PZ analysis")
         when (val analysis = current.analysis) {
             is AnalysisUi.Running -> Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(Tokens.Spacing.md.dp)) {
                 CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
@@ -899,37 +948,49 @@ private fun AnalysisSection(current: ActiveDiagramUi, actions: LzPanelActions) {
                 Banner(analysis.message, BannerKind.Error, actionLabel = "Dismiss", onAction = actions.dismissAnalysis)
                 if (current.canAnalyze && current.locked == null) PillButton("Try again", onClick = actions.analyze, icon = EzpzIcons.refresh)
             }
-            AnalysisUi.Idle -> Row(
-                Modifier.heightIn(min = 56.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(Tokens.Spacing.md.dp),
-            ) {
+            AnalysisUi.Idle -> {
                 val analyzed = current.status == DiagramStatus.ANALYZED
-                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                    Text(
-                        "LZ/PZ analysis", style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.semantics { heading() },
-                    )
-                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                        if (analyzed) Icon(painterResource(EzpzIcons.checkCircleFill), contentDescription = null, tint = EzpzTheme.status.success, modifier = Modifier.size(16.dp))
-                        Text(
-                            when {
-                                !current.canAnalyze -> "Set a target to analyze this LZ/PZ."
-                                analyzed && current.locked != null -> "Analyzed. Read-only here: you can look at it, not change it."
-                                current.locked != null -> "Not analyzed. Nothing in this pack can be changed, so it cannot be analyzed here."
-                                analyzed && current.inPack != null -> "Analyzed. Planning graphics are unlocked."      // a pack's has no Save to unlock
-                                analyzed -> "Analyzed. Planning graphics and save are unlocked."
-                                else -> "Not analyzed yet. Analyzing finds the landing area and measures its slope; it needs a connection."
-                            },
-                            style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                    }
-                }
-                if (current.canAnalyze) {
-                    // Off, not gone, in a read-only pack (the design's): the words beside it say why.
-                    val can = current.locked == null
-                    if (analyzed) PillButton("Re-analyze", onClick = actions.analyze, icon = EzpzIcons.refresh, style = PillStyle.Tonal, enabled = can)
-                    else PillButton("Analyze", onClick = actions.analyze, enabled = can)
-                }
+                // Its words beside the button while they keep a readable width, else the button under them (a phone at large text).
+                SideBySide(
+                    minFlexible = ANALYSIS_WORDS_MIN, gap = Tokens.Spacing.md.dp, flexibleFirst = true, stackedEnd = true, modifier = Modifier.heightIn(min = 48.dp),
+                    fixed = {
+                        if (current.canAnalyze) {
+                            // Off, not gone, in a read-only pack (the design's): the words beside it say why.
+                            val can = current.locked == null
+                            if (analyzed) PillButton("Re-analyze", onClick = actions.analyze, icon = EzpzIcons.refresh, style = PillStyle.Tonal, enabled = can)
+                            else PillButton("Analyze", onClick = actions.analyze, enabled = can)
+                        }
+                    },
+                    flexible = {
+                        Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                            if (titled) {
+                                Text(
+                                    "LZ/PZ analysis", style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.semantics { heading() },
+                                )
+                            }
+                            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                if (analyzed) Icon(painterResource(EzpzIcons.checkCircleFill), contentDescription = null, tint = EzpzTheme.status.success, modifier = Modifier.size(16.dp))
+                                Text(
+                                    when {
+                                        !current.canAnalyze -> "Set a target to analyze this LZ/PZ."
+                                        analyzed && current.locked != null -> "Analyzed. Read-only here: you can look at it, not change it."
+                                        current.locked != null -> "Not analyzed. Nothing in this pack can be changed, so it cannot be analyzed here."
+                                        analyzed && current.inPack != null -> "Analyzed. Planning graphics are unlocked."      // a pack's has no Save to unlock
+                                        analyzed -> "Analyzed. Planning graphics and save are unlocked."
+                                        else -> "Not analyzed yet. Analyzing finds the landing area and measures its slope; it needs a connection."
+                                    },
+                                    style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                            }
+                        }
+                    },
+                )
             }
+        }
+        measured()
+        if (!titled && (current.slopeShown != null || current.outlineShown != null)) {
+            Text("On the map", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = Tokens.Spacing.xs.dp))
         }
         current.slopeShown?.let { shown ->
             ViewSwitch("Slope map", shown) { actions.toggleSlope() }
@@ -959,11 +1020,7 @@ private fun ViewSwitch(label: String, on: Boolean, onChange: (Boolean) -> Unit) 
  */
 @Composable
 private fun SlopeOpacitySlider(percent: Int, onChange: (Int) -> Unit) {
-    Column(Modifier.fillMaxWidth()) {
-        Row(Modifier.fillMaxWidth().clearAndSetSemantics { }, verticalAlignment = Alignment.CenterVertically) {
-            Text("Opacity", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.weight(1f))
-            Text("$percent%", style = MaterialTheme.typography.bodyMedium)
-        }
+    val slider: @Composable (Modifier) -> Unit = { modifier ->
         Slider(
             value = percent.toFloat(),
             onValueChange = { onChange(it.roundToInt()) },
@@ -971,12 +1028,35 @@ private fun SlopeOpacitySlider(percent: Int, onChange: (Int) -> Unit) {
             steps = SlopeOpacity.STOPS_BETWEEN,
             // The stops are there (the thumb and a screen reader move by them); a dot for each of nineteen is only noise under the number that says it.
             colors = SliderDefaults.colors(activeTickColor = Color.Transparent, inactiveTickColor = Color.Transparent),
-            modifier = Modifier.fillMaxWidth().semantics {
+            modifier = modifier.semantics {
                 contentDescription = "Slope map opacity"
                 // Its own words: read as a share of the slider's range, 55 would be said as 50 percent.
                 stateDescription = "$percent percent"
             },
         )
+    }
+    // Its name and value, as wide as "100%" makes them whatever the value, so a value that grows a digit never moves the track under the finger.
+    val words: @Composable () -> Unit = {
+        Column(Modifier.clearAndSetSemantics { }) {
+            Text("Opacity", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Box {
+                Text("100%", style = MaterialTheme.typography.bodyMedium, color = Color.Transparent)
+                Text("$percent%", style = MaterialTheme.typography.bodyMedium)
+            }
+        }
+    }
+    if (LocalDensity.current.fontScale > 1.3f) {
+        // Large text: the words over the track, which keeps the card's whole width.
+        Column(Modifier.fillMaxWidth()) {
+            words()
+            slider(Modifier.fillMaxWidth())
+        }
+    } else {
+        // On one line (the owner's request of 2026-11-22: a more compact analysis), the words at the start.
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(Tokens.Spacing.md.dp)) {
+            words()
+            slider(Modifier.weight(1f))
+        }
     }
 }
 
@@ -991,6 +1071,8 @@ private fun ToolGrid(
     onDraw: () -> Unit,
     onTool: (PlaceTool) -> Unit,
     onUnit: () -> Unit,
+    backstopOn: Boolean = false,
+    onBackstop: () -> Unit = {},
 ) {
     val tiles: List<@Composable (Modifier) -> Unit> = listOf(
         { m -> ToolTile("Draw LZ", "Draw the LZ/PZ boundary", ToolSymbol.Boundary, canDraw && !drawing, drawing, m, onDraw) },
@@ -1000,6 +1082,9 @@ private fun ToolGrid(
         { m -> ToolTile("Unit", "Make a unit to place at the crosshair", ToolSymbol.Unit, canPlace, addingUnit, m, onUnit) },
         { m -> ToolTile("L-GA", "Place left go-arounds", ToolSymbol.GoAroundLeft, canPlace, placing == PlaceTool.GO_AROUND_LEFT, m) { onTool(PlaceTool.GO_AROUND_LEFT) } },
         { m -> ToolTile("R-GA", "Place right go-arounds", ToolSymbol.GoAroundRight, canPlace, placing == PlaceTool.GO_AROUND_RIGHT, m) { onTool(PlaceTool.GO_AROUND_RIGHT) } },
+        { m ->
+            ToolTile("Backstop", if (backstopOn) "Drawing a backstop. Tap to finish" else "Draw a backstop beyond the LZ/PZ", ToolSymbol.Backstop, canPlace || backstopOn, backstopOn, m, onBackstop)
+        },
     )
     Column(verticalArrangement = Arrangement.spacedBy(Tokens.Spacing.sm.dp)) {
         tiles.chunked(4).forEach { row ->
@@ -1012,7 +1097,7 @@ private fun ToolGrid(
 }
 
 /** The tools' little map symbols: the LZ/PZ panel's tool grid, and the map menu's *Add object* list. */
-enum class ToolSymbol { Boundary, Helicopter, Pz, Sector, Unit, GoAroundLeft, GoAroundRight }
+enum class ToolSymbol { Boundary, Helicopter, Pz, Sector, Unit, GoAroundLeft, GoAroundRight, Backstop }
 
 @Composable
 private fun ToolTile(label: String, description: String, glyph: ToolSymbol, enabled: Boolean, on: Boolean, modifier: Modifier, onClick: () -> Unit) {
@@ -1021,7 +1106,7 @@ private fun ToolTile(label: String, description: String, glyph: ToolSymbol, enab
         enabled = enabled,
         modifier = modifier.height(56.dp).semantics { contentDescription = description; selected = on },
         shape = RoundedCornerShape(Tokens.Radius.lg.dp),
-        color = if (on) MaterialTheme.colorScheme.secondaryContainer else MaterialTheme.colorScheme.surfaceContainerHigh,
+        color = if (on) MaterialTheme.colorScheme.secondaryContainer else MaterialTheme.colorScheme.surfaceContainerHighest,
         contentColor = if (on) MaterialTheme.colorScheme.onSecondaryContainer else MaterialTheme.colorScheme.onSurface,
         border = if (on) BorderStroke(1.dp, EzpzTheme.status.accent) else null,
     ) {
@@ -1076,6 +1161,7 @@ fun ToolGlyph(glyph: ToolSymbol, enabled: Boolean) {
             }
             ToolSymbol.GoAroundLeft -> goAround(u, warning, left = true)
             ToolSymbol.GoAroundRight -> goAround(u, warning, left = false)
+            ToolSymbol.Backstop -> backstop(u, error)
         }
     }
 }
@@ -1083,6 +1169,21 @@ fun ToolGlyph(glyph: ToolSymbol, enabled: Boolean) {
 private fun polygon(u: Float, vararg points: Pair<Float, Float>): Path = Path().apply {
     points.forEachIndexed { i, (x, y) -> if (i == 0) moveTo(x * u, y * u) else lineTo(x * u, y * u) }
     close()
+}
+
+/**
+ * The web's backstop tool (`BackstopGlyph`): a dashed line across the top and an arrow back from it, in the palette's error red (the map's own red is outlined in white;
+ * at this size, and at night, the palette's colour reads better).
+ */
+private fun DrawScope.backstop(u: Float, color: Color) {
+    val dash = PathEffect.dashPathEffect(floatArrayOf(1.6f * u, 3.4f * u))
+    val line = Path().apply {
+        moveTo(2.9f * u, 6.7f * u)
+        quadraticTo(12f * u, 1.9f * u, 21.1f * u, 6.7f * u)
+    }
+    drawPath(line, color, style = Stroke(2f * u, cap = StrokeCap.Butt, pathEffect = dash))
+    drawLine(color, Offset(12f * u, 5f * u), Offset(12f * u, 16f * u), 2f * u, StrokeCap.Round)
+    drawPath(polygon(u, 12f to 22.5f, 7.7f to 15.8f, 16.3f to 15.8f), color, style = Fill)
 }
 
 /** A curved arrow turning back on itself (the design's go-around): to the left, or mirrored to the right. */

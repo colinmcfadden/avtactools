@@ -21,6 +21,7 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonObject
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -84,9 +85,9 @@ class RouteRepository(
         combine(feed.observe(RecordKind.ROUTE), feed.observe(RecordKind.MISSION)) { sets, missions -> sets.map(::summarize) + missions.map(::summarizeMission) }
 
     /** A new set of [routes] named [name], queued for the server at once. */
-    suspend fun create(name: String, routes: List<SketchRoute> = emptyList()): RouteSet {
+    suspend fun create(name: String, routes: List<SketchRoute> = emptyList(), extras: JsonObject = JsonObject(emptyMap())): RouteSet {
         val uuid = java.util.UUID.randomUUID().toString()
-        val set = RouteSet(id = uuid, name = name, routes = routes)
+        val set = RouteSet(id = uuid, name = name, routes = routes, extras = extras)
         sync.create(RecordKind.ROUTE, name, RouteSets.serialize(set), uuid = uuid)
         scheduler.requestSync()
         return set

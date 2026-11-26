@@ -46,6 +46,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
 import androidx.compose.ui.input.nestedscroll.NestedScrollSource
 import androidx.compose.ui.input.nestedscroll.nestedScroll
@@ -275,6 +276,8 @@ fun PanelSheet(
     }
     // The header as tall as it wants to be: with the person's text larger than the design's, lowered shows the whole of it, not its top.
     var headerPx by remember { mutableIntStateOf(0) }
+    val sheetShape = RoundedCornerShape(topStart = Tokens.Radius.sheet.dp, topEnd = Tokens.Radius.sheet.dp)
+    val sheetColor = MaterialTheme.colorScheme.surfaceContainerLow
     Surface(
         modifier = modifier
             // Fills the space it is given and lays out only the part that shows, from its edge down.
@@ -291,11 +294,16 @@ fun PanelSheet(
             // After the layout: only the part that shows, never the map above it.
             .then(if (inert) TakesNoTouch else Modifier)
             .nestedScroll(scroll)
-            .anchoredDraggable(state.draggable, Orientation.Vertical, interactionSource = state.interactions, flingBehavior = fling),
-        shape = RoundedCornerShape(topStart = Tokens.Radius.sheet.dp, topEnd = Tokens.Radius.sheet.dp),
-        color = MaterialTheme.colorScheme.surfaceContainerLow,
+            .anchoredDraggable(state.draggable, Orientation.Vertical, interactionSource = state.interactions, flingBehavior = fling)
+            // Glass (Glass.kt): more of the map shows through the more of it the panel covers. Read as it is drawn, so a drag draws again and composes nothing.
+            .glassBackground(sheetShape, sheetColor) {
+                val anchors = state.anchors
+                Glass.sheetAlpha(if (anchors == null) 0f else Glass.openness(state.offsetPx, anchors.halfPx, anchors.fullPx))
+            },
+        shape = sheetShape,
+        color = Color.Transparent,
         contentColor = MaterialTheme.colorScheme.onSurface,
-        shadowElevation = 6.dp,
+        border = glassEdge(),
     ) {
         Column(Modifier.fillMaxSize()) {
             Box(

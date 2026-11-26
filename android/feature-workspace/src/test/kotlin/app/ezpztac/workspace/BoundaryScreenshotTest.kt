@@ -1,6 +1,8 @@
 package app.ezpztac.workspace
 
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -58,6 +60,30 @@ class BoundaryScreenshotTest {
     @Test
     @Config(qualifiers = "w360dp-h640dp-xxhdpi", fontScale = 1.3f)
     fun offerNarrowLargeText() = shot("offer-narrow-large") { AnalyzeOfferBar(AnalyzeOfferUi(points = 12), null, BoundaryActions()) }
+
+    // A held threat's bar with its rings and mask switches (the owner's request of 2026-11-22), over a stand-in map so its glass can be seen.
+    private fun threatHeld(ringsOn: Boolean, mask: ThreatMaskUi) = HeldObjectUi(
+        "SA-8", "16S GD 66993 52949", heading = null,
+        threat = HeldThreatUi("t1", "SA-8", "SA-8 Gecko", "16S GD 66993 52949", "", "SOF", "", emptyList(), mask, ringsOn = ringsOn),
+    )
+
+    @Test fun threatBar() = shot("held-threat") { HeldObjectBar(threatHeld(true, ThreatMaskUi(ThreatMaskUi.Status.SHOWING)), HeldObjectActions()) }
+
+    @Test fun threatBarWorkingNight() = shot("held-threat-working-night", ThemeMode.Night) {
+        HeldObjectBar(threatHeld(false, ThreatMaskUi(ThreatMaskUi.Status.WORKING)), HeldObjectActions())
+    }
+
+    @Test
+    fun threatBarOverMap() {
+        compose.setContent {
+            EzpzTheme(ThemeMode.Dark) {
+                Box(Modifier.fillMaxSize().background(androidx.compose.ui.graphics.Brush.verticalGradient(listOf(androidx.compose.ui.graphics.Color(0xFF2E4A2B), androidx.compose.ui.graphics.Color(0xFFF4F1E4))))) {
+                    Box(Modifier.padding(top = 120.dp)) { HeldObjectBar(threatHeld(true, ThreatMaskUi(ThreatMaskUi.Status.SHOWING)), HeldObjectActions()) }
+                }
+            }
+        }
+        compose.onRoot().captureRoboImage("build/screenshots/boundary-held-threat-over-map.png")
+    }
 
     // The doghouse's bar, where its fields now are.
     private val doghouseHeld = HeldObjectUi(

@@ -89,6 +89,12 @@ public object PackSentences {
         )
     }
 
+    /**
+     * The history's sentence for the pack's control measures made (`measuresCreateSummary`): a route set's document with no routes, made when the first
+     * FLOT or phase line is drawn in a pack, so it is not called a route set. Never cut.
+     */
+    public fun measuresCreateSummary(actor: String?, name: String): String = "${who(actor)} started the pack's control measures (\"$name\")."
+
     /** The history's sentence for an item renamed from [from] to [to]. Never cut. */
     public fun renameSummary(actor: String?, from: String, to: String): String = "${who(actor)} renamed \"$from\" to \"$to\"."
 

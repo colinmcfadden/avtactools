@@ -87,12 +87,18 @@ data class ThreatScene(
         }
 
         /** [masks] are the masks asked for and still current, by the threat's id; a hidden threat's is not drawn. */
-        fun of(entries: List<ThreatEntry>, selectedId: String? = null, masks: Map<String, List<ThreatMaskPicture>> = emptyMap()): ThreatScene {
+        fun of(
+            entries: List<ThreatEntry>,
+            selectedId: String? = null,
+            masks: Map<String, List<ThreatMaskPicture>> = emptyMap(),
+            /** The threats whose rings this device leaves off ([app.ezpztac.data.ThreatDisplay]): their markers stay. */
+            ringsOff: Set<String> = emptySet(),
+        ): ThreatScene {
             val visible = entries.filter { it.visible && it.threat.lat.isFinite() && it.threat.lon.isFinite() }
             return ThreatScene(
                 masks = visible.flatMap { masks[it.id].orEmpty() },
                 pins = visible.map { ThreatPin(it.id, it.threat.name, it.threat.milstdId, LatLon(it.threat.lat, it.threat.lon), it.id == selectedId) },
-                rings = visible.flatMap { entry ->
+                rings = visible.filter { it.id !in ringsOff }.flatMap { entry ->
                     entry.threat.radars.filter { it.showRangeRings && it.rangeNmi.isFinite() && it.rangeNmi > 0 }.map {
                         ThreatRing(entry.id, it.type, LatLon(entry.threat.lat, entry.threat.lon), it.rangeNmi)
                     }

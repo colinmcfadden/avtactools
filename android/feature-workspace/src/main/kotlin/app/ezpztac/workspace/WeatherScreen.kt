@@ -30,6 +30,7 @@ import app.ezpztac.designsystem.Banner
 import app.ezpztac.designsystem.BannerKind
 import app.ezpztac.designsystem.EzpzTextField
 import app.ezpztac.designsystem.EzpzTheme
+import app.ezpztac.designsystem.StatTile
 import app.ezpztac.designsystem.TextAction
 import app.ezpztac.designsystem.Tokens
 import app.ezpztac.model.NotamGroup
@@ -44,12 +45,13 @@ import app.ezpztac.model.WeatherAge
  * NOTAM search that could not be done says so too, because "none fetched" is not "none active".
  */
 @Composable
-internal fun WeatherSection(weather: WeatherUi, nowMillis: Long, onRefresh: () -> Unit) {
+internal fun WeatherSection(weather: WeatherUi, nowMillis: Long, titled: Boolean = true, onRefresh: () -> Unit) {
     Column(verticalArrangement = Arrangement.spacedBy(Tokens.Spacing.sm.dp)) {
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-            Text("Weather", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
-            if (weather.fetching) Text("Updating…", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            else TextAction("Refresh", onClick = onRefresh, modifier = Modifier.semantics { contentDescription = "Update the weather" })
+        if (titled) {
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                Text("Weather", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
+                WeatherRefresh(weather, onRefresh)
+            }
         }
         Row(Modifier.height(IntrinsicSize.Max), horizontalArrangement = Arrangement.spacedBy(Tokens.Spacing.sm.dp)) {         // equal height: the wind's gust can make its tile taller
             WindTile(weather, Modifier.weight(1f).fillMaxHeight())
@@ -62,6 +64,29 @@ internal fun WeatherSection(weather: WeatherUi, nowMillis: Long, onRefresh: () -
         weather.failure?.let { Banner(it, BannerKind.Warning) }
         weather.notams?.let { NotamsPanel(it) }
     }
+}
+
+/** *Refresh*, or that it is updating. */
+@Composable
+internal fun WeatherRefresh(weather: WeatherUi, onRefresh: () -> Unit) {
+    if (weather.fetching) Text("Updating…", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
+    else TextAction("Refresh", onClick = onRefresh, modifier = Modifier.semantics { contentDescription = "Update the weather" })
+}
+
+/** What the weather's card says while folded: the wind and temperature, or why there are none. */
+internal fun weatherSummary(weather: WeatherUi): String? = when {
+    weather.fetching && weather.fetchedAtMillis == null -> "Fetching…"
+    !weather.hasReport -> if (weather.fetchedAtMillis == null) null else "No station reported"
+    else -> listOfNotNull(
+        when {
+            weather.windSpeed == "--" -> null
+            weather.windVariable -> "Wind VRB ${weather.windSpeed} kt"
+            weather.windFrom != null -> "Wind ${weather.windFrom.toString().padStart(3, '0')}° ${weather.windSpeed}${weather.windGust?.let { " $it" } ?: ""} kt"
+            else -> "Wind ${weather.windSpeed} kt"
+        },
+        weather.temp.takeIf { it != "--" }?.let { "$it °C" },
+        weather.category,
+    ).joinToString(" · ").ifEmpty { null }
 }
 
 @Composable
@@ -100,7 +125,7 @@ private fun WindTile(weather: WeatherUi, modifier: Modifier) {
             when {
                 weather.windVariable -> Text("VRB", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 // An arrow that points where the wind is going: a wind *from* 270 blows towards 090, and ↓ turned by the bearing it comes from points that way.
-                weather.windFrom != null -> Text("↓", style = MaterialTheme.typography.headlineSmall, color = MaterialTheme.colorScheme.primary, modifier = Modifier.graphicsLayer { rotationZ = weather.windFrom.toFloat() })
+                weather.windFrom != null -> Text("↓", style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.primary, modifier = Modifier.graphicsLayer { rotationZ = weather.windFrom.toFloat() })
                 else -> Unit
             }
         },
@@ -109,19 +134,8 @@ private fun WindTile(weather: WeatherUi, modifier: Modifier) {
 
 @Composable
 private fun WeatherTile(label: String, value: String, unit: String, modifier: Modifier, description: String? = null, leading: @Composable () -> Unit = {}) {
-    Surface(
-        modifier = modifier.then(if (description != null) Modifier.semantics { contentDescription = description } else Modifier),
-        shape = RoundedCornerShape(Tokens.Radius.sm.dp), color = MaterialTheme.colorScheme.surfaceVariant,
-    ) {
-        Column(Modifier.padding(Tokens.Spacing.md.dp), verticalArrangement = Arrangement.spacedBy(Tokens.Spacing.xs.dp)) {
-            Text(label, style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(Tokens.Spacing.xs.dp)) {
-                leading()
-                Text(value, style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.SemiBold), color = MaterialTheme.colorScheme.onSurface)
-            }
-            Text(unit, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        }
-    }
+    // The figure and its unit on one line (the owner's request of 2026-11-22: smaller tiles, so the page is followed at a glance).
+    StatTile(label, value, modifier, unit = unit, description = description, leading = leading)
 }
 
 // -- NOTAMs ------------------------------------------------------------------------------------------------------------------

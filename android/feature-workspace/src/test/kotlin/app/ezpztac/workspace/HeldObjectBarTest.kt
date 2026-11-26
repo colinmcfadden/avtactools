@@ -237,7 +237,7 @@ class HeldObjectBarTest {
 
     @Test
     fun `a held threat is named and placed, and does not turn`() {
-        assertEquals(HeldObjectUi("SA-6", "16S GD 66000 52000", null), heldObjectOf(GraphicsUiState(), ThreatsUiState(held = threat), RoutesUiState()))
+        assertEquals(HeldObjectUi("SA-6", "16S GD 66000 52000", null, threat = threat), heldObjectOf(GraphicsUiState(), ThreatsUiState(held = threat), RoutesUiState()))
     }
 
     @Test
@@ -452,5 +452,58 @@ class HeldObjectBarTest {
         assertTrue(present("Name: CHALK 1"))
         assertEquals(0, compose.onAllNodes(hasSetTextAction()).fetchSemanticsNodes().size)
     }
-}
 
+    // -- A threat's rings and mask (the owner's request of 2026-11-22: both shown by default, switched from the threat's bar) --------------------------------------
+
+    private fun heldThreat(ringsOn: Boolean = true, maskOn: Boolean = true, hasRings: Boolean = true, wantsMask: Boolean = true, mask: ThreatMaskUi = ThreatMaskUi(ThreatMaskUi.Status.SHOWING)) =
+        heldObjectOf(
+            GraphicsUiState(),
+            ThreatsUiState(held = HeldThreatUi("t1", "SA-8", "SHGPEWRR------", "16S GD 66993 52949", "", "SOF", "", emptyList(), mask, ringsOn, maskOn, hasRings, wantsMask)),
+            RoutesUiState(),
+        )!!
+
+    @Test
+    fun `a held threat's bar shows its rings and its mask as two switches, both on, and each turns off alone`() {
+        val asked = mutableListOf<String>()
+        compose.setContent {
+            EzpzTheme(ThemeMode.Dark) {
+                HeldObjectBar(heldThreat(), HeldObjectActions(setThreatRings = { id, on -> asked += "rings $id $on" }, setThreatMask = { id, on -> asked += "mask $id $on" }))
+            }
+        }
+        val shown = SemanticsMatcher.expectValue(SemanticsProperties.StateDescription, "Shown")
+        val switch = SemanticsMatcher.expectValue(SemanticsProperties.Role, Role.Switch)
+        compose.onNodeWithText("Range rings").assert(shown).assert(switch).performClick()
+        compose.onNodeWithText("Terrain mask").assert(shown).assert(switch).performClick()
+        assertEquals(listOf("rings t1 false", "mask t1 false"), asked)
+    }
+
+    @Test
+    fun `turned off, a switch turns it back on, and one the threat's radars do not draw is off with the reason`() {
+        val asked = mutableListOf<String>()
+        compose.setContent {
+            EzpzTheme(ThemeMode.Dark) {
+                HeldObjectBar(
+                    heldThreat(ringsOn = false, wantsMask = false, mask = ThreatMaskUi()),
+                    HeldObjectActions(setThreatRings = { _, on -> asked += "rings $on" }, setThreatMask = { _, on -> asked += "mask $on" }),
+                )
+            }
+        }
+        compose.onNodeWithText("Range rings").assert(SemanticsMatcher.expectValue(SemanticsProperties.StateDescription, "Hidden")).performClick()
+        compose.onNodeWithText("Terrain mask").assertIsNotEnabled()
+        compose.onNodeWithText("Its radars work out no mask: turn one on in its settings.").assertIsDisplayed()
+        assertEquals(listOf("rings true"), asked)
+    }
+
+    @Test
+    fun `a mask that could not be had says why in the app's words, and can be asked for again`() {
+        val asked = mutableListOf<String>()
+        compose.setContent {
+            EzpzTheme(ThemeMode.Dark) {
+                HeldObjectBar(heldThreat(mask = ThreatMaskUi(ThreatMaskUi.Status.FAILED, "There is no connection to the server, so the mask could not be worked out.")), HeldObjectActions(setThreatMask = { _, on -> asked += "mask $on" }))
+            }
+        }
+        compose.onNodeWithText("There is no connection to the server, so the mask could not be worked out.").assertIsDisplayed()
+        compose.onNodeWithText("Try the mask again").performClick()
+        assertEquals(listOf("mask true"), asked)
+    }
+}

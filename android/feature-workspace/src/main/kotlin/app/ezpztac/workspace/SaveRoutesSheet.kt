@@ -40,6 +40,7 @@ import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.unit.dp
+import app.ezpztac.designsystem.BlurBehindWindow
 import app.ezpztac.designsystem.EzpzIcons
 import app.ezpztac.designsystem.EzpzTheme
 import app.ezpztac.designsystem.PillButton
@@ -54,6 +55,7 @@ private const val MAX_NAME = 100
 fun SaveRoutesSheet(open: OpenSetUi, others: List<Pair<String, String>>, onSave: (name: String, replacing: String?) -> Unit, onDismiss: () -> Unit) {
     val state = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     ModalBottomSheet(onDismissRequest = onDismiss, sheetState = state, containerColor = MaterialTheme.colorScheme.surfaceContainerLow) {
+        BlurBehindWindow()                                                         // the map behind, blurred, where the device allows it
         SaveRoutesContent(open, others, onSave, onDismiss)
     }
 }

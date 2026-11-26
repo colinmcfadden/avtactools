@@ -26,6 +26,7 @@ import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
+import app.ezpztac.designsystem.BlurBehindWindow
 import app.ezpztac.designsystem.EzpzIcons
 import app.ezpztac.designsystem.EzpzTheme
 import app.ezpztac.designsystem.Tokens
@@ -36,6 +37,7 @@ import app.ezpztac.designsystem.Tokens
 fun ImportSheet(threatsAllowed: Boolean, threatsSaved: Boolean, onChoose: () -> Unit, onDismiss: () -> Unit) {
     val state = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     ModalBottomSheet(onDismissRequest = onDismiss, sheetState = state, containerColor = MaterialTheme.colorScheme.surfaceContainerLow) {
+        BlurBehindWindow()                                                         // the map behind, blurred, where the device allows it
         ImportSheetContent(threatsAllowed, onChoose = { onDismiss(); onChoose() })
     }
 }

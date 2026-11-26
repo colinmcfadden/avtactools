@@ -13,6 +13,7 @@ import app.ezpztac.android.LastDiagram
 import app.ezpztac.android.LastDiagramPreferences
 import app.ezpztac.android.LastRouteSet
 import app.ezpztac.android.LastRouteSetPreferences
+import app.ezpztac.android.LastMeasuresPreferences
 import app.ezpztac.android.ApiChartCalls
 import app.ezpztac.android.ChartCalls
 import app.ezpztac.android.ChartConfig
@@ -26,6 +27,7 @@ import app.ezpztac.android.LidarWaitingPreferences
 import app.ezpztac.android.MinimumVersion
 import app.ezpztac.android.MinimumVersionPreferences
 import app.ezpztac.android.HiddenDiagramPreferences
+import app.ezpztac.android.ThreatDisplayPreferences
 import app.ezpztac.android.OpenDiagramPreferences
 import app.ezpztac.android.OpenRouteSetPreferences
 import app.ezpztac.android.OpenThreatSetPreferences
@@ -54,6 +56,7 @@ import app.ezpztac.android.packs.SessionParking
 import app.ezpztac.android.sync.EngineSyncRunner
 import app.ezpztac.android.sync.SyncRunner
 import app.ezpztac.briefs.RendererBriefPdfs
+import app.ezpztac.data.LastMeasures
 import app.ezpztac.data.LibraryUpload
 import app.ezpztac.android.sync.WorkManagerSyncScheduler
 import app.ezpztac.data.AircraftProfiles
@@ -75,6 +78,7 @@ import app.ezpztac.data.FileMasterProfileStore
 import app.ezpztac.data.LastBrief
 import app.ezpztac.data.MissionTemplate
 import app.ezpztac.data.HiddenDiagramStore
+import app.ezpztac.data.ThreatDisplayStore
 import app.ezpztac.data.OpenDiagramStore
 import app.ezpztac.data.OpenRouteSetStore
 import app.ezpztac.data.OpenThreatSetStore
@@ -297,6 +301,9 @@ interface AppBindings {
     fun lastRouteSet(impl: LastRouteSetPreferences): LastRouteSet
 
     @Binds
+    fun lastMeasures(impl: LastMeasuresPreferences): LastMeasures
+
+    @Binds
     fun pointSetViews(impl: PointSetViewPreferences): PointSetViewStore
 
     @Binds
@@ -338,6 +345,9 @@ interface AppBindings {
 
     @Binds
     fun hiddenDiagrams(impl: HiddenDiagramPreferences): HiddenDiagramStore
+
+    @Binds
+    fun threatDisplay(impl: ThreatDisplayPreferences): ThreatDisplayStore
 
     @Binds
     fun openRouteSets(impl: OpenRouteSetPreferences): OpenRouteSetStore

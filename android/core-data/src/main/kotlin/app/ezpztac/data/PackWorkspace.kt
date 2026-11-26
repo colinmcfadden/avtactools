@@ -14,6 +14,7 @@ import app.ezpztac.model.DiagramJson
 import app.ezpztac.model.DiagramNormalizer
 import app.ezpztac.model.DiagramTarget
 import app.ezpztac.model.RouteSet
+import app.ezpztac.planning.SetLines
 import java.util.UUID
 import java.util.concurrent.atomic.AtomicBoolean
 import javax.inject.Inject
@@ -52,6 +53,8 @@ class PackWorkspace @Inject constructor(
     private val routeItems: PackItemStore<RouteSet>,
     private val threats: PackThreatSync,
     private val keeper: PackKeeper,
+    /** The control measures' session (a pack's FLOTs and phase lines are one item of their own); none where nothing draws them. */
+    private val measures: MeasuresSession? = null,
 ) : OpenPack {
     // The thread that edits, where the editors' sessions are changed and their pack items' baselines kept.
     private val main = lzItems.main
@@ -66,9 +69,11 @@ class PackWorkspace @Inject constructor(
     val notices: Flow<PackNotice> = merge(engine.notices, editors)
 
     /** The items of the open pack open now (an LZ/PZ in the diagram session, a route set in the route session, the sets of threats on the map), by uuid. */
-    val openItems: Flow<Set<String>> = combine(engine.open, diagrams.active, routes.active, threats.onMap) { state, diagram, set, onMap ->
+    val openItems: Flow<Set<String>> = combine(
+        engine.open, diagrams.active, routes.active, threats.onMap, measures?.active ?: kotlinx.coroutines.flow.flowOf(null),
+    ) { state, diagram, set, onMap, held ->
         val pack = state?.uuid ?: return@combine emptySet()
-        (listOfNotNull(diagram?.id, set?.id) + onMap).mapNotNull(PackRef::parse).filter { it.pack == pack }.map { it.item }.toSet()
+        (listOfNotNull(diagram?.id, set?.id, held?.id) + onMap).mapNotNull(PackRef::parse).filter { it.pack == pack }.map { it.item }.toSet()
     }.distinctUntilChanged()
 
     /** Joins the editors to whichever pack is open, from now on. Once is enough; again changes nothing. */
@@ -76,6 +81,7 @@ class PackWorkspace @Inject constructor(
         if (!started.compareAndSet(false, true)) return
         PackEditorSync(diagrams, lzItems, engine, keeper, presence = true, tell = ::tell).start(scope)
         PackEditorSync(routes, routeItems, engine, keeper, presence = false, tell = ::tell).start(scope)
+        measures?.let { m -> m.items?.let { PackEditorSync(m, it, engine, keeper, presence = false, tell = ::tell).start(scope) } }
         threats.start(scope, ::tell)
     }
 
@@ -124,7 +130,12 @@ class PackWorkspace @Inject constructor(
         val localId = PackRef.localId(state.uuid, itemUuid)
         when (item.kind) {
             "lz" -> diagrams.active.value?.id == localId || diagrams.open(localId)
-            "route" -> routes.active.value?.id == localId || routes.open(localId)
+            "route" -> if (measures != null && SetLines.isMeasures(item.data, item.name == SetLines.MEASURES_NAME)) {
+                // The pack's control measures open beside its route sets, as the web lists them apart (AGENTS.md §4, *Control measures*).
+                measures.active.value?.id == localId || measures.open(localId)
+            } else {
+                routes.active.value?.id == localId || routes.open(localId)
+            }
             "threatset" -> threats.show(localId)
             else -> false
         }
@@ -164,6 +175,30 @@ class PackWorkspace @Inject constructor(
     }
 
     /**
+     * The pack's control measures, opened in their session: the item already there (`packMeasuresFor`: one with no routes, with lines or called
+     * [SetLines.MEASURES_NAME], so one emptied is used again), else a new one, made with the web's history sentence (*started the pack's control measures*).
+     * Its local id; null when no pack is open or the pack would not take it (and the person is told why).
+     */
+    override suspend fun openMeasures(): String? = withContext(main) {
+        val session = measures ?: return@withContext null
+        val state = engine.open.value ?: return@withContext null
+        session.active.value?.id?.takeIf { PackRef.parse(it)?.pack == state.uuid }?.let { return@withContext it }
+        state.items.firstOrNull { it.kind == "route" && SetLines.isMeasures(it.data, it.name == SetLines.MEASURES_NAME) }?.let { item ->
+            val localId = PackRef.localId(state.uuid, item.uuid)
+            return@withContext localId.takeIf { session.open(it) }
+        }
+        val uuid = PackSentences.packItemId("route", UUID.randomUUID().toString())
+        val localId = PackRef.localId(state.uuid, uuid)
+        val data = JsonObject(linkedMapOf("version" to JsonPrimitive(1), "routes" to JsonArray(emptyList())))
+        val count = state.items.count { it.kind == "route" }
+        val create = PackSentences.newItemOp("route", uuid, SetLines.MEASURES_NAME, count, data, engine.me.value?.name)
+        val op = JsonObject(LinkedHashMap(create).apply { put("summary", JsonPrimitive(PackSentences.measuresCreateSummary(engine.me.value?.name, SetLines.MEASURES_NAME))) })
+        if (!made(state.uuid, op)) return@withContext null
+        session.open(localId)
+        localId
+    }
+
+    /**
      * Closes item [itemUuid] of the open pack in its editor, if it is open there; it stays in the pack (the web's "Close here"). Its last change
      * goes to the pack first ([DocumentSession.closeIfOpen]), and a save that fails is thrown once it is closed.
      */
@@ -173,6 +208,7 @@ class PackWorkspace @Inject constructor(
             val localId = PackRef.localId(pack, itemUuid)
             diagrams.closeIfOpen(localId)
             routes.closeIfOpen(localId)
+            measures?.closeIfOpen(localId)
             threats.hide(localId)
         }
     }
@@ -208,6 +244,7 @@ class PackWorkspace @Inject constructor(
         val pack = engine.open.value?.uuid ?: return@withContext
         if (diagrams.active.value?.id?.let(PackRef::parse)?.pack == pack) diagrams.flush()
         if (routes.active.value?.id?.let(PackRef::parse)?.pack == pack) routes.flush()
+        if (measures?.active?.value?.id?.let(PackRef::parse)?.pack == pack) measures.flush()
         threats.flush()
     }
 
@@ -220,7 +257,8 @@ class PackWorkspace @Inject constructor(
         val state = engine.open.value ?: return@withContext null
         val item = state.item(itemUuid) ?: return@withContext null
         val localId = PackRef.localId(state.uuid, itemUuid)
-        shown(diagrams, lzItems, localId, item) ?: shown(routes, routeItems, localId, item) ?: threats.shown(localId, item) ?: item.data
+        shown(diagrams, lzItems, localId, item) ?: shown(routes, routeItems, localId, item)
+            ?: measures?.items?.let { shown(measures, it, localId, item) } ?: threats.shown(localId, item) ?: item.data
     }
 
     private fun <D : Any> shown(session: DocumentSession<D>, items: PackItemStore<D>, localId: String, item: PackItemView): JsonElement? {
@@ -271,6 +309,7 @@ class PackWorkspace @Inject constructor(
         }
         close(diagrams.active.value?.id, diagrams)
         close(routes.active.value?.id, routes)
+        measures?.let { close(it.active.value?.id, it) }
         try {
             threats.leaving(staying)
         } catch (e: CancellationException) {

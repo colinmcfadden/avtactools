@@ -29,7 +29,7 @@ import org.robolectric.annotation.GraphicsMode
 
 /**
  * The LZ/PZ plan's view switches on a 360 dp phone with large text (1.3, and 2.0): the slope map, its opacity and the LZ box, each said whole and in reach,
- * the slider across the panel. `-Pezpz.screenshots` draws them.
+ * the slider with room to drag. `-Pezpz.screenshots` draws them.
  */
 @RunWith(RobolectricTestRunner::class)
 @GraphicsMode(GraphicsMode.Mode.NATIVE)
@@ -54,8 +54,8 @@ class LzPlanNarrowTest {
     private fun check(picture: String) {
         show()
         val slider = compose.onNode(hasContentDescription("Slope map opacity")).performScrollTo().assertIsDisplayed().fetchSemanticsNode()
-        // The panel's width less its padding (328 dp at three pixels to the point): the percentage over it never takes the track's room.
-        assertTrue("the slider is ${slider.size.width} px across", slider.size.width >= 328 * 3 - 3)
+        // In its card, beside its words at 1.3 (most of the card's 304 dp less its words), under them past it (the card's whole width): either way a track to drag along.
+        assertTrue("the slider is ${slider.size.width} px across", slider.size.width >= 200 * 3)
         compose.onNode(isToggleable() and hasText("Slope map")).assertIsDisplayed()
         compose.onNode(isToggleable() and hasText("LZ box")).performScrollTo().assertIsDisplayed()
         compose.onRoot().captureRoboImage("build/screenshots/lz-view-$picture.png")

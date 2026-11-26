@@ -125,7 +125,12 @@ internal class PackEditorRig(
     val threats = ThreatStore(NoVault, scope, dispatcher)
     var threatsOn = true
     val threatSync = PackThreatSync(threats, threatItems, engine, keeper, threatsOn = { threatsOn })
-    val workspace = PackWorkspace(engine, diagrams, routes, lzItems, routeItems, threatSync, keeper)
+    /** The control measures' session, with a pack store of its own as the app's (DataModule). */
+    val measureItems = PackItemStore<RouteSet>(engine, RoutePackKind, copy, { it.id }, dispatcher, dispatcher)
+    val measuresSession = MeasuresSession(routeRepository, scope, items = measureItems)
+    val workspace = PackWorkspace(engine, diagrams, routes, lzItems, routeItems, threatSync, keeper, measuresSession)
+    val drawingMode = DrawingMode()
+    val measures = ControlMeasures(diagrams, routes, measuresSession, routeRepository, workspace, drawingMode, LastMeasures.None)
 
     /** Everything the person was told, in order: the engine's notices and the editors'. */
     val notices = mutableListOf<PackNotice>()
