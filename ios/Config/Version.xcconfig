@@ -10,3 +10,7 @@ EZPZ_API_MAJORS = 1 2
 
 // A placeholder, as Android's: the bundle id is permanent once published and is the owner's to choose (docs/IOS_PLAN.md §15).
 EZPZ_BUNDLE_ID = app.ezpztac.unreleased
+
+// The server's root, the twin of Android's `-Pezpz.apiUrl` (its routes carry their own /api). `$()` keeps the `//` from being read
+// as a comment, as xcconfig would.
+EZPZ_API_URL = https:/$()/prod-ezpz-api.mcfadd.in/

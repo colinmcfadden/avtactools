@@ -1,35 +1,32 @@
 import CoreJS
+import DesignSystem
+import FeatureMap
 import SwiftUI
 
-/// The composition root (docs/IOS_PLAN.md §5). In I0 it only shows that the app builds and links the pure modules; the frames, the
-/// map and the stores join it from I2 and I3.
+/// The composition root (docs/IOS_PLAN.md §5): the map and the frames over it. Sign-in, the documents and the panels' contents join
+/// it from I4; for now the map and its frames are the app.
 @main
 struct EZPZApp: App {
+    @State private var map = MapStore()
+    @State private var display = DisplaySettings()
+
     var body: some Scene {
         WindowGroup {
-            RootView()
+            RootView(map: map, display: display)
+                .appTheme(night: display.night)
+                .task { await ServerConfig.load(into: map) }
         }
     }
 }
 
-struct RootView: View {
-    var body: some View {
-        VStack(spacing: 12) {
-            Text("EZ/PZ")
-                .font(.largeTitle.bold())
-            Text("Version \(AppInfo.version) (\(AppInfo.build))")
-                .font(.subheadline)
-                .foregroundStyle(.secondary)
-            Text("API \(AppInfo.apiMajors.map { JsNumber.toText(Double($0)) }.joined(separator: ", "))")
-                .font(.footnote)
-                .foregroundStyle(.secondary)
-            Text("Not ready for use: the foundations only.")
-                .font(.footnote)
-                .foregroundStyle(.secondary)
-                .padding(.top, 8)
-        }
-        .padding()
+/// Night mode, a device choice (Android's `DisplaySettings`), never saved with a plan or synced.
+@MainActor @Observable
+final class DisplaySettings {
+    var night: Bool {
+        didSet { UserDefaults.standard.set(night, forKey: "ezpz.night") }
     }
+
+    init() { night = UserDefaults.standard.bool(forKey: "ezpz.night") }
 }
 
 /// What this build is, from its Info.plist, which Config/Version.xcconfig fills.
@@ -40,6 +37,11 @@ enum AppInfo {
     /// The API majors this build talks, `EZPZ_API_MAJORS`.
     static var apiMajors: [Int] {
         (info("EZPZApiMajors") ?? "").split(whereSeparator: { $0 == " " || $0 == "," }).compactMap { Int($0) }
+    }
+
+    /// The server's root, `EZPZ_API_URL` (its own routes carry `/api`, as Android's `ezpz.apiUrl`).
+    static var apiRoot: URL {
+        info("EZPZApiURL").flatMap { URL(string: $0) } ?? URL(string: "https://prod-ezpz-api.mcfadd.in/")!
     }
 
     private static func info(_ key: String) -> String? {

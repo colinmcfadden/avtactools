@@ -12,6 +12,7 @@ let package = Package(
         .library(name: "CoreModel", targets: ["CoreModel"]),
         .library(name: "CoreGeo", targets: ["CoreGeo"]),
         .library(name: "CorePlanning", targets: ["CorePlanning"]),
+        .library(name: "CoreMap", targets: ["CoreMap"]),
         .library(name: "DesignTokens", targets: ["DesignTokens"]),
         .library(name: "CoreTesting", targets: ["CoreTesting"]),
     ],
@@ -25,6 +26,9 @@ let package = Package(
         .target(name: "CoreGeo", dependencies: ["CoreModel", "CoreJS"]),
         // Android's core-planning: aircraft geometry, capacity, separation, the graphics' placement, routes planned, backstops.
         .target(name: "CorePlanning", dependencies: ["CoreModel", "CoreGeo", "CoreJS"]),
+        // The map's plain arithmetic from android/feature-map: the base maps and their style documents, the camera and the readout,
+        // the projection, and the MGRS grid fitted to what shows. Plain code, so it is tested on the Mac; FeatureMap draws it with MapLibre.
+        .target(name: "CoreMap", dependencies: ["CoreGeo", "CoreModel", "CoreJS"]),
         // The design tokens, generated from contracts/tokens/tokens.json by contracts/scripts/tokens.py (as Android's Tokens.kt):
         // plain numbers, so the palettes are held to WCAG here on the Mac.
         .target(name: "DesignTokens"),
@@ -33,6 +37,7 @@ let package = Package(
         .testTarget(name: "CoreJSTests", dependencies: ["CoreJS", "CoreTesting"]),
         .testTarget(name: "CoreModelTests", dependencies: ["CoreModel", "CoreJS", "CoreTesting"]),
         .testTarget(name: "CoreGeoTests", dependencies: ["CoreGeo", "CoreModel", "CoreJS", "CoreTesting"]),
+        .testTarget(name: "CoreMapTests", dependencies: ["CoreMap", "CoreGeo", "CoreModel", "CoreJS", "CoreTesting"]),
         .testTarget(name: "DesignTokensTests", dependencies: ["DesignTokens"]),
         .testTarget(name: "CorePlanningTests", dependencies: ["CorePlanning", "CoreGeo", "CoreModel", "CoreJS", "CoreTesting"]),
     ],

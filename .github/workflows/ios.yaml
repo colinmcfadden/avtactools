@@ -41,7 +41,9 @@ jobs:
 
       # swift-format ships with the toolchain, so nothing is installed for it (docs/IOS_PLAN.md §4). Its settings: ios/.swift-format.
       - name: Format
-        run: swift format lint --strict --recursive App Packages/EZPZCore/Sources Packages/EZPZCore/Tests Packages/EZPZCore/Package.swift
+        run: >-
+          swift format lint --strict --recursive App Packages/EZPZCore/Sources Packages/EZPZCore/Tests Packages/EZPZCore/Package.swift
+          Packages/EZPZFeatures/Sources Packages/EZPZFeatures/Package.swift
 
       # Tokens.swift is generated from contracts/tokens/tokens.json, as Android's Tokens.kt is; a hand edit fails here. Standard
       # library only, so the runner's own Python does.
