@@ -182,6 +182,8 @@ Every leg of a route, between two of its route points (a checkpoint, the SP or R
 
 Each doghouse is turned to its leg, so it reads upright when the map is turned that way (ForeFlight's track-up view while flying the leg). As you zoom out it never disappears: where its leg is too short on the screen to hold it, it is drawn smaller, down to a small mark. It goes into a mission overlay at its full size where the leg has room, and never smaller than three-quarters of it, so it can be read when you zoom in on the route in ForeFlight. Turn them all off and on with **Route doghouses** in **Layers**; your browser remembers the choice.
 
+**A route flown into an LZ/PZ takes the place of its doghouse.** When a route shown on the map has a point within 500 m of an LZ/PZ's target, the leg arriving there stands in for the LZ/PZ's landing doghouse, and a leg leaving it for its takeoff doghouse: the LZ/PZ's own is not drawn, so the map shows one heading for one approach. The slope is then judged on that leg's true course, and the slope tile says which route and leg it came from (`From ROUTE 2, RP to TGT`); the slope profile, the LZ card's LAND and T/O and the brief use it too. Nothing in the LZ/PZ is changed: hide the route, move it off, or close it, and the LZ/PZ's own doghouses and headings come back as they were. The Android app does the same, and draws the leg doghouses too.
+
 ![Route doghouses in an exported overlay](images/39-route-doghouses.jpg)
 
 ### Arranging routes: sets, moving, combining and colours
