@@ -104,7 +104,7 @@ class ShareExportTest {
         assertEquals("OP DK brief.pdf", ShareExport.plainName("../OP DK brief.pdf"))
         assertEquals("application/pdf", ShareExport.mimeOf(listOf(ExportFile("OP DK brief.pdf", bytes))))
         val chooser = prepare(ExportFile("OP DK brief.pdf", bytes))
-        assertEquals("Share brief", chooser.getStringExtra(android.content.Intent.EXTRA_TITLE) ?: chooser.getCharSequenceExtra(android.content.Intent.EXTRA_TITLE)?.toString())
+        assertEquals("Share PDF", chooser.getStringExtra(android.content.Intent.EXTRA_TITLE) ?: chooser.getCharSequenceExtra(android.content.Intent.EXTRA_TITLE)?.toString())
         assertTrue(File(exports(), "OP DK brief.pdf").exists())
     }
 

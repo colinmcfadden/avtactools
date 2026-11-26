@@ -93,9 +93,12 @@ fun ImportReviewHost(
     threatsAllowed: Boolean,
     /** A tablet's: a large dialog (the design's, up to [LARGE_DIALOG_WIDTH]) rather than the whole screen. */
     large: Boolean = false,
+    /** What the account and the server allow of documents. */
+    documents: DocumentRules = DocumentRules(),
     viewModel: IncomingViewModel = hiltViewModel(),
 ) {
     LaunchedEffect(viewModel, threatsAllowed) { viewModel.allowThreats(threatsAllowed) }
+    LaunchedEffect(viewModel, documents) { viewModel.allowDocuments(documents) }
     val state by viewModel.state.collectAsStateWithLifecycle()
     if (!state.visible) return
     val actions = ImportReviewActions(viewModel::setName, viewModel::setPlace, viewModel::remove, viewModel::cancel, viewModel::importAll)
@@ -228,6 +231,42 @@ private fun ReviewItem(item: ImportItemUi, actions: ImportReviewActions, enabled
             } else {
                 LockedPlace("This device only", "Threats are not saved to your account or shared yet.")
                 Note(EzpzIcons.encrypted, "Kept in an encrypted file on this device until you sign out.", top = Tokens.Spacing.sm.dp)
+            }
+        }
+        is ImportItemUi.Document -> ItemBlock(EzpzIcons.pictureAsPdf, item.fileName, "Document", "${item.label} · ${item.size}", enabled, remove) {
+            // A document keeps its name as typed (an OPORD's title), where the planning items are named in capitals. Typed into a field of its own, as a set's is.
+            var name by remember(item.id) { mutableStateOf(item.name) }
+            val focus = LocalFocusManager.current
+            EzpzTextField(
+                name, { name = it; actions.setName(item.id, it) }, "Name", capitalization = KeyboardCapitalization.Sentences, imeAction = ImeAction.Done,
+                onImeAction = { focus.clearFocus() }, enabled = enabled, modifier = Modifier.padding(top = 14.dp),
+            )
+            val packName = item.pack
+            if (item.places.size > 1 && packName != null) {
+                Segmented(
+                    listOf(packName to ImportPlace.PACK.name, "Library" to ImportPlace.LIBRARY.name), item.place.name, "Where ${item.fileName} goes",
+                    Modifier.fillMaxWidth().padding(top = Tokens.Spacing.md.dp),
+                ) { if (enabled) actions.setPlace(item.id, ImportPlace.valueOf(it)) }
+            } else {
+                LockedPlace(if (item.place == ImportPlace.PACK) packName ?: "The pack" else "Library", if (item.place == ImportPlace.PACK) "Into the pack, for everyone in it." else "Kept in your Library.")
+            }
+            val converted = if (item.converted) " The server turns it into a PDF, which is what is kept and read; the original is not kept." else ""
+            if (item.place == ImportPlace.PACK) {
+                Note(EzpzIcons.groups, "Everyone in $packName (${plural(item.members, "member")}) can read it.$converted", accent = true)
+            } else {
+                Note(EzpzIcons.collectionsBookmark, "Kept in your Library, to read on any device you use.$converted", accent = true)
+            }
+            item.error?.let { why ->
+                Text(
+                    buildAnnotatedString {
+                        withStyle(SpanStyle(color = MaterialTheme.colorScheme.error, fontWeight = FontWeight.Medium)) { append("Not uploaded.") }
+                        append(" ")
+                        append(why)
+                        append(" Import tries it again.")
+                    },
+                    style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(top = Tokens.Spacing.sm.dp).semantics { liveRegion = LiveRegionMode.Polite },
+                )
             }
         }
         is ImportItemUi.Mission -> ItemBlock(
@@ -377,7 +416,10 @@ private fun ReviewFooter(state: IncomingUiState, actions: ImportReviewActions) {
                 verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(Tokens.Spacing.sm.dp),
             ) {
                 Icon(painterResource(EzpzIcons.moveToInbox), contentDescription = null, tint = EzpzTheme.status.accent, modifier = Modifier.size(18.dp))
-                Text(state.summary, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text(
+                    if (state.converting) "Uploading. Turning an Office file into a PDF can take a minute." else state.summary,
+                    style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
             }
             Row(
                 Modifier.fillMaxWidth().padding(top = 6.dp), horizontalArrangement = Arrangement.spacedBy(Tokens.Spacing.sm.dp, Alignment.End),

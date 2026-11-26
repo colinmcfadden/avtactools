@@ -56,6 +56,35 @@ internal object DataModule {
     @Singleton
     fun recordFeed(store: RoomSyncStore): RecordFeed = store
 
+    /** The documents' files, under `noBackupFilesDir` so none reaches a consumer cloud (docs/DOCUMENTS.md §9.2). */
+    @Provides
+    @Singleton
+    fun documentFiles(@ApplicationContext context: Context, api: ApiClient): DocumentFiles =
+        DocumentFiles(java.io.File(context.noBackupFilesDir, "documents"), ApiDocumentFileSource(api))
+
+    @Provides
+    fun documentFilesCleaner(files: DocumentFiles): DocumentFilesCleaner = files
+
+    @Provides
+    fun documentPruner(documents: DocumentRepository): DocumentPruner = documents
+
+    @Provides
+    fun documentUploads(documents: DocumentRepository): DocumentUploads = documents
+
+    @Provides
+    @Singleton
+    fun documents(api: ApiClient, repository: SyncRepository, feed: RecordFeed, scheduler: SyncScheduler, files: DocumentFiles): DocumentRepository =
+        DocumentRepository(ApiDocumentApi(api), repository, feed, scheduler, files)
+
+    /** The document being read, one at a time over the frame, whichever screen opened it. */
+    @Provides
+    @Singleton
+    fun documentViewing(documents: DocumentRepository, pack: OpenPack, files: DocumentFiles): DocumentViewing = DocumentViewing(documents, pack, files)
+
+    @Provides
+    @Singleton
+    fun packDocuments(api: ApiClient, engine: PackEngine, scheduler: SyncScheduler): PackDocuments = ApiPackDocuments(api, engine, scheduler)
+
     @Provides
     @Singleton
     fun accountScope(database: EzpzDatabase): AccountScope = RoomAccountScope(database)

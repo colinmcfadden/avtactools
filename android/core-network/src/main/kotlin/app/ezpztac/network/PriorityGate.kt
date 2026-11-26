@@ -53,9 +53,20 @@ public object PriorityPaths {
         "/overlay-image",       // a mission overlay cut into tiles (web only so far)
     )
 
-    /** Whether a request to [url] (a path, or a whole URL) is heavy. A query string is ignored. */
-    public fun isHeavy(url: String): Boolean {
+    /**
+     * A document sent up (docs/DOCUMENTS.md §5): the server reads it and may convert it with LibreOffice, a minute of its time. Heavy by method as well as
+     * path, as the web's `UPLOADS`: the same paths read with a GET (listing the documents, a file) are not heavy, and must not wait behind each other.
+     */
+    private val UPLOADS = listOf(
+        Regex("/documents$"),                              // into the Library, or a pack's (/packs/<uuid>/documents)
+        Regex("/documents/[^/]+/version$"),                // a new version in the Library
+        Regex("/packs/[^/]+/items/[^/]+/version$"),        // a new version of a pack's document
+    )
+
+    /** Whether a request to [url] (a path, or a whole URL) made with [method] is heavy. A query string is ignored. */
+    public fun isHeavy(url: String, method: String = "GET"): Boolean {
         val path = url.substringBefore('?')
+        if (method.equals("POST", ignoreCase = true) && UPLOADS.any { it.containsMatchIn(path) }) return true
         return HEAVY.any { path.endsWith(it) }
     }
 }

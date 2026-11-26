@@ -55,6 +55,7 @@ dependencies {
     implementation(project(":feature-packs"))
     implementation(project(":feature-viewer3d"))
     implementation(project(":feature-brief"))
+    implementation(project(":feature-documents"))
 
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.activity.compose)

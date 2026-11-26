@@ -3,7 +3,6 @@ package app.ezpztac.android
 import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import app.ezpztac.geo.GridShare
 import app.ezpztac.android.export.ExportCleaner
 import app.ezpztac.android.notifications.NotificationShell
 import app.ezpztac.android.notifications.NotificationTap
@@ -17,6 +16,7 @@ import app.ezpztac.auth.InviteLinks
 import app.ezpztac.data.AccountScope
 import app.ezpztac.data.BriefFlush
 import app.ezpztac.data.DiagramSession
+import app.ezpztac.data.DocumentFilesCleaner
 import app.ezpztac.data.IncomingFiles
 import app.ezpztac.data.Ownership
 import app.ezpztac.data.RouteSession
@@ -24,6 +24,7 @@ import app.ezpztac.data.SessionPointSets
 import app.ezpztac.data.ThreatStore
 import app.ezpztac.data.TilesetCacheCleaner
 import app.ezpztac.data.WeatherService
+import app.ezpztac.geo.GridShare
 import app.ezpztac.missionpacks.InviteAcceptance
 import app.ezpztac.missionpacks.InviteState
 import app.ezpztac.missionpacks.PackUser
@@ -86,8 +87,13 @@ class AppViewModel @Inject constructor(
     private val saved: SavedStateHandle,
     @Named("appVersion") private val version: String,
     private val notifications: NotificationShell,
+    // Last, with a default, so a test that builds the shell by position need not name it.
+    private val documentFiles: DocumentFilesCleaner = DocumentFilesCleaner {},
 ) : ViewModel() {
     private val config = MutableStateFlow<AppConfig?>(null)
+
+    /** The server turns Word, Excel and PowerPoint files into PDFs (its config's `services.documentConversion`, docs/DOCUMENTS.md §4.4): false until it answers. */
+    val documentConversion: StateFlow<Boolean> = config.map { it?.services?.documentConversion == true }.stateIn(viewModelScope, SharingStarted.Eagerly, false)
     private val link = MutableStateFlow<AuthRoute?>(null)
     private val ownership = MutableStateFlow<Ownership?>(null)
 
@@ -277,6 +283,7 @@ class AppViewModel @Inject constructor(
                 quietly { threats.signOut() }                                    // what was changed is saved first; then none of it stays in memory, and a device-only picture goes
                 exports.clear()                                                  // nor a .ths or mission that was shared: they are in the clear in the cache
                 tiles.clear()                                                    // nor the point clouds the 3D view kept: each is a place
+                documentFiles.clear()                                            // nor the documents: each is the account's
             }
             return
         }

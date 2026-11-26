@@ -33,20 +33,34 @@ import app.ezpztac.designsystem.Tokens
 /** The design's Import, as a modal bottom sheet ([ImportSheetContent]). Dismissing it opens nothing. */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun ImportSheet(threatsAllowed: Boolean, threatsSaved: Boolean, onChoose: () -> Unit, onDismiss: () -> Unit) {
+fun ImportSheet(threatsAllowed: Boolean, threatsSaved: Boolean, onChoose: () -> Unit, onDismiss: () -> Unit, documents: DocumentRules = DocumentRules()) {
     val state = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     ModalBottomSheet(onDismissRequest = onDismiss, sheetState = state, containerColor = MaterialTheme.colorScheme.surfaceContainerLow) {
-        ImportSheetContent(threatsAllowed, onChoose = { onDismiss(); onChoose() })
+        ImportSheetContent(threatsAllowed, onChoose = { onDismiss(); onChoose() }, threatsSaved = threatsSaved, documents = documents)
     }
 }
 
+/** The Import menu's line for documents: what the server takes (a PDF always, the Office files where it converts them); none for an account without them. */
+fun documentChoice(rules: DocumentRules): String? = when {
+    !rules.on -> null
+    rules.conversion -> "PDF, Word, Excel or PowerPoint · read as a PDF"
+    else -> "PDF · an OPORD or any other paper"
+}
+
 /**
- * What can be imported (the design's Import menu): an AMPS mission, local points, threats (only with the account's threats on). Each
+ * What can be imported (the design's Import menu): an AMPS mission, local points, threats (only with the account's threats on), a document (only with the
+ * account's documents on, docs/DOCUMENTS.md §9.2). Each
  * opens the system's picker, and every file chosen goes to the review, which says what it turned out to be and where it goes: what a file is comes from what is
  * in it, not the row it was chosen from, so the rows only say what the app takes. Map overlays are not offered (the owner's decision 2 of the redesign).
  */
 @Composable
-fun ImportSheetContent(threatsAllowed: Boolean, onChoose: () -> Unit, modifier: Modifier = Modifier, threatsSaved: Boolean = false) {
+fun ImportSheetContent(
+    threatsAllowed: Boolean,
+    onChoose: () -> Unit,
+    modifier: Modifier = Modifier,
+    threatsSaved: Boolean = false,
+    documents: DocumentRules = DocumentRules(),
+) {
     Column(modifier.fillMaxWidth().padding(bottom = 20.dp)) {
         Column(Modifier.padding(start = Tokens.Spacing.xl.dp, end = Tokens.Spacing.xl.dp, bottom = Tokens.Spacing.md.dp)) {
             Text("Import", style = MaterialTheme.typography.titleLarge, modifier = Modifier.semantics { heading() })
@@ -60,6 +74,7 @@ fun ImportSheetContent(threatsAllowed: Boolean, onChoose: () -> Unit, modifier: 
         if (threatsAllowed) {
             if (threatsSaved) Choice(EzpzIcons.crisisAlert, "Threats", ".ths · AMPS threats", onChoose) else Choice(EzpzIcons.crisisAlert, "Threats", ".ths · stays on this device", onChoose, locked = true)
         }
+        documentChoice(documents)?.let { Choice(EzpzIcons.pictureAsPdf, "Document", it, onChoose) }
         HorizontalDivider(Modifier.padding(top = Tokens.Spacing.sm.dp), color = MaterialTheme.colorScheme.outlineVariant)
         Row(
             Modifier.padding(start = Tokens.Spacing.xl.dp, top = Tokens.Spacing.lg.dp, end = Tokens.Spacing.xl.dp),

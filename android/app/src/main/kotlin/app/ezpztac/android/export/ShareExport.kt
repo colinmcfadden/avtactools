@@ -105,7 +105,7 @@ object ShareExport {
 
     /**
      * A file name with no folder in it, keeping one of the extensions the app exports (`.msnx` mission, `.ths` threats, `.gpx` and `.fpl` for another app, `.pdf` a
-     * mission brief) and giving anything else `.msnx`, which is what most exports are.
+     * mission brief or a document) and giving anything else `.msnx`, which is what most exports are.
      */
     internal fun plainName(name: String): String {
         val last = name.substringAfterLast('/').substringAfterLast('\\').trim().trim('.')
@@ -133,7 +133,7 @@ object ShareExport {
     }
 
     private fun titleOf(files: List<ExportFile>): String = when {
-        files.all { it.fileName.endsWith(".pdf", ignoreCase = true) } -> "Share brief"
+        files.all { it.fileName.endsWith(".pdf", ignoreCase = true) } -> "Share PDF"
         files.all { it.fileName.endsWith(".gpx", ignoreCase = true) || it.fileName.endsWith(".fpl", ignoreCase = true) } -> "Share route"
         else -> "Export for AMPS"
     }

@@ -94,6 +94,7 @@ import app.ezpztac.briefs.SandtableLayer
 import app.ezpztac.briefs.SandtableMarksLayer
 import app.ezpztac.briefs.SandtableScene
 import app.ezpztac.briefs.sandtableActionsOf
+import app.ezpztac.data.DocumentKey
 import app.ezpztac.designsystem.Banner
 import app.ezpztac.designsystem.BannerKind
 import app.ezpztac.designsystem.EzpzIcons
@@ -102,6 +103,9 @@ import app.ezpztac.designsystem.SheetDetent
 import app.ezpztac.designsystem.ToastHost
 import app.ezpztac.designsystem.Tokens
 import app.ezpztac.designsystem.rememberPanelSheetState
+import app.ezpztac.documents.DocumentExport
+import app.ezpztac.documents.DocumentViewerHost
+import app.ezpztac.documents.DocumentViewerViewModel
 import app.ezpztac.geo.GridShare
 import app.ezpztac.geo.MgrsConverter
 import app.ezpztac.map.ContourLabelsLayer
@@ -115,8 +119,8 @@ import app.ezpztac.map.MapChromeBoxes
 import app.ezpztac.map.MapCommand
 import app.ezpztac.map.MapProjection
 import app.ezpztac.map.MapScreen
-import app.ezpztac.map.MapStyles
 import app.ezpztac.map.MapSearchSpotlight
+import app.ezpztac.map.MapStyles
 import app.ezpztac.map.MapViewModel
 import app.ezpztac.map.MgrsGridLayer
 import app.ezpztac.map.OtherLzLayer
@@ -147,6 +151,7 @@ import app.ezpztac.packs.NewPackHost
 import app.ezpztac.packs.NewPackViewModel
 import app.ezpztac.packs.PackCopyViewModel
 import app.ezpztac.packs.PackDialogsHost
+import app.ezpztac.packs.PackDocumentActions
 import app.ezpztac.packs.PackHeaderMenu
 import app.ezpztac.packs.PackItemCopyViewModel
 import app.ezpztac.packs.PackPanelFoot
@@ -166,6 +171,7 @@ import app.ezpztac.viewer3d.Viewer3DHost
 import app.ezpztac.workspace.BoundaryToolbarHost
 import app.ezpztac.workspace.DiagramsUiState
 import app.ezpztac.workspace.DiagramsViewModel
+import app.ezpztac.workspace.DocumentRules
 import app.ezpztac.workspace.ExportFile
 import app.ezpztac.workspace.GraphicKind
 import app.ezpztac.workspace.GraphicsViewModel
@@ -194,9 +200,11 @@ import app.ezpztac.workspace.RoutesUiState
 import app.ezpztac.workspace.RoutesViewModel
 import app.ezpztac.workspace.ThreatsHost
 import app.ezpztac.workspace.ThreatsViewModel
+import app.ezpztac.workspace.documentTypes
 import app.ezpztac.workspace.importsLine
 import app.ezpztac.workspace.offersLibrary
 import app.ezpztac.workspace.rememberFileImport
+import app.ezpztac.workspace.rememberVersionPick
 import kotlin.math.roundToInt
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
@@ -256,6 +264,8 @@ fun MapHome(
     /** A grid link the app was opened with (`#grid=…`, docs/GRID_SHARING.md), until the map has gone there. */
     gridLink: GridShare.Link? = null,
     onGridLinkHandled: () -> Unit = {},
+    /** The server turns Word, Excel and PowerPoint files into PDFs: they are offered as documents only then (docs/DOCUMENTS.md §4.4). */
+    documentConversion: Boolean = false,
     viewModel: MapViewModel = hiltViewModel(),
     home: HomeViewModel = hiltViewModel(),
     display: DisplayViewModel = hiltViewModel(),
@@ -338,6 +348,13 @@ fun MapHome(
     // Threats are drawn, held and taken in only while the account has them, which is while their panel is offered.
     val threatsOn = Panel.Threats in panels
     val threatsSaved = threatsOn && user.hasFeature("cloud_save")          // an account that cannot save them has none to list
+    // Documents (docs/DOCUMENTS.md §9.3): uploaded and read with the account's feature, an Office file only where the server converts it, into the Library with cloud
+    // save; a pack's documents are read by every member, the feature or not. One read at a time, over the whole screen.
+    val documentRules = DocumentRules(on = user.hasFeature("documents"), conversion = documentConversion, saved = user.hasFeature("cloud_save"))
+    val documentKinds = documentTypes(documentConversion)
+    val documentViewer: DocumentViewerViewModel = hiltViewModel()
+    val documentOpen by remember(documentViewer) { documentViewer.state.map { it.open }.distinctUntilChanged() }.collectAsStateWithLifecycle(false)
+    val documentFocus = remember { FocusRequester() }
     // How tall whatever floats above the readout is now (a drawing toolbar, the held object's bar), in pixels: the toasts go above it.
     var floating by remember { mutableIntStateOf(0) }
     var switcherOpen by rememberSaveable { mutableStateOf(false) }
@@ -425,6 +442,8 @@ fun MapHome(
     // A pack's item kept as a copy of the person's own, and a copy updated from its Library original (the design's PackDialogs D and B): from the Pack panel, the
     // LZ/PZ and Routes panels' menus in a pack, and a finished pack's banner.
     val itemCopies: PackItemCopyViewModel = hiltViewModel()
+    // A new version of a pack's document: one file chosen for the item it was asked for, uploaded by the Pack panel's view model.
+    val packVersion = rememberVersionPick(documentKinds, onRead = packPanel::newDocumentVersion, onFailed = packPanel::refuse)
     val saveCopy: ((String) -> Unit)? = if (openPack != null) ({ ref -> CopyRules.packItemOf(ref)?.let(itemCopies::askSave) }) else null
     val askCopy: ((RecordKind) -> (uuid: String, name: String) -> Unit)? =
         if (CopyRules.asksWhere(packsHere, openPack)) ({ kind -> { uuid, name -> copies.ask(kind, uuid, name) } }) else null
@@ -432,9 +451,11 @@ fun MapHome(
     val addingTo = CopyRules.addingTo(packsHere, openPack)
     val adding by copies.adding.collectAsStateWithLifecycle()
     // A page or dialog over the frame (the Library, Members, Teams, New pack): nobody is looking at the map or the Pack panel under it.
-    val overFrame = libraryTab != null || membersOpen || teamsOpen || newPackOpen || briefOpen || presenting || lz.viewer3d != null
+    val overFrame = libraryTab != null || membersOpen || teamsOpen || newPackOpen || briefOpen || presenting || lz.viewer3d != null || documentOpen
     // Where the keyboard's focus goes while the 3D view is up: a focus search that would go into the frame under it goes there.
     val viewer3dFocus = remember { FocusRequester() }
+    // The page over the whole frame that a focus search into the frame goes to: the 3D view, else a document being read.
+    val pageFocus = if (lz.viewer3d != null) viewer3dFocus else documentFocus.takeIf { documentOpen }
     LaunchedEffect(newPack) {
         newPack.made.collect { uuid ->
             pickedPack(uuid)
@@ -451,7 +472,7 @@ fun MapHome(
         when (CopyRules.libraryAfter(wanted, openPack?.uuid)) {
             CopyRules.LibraryAfter.WAIT -> Unit                                                    // still on its way
             CopyRules.LibraryAfter.OPEN_LIBRARY -> {
-                libraryTab = libraryTabsFor(panels, threatsSaved).firstOrNull() ?: LibraryTab.LZ
+                libraryTab = libraryTabsFor(panels, threatsSaved, documentRules.on).firstOrNull() ?: LibraryTab.LZ
                 libraryAfter = null
             }
             CopyRules.LibraryAfter.LET_GO -> libraryAfter = null
@@ -539,7 +560,7 @@ fun MapHome(
     LaunchedEffect(lz.page) { if (tablet && lz.page == LzPage.AIRCRAFT) tabletState.showList() }
     // A toast from a panel; the Saved one offers its Library tab (the design's Saved: Open Library), if the account has it when the toast is shown: the collectors
     // below outlive a change of features, so they read the tabs as they are now.
-    val libraryTabs by rememberUpdatedState(libraryTabsFor(panels, threatsSaved))
+    val libraryTabs by rememberUpdatedState(libraryTabsFor(panels, threatsSaved, documentRules.on))
     LaunchedEffect(packPanel) {
         packPanel.kept.collect { notice ->
             val tab = notice.library?.let(CopyRules::libraryTabOf)
@@ -607,8 +628,8 @@ fun MapHome(
     // A file another app opened with this one (Files, a mail, the share sheet), or chosen with Import, is put to the person here: nothing is imported until they say so.
     // Not over a brief being presented: a file opened with the app meanwhile waits for it to end (**not like the web**, which ignores a file dropped on the map then:
     // here another app handed it over, and it is kept for after).
-    if (!presenting) ImportReviewHost(threatsAllowed = threatsOn, large = tablet, viewModel = incoming)
-    if (importMenu) ImportSheet(threatsAllowed = threatsOn, threatsSaved = threatsSaved, onChoose = importFiles, onDismiss = { importMenu = false })            // the phone's, and a panel's own Import
+    if (!presenting) ImportReviewHost(threatsAllowed = threatsOn, large = tablet, documents = documentRules, viewModel = incoming)
+    if (importMenu) ImportSheet(threatsAllowed = threatsOn, threatsSaved = threatsSaved, onChoose = importFiles, onDismiss = { importMenu = false }, documents = documentRules)            // the phone's, and a panel's own Import
     LaunchedEffect(incoming) { incoming.notices.collect { snackbars.showSnackbar(it, withDismissAction = true) } }
     LaunchedEffect(importsModel) { importsModel.notices.collect { toast(it, LibraryTab.POINTS) } }
     // An invitation link: said above the sheet, in the frame's own toasts.
@@ -654,6 +675,19 @@ fun MapHome(
     }
     // Collected here, not in the Routes panel: the route's plan page can build a file whether or not the panel is offered, and a file built must reach the share sheet.
     val share by rememberUpdatedState(shareExport)
+    // A document's PDF is up to 50 MB: written off the main thread, and a write that fails (the disk full) is said, never the end of the app.
+    val shareDocument: (DocumentExport) -> Unit = { pdf ->
+        scope.launch {
+            val chooser = try {
+                withContext(Dispatchers.IO) { ShareExport.prepare(context, ExportFile(pdf.fileName, pdf.bytes)) }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (_: Exception) {
+                null
+            }
+            if (chooser != null) context.startActivity(chooser) else snackbars.showSnackbar("The PDF could not be handed to another app.", withDismissAction = true)
+        }
+    }
     LaunchedEffect(routesModel) { routesModel.exports.collect { share(it) } }
     // The plan page covers the frame: a field left focused under it (a rename in the panel) would keep the keyboard and take what is typed.
     LaunchedEffect(routes.planOpen) { if (routes.planOpen) focus.clearFocus() }
@@ -685,6 +719,12 @@ fun MapHome(
                             ),
                             onMembers = { invite -> members.open(openPack?.name.orEmpty(), invite) },
                             onUpdate = itemCopies::askUpdate, onSaveCopy = itemCopies::askSave,
+                            documents = PackDocumentActions(
+                                read = { item -> openPack?.uuid?.let { documentViewer.show(DocumentKey.Pack(it, item)) } },
+                                // An editor uploads and gives a new version with the account's documents; a viewer, or a finished pack, reads only.
+                                newVersion = if (documentRules.on) packVersion else null,
+                                upload = if (documentRules.on) importFiles else null,
+                            ),
                         )
                         // A new LZ/PZ starts at the crosshair, and the tools add there. An administrator can switch own aircraft off for an account (the
                         // server would refuse what it made).
@@ -807,7 +847,7 @@ fun MapHome(
                     // The search bar and the sheet are reserved from the map, so the camera's centre is the crosshair, which is drawn between them.
                     EzpzMap(
                         host = host, style = state.style, initial = viewModel.initialCamera, padding = frame.padding, modifier = Modifier.fillMaxSize(),
-                        covered = lz.viewer3d != null,                       // the 3D view is over the whole of it
+                        covered = lz.viewer3d != null || documentOpen,       // the 3D view or a document is over the whole of it
                         onTap = { at ->
                             // A brief being presented takes no edits: a tap holds nothing. With the phone's search open, a tap on the map folds it and does nothing else.
                             if (!presenting && !search.foldOnTap()) {
@@ -931,7 +971,7 @@ fun MapHome(
                                 expanded = true, onDismissRequest = dismiss, shape = MaterialTheme.shapes.large,
                                 containerColor = MaterialTheme.colorScheme.surfaceContainerLow, modifier = Modifier.width(IMPORT_MENU_WIDTH),
                             ) {
-                                ImportSheetContent(threatsOn, onChoose = { dismiss(); importFiles() })
+                                ImportSheetContent(threatsOn, onChoose = { dismiss(); importFiles() }, threatsSaved = threatsSaved, documents = documentRules)
                             }
                         },
                         onLibrary = {
@@ -987,7 +1027,7 @@ fun MapHome(
                             SandtableFlights(host, shown.view, sandtableBoxes, sandtableHandover)
                         }
                     },
-                    modifier = Modifier.underPage(unread = libraryTab != null || lz.viewer3d != null || search.expanded, focusTo = viewer3dFocus.takeIf { lz.viewer3d != null }),
+                    modifier = Modifier.underPage(unread = libraryTab != null || lz.viewer3d != null || documentOpen || search.expanded, focusTo = pageFocus),
                     backEnabled = !overFrame && !search.expanded,
                     panel = { p -> movablePanels.getValue(p)() },
                     mapScreen = movableMap,
@@ -1010,7 +1050,7 @@ fun MapHome(
                     floatingPx = { floating },
                     footer = footer,
                     // Under the route's plan page the frame is still there (the map, the panels and what they listen for) but neither read nor touched.
-                    modifier = Modifier.underPage(unread = routes.planOpen || libraryTab != null || lz.viewer3d != null || search.expanded, focusTo = viewer3dFocus.takeIf { lz.viewer3d != null }),
+                    modifier = Modifier.underPage(unread = routes.planOpen || libraryTab != null || lz.viewer3d != null || documentOpen || search.expanded, focusTo = pageFocus),
                     // A tap on the map hides it; Back shows it again, unless a page over the frame has Back for itself.
                     hidden = frameState.hidden,
                     onShow = frameState::show,
@@ -1054,7 +1094,7 @@ fun MapHome(
             // conflict are that panel's own, so an item open now is renamed and closed where its unsaved edits are.
             LibraryHost(
                 tab = libraryTab,
-                tabs = libraryTabsFor(panels, threatsSaved),
+                tabs = libraryTabsFor(panels, threatsSaved, documentRules.on),
                 actions = LibraryActions(
                     close = { libraryTab = null },
                     open = { row ->
@@ -1066,6 +1106,12 @@ fun MapHome(
                             LibraryTab.ROUTES -> Panel.Routes.also { routesModel.openSet(row.uuid) }
                             LibraryTab.POINTS -> Panel.Imports.also { importsModel.show(row.uuid) }
                             LibraryTab.THREATS -> Panel.Threats.also { threatsModel.openSaved(row.uuid) }
+                            LibraryTab.DOCUMENTS -> {
+                                // Read over everything, the Library shut as any item's Open shuts it: Back from the document is the map.
+                                documentViewer.show(DocumentKey.Library(row.uuid))
+                                libraryTab = null
+                                return@LibraryActions
+                            }
                         }
                         libraryTab = null
                         if (panel in panels) {
@@ -1079,6 +1125,7 @@ fun MapHome(
                             LibraryTab.ROUTES -> routesModel.renameSet(row.uuid, name, replacing)
                             LibraryTab.POINTS -> importsModel.rename(row.uuid, name, replacing)
                             LibraryTab.THREATS -> threatsModel.renameSaved(row.uuid, name, replacing)
+                            LibraryTab.DOCUMENTS -> Unit                                       // the Library's own (LibraryHost)
                         }
                     },
                     delete = { row ->
@@ -1087,6 +1134,7 @@ fun MapHome(
                             LibraryTab.ROUTES -> routesModel.deleteSet(row.uuid)
                             LibraryTab.POINTS -> importsModel.delete(row.uuid)
                             LibraryTab.THREATS -> threatsModel.deleteSaved(row.uuid)
+                            LibraryTab.DOCUMENTS -> Unit
                         }
                     },
                     resolve = { row, how ->
@@ -1095,13 +1143,16 @@ fun MapHome(
                             LibraryTab.ROUTES -> routesModel.resolve(row.uuid, how)
                             LibraryTab.POINTS -> importsModel.resolve(row.uuid, how)
                             LibraryTab.THREATS -> threatsModel.resolve(row.uuid, how)
+                            LibraryTab.DOCUMENTS -> Unit                                       // a document is never a conflict copy
                         }
                     },
                     addToPack = askCopy?.let { ask -> { row -> ask(CopyRules.recordKindOf(row.tab))(row.uuid, row.name) } },
                     addToOpenPack = { row -> copies.addToOpen(CopyRules.recordKindOf(row.tab), row.uuid, row.name) },
+                    upload = if (documentRules.on) ({ importFiles() }) else null,
                 ),
                 snackbars = snackbars,
                 large = tablet,
+                documentTypes = documentKinds,
                 addingTo = addingTo,
                 adding = adding,
             )
@@ -1124,6 +1175,8 @@ fun MapHome(
             }
             // The open LZ/PZ in 3D, over the whole screen and everything on it, phone and tablet alike (the owner, 2026-10-20): the frame under it stays
             // composed and untouched, neither read nor touched while it is up, so closing it shows the map as it was.
+            // A document being read, over the whole screen as the 3D view is (docs/DOCUMENTS.md §8.1): the frame under it stays composed and untouched.
+            DocumentViewerHost(night = night, onShare = shareDocument, snackbars = snackbars, focus = documentFocus, viewModel = documentViewer)
             Viewer3DHost(target = lz.viewer3d, night = night, onClose = diagrams::close3d, snackbars = snackbars, focus = viewer3dFocus)
         }
     }
@@ -1254,11 +1307,12 @@ internal fun libraryTabFor(panel: Panel, threatsSaved: Boolean = false): Library
 }
 
 /** The Library's tabs an account has: those of the panels it is offered (an administrator can turn routes off, as on the web). */
-internal fun libraryTabsFor(panels: List<Panel>, threatsSaved: Boolean = false): List<LibraryTab> = listOfNotNull(
+internal fun libraryTabsFor(panels: List<Panel>, threatsSaved: Boolean = false, documents: Boolean = false): List<LibraryTab> = listOfNotNull(
     LibraryTab.LZ.takeIf { Panel.Lz in panels },
     LibraryTab.ROUTES.takeIf { Panel.Routes in panels },
     LibraryTab.POINTS.takeIf { Panel.Imports in panels },
     LibraryTab.THREATS.takeIf { threatsSaved && Panel.Threats in panels },
+    LibraryTab.DOCUMENTS.takeIf { documents },                                 // the account's `documents` feature (docs/DOCUMENTS.md §9.3)
 )
 
 /** Where Back goes from the LZ/PZ panel's page: the aircraft back to the plan they were opened from, the rest to the open LZ/PZs. */

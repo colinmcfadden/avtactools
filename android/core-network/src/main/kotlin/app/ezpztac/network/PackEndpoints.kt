@@ -219,21 +219,6 @@ public suspend fun ApiClient.savePackItemToLibrary(uuid: String, item: String, n
 // The server makes a document from the file it is sent: a client never sends a document's content, and renames or removes one with
 // the ordinary item operations.
 
-/** The most a document's PDF may hold (the server's own limit); a longer answer is refused as it arrives, never read whole. */
-public const val DOCUMENT_PDF_MAX_BYTES: Long = 50L * 1024 * 1024
-
-/** The most a document's page text may hold: 2,000,000 characters, at most four bytes each, with the JSON round them. */
-public const val DOCUMENT_TEXT_MAX_BYTES: Long = 9L * 1024 * 1024
-
-/** A file to upload as a document: its [name] (the server takes the title from it) and its [bytes]. */
-public class DocumentFile(public val name: String, public val bytes: ByteArray)
-
-private fun documentCall(path: String, form: Map<String, String>, file: DocumentFile, asUser: Int?) = ApiClient.Call(
-    "POST", path, form = form, file = ApiClient.FormFile("file", file.name, file.bytes),
-    // An Office file is converted on the server, which can take a minute or two.
-    readTimeoutSeconds = ApiClient.HEAVY_READ_TIMEOUT_SECONDS, asUser = asUser,
-)
-
 /**
  * Uploads [file] into the pack (an editor; the pack not finished), where the server reads it and turns a Word, Excel or PowerPoint
  * file into a PDF. [item] is this device's id for the new item, so an upload sent again after a lost answer is the same item
@@ -274,11 +259,12 @@ public suspend fun ApiClient.packDocumentPdf(uuid: String, item: String, asUser:
 ).bytes
 
 /** A pack's document's page text, for search. A scan has none: [ApiException] with `no_text` (404). */
-public suspend fun ApiClient.packDocumentText(uuid: String, item: String, asUser: Int? = null): DocumentText {
-    // Read as a bounded file (text of a 500-page PDF can be megabytes), then as the JSON it is.
-    val file = execute(ApiClient.Call("GET", "${PackPaths.item(uuid, item)}/text", binary = true, maxBytes = DOCUMENT_TEXT_MAX_BYTES, asUser = asUser))
-    return decode(ApiResponse(file.status, okhttp3.Headers.headersOf(), file.bytes.toString(Charsets.UTF_8)))
-}
+public suspend fun ApiClient.packDocumentText(uuid: String, item: String, asUser: Int? = null): DocumentText =
+    documentTextAt("${PackPaths.item(uuid, item)}/text", asUser)
+
+/** A pack's document's page text file as the server keeps it, to check against the hash its item names. */
+public suspend fun ApiClient.packDocumentTextFile(uuid: String, item: String, asUser: Int? = null): ByteArray =
+    documentTextFileAt("${PackPaths.item(uuid, item)}/text", asUser)
 
 // -- Members ------------------------------------------------------------------------
 

@@ -70,11 +70,13 @@ map
 more_vert
 move_to_inbox
 my_location
+offline_pin
 open_in_new
 person
 person_add
 person_remove
 person_search
+picture_as_pdf
 pin_drop
 play_arrow
 refresh

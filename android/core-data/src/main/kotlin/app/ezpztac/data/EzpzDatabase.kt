@@ -21,15 +21,18 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         RecordEntity::class, OutboxEntity::class, SyncStateEntity::class, BlobEntity::class,
         PackEntity::class, PackItemEntity::class, PackOpEntity::class, PackOwnEntity::class,
     ],
-    version = 5,
+    version = 6,
     exportSchema = true,
     // 2: a record can carry a file (a mission's `.msnx`): two columns on the record, two on a send in progress, and the table the bytes live in.
     // 3: mission packs: four new tables, nothing existing altered.
     // 4: a record notes when it last changed (the Library sorts by it): one column, null for every record kept before.
     // 5: nothing altered. The sync cursor is forgotten, once, so a device past saved threat sets it could not read before picks them up ([ForgetCursor]).
+    // 6: the same again, for documents (docs/DOCUMENTS.md §9.2): a version before them passes over the feed's `document` entries, which exist as soon as
+    //    the server has documents, whatever the app.
     autoMigrations = [
         AutoMigration(from = 1, to = 2), AutoMigration(from = 2, to = 3), AutoMigration(from = 3, to = 4),
         AutoMigration(from = 4, to = 5, spec = EzpzDatabase.ForgetCursor::class),
+        AutoMigration(from = 5, to = 6, spec = EzpzDatabase.ForgetCursor::class),
     ],
 )
 internal abstract class EzpzDatabase : RoomDatabase() {

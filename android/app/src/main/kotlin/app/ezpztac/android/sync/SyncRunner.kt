@@ -7,6 +7,7 @@ import app.ezpztac.android.packs.MISSION_PACKS
 import app.ezpztac.android.packs.PackRuntime
 import app.ezpztac.data.AccountScope
 import app.ezpztac.data.DiagramSession
+import app.ezpztac.data.DocumentPruner
 import app.ezpztac.data.LibraryUpload
 import app.ezpztac.data.Ownership
 import app.ezpztac.data.RouteSession
@@ -60,6 +61,7 @@ class EngineSyncRunner @Inject constructor(
     private val routes: RouteSession,
     private val minimum: MinimumVersion,
     @Named("appVersion") private val version: String,
+    private val documents: DocumentPruner = DocumentPruner {},
 ) : SyncRunner, LibraryUpload {
     override suspend fun runOnce(): SyncOutcome {
         if (auth.state.value is AuthState.Unknown) {
@@ -85,6 +87,14 @@ class EngineSyncRunner @Inject constructor(
         report.recreated.forEach { (old, new) ->
             diagrams.follow(old, new)
             routes.follow(old, new)
+        }
+        // A document deleted on another device leaves this one's files once its tombstone has come (docs/DOCUMENTS.md §9.2).
+        try {
+            documents.prune()
+        } catch (e: CancellationException) {
+            throw e
+        } catch (_: Exception) {
+            // The next sync tries again; a file left a while longer is all it costs.
         }
         return if (drained == DrainOutcome.RETRY) SyncOutcome.Retry else outcomeOf(report)
     }

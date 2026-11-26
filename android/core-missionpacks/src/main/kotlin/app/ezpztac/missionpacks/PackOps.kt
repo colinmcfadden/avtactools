@@ -30,7 +30,10 @@ public data class OpResult(val items: Map<String, PackItemState>, val status: Op
  */
 public object PackOps {
     // A brief (docs/MISSION_BRIEF.md §3) and a set of threats hold an object, as an LZ and a route set do; only a point set holds a list.
-    public val ITEM_KINDS: List<String> = listOf("lz", "route", "pointset", "brief", "threatset")
+    // A `document` (docs/DOCUMENTS.md §7) holds an object naming the files the server checked, and is made and given a new version only by
+    // the server; a client renames and removes one. The rules here are the same for every kind: what a client may send is the server's
+    // to refuse (`pack_routes.apply_ops`).
+    public val ITEM_KINDS: List<String> = listOf("lz", "route", "pointset", "brief", "threatset", "document")
 
     /** What a client may send. `item.replace` is the server's own (update from original). */
     public val CLIENT_OP_TYPES: List<String> = listOf("item.create", "item.delete", "item.rename", "set", "patch", "upsert", "insert", "remove")

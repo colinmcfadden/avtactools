@@ -88,7 +88,7 @@ public class FakeServer : SyncApi {
         RecordKind.MISSION -> JsonObject(mapOf("id" to JsonPrimitive(r.serverId), "name" to JsonPrimitive(r.name), "kind" to JsonPrimitive("mission"),
             "client_uuid" to JsonPrimitive(r.uuid), "revision" to JsonPrimitive(r.revision), "route_data" to r.data,
             "has_file" to JsonPrimitive(r.file != null), "file_name" to JsonPrimitive(r.fileName)))
-        RecordKind.BRIEF, RecordKind.THREAT_SET -> JsonObject(mapOf("id" to JsonPrimitive(r.serverId), "name" to JsonPrimitive(r.name), "client_uuid" to JsonPrimitive(r.uuid),
+        RecordKind.BRIEF, RecordKind.THREAT_SET, RecordKind.DOCUMENT -> JsonObject(mapOf("id" to JsonPrimitive(r.serverId), "name" to JsonPrimitive(r.name), "client_uuid" to JsonPrimitive(r.uuid),
             "revision" to JsonPrimitive(r.revision), "data" to r.data, "updated_at" to JsonPrimitive(updatedAt(r.seq))))
     }
 
@@ -145,7 +145,7 @@ public class FakeServer : SyncApi {
             SyncChange(
                 type = when (it.kind) {
                     RecordKind.LZ -> "lz"; RecordKind.AIRCRAFT -> "aircraft"; RecordKind.ROUTE, RecordKind.MISSION -> "route"; RecordKind.POINT_SET -> "pointset"
-                    RecordKind.BRIEF -> "brief"; RecordKind.THREAT_SET -> "threatset"
+                    RecordKind.BRIEF -> "brief"; RecordKind.THREAT_SET -> "threatset"; RecordKind.DOCUMENT -> "document"
                 },
                 id = it.serverId, clientUuid = it.uuid, revision = it.revision, deleted = it.deleted, name = it.name,
                 kind = when (it.kind) { RecordKind.ROUTE -> "sketch"; RecordKind.MISSION -> "mission"; else -> null },

@@ -143,7 +143,7 @@ class LibraryViewModelTest {
         r.device.repository.create(RecordKind.MISSION, "GOAT", RouteSets.missionSummary(emptyList()), uuid = "m1", file = FilePart("GOAT_SUCKER.msnx", byteArrayOf(1, 2, 3)))
         r.points.import(lps, "NORTH GA.LPS")
         advanceUntilIdle()
-        assertEquals(mapOf(LibraryTab.LZ to 1, LibraryTab.ROUTES to 2, LibraryTab.POINTS to 1, LibraryTab.THREATS to 0), r.state.counts)
+        assertEquals(mapOf(LibraryTab.LZ to 1, LibraryTab.ROUTES to 2, LibraryTab.POINTS to 1, LibraryTab.THREATS to 0, LibraryTab.DOCUMENTS to 0), r.state.counts)
         val lz = r.state.rows.single()
         assertEquals("16S GD 66993 52949", lz.grid)
         assertTrue(lz.updated!!.startsWith("Updated "))

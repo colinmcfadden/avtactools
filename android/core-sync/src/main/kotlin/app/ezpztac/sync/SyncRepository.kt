@@ -27,6 +27,7 @@ public class SyncRepository(
     /** Makes a record. It has its identity at once; the server hears of it at the next sync. A [file] is kept with it (a mission needs one). */
     public suspend fun create(kind: RecordKind, name: String, data: JsonObject, uuid: String = ids.newUuid(), file: FilePart? = null): LocalRecord =
         store.transaction {
+            requireQueued(kind)
             val ref = file?.let { keep(it) }
             val record = LocalRecord(
                 kind, uuid, serverId = null, baseRevision = null, name = name, data = data, dirty = true, localVersion = 1, file = ref, updatedAt = clock(),
@@ -39,6 +40,7 @@ public class SyncRepository(
     /** Changes a record. Only what is given changes. A record the server has not seen yet is simply updated in place. A [file] given replaces the record's. */
     public suspend fun edit(kind: RecordKind, uuid: String, name: String? = null, data: JsonObject? = null, file: FilePart? = null): LocalRecord =
         store.transaction {
+            requireQueued(kind)
             val current = requireNotNull(record(kind, uuid)?.takeUnless { it.deleted }) { "no such record" }
             val edited = current.copy(
                 name = name ?: current.name,
@@ -62,6 +64,7 @@ public class SyncRepository(
      */
     public suspend fun delete(kind: RecordKind, uuid: String) {
         store.transaction {
+            requireQueued(kind)
             val current = record(kind, uuid) ?: return@transaction
             val create = entryFor(kind, uuid, Operation.CREATE)
             // Never sent: no create, or one that was not sent, or one the server refused for good (it does not have the record).
@@ -80,6 +83,43 @@ public class SyncRepository(
             }
         }
     }
+
+    /**
+     * Holds what the server answered for a record changed online ([RecordKind.DOCUMENT]: an upload, a rename, a new version), as the next pull would bring
+     * it: the record at the server's [revision], with nothing waiting. [data] null keeps the document held (a rename's answer has none); a record not held yet
+     * needs one, and without it is left for the pull. An answer older than what is held changes nothing, so a pull that came first is never undone.
+     */
+    public suspend fun take(
+        kind: RecordKind,
+        uuid: String,
+        serverId: Int,
+        revision: Int,
+        name: String,
+        data: JsonObject?,
+        updatedAt: String? = null,
+    ) {
+        require(kind == RecordKind.DOCUMENT) { "only a record changed online is taken from an answer" }
+        store.transaction {
+            val current = record(kind, uuid)
+            when {
+                current == null -> if (data != null) {
+                    put(LocalRecord(kind, uuid, serverId, revision, name, data, updatedAt = updatedAt ?: clock()))
+                }
+                (current.baseRevision ?: -1) < revision -> put(
+                    current.copy(serverId = serverId, baseRevision = revision, name = name, data = data ?: current.data, updatedAt = updatedAt ?: clock()),
+                )
+            }
+        }
+    }
+
+    /** Lets go of a record the server has deleted at our asking ([RecordKind.DOCUMENT]), as its tombstone will when it comes. */
+    public suspend fun forget(kind: RecordKind, uuid: String) {
+        require(kind == RecordKind.DOCUMENT) { "only a record changed online is let go of without the outbox" }
+        store.transaction { remove(kind, uuid) }
+    }
+
+    /** A document is never queued (docs/DOCUMENTS.md §6): one made or changed here would wait in the outbox for good, since no route takes its content. */
+    private fun requireQueued(kind: RecordKind) = require(kind != RecordKind.DOCUMENT) { "a document is changed online, never queued" }
 
     /** Stores a file's bytes and says what to call it. */
     private suspend fun SyncTransaction.keep(file: FilePart): FileRef {
