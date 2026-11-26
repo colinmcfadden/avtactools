@@ -33,6 +33,13 @@ describe("the legs into and out of an LZ/PZ", () => {
     expect(lzLegs(LZ, [movedOff]).landing).toBeNull();
   });
 
+  it("counts a short last leg, both of whose ends are within reach, as the arrival alone", () => {
+    const short = { ...IN, points: [point("cp", 34.598, -84.4, ".CP"), point("tgt", 34.6, -84.4, ".TGT")] };
+    const legs = lzLegs(LZ, [short]);
+    expect(legs.landing.from).toBe("CP");
+    expect(legs.takeoff).toBeNull();
+  });
+
   it("says a leg with no route name as the route", () => {
     expect(legWords({ routeName: "", from: "RP", to: "TGT" })).toBe("From the route, RP to TGT");
     expect(legWords(null)).toBeNull();

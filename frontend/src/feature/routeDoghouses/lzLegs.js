@@ -7,8 +7,10 @@
  * route reaches it (a route hidden, moved off, or closed).
  *
  * A leg reaches the target where its named point there is within 500 m of it, the brief's rule for a route that reaches a stop
- * (compile.js). Of several, the leg whose end is nearest the target wins (the first of equal ones, routes and legs in order).
- * Only routes shown count, as only they are drawn: a route hidden on the map stands in for nothing.
+ * (compile.js): it arrives when that is the end it flies to, and leaves when it is the end it flies from, whichever end is the
+ * nearer (the one it flies to, of two as near), so a short last leg from a checkpoint 300 m out is an arrival and nothing more.
+ * Of several, the leg whose end is nearest the target wins (the first of equal ones, routes and legs in order). Only routes
+ * shown count, as only they are drawn: a route hidden on the map stands in for nothing.
  */
 import { computeRoutePlan, defaultRoutePlan, distanceNm, planPoints } from "../msnxImport/routeCalc";
 import { doghouseHeadingText, flightDoghouses } from "../doghouses/doghouseFields";
@@ -62,11 +64,12 @@ export const lzLegs = (target, routes = []) => {
       const to = amps[i + 1];
       if (!from || !to) return;
       const arriving = metresTo(to);
-      if (arriving <= LZ_LEG_REACH_M && (legs.landing === null || arriving < legs.landing.metres)) {
-        legs.landing = legOf(route, leg, from, to, arriving);
-      }
       const leaving = metresTo(from);
-      if (leaving <= LZ_LEG_REACH_M && (legs.takeoff === null || leaving < legs.takeoff.metres)) {
+      if (arriving <= leaving) {
+        if (arriving <= LZ_LEG_REACH_M && (legs.landing === null || arriving < legs.landing.metres)) {
+          legs.landing = legOf(route, leg, from, to, arriving);
+        }
+      } else if (leaving <= LZ_LEG_REACH_M && (legs.takeoff === null || leaving < legs.takeoff.metres)) {
         legs.takeoff = legOf(route, leg, from, to, leaving);
       }
     });

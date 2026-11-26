@@ -91,6 +91,12 @@ const THROUGH = route("through", [
   point("TGT", 34.6001, -84.4001, { ptType: "target", name: ".TGT" }),
   point("SP", 34.62, -84.36, { ptType: "ip", name: ".SP" }),
 ]);
+// A last leg from a checkpoint 300 m out: an arrival, and no departure, though both its ends are within reach.
+const SHORT_FINAL = route("short-final", [
+  point("SP", 34.56, -84.45, { ptType: "ip", name: ".SP" }),
+  point("CP", 34.6027, -84.4, { name: ".CP3" }),
+  point("TGT", 34.6, -84.4, { ptType: "target", name: ".TGT" }),
+]);
 const NEARER = route("nearer", [point("RP", 34.57, -84.42, { name: ".RP2" }), point("TGT", 34.60001, -84.40001, { name: ".LZ" })]);
 
 const LZ_CASES = {
@@ -99,6 +105,7 @@ const LZ_CASES = {
   outOnly: { target: LZ, routes: [OUTBOUND] },
   throughTheLz: { target: LZ, routes: [THROUGH] },
   theNearerArrivalWins: { target: LZ, routes: [THROUGH, NEARER] },
+  aShortLastLegIsOnlyAnArrival: { target: LZ, routes: [SHORT_FINAL] },
   aHiddenRouteStandsInForNothing: { target: LZ, routes: [{ ...INBOUND, visible: false }, OUTBOUND] },
   tooFarFromTheTarget: { target: { lat: 34.606, lon: -84.4 }, routes: [INBOUND, OUTBOUND] },
   justInReach: { target: { lat: 34.6044, lon: -84.4 }, routes: [INBOUND] },
@@ -132,14 +139,14 @@ const fixture = () => ({
     "legs: a doghouse on each leg between two named points of each route shown (routeDoghouses): key, its place (lat, lon), rotation (the leg's true course, "
     + "0 with none), offset ({x, y} in CSS px in the box's own frame, x across to the right of the way flown, y back along it), lengthPx0 (the leg on the screen at "
     + "zoom 0, doubled each zoom) and box (what it says). offsets: sideOffset(course, stretch). scales: scaleAt for a leg lengthPx0 at a Leaflet zoom (null: not a "
-    + "number) with its floor. texts: legTime(seconds), courseText(degrees), roofName(name). lz: the legs of the routes shown that arrive at an LZ/PZ's target "
+    + "number) with its floor. texts: legTime(time: seconds, null for none), courseText(degrees), roofName(name). lz: the legs of the routes shown that arrive at an LZ/PZ's target "
     + "(landing) and leave it (takeoff), within 500 m of it, the nearer end winning (lzLegs); the flight data the slope is judged on with their headings "
     + "(judged); the ids of the LZ/PZ's doghouses still drawn beside them (shownDoghouses); and what the slope tile says of the landing leg (words).",
   legs: Object.entries(LEG_ROUTES).map(([name, routes]) => ({ name, routes, doghouses: routeDoghouses(routes).map(shownLegDoghouse) })),
   offsets: OFFSETS.map(([course, stretch]) => ({ course, stretch, offset: sideOffset(course, stretch) })),
   scales: SCALES.map((c) => ({ ...c, scale: scaleAt({ lengthPx0: c.lengthPx0 }, c.zoom ?? Number.NaN, c.min) })),
   texts: {
-    legTime: [0, 59.4, 59.5, 425, 3600.2, null].map((seconds) => ({ seconds, ...legTime(seconds ?? undefined) })),
+    legTime: [0, 59.4, 59.5, 425, 3600.2, null].map((time) => ({ time, ...legTime(time ?? undefined) })),
     courseText: [0, 4.5, 45.49, 359.4, 359.6, null].map((degrees) => ({ degrees, text: courseText(degrees ?? undefined) })),
     roofName: [".CP3", "CP3", " .TGT ", "..X", "", null].map((name) => ({ name, text: roofName(name) })),
   },
