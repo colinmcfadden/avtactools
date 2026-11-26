@@ -16,7 +16,9 @@
  */
 
 // A brief (docs/MISSION_BRIEF.md §3) holds an object, as an LZ and a route set do; only a point set holds a list.
-export const ITEM_KINDS = ["lz", "route", "pointset", "brief", "threatset"];
+// A `document` (docs/DOCUMENTS.md §7) is made and replaced only by the server, which checked its files; a client renames and
+// removes one. The rules here are the same for every kind: what a client may send is the server's to refuse (pack_routes.apply_ops).
+export const ITEM_KINDS = ["lz", "route", "pointset", "brief", "threatset", "document"];
 // What a client may send. `item.replace` is the server's own (update from original).
 export const CLIENT_OP_TYPES = ["item.create", "item.delete", "item.rename", "set", "patch", "upsert", "insert", "remove"];
 export const SERVER_OP_TYPES = ["item.replace"];

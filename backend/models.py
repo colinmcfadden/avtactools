@@ -393,6 +393,28 @@ class SavedThreatSet(SyncMixin, db.Model):
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
 
+class SavedDocument(SyncMixin, db.Model):
+    """A document in a person's Library: a PDF and its page text, kept by their hashes in the document store (docs/DOCUMENTS.md).
+
+    ``doc_data`` is the JSON a pack item of kind ``document`` holds too, ``{version, pdf, text, source, added_at}``; the bytes are
+    never in the database. The hashes, pages and size are columns as well, so the Library lists without reading JSON and
+    ``documents.files`` finds what names a file. A tombstone blanks them all.
+    """
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False, index=True)
+    name = db.Column(db.String(100), nullable=False)
+
+    doc_data = db.Column(db.JSON, nullable=False)
+    pdf_sha256 = db.Column(db.String(64), nullable=True, index=True)
+    text_sha256 = db.Column(db.String(64), nullable=True, index=True)
+    page_count = db.Column(db.Integer, nullable=False, default=0)
+    pdf_bytes = db.Column(db.Integer, nullable=False, default=0)
+    source_type = db.Column(db.String(10), nullable=True)
+
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
 class SavedLZ(SyncMixin, db.Model):
     id = db.Column(db.Integer, primary_key=True)
     user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)

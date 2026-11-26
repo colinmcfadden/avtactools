@@ -50,7 +50,7 @@ def public_mapbox_token(environ, default=None):
     return token
 
 
-def build_config(environ, *, server_version, lidar_builds, mapbox_default=None, charts=None):
+def build_config(environ, *, server_version, lidar_builds, document_conversion=False, mapbox_default=None, charts=None):
     """The payload for ``GET /api/config``.
 
     ``environ`` is a mapping (``os.environ``). ``lidar_builds`` is whether the
@@ -78,6 +78,9 @@ def build_config(environ, *, server_version, lidar_builds, mapbox_default=None, 
             # P3) does not exist yet. Not mission packs, the shared containers in pack_routes.py:
             # the field kept its name because the Android app already reads it.
             "packs": False,
+            # Whether an Office file can be turned into a PDF here (a Gotenberg of 8.34.0 or later, docs/DOCUMENTS.md §4.4): without
+            # it a PDF is still taken, and a client offers PDF alone.
+            "documentConversion": bool(document_conversion),
         },
         "mapbox": {
             "publicToken": public_mapbox_token(environ, mapbox_default),

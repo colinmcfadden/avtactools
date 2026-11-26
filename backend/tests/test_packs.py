@@ -2115,7 +2115,7 @@ class SeenTests(PackCase):
                           self.op('item.create', 'lz-2', kind='lz', name='LZ CROW', data=LZ_DATA),
                           self.op('item.delete', 'lz-2')))
         [summary] = self.ok(self.call(self.colin, 'get', '/api/packs'))['packs']
-        self.assertEqual(summary['item_counts'], {'lz': 1, 'route': 1, 'pointset': 1, 'threatset': 0})
+        self.assertEqual(summary['item_counts'], {'lz': 1, 'route': 1, 'pointset': 1, 'threatset': 0, 'document': 0})
         self.assertEqual(summary['item_count'], 3)
 
 

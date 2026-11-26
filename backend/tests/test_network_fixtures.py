@@ -52,6 +52,7 @@ from routes.aircraft_routes import aircraft_bp  # noqa: E402
 from routes.brief_routes import brief_bp  # noqa: E402
 from routes.chart_routes import chart_bp  # noqa: E402
 from routes.config_routes import config_bp  # noqa: E402
+from routes.document_routes import documents_bp  # noqa: E402
 from routes.lidar_routes import lidar_bp  # noqa: E402
 from routes.lz_routes import lz_bp  # noqa: E402
 from routes.notification_routes import notification_bp  # noqa: E402
@@ -143,7 +144,7 @@ def documented(method, path, status):
 
 class NetworkFixtureTests(NativeAuthCase):
     extra_blueprints = (config_bp, lz_bp, saved_routes_bp, point_sets_bp, aircraft_bp, sync_bp, terrain_bp, threat_bp, weather_bp,
-                        pack_bp, team_bp, brief_bp, threat_set_bp, lidar_bp, notification_bp, chart_bp)
+                        pack_bp, team_bp, brief_bp, threat_set_bp, lidar_bp, notification_bp, chart_bp, documents_bp)
 
     def setUp(self):
         super().setUp()
@@ -166,7 +167,7 @@ class NetworkFixtureTests(NativeAuthCase):
         if kept:
             entry["headers"] = kept
         entry["body"] = normalise(response.get_json(silent=True))
-        if response.mimetype == "application/octet-stream" and response.get_data():
+        if response.mimetype in ("application/octet-stream", "application/pdf") and response.get_data():
             data = response.get_data()
             entry["bytes"] = len(data)
             entry["sha256"] = hashlib.sha256(data).hexdigest()
@@ -1156,6 +1157,80 @@ class NetworkFixtureTests(NativeAuthCase):
         self.rec("sync: changes, with a set of threats", ask("get", "/api/sync/changes?since=0"))
         self.rec("threatset: delete", ask("delete", here, if_match='"2"'))
 
+    def documents(self, who):
+        """Documents (docs/DOCUMENTS.md): in the Library, synced like an LZ, and in a pack. LibreOffice is stood in for (Gotenberg's
+        answer) and the store is a folder of its own; the routes, pypdf's reading of the PDFs and the responses are the server's. For an
+        account the briefs and threats have finished with, so nothing above moves."""
+        from document_samples import FakeResponse, encrypted, ooxml, pdf_with
+        from brief import gotenberg
+
+        doc_uuid = "5d3c9b1a-8e47-4f26-b0a5-2c6e9d1f7a38"
+        pack_uuid = "a4f7e2c9-1b3d-4e85-9c60-8f2a5d7b0e13"
+        KEPT_UUIDS.update({doc_uuid, pack_uuid})
+        opord = pdf_with("OPORD 24-03 (OPERATION DARK KNIGHT)", "Annex C: LZ HAWK at 16S GC 31204 58811")
+        change = pdf_with("OPORD 24-03 CHANGE 1")
+        files_headers = ("Content-Type", "Content-Disposition", "Cache-Control", "X-Content-Type-Options", "Content-Security-Policy")
+        with self.app.app_context():
+            user = db.session.get(User, who["id"])
+            user.features = {**(user.features or {}), "documents": True}
+            db.session.commit()
+
+        def ask(method, path, if_match=None, **kwargs):
+            headers = {**who["head"], "If-Match": if_match} if if_match else who["head"]
+            return getattr(self.client, method)(path, headers=headers, **kwargs)
+
+        def upload(path, data, filename, if_match=None, **fields):
+            return ask("post", path, if_match=if_match, content_type="multipart/form-data",
+                       data={"file": (io.BytesIO(data), filename), **fields})
+
+        store = tempfile.mkdtemp(prefix="ezpz-documents-fixture-")
+        environ = {"DOCUMENTS_DIR": store, "GOTENBERG_URL": "http://gotenberg.test"}
+        try:
+            # Office files are converted only by a Gotenberg new enough to keep a PDF's text (docs/DOCUMENTS.md §4.1): it says which it is.
+            gotenberg._version.update(base=None, value=None, until=0.0)
+            with patch.dict(os.environ, environ), \
+                    patch("brief.gotenberg.requests.get", return_value=FakeResponse(200, text="8.34.0")), \
+                    patch("brief.gotenberg.requests.post", return_value=FakeResponse(200, pdf_with("SYNC MATRIX"))):
+                created = self.rec("document: upload", upload("/api/documents", opord, "OPORD 24-03.pdf", client_uuid=doc_uuid),
+                                   "ETag").get_json()
+                self.rec("document: upload again with the same identity",
+                         upload("/api/documents", opord, "OPORD 24-03.pdf", client_uuid=doc_uuid), "ETag")
+                self.rec("document: an Excel file", upload("/api/documents", ooxml("xlsx"), "SYNC MATRIX.xlsx"), "ETag")
+                self.rec("document: a scan", upload("/api/documents", pdf_with(""), "scan.pdf"), "ETag")
+                self.rec("document: a file it does not take", upload("/api/documents", b"just some text", "notes.pdf"))
+                self.rec("document: a PDF with a password", upload("/api/documents", encrypted(opord, "secret"), "locked.pdf"))
+                self.rec("document: no file", ask("post", "/api/documents", content_type="multipart/form-data", data={"name": "X"}))
+                here = f"/api/documents/{created['id']}"
+                self.rec("document: list", ask("get", "/api/documents"))
+                self.rec("document: get", ask("get", here), "ETag")
+                self.rec("document: its PDF", ask("get", f"{here}/pdf"), *files_headers)
+                self.rec("document: its text", ask("get", f"{here}/text"), *files_headers)
+                scans = [d for d in ask("get", "/api/documents").get_json() if not d["has_text"]]
+                self.rec("document: a scan's text", ask("get", f"/api/documents/{scans[0]['id']}/text"))
+                self.rec("document: rename", ask("put", here, if_match='"1"', json={"name": "OPORD 24-03 (DK)"}), "ETag")
+                self.rec("document: rename on a stale revision", ask("put", here, if_match='"1"', json={"name": "mine"}), "ETag")
+                self.rec("document: a new version", upload(f"{here}/version", change, "OPORD 24-03 CHANGE 1.pdf", if_match='"2"'), "ETag")
+                self.rec("document: not found", ask("get", "/api/documents/9999"))
+                self.rec("sync: changes, with a document", ask("get", "/api/sync/changes?since=0"))
+
+                packs = f"/api/packs/{pack_uuid}"
+                ask("post", "/api/packs", json={"name": "OP DK PAPERS", "uuid": pack_uuid})
+                self.rec("pack document: upload", upload(f"{packs}/documents", opord, "OPORD 24-03.pdf", item="doc-1"))
+                self.rec("pack document: upload again with the same item", upload(f"{packs}/documents", opord, "OPORD 24-03.pdf", item="doc-1"))
+                self.rec("pack document: an item.create from a client", ask("post", f"{packs}/ops", json={"ops": [
+                    {"type": "item.create", "item": "doc-2", "kind": "document", "name": "MINE", "data": created, "client_op_id": "op-1"}]}))
+                self.rec("pack document: its PDF", ask("get", f"{packs}/items/doc-1/pdf"), *files_headers)
+                self.rec("pack document: its text", ask("get", f"{packs}/items/doc-1/text"), *files_headers)
+                self.rec("pack document: a new version", upload(f"{packs}/items/doc-1/version", change, "change1.pdf"))
+                self.rec("pack document: copied in from the Library",
+                         ask("post", f"{packs}/items", json={"item": "doc-3", "source": {"kind": "document", "id": created["id"]}}))
+                self.rec("pack document: saved to the Library", ask("post", f"{packs}/items/doc-1/library", json={}))
+                self.rec("pack document: a pack with documents", ask("get", packs))
+                self.rec("document: delete", ask("delete", here, if_match='"3"'))
+        finally:
+            gotenberg._version.update(base=None, value=None, until=0.0)
+            shutil.rmtree(store, ignore_errors=True)
+
     def test_the_recorded_responses_are_what_the_server_says(self):
         self.scenario()
         self.accounts()
@@ -1164,7 +1239,9 @@ class NetworkFixtureTests(NativeAuthCase):
         self.planning()
         self.weather_summary()
         self.packs()
-        self.threat_sets(self.briefs())
+        ray = self.briefs()
+        self.threat_sets(ray)
+        self.documents(ray)
         self.viewer3d()                                     # last: its account would move every user id the packs' and the briefs' responses hold
         document = {
             "description": "Real responses from the Flask API (tests/test_network_fixtures.py), with tokens, timestamps, "

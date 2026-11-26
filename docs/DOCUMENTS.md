@@ -1,6 +1,6 @@
 # Documents — plan
 
-Status: **decided** (2026-11-22; the owner's answers are §13). Nothing is built yet: D1, the server, is next. The owner asked for a place to keep the OPORD and the other papers of a mission
+Status: **decided** (2026-11-22; the owner's answers are §13). D1, the server, is built; D2, the web, is next. The owner asked for a place to keep the OPORD and the other papers of a mission
 beside its plan, to look through quickly while planning: a document is uploaded to a person's **Library** or into a **Mission Pack**,
 where it sits in the Pack panel's **Items** beside the LZ/PZs, route sets and point sets. Word, Excel, PowerPoint and PDF are taken, and
 every one is **shown as a PDF**, on the web, Android and later iOS. It is **not an editor**: a document is read, never changed, with a
@@ -86,7 +86,7 @@ work from. Both are a later step if the owner wants them; the store keeps files 
 
 Gotenberg already prints the brief and the LZ survey pages (`backend/brief/gotenberg.py`, `GOTENBERG_URL`, AGENTS.md §9), and the same
 image carries LibreOffice: `POST /forms/libreoffice/convert`, one file in, one PDF out. No new service. `gotenberg.convert_office(data,
-name, kind)` beside `print_pdf`, sending:
+kind)` beside `print_pdf`, sending:
 
 - `singlePageSheets=true` for a spreadsheet, so a sync matrix is one page per sheet to zoom into, not forty pages cut at the print area;
 - `exportNotes=false`, `exportHiddenSlides=false` (the defaults, sent anyway): speaker notes, comments and hidden slides are not in the PDF;
@@ -102,6 +102,12 @@ with these flags added to the brief's: `--libreoffice-deny-private-ips=true --li
 --libreoffice-restart-after=10`. LibreOffice converts one file at a time (a lock inside Gotenberg); a full queue answers 503, refused here as
 *The converter is busy: try again in a minute.* Running Gotenberg on a Docker network with no route out at all is stronger still (the
 owner's, at deploy).
+
+**The API asks Gotenberg its version, and converts nothing below 8.34.0** (`brief/gotenberg.converts_office`, from its own `GET /version`,
+kept ten minutes, a minute after no answer): `GOTENBERG_URL` alone is not enough, since the brief prints through older ones, and a
+deployment that sets it for the brief while Gotenberg is still 8.21.1 would otherwise hand hostile Office files to a LibreOffice that
+fetches what they link to. Below it (or with no answer, or no version in one) an Office file is refused as if there were no Gotenberg
+(§4.4). What it makes is read only as far as a PDF may be (50 MB), never whole into memory first.
 
 **What it looks like.** LibreOffice is not Word: a document laid out with fonts the image lacks reflows, and an elaborate PowerPoint can
 shift. Whether the image's fonts cover Army templates (Calibri and Cambria need their metric-compatible Carlito and Caladea, Arial and Times
@@ -129,9 +135,10 @@ Keeping it would have added `source.sha256`, a *Download original* on each clien
 
 ### 4.4 Where there is no Gotenberg
 
-Without `GOTENBERG_URL` (a bare local run, Fly) **a PDF is still taken**; an Office file is refused with 503 `conversion_unavailable`: *This
-server cannot turn Office files into PDFs. Save it as a PDF and upload that.* `/api/config` says so ahead of time
-(`services.documentConversion`, a new optional boolean), so a client offers *PDF* alone in its picker there and says why.
+Without `GOTENBERG_URL` (a bare local run, Fly), or with a Gotenberg older than 8.34.0 (§4.1), **a PDF is still taken**; an Office file is
+refused with 503 `conversion_unavailable`: *This server cannot turn Office files into PDFs. Save it as a PDF and upload that.*
+`/api/config` says so ahead of time (`services.documentConversion`, a new optional boolean, from the same version check), so a client offers
+*PDF* alone in its picker there and says why.
 
 ---
 
@@ -159,9 +166,17 @@ The database never holds the bytes (the `.msnx` is a `LargeBinary` column; docum
 
 A file is deleted once no **live** Library record or pack item names it: after a delete, a new version or an account's deletion
 commits, each hash the old content named is looked for in `saved_document`'s two columns and in the live `document` items of every pack
-(`kind = 'document' AND deleted_at IS NULL`: a small set), and deleted if nothing names it. A sweep at startup and every day does the same
+(`kind = 'document' AND deleted_at IS NULL`: a small set), and deleted if nothing names it. A sweep ten minutes after startup and then every day (where `DOCUMENTS_DIR` is set: `documents.files.start_sweeping`) does the same
 for every file older than an hour (an upload writes its files just before its row commits), so a crash between the two leaves nothing for
 long. A tombstone blanks its content at once, as every saved record's does (`doc_data` to `{}`, the hash columns null, the name empty).
+
+**A copy holds the files lock from reading what it copies to committing** (`files.held()`): a Library document copied into a pack, a pack's
+copy updated from its original, a pack's document saved to a Library, a pack duplicated. The delete it races releases its files only after
+its own commit and under the same lock, so it either finds the copy naming them or the copy finds the original gone; without the lock a
+copy could commit naming a file already deleted (the D1 review proved it). A copy also checks the files are on disk. A new version, which
+converts for minutes before it writes, reads its record or item again once it holds the lock and decides again by it: a document deleted
+meanwhile stays deleted, one renamed meanwhile is a 409 for the revision sent, and two versions at once are two revisions, the later on
+top. A rename and a delete of a Library document lock its row (`FOR UPDATE` in Postgres) as they read it.
 
 ### 5.4 Limits
 
@@ -169,11 +184,15 @@ long. A tombstone blanks its content at once, as every saved record's does (`doc
 |---|---|---|
 | A file uploaded | 25 MB | An OPORD with annexes as a PDF is a few MB; a heavy PowerPoint 10–20 MB. Under Cloudflare's 100 MB body limit and the 180 s request |
 | A PDF kept | 50 MB, 500 pages | A conversion can grow a file; reading the text of 500 pages with pypdf can take tens of seconds |
-| Its text | 2 MB (cut, with a note) | Find in the document is a few hundred KB for a real OPORD |
+| Its text | 2,000,000 characters, and 60 s of reading (cut, with a note: `truncated`) | Find in the document is a few hundred KB for a real OPORD |
 | A person's Library | 200 documents, 1 GB | Counted from `saved_document`; past it *Your Library is full: delete a document first* (413 `library_full`) |
 | A pack | 100 documents, 1 GB | Counted from its live items (413 `pack_full`) |
 
-All five are constants in one module, the owner's to change.
+All five are constants in one module, the owner's to change. **Two uploads are read at once** (`core.READING_AT_ONCE`; a PDF's streams
+inflate as pypdf reads them, a few hundred MB for a hostile one, in the worker that also holds SAM); more wait their turn, and after a
+minute are told *The server is busy reading other documents* (503 `converter_busy`). A zip's entries are counted from its end record before
+anything else reads it (at most 20,000 entries and a 2 MB directory), since Python's reader makes an object for every entry first.
+The Library's count and size are checked again under the files lock, so uploads side by side cannot pass the limit together.
 
 ### 5.5 A new version
 
@@ -198,7 +217,7 @@ takes the new version, with nothing new to build: it is the pack machinery alrea
 | `PUT /api/documents/<id>` | JSON `{name}`: a rename, with `If-Match` and `Idempotency-Key` as every saved record |
 | `POST /api/documents/<id>/version` | Multipart as the create: a new version (§5.5), with `If-Match` |
 | `DELETE /api/documents/<id>` | A tombstone; the files go once nothing names them (§5.3) |
-| `GET /api/documents/<id>/pdf` | The PDF, `Content-Type: application/pdf`, `Content-Disposition: inline`, `Cache-Control: private, max-age=604800, immutable` (a file never changes under its hash; a new version is a new hash, so a client asks by record and gets the current one), range requests honoured (pdf.js reads a large file a part at a time), `X-Content-Type-Options: nosniff` and `Content-Security-Policy: sandbox`, so the PDF opened at its own address in a browser runs nothing |
+| `GET /api/documents/<id>/pdf` | The PDF, `Content-Type: application/pdf`, `Content-Disposition: inline` (`?download=1`: an attachment), `Cache-Control: private, no-cache` with an `ETag` (a new version is a new file at the same address, so a kept copy is asked about with `If-None-Match` and a 304 costs nothing), range requests honoured (pdf.js reads a large file a part at a time), `X-Content-Type-Options: nosniff` and `Content-Security-Policy: sandbox`, so the PDF opened at its own address in a browser runs nothing |
 | `GET /api/documents/<id>/text` | The page text (§8.2), with the same headers but `application/json` |
 | `GET /api/sync/changes` | Gains `type: document`, `data` the JSON of §2 |
 
@@ -261,7 +280,7 @@ attachment shown.
 
 | | Viewer | Notes |
 |---|---|---|
-| Web | **pdf.js** (`pdfjs-dist`, Mozilla, Apache-2.0), one exact version (the owner's choice, 2026-11-22) | Loaded only when a document opens (a dynamic import, as Cesium stays out of the main bundle), its worker served from the site's own origin, `isEvalSupported: false` (CVE-2024-4367 ran script through a font where it was on) and no scripting. Pages drawn on canvases as they scroll into sight, a few either side kept |
+| Web | **pdf.js** (`pdfjs-dist`, Mozilla, Apache-2.0), one exact version (the owner's choice, 2026-11-22) | Loaded only when a document opens (a dynamic import, as Cesium stays out of the main bundle), its worker served from the site's own origin, XFA off and no scripting, annotation layer or links. pdf.js 6 has no eval path at all (CVE-2024-4367 ran script through a font's, behind the `isEvalSupported` option that version removed). Pages drawn on canvases as they scroll into sight, a few either side kept |
 | Android | The platform's **`PdfRenderer`**, as the brief's review draws its PDF (`RendererBriefPdfs`) | No dependency. Pages drawn as bitmaps as they scroll into sight; pinch and double tap to zoom |
 | iOS | **PDFKit**'s `PDFView` (`docs/IOS_PLAN.md`) | A full viewer; its own search is not used, so results match the others (§8.2) |
 
@@ -322,8 +341,10 @@ pages counted before their text, so a hostile PDF costs at most the limits of §
 
 ### 9.2 Android
 
-- **core-network**: the routes' DTOs, held to the recordings by `DtoFixtureTest`; the upload a multipart heavy call (`PriorityGate`,
-  190 s); the files read bounded (`Call.maxBytes`: 50 MB for a PDF, 2 MB for text).
+- **core-network**: the routes' DTOs, held to the recordings by `DtoFixtureTest`; the upload a multipart call with the heavy read
+  timeout (190 s, since D1); holding background calls back while it converts waits for D3, because `PriorityGate` matches by path
+  alone and would hold back listing the documents too; the files read bounded (`Call.maxBytes`: 50 MB for a PDF, 9 MB for its text,
+  2,000,000 characters of up to four bytes each).
 - **core-sync**: `RecordKind.DOCUMENT`, pulled like any record, its document the JSON of §2; **never in the outbox** (§6): the Library's
   rename and delete call the API directly and then ask for a sync. No database version is needed for the kind (Room keeps a kind by its
   name); a device past the feed's `document` entries pulls them because none exist before the server has the kind.
@@ -377,7 +398,7 @@ updated in the same commit, a PR to `develop`.
 | Step | What | Depends on |
 |---|---|---|
 | **D0** | This plan, and the owner's answers (§13) | — |
-| **D1 Server** | `saved_document`; `documents/` (the store's root, `convert` through Gotenberg, `pdf` checks and text with pypdf), `/api/documents` and its files, the feed's `document`, the pack routes and the `document` kind (`pack_ops`, `apply_ops`'s refusal, copy in and out, update from original, item files), deletion of files (§5.3) and the sweep, account deletion, `/api/config`'s `documentConversion`, the entitlement; on the web only `packOps.js`'s kind and the fixtures it writes (`ops-document.json`), since the server is held to them; OpenAPI 3.0.0 with recorded responses; tests (each limit, each refusal, a hostile PDF, idempotent upload, files deleted only when nothing names them) | D0 |
+| **D1 Server** | `saved_document`; `documents/` (the store's root, `convert` through Gotenberg, `pdf` checks and text with pypdf), `/api/documents` and its files, the feed's `document`, the pack routes and the `document` kind (`pack_ops`, `apply_ops`'s refusal, copy in and out, update from original, item files), deletion of files (§5.3) and the sweep, account deletion, `/api/config`'s `documentConversion`, the entitlement; on the web only `packOps.js`'s kind and the fixtures it writes (`ops-document.json`), since the server is held to them, and `packApi`'s calls for the pack's document routes (its test wants one for every pack route in the spec); OpenAPI 3.0.0 with recorded responses, and on Android only core-network's types for them (`DtoFixtureTest` decodes every recording strictly); tests (each limit, each refusal, a hostile PDF, idempotent upload, files deleted only when nothing names them) | D0 |
 | **D2 Web** | The Library's tab, the upload review, Import and a drop, the OOXML sniff, the Pack panel's group, the viewer (pdf.js), find in the document (`documentSearch.js`, `documents/search.json`), the sentences (`describe.json`), `apiSupport.json`; USER_GUIDE | D1 |
 | **D3 Android** | core-network, `RecordKind.DOCUMENT`, `DocumentFiles`, `feature-documents`, the Library tab, the Pack panel's group, Import and the share target, `FileKinds`, the ports held to the fixtures, `ezpz.apiMajors`; AGENTS.md §17, `docs/HANDOFF.md` | D1 (D2 for the fixtures it writes) |
 | **D4 iOS** | The section of §9.4 in `docs/IOS_PLAN.md` | the iOS plan on `develop` |

@@ -3,6 +3,7 @@ import os
 from flask import Blueprint, jsonify
 
 import lidar_builder
+from brief import gotenberg
 from app_config import build_config
 from charts import serve as chart_serve, state as chart_state
 
@@ -33,6 +34,7 @@ def app_config():
         os.environ,
         server_version=__version__,
         lidar_builds=lidar_builder.configured(),
+        document_conversion=gotenberg.converts_office(),
         mapbox_default=_default_mapbox_token(),
         charts=chart_serve.config(chart_state.root()),
     )

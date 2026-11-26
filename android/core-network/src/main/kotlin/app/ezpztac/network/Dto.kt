@@ -105,7 +105,11 @@ public data class AppConfig(
 ) {
     @Serializable public data class MinAppVersion(val android: String? = null, val ios: String? = null)
     @Serializable public data class Maintenance(val active: Boolean, val message: String? = null)
-    @Serializable public data class Services(val lidarBuilds: Boolean, val packs: Boolean)
+    /**
+     * [documentConversion]: Word, Excel and PowerPoint files can be uploaded as documents (the server has Gotenberg); without it
+     * only a PDF is taken. False from a server from before documents (docs/DOCUMENTS.md §4.4).
+     */
+    @Serializable public data class Services(val lidarBuilds: Boolean, val packs: Boolean, val documentConversion: Boolean = false)
     @Serializable public data class MapboxConfig(val publicToken: String? = null)
     @Serializable public data class Charts(val vfr: Vfr) {
         /**
@@ -278,6 +282,60 @@ public data class ThreatSetFull(
     /** The set's document, `{version, threats}`, as the web saves it. Opaque here. */
     val data: JsonObject,
 )
+
+/**
+ * A document in the Library (`/api/documents`, docs/DOCUMENTS.md §6): a PDF the server made or kept, and its page text. [bytes] is the
+ * PDF's size, [sourceType] what was uploaded (`pdf`, `docx`, `xlsx`, `pptx`, `doc`, `xls`, `ppt`), [hasText] false for a scan.
+ */
+@Serializable
+public data class DocumentSummary(
+    val id: Int,
+    val name: String,
+    val pages: Int,
+    val bytes: Long,
+    @SerialName("source_type") val sourceType: String,
+    @SerialName("has_text") val hasText: Boolean,
+    @SerialName("created_at") val createdAt: String,
+    @SerialName("updated_at") val updatedAt: String,
+    @SerialName("client_uuid") val clientUuid: String,
+    val revision: Int,
+)
+
+@Serializable
+public data class DocumentFull(
+    val id: Int,
+    val name: String,
+    val pages: Int,
+    val bytes: Long,
+    @SerialName("source_type") val sourceType: String,
+    @SerialName("has_text") val hasText: Boolean,
+    @SerialName("created_at") val createdAt: String,
+    @SerialName("updated_at") val updatedAt: String,
+    @SerialName("client_uuid") val clientUuid: String,
+    val revision: Int,
+    val data: DocumentData,
+)
+
+/**
+ * What a Library record and a pack's document item hold (docs/DOCUMENTS.md §2), written by the server only: the files by their
+ * hashes, never their bytes. A client fetches the files from the record's or the item's own routes; [text] is null for a scan.
+ */
+@Serializable
+public data class DocumentData(
+    val version: Int,
+    val pdf: Pdf,
+    val text: Text? = null,
+    val source: Source,
+    @SerialName("added_at") val addedAt: String,
+) {
+    @Serializable public data class Pdf(val sha256: String, val bytes: Long, val pages: Int)
+    @Serializable public data class Text(val sha256: String, val chars: Int)
+    @Serializable public data class Source(val type: String, val name: String? = null, val bytes: Long)
+}
+
+/** Each page's text as the server read it, for search; [truncated] when reading stopped short and later pages have none. */
+@Serializable
+public data class DocumentText(val version: Int, val pages: List<String>, val truncated: Boolean)
 
 /** An airframe profile: the admin's master list, or one of the caller's own. */
 @Serializable
