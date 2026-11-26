@@ -7,6 +7,7 @@ import MoreMenu from "../../ui/MoreMenu";
 import { clockTime, shortDate, timeAgo } from "../../ui/time";
 import * as packApi from "../packApi";
 import { historyLines } from "../packHistory";
+import { documentDetail } from "../../documents/documentWords";
 import { changedSince } from "../usePackSeen";
 import "./packs.css";
 
@@ -17,12 +18,13 @@ import "./packs.css";
  * says so, and offers Update when the original has moved on.
  */
 
-const KIND_ICON = { lz: "hexagon", route: "route", pointset: "mapPin", threatset: "diamond" };
+const KIND_ICON = { lz: "hexagon", route: "route", pointset: "mapPin", threatset: "diamond", document: "file" };
 const GROUPS = [
   { kind: "lz", label: "LZ/PZ" },
   { kind: "route", label: "Routes" },
   { kind: "pointset", label: "Point sets" },
   { kind: "threatset", label: "Threats" },
+  { kind: "document", label: "Documents" },
 ];
 const ROLE_WORDS = { owner: "the owner", editor: "an editor", viewer: "a viewer" };
 
@@ -53,6 +55,7 @@ export const itemDetail = (item) => {
     const n = Array.isArray(item.data?.threats) ? item.data.threats.length : 0;
     return `${n.toLocaleString("en-US")} ${n === 1 ? "threat" : "threats"}`;
   }
+  if (item.kind === "document") return documentDetail(item.data) || null;
   return null;
 };
 
@@ -60,9 +63,11 @@ const ItemRow = ({ item, isOpen, isNew, editing, readOnly, canEdit, onOpen, acti
   const who = item.updated_by ?? item.created_by;
   const detail = itemDetail(item);
   const original = item.source?.original;
+  // A document is read, never edited (docs/DOCUMENTS.md §7): Open reads it, and an editor may give it a new version.
+  const document = item.kind === "document";
   return (
     <div className={`packs-item${isOpen ? " packs-item--open" : ""}`}>
-      <button type="button" className="packs-item__hit" onClick={() => onOpen(item)} aria-label={`${isOpen ? "Go to" : "Open"} ${item.name}`}>
+      <button type="button" className="packs-item__hit" onClick={() => onOpen(item)} aria-label={`${isOpen ? "Go to" : document ? "Read" : "Open"} ${item.name}`}>
         <span className="packs-item__icon" aria-hidden="true"><Icon name={KIND_ICON[item.kind] ?? "file"} size={16} /></span>
         <span className="packs-item__main">
           <span className="packs-item__name">
@@ -93,6 +98,8 @@ const ItemRow = ({ item, isOpen, isNew, editing, readOnly, canEdit, onOpen, acti
         items={[
           { icon: isOpen ? "x" : "eye", title: isOpen ? "Close here" : "Open", text: isOpen ? "It stays in the pack" : undefined, onSelect: () => (isOpen ? actions.close(item) : onOpen(item)), hidden: item.kind === "lz" && isOpen },
           { icon: "pencil", title: "Rename", onSelect: () => actions.rename(item), hidden: readOnly || !canEdit },
+          { icon: "upload", title: "New version…", onSelect: () => actions.newVersion?.(item), hidden: !document || readOnly || !canEdit || !actions.newVersion, disabled: item.pendingCreate },
+          { icon: "download", title: "Download PDF", onSelect: () => actions.download?.(item), hidden: !document || !actions.download, disabled: item.pendingCreate },
           { icon: "copy", title: "Save a copy to Library…", onSelect: () => actions.saveCopy(item), disabled: item.pendingCreate },
           { icon: "refresh", title: "Update from original…", onSelect: () => actions.updateFromOriginal(item), hidden: original !== "changed" || readOnly || !canEdit },
           { divider: true, hidden: readOnly || !canEdit },
@@ -354,7 +361,7 @@ const PackPanel = ({ pack, members = [], audience, items = [], openIds, people =
           <div className="shell-empty">
             {readOnly
               ? "This pack is empty."
-              : "Nothing in this pack yet. Add from your Library, or set a target, sketch a route, add a threat or import local points while the pack is open."}
+              : `Nothing in this pack yet. Add from your Library, or set a target, sketch a route, add a threat${actions.uploadDocument ? ", upload a document" : ""} or import local points while the pack is open.`}
           </div>
         ) : (
           GROUPS.map((group) => {
@@ -394,6 +401,17 @@ const PackPanel = ({ pack, members = [], audience, items = [], openIds, people =
             <button type="button" className="ui-btn ui-btn--38 ui-btn--grow" onClick={actions.addFromLibrary}>
               <Icon name="library" size={15} />
               <span>Add from Library</span>
+            </button>
+          )}
+          {!finished && canEdit && !readOnly && actions.uploadDocument && (
+            <button
+              type="button"
+              className="ui-btn ui-btn--38 ui-btn--square"
+              onClick={actions.uploadDocument}
+              aria-label="Upload a document"
+              title="Upload a document: a PDF, or a Word, Excel or PowerPoint file"
+            >
+              <Icon name="upload" size={15} />
             </button>
           )}
           {role === "owner" &&

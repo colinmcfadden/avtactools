@@ -4,6 +4,9 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import app.ezpztac.data.DiagramRepository
 import app.ezpztac.data.DiagramSession
+import app.ezpztac.data.DocumentInfo
+import app.ezpztac.data.DocumentOutcome
+import app.ezpztac.data.DocumentRepository
 import app.ezpztac.data.OpenDiagrams
 import app.ezpztac.data.OpenRouteSets
 import app.ezpztac.data.PointSetRepository
@@ -24,6 +27,8 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
@@ -35,6 +40,7 @@ enum class LibraryTab(val label: String, val one: String, val many: String, val 
     ROUTES("Routes", "saved route set", "saved route sets", "Search route sets by name"),
     POINTS("Local points", "saved point set", "saved point sets", "Search point sets by name"),
     THREATS("Threats", "saved threat set", "saved threat sets", "Search threat sets by name"),
+    DOCUMENTS("Documents", "document", "documents", "Search documents by name"),
 }
 
 /**
@@ -108,6 +114,8 @@ class LibraryViewModel @Inject constructor(
     views: PointSetViews,
     private val threatSets: ThreatSetRepository,
     private val threatStore: ThreatStore,
+    /** The Library's documents (docs/DOCUMENTS.md §6): none where documents are not offered. */
+    private val documents: DocumentRepository? = null,
 ) : ViewModel() {
     private data class Choices(val tab: LibraryTab = LibraryTab.LZ, val query: String = "", val sort: LibrarySort = LibrarySort.UPDATED, val busy: Boolean = false)
 
@@ -157,8 +165,22 @@ class LibraryViewModel @Inject constructor(
         }
     }
 
-    val state: StateFlow<LibraryUiState> = combine(lzRows, routeRows, pointRows, threatRows, choices) { lz, routes, points, threats, c ->
-        val all = mapOf(LibraryTab.LZ to lz, LibraryTab.ROUTES to routes, LibraryTab.POINTS to points, LibraryTab.THREATS to threats)
+    // Changed online only, so never anything but what the server holds: no sync state and no conflict copy (docs/DOCUMENTS.md §6).
+    private val documentRows = (documents?.observe() ?: flowOf(emptyList())).map { records ->
+        records.filter { !it.deleted }.map { r ->
+            LibraryRowUi(
+                r.uuid, LibraryTab.DOCUMENTS, r.name, detail = DocumentInfo.of(r.data)?.detail?.ifEmpty { null }, updated = updatedLine(r.updatedAt),
+                updatedAt = r.updatedAt,
+            )
+        }
+    }
+
+    private val planning = combine(lzRows, routeRows, pointRows, threatRows) { lz, routes, points, threats ->
+        mapOf(LibraryTab.LZ to lz, LibraryTab.ROUTES to routes, LibraryTab.POINTS to points, LibraryTab.THREATS to threats)
+    }
+
+    val state: StateFlow<LibraryUiState> = combine(planning, documentRows, choices) { rows, docs, c ->
+        val all = rows + (LibraryTab.DOCUMENTS to docs)
         LibraryUiState(
             tab = c.tab, query = c.query, sort = c.sort, busy = c.busy,
             rows = sorted(all.getValue(c.tab).filter { matches(it, c.query) }, c.sort),
@@ -202,6 +224,7 @@ class LibraryViewModel @Inject constructor(
                         threatStore.flush()
                         threatSets.duplicate(row.uuid, name)
                     }
+                    LibraryTab.DOCUMENTS -> return@launch                                      // not offered: a copy would name the same files
                 }
                 _notices.tryEmit(if (made != null) "Made “$name”, a copy of “${row.name}”" else "“${row.name}” is no longer in your Library.")
             } catch (e: CancellationException) {
@@ -214,7 +237,49 @@ class LibraryViewModel @Inject constructor(
         }
     }
 
+    // -- Documents: changed online, here, since the Library is where they are kept ---------------------------------------------------------------------
+
+    /** Renames document [row] to [name], on the server and then here. */
+    fun renameDocument(row: LibraryRowUi, name: String) = documentChange("“${row.name}” is renamed “${name.trim()}”.") { it.rename(row.uuid, name) }
+
+    /** Deletes document [row] from the Library on every device, and its files from this one. */
+    fun deleteDocument(row: LibraryRowUi) = documentChange("Deleted “${row.name}”.") { it.delete(row.uuid) }
+
+    /** A new version of document [row] from a file the person chose; the server turns an Office file into a PDF. */
+    fun newVersion(row: LibraryRowUi, fileName: String, bytes: ByteArray) {
+        _notices.tryEmit("Uploading the new version of “${row.name}”…")
+        documentChange("“${row.name}” is now the version from $fileName.") { it.newVersion(row.uuid, fileName, bytes) }
+    }
+
+    /** A file chosen for a new version that could not be read, said as the others are. */
+    fun refuseVersion(message: String) {
+        _notices.tryEmit(message)
+    }
+
+    private fun documentChange(done: String, change: suspend (DocumentRepository) -> DocumentOutcome) {
+        val repository = documents ?: return
+        if (choices.value.busy) {
+            _notices.tryEmit(STILL_WORKING)
+            return
+        }
+        choices.update { it.copy(busy = true) }
+        viewModelScope.launch {
+            try {
+                _notices.tryEmit(
+                    when (val outcome = change(repository)) {
+                        is DocumentOutcome.Done -> done
+                        is DocumentOutcome.Refused -> outcome.message
+                    },
+                )
+            } finally {
+                choices.update { it.copy(busy = false) }
+            }
+        }
+    }
+
     internal companion object {
+        const val STILL_WORKING = "Still working on the last change: try again in a moment."
+
         /** `Updated Aug 25 · 17:34`, or null for a time never noted or that cannot be read. */
         fun updatedLine(iso: String?): String? = LzNames.updated(iso)?.let { "Updated $it" }
 

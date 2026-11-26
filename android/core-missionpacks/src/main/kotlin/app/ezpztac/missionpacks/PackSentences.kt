@@ -14,8 +14,10 @@ import kotlinx.serialization.json.JsonPrimitive
  * An actor is who did it, as [actorName] names them; null or empty is "Someone".
  */
 public object PackSentences {
-    private val PREFIX = mapOf("lz" to "lz", "route" to "rt", "pointset" to "ps", "threatset" to "ts")
-    private val KIND_WORDS = mapOf("lz" to "LZ/PZ", "route" to "route set", "pointset" to "point set", "threatset" to "threat set")
+    // A document's item is made by the server, from the file it checked (docs/DOCUMENTS.md §7), never by an `item.create` here, so it has
+    // no default name nor sentence of its own; the client still names the item, so an upload asked again after a lost answer is the same item.
+    private val PREFIX = mapOf("lz" to "lz", "route" to "rt", "pointset" to "ps", "threatset" to "ts", "document" to "doc")
+    private val KIND_WORDS = mapOf("lz" to "LZ/PZ", "route" to "route set", "pointset" to "point set", "threatset" to "threat set", "document" to "document")
     private const val SOMEONE = "Someone"
 
     /** The longest name a kept version is saved under, in UTF-16 units as the web counts them. */
@@ -30,7 +32,7 @@ public object PackSentences {
     /** Who the signed-in person is in the history ([actorName]); "Someone" when nobody is. */
     public fun actorName(user: ApiUser?): String = actorName(user?.name, user?.email)
 
-    /** A new item's uuid in a pack: its kind's prefix (`lz-`, `rt-`, `ps-`, `ts-`) and an id the client chose. */
+    /** A new item's uuid in a pack: its kind's prefix (`lz-`, `rt-`, `ps-`, `ts-`, `doc-`) and an id the client chose. */
     public fun packItemId(kind: String, id: String): String {
         val prefix = requireNotNull(PREFIX[kind]) { "Not a pack item's kind: $kind" }
         return "$prefix-$id"

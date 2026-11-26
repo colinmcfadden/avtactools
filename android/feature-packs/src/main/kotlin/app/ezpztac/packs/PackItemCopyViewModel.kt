@@ -47,6 +47,12 @@ interface PackItemCalls {
 
     /** Saves [data] (an item's, as this person sees it) to their Library as a new record named [name], on the device, queued for the server. */
     suspend fun saveToLibrary(pack: String, kind: String, name: String, data: JsonElement): KeptOutcome
+
+    /**
+     * Saves pack [pack]'s document [item] to this person's Library as [name], on the server, which names the same files (docs/DOCUMENTS.md §7): a document is
+     * the server's to make, never the device's. Null once done; else why not, in words.
+     */
+    suspend fun saveDocumentToLibrary(pack: String, item: String, name: String): String? = "Documents cannot be saved to the Library here."
 }
 
 /** Updating copy [item] ([name]) of pack [pack] from its Library original ([kind] record [original]): the dialog, and what the server says of the change. */
@@ -308,6 +314,15 @@ class PackItemCopyViewModel @Inject constructor(
             return "The last change to it could not be saved, so no copy was made."
         }
         if (door.open.value?.uuid != asked.pack) return "${asked.packName} is not open here now."
+        if (asked.kind == "document") {
+            return try {
+                calls.saveDocumentToLibrary(asked.pack, asked.item, name)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (_: Exception) {
+                CANNOT_SAVE
+            }
+        }
         return try {
             // As this person sees it now: the editor's document while the item is open in one, else the pack's.
             val data = door.seenData(asked.item) ?: return PackMessages.words(PackFailure(404, "item_not_found"))

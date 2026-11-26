@@ -31,6 +31,8 @@ export const IMPORT_KINDS = [
   { kind: "lps", icon: "mapPin", title: "Local points", text: ".LPS · AMPS point sets" },
   { kind: "ths", icon: "diamond", title: "Threats", text: ".ths · AMPS threats, saved to your Library" },
   { kind: "overlay", icon: "image", title: "Map overlay", text: ".kmz, .kml · drawn over the map" },
+  // Offered only to an account with documents (docs/DOCUMENTS.md §9.1): canImport.document is false otherwise.
+  { kind: "document", icon: "file", title: "Document", text: "PDF, Word, Excel, PowerPoint · read beside the plan", needs: true },
 ];
 
 const TopBar = ({
@@ -125,7 +127,7 @@ const TopBar = ({
       </button>
       <Menu open={imports.open} onClose={imports.close} anchorRef={imports.anchorRef} label="Import" width={340} align="end">
         <div className="ui-menu__heading"><div className="ui-label">Import</div></div>
-        {IMPORT_KINDS.map((entry) => (
+        {IMPORT_KINDS.filter((entry) => !entry.needs || canImport[entry.kind] !== undefined).map((entry) => (
           <MenuItem
             key={entry.kind}
             rich

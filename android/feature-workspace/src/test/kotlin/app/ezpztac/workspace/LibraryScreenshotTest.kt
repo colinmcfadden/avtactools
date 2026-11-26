@@ -74,8 +74,8 @@ class LibraryScreenshotTest {
     @Test
     @Config(qualifiers = "w360dp-h780dp-xxhdpi", fontScale = 1.3f)
     fun narrow() {
-        shot("narrow") { LibraryPage(state, LibraryActions()) }
-        // Each tab's count is on the screen, and a grid on one line, not split into two values.
+        shot("narrow") { LibraryPage(state.copy(tabs = listOf(LibraryTab.LZ, LibraryTab.ROUTES, LibraryTab.POINTS)), LibraryActions()) }
+        // Three tabs sit side by side: each tab's count is on the screen, and a grid on one line, not split into two values.
         val width = compose.onRoot().fetchSemanticsNode().boundsInRoot.right
         for (count in listOf("12", "4", "3")) {
             val node = compose.onAllNodesWithText(count, useUnmergedTree = true).fetchSemanticsNodes().single()
@@ -96,5 +96,23 @@ class LibraryScreenshotTest {
                 assertFalse("\"$words\" is cut", l.isLineEllipsized(l.lineCount - 1) || l.didOverflowHeight)
             }
         }
+    }
+
+    @Test
+    @Config(qualifiers = "w360dp-h780dp-xxhdpi", fontScale = 1.3f)
+    fun narrowFiveTabs() {
+        val five = state.copy(counts = state.counts + (LibraryTab.THREATS to 2) + (LibraryTab.DOCUMENTS to 7))
+        shot("narrow-five") { LibraryPage(five, LibraryActions()) }
+        // Five tabs do not fit a narrow phone side by side (four did not either: "Threats" broke mid-word): the row scrolls, and no tab's words are cut or broken.
+        for (words in LibraryTab.entries.map { it.label }) {
+            val layout = mutableListOf<TextLayoutResult>()
+            compose.onAllNodesWithText(words, useUnmergedTree = true).fetchSemanticsNodes().single().config[SemanticsActions.GetTextLayoutResult].action?.invoke(layout)
+            val l = layout.single()
+            assertEquals("\"$words\" is broken", 1, l.lineCount)
+            assertFalse("\"$words\" is cut", l.isLineEllipsized(0) || l.getLineRight(0) - l.getLineLeft(0) > l.size.width + 0.5f)
+        }
+        val width = compose.onRoot().fetchSemanticsNode().boundsInRoot.right
+        val chosen = compose.onAllNodesWithText("12", useUnmergedTree = true).fetchSemanticsNodes().single()
+        assertTrue("the open tab's count is on the screen", chosen.boundsInRoot.right <= width)
     }
 }

@@ -243,13 +243,13 @@ Exported files deliberately contain geometry only — after opening one in AMPS,
 - An LZ/PZ must be analyzed before it can be saved. Saving captures the target, boundary, analysis, everything placed on it and the doghouse edits. Threats and routes are not part of it.
 - **Close** (in an LZ/PZ's **⋯** menu) takes it out of this session; with unsaved changes it asks *Cancel / Don't save / Save*.
 
-**The Library** (top bar) is everything you have saved, in tabs: LZ/PZ, Routes, Local points, Threats and Overlays. Search, sort, and **Open** one to add it to this session (one already open says *Open in session*). Its **⋯** menu renames, duplicates or deletes it; deleting asks first, because it is gone from every device. The LZ/PZ panel also lists the three most recent LZ/PZs with a quick **Open**.
+**The Library** (top bar) is everything you have saved, in tabs: LZ/PZ, Routes, Local points, Threats and Overlays, and Documents where your account has them. Search, sort, and **Open** one to add it to this session (one already open says *Open in session*). Its **⋯** menu renames, duplicates or deletes it; deleting asks first, because it is gone from every device. The LZ/PZ panel also lists the three most recent LZ/PZs with a quick **Open**.
 
 Your account menu (your name, top right) holds **Sign out**, and for admins a link to the admin dashboard.
 
 ### Importing files
 
-**Import** in the top bar takes AMPS mission files (`.msnx`), local points (`.LPS`), threats (`.ths`), flight plans (`.fpl` and `.gpx`) and map overlays (`.kmz` and `.kml`). You can also drop files anywhere on the map. EZ-PZ works out what each file is from its content, then shows what it found and asks where each should live: local points and missions can be saved to your Library or kept in this session; a threat file becomes a set of threats in your Library. Anything it cannot read is listed with the reason and left out.
+**Import** in the top bar takes AMPS mission files (`.msnx`), local points (`.LPS`), threats (`.ths`), flight plans (`.fpl` and `.gpx`), map overlays (`.kmz` and `.kml`) and, where your account has them, documents (below). You can also drop files anywhere on the map. EZ-PZ works out what each file is from its content, then shows what it found and asks where each should live: local points and missions can be saved to your Library or kept in this session; a threat file becomes a set of threats in your Library. Anything it cannot read is listed with the reason and left out.
 
 The **Imports** panel lists what you have brought in, with where it lives; mission files and threat files link to the panel where they are edited.
 
@@ -259,9 +259,24 @@ The **Imports** panel lists what you have brought in, with where it lives; missi
 
 **Your own local points.** **New local point** in the Imports panel, or right-click the map and choose **Add Local Point Here**, makes one with a name, a place (an MGRS grid or a lat/long), and if you like an elevation, a group and a description. Add it to a set you have open or start a new one. Under a set, the arrow shows its points by group: add to a group, change a point with the pencil, or use **⋯** to delete it or export it. A set's own **⋯** menu saves it to your Library, once it has at least one point, and exports the whole set as `.LPS` for AMPS or as GPX; a group or a single point exports the same way.
 
+### Documents
+
+Keep the OPORD, its annexes and the other papers of a mission beside the plan, to read while you plan. A document is a PDF, or a Word, Excel or PowerPoint file, up to 25 MB; EZ-PZ turns an Office file into a PDF when you upload it and keeps only the PDF, so what you read is the PDF, never the original. Documents are for reading: nothing in one is changed here.
+
+- **Upload** from **Import › Document**, the **Upload document** button in the Library's **Documents** tab, or by dropping the file on the map. The review asks where it goes: your Library, or the open Mission Pack, where everyone in the pack can read it. Converting a large Office file can take a minute; the review waits and says so. If the upload fails (no connection, the converter busy), the review stays open with the reason, and **Import** tries the same upload again.
+- **Read** with **Open** (Library) or a click on its row (Pack panel). The document opens in a window over the map, which you can move and resize; on a phone it is the whole screen. Zoom with **−** and **+**, and **Find** searches the document's text, listing every page it is on: a click goes to it. A scanned paper has no text to search, and the window says so.
+- **⋯** on a document renames it, uploads a **New version…** (it replaces the old one under the same name, for you or for the whole pack), **Download PDF**, adds a Library document to a Mission Pack or saves a pack's to your Library, and deletes or removes it.
+- **Classification**: documents are unclassified only, like everything in EZ-PZ. Do not upload anything marked CUI or higher.
+
+![The Library's Documents tab](images/40-library-documents.jpg)
+
+![Reading a document, with Find](images/41-document-viewer.jpg)
+
+![A Mission Pack's documents](images/42-pack-documents.jpg)
+
 ### Mission Packs
 
-A Mission Pack is a shared space for one operation: everyone in it edits the same LZ/PZs, route sets, point sets and threats, and sees each other's changes as they are made. Use the workspace switcher at the top left (it says **Library** until a pack is open).
+A Mission Pack is a shared space for one operation: everyone in it edits the same LZ/PZs, route sets, point sets and threats, reads the same documents, and sees each other's changes as they are made. Use the workspace switcher at the top left (it says **Library** until a pack is open).
 
 - **New pack**: name it, say what it is for, and choose who can open it (just you, a team as editors or viewers, or particular people). People on your teams are found by name; anyone else gets an email.
 - **While a pack is open** the top bar turns violet and says whether everything has reached everyone. Anything you start goes into the pack: a new target, a sketched route, imported local points, a threat. There is no Save: the pack keeps every change. Your Library work is put aside meanwhile and comes back as you left it when you switch back.

@@ -22,8 +22,10 @@ from werkzeug.security import check_password_hash
 from google.oauth2 import id_token
 from google.auth.transport import requests as google_requests
 
+from documents import files as document_files
 from models import (
-    db, User, SavedRoute, SavedLZ, SavedPointSet, SavedOverlay, SavedBrief, SavedThreatSet, LoginEvent, AircraftProfile, SyncCounter,
+    db, User, SavedRoute, SavedLZ, SavedPointSet, SavedOverlay, SavedBrief, SavedThreatSet, SavedDocument, LoginEvent, AircraftProfile,
+    SyncCounter,
     MissionPack, MissionPackItem, MissionPackMember, Team, TeamMember,
 )
 import data_admin
@@ -386,8 +388,11 @@ def delete_user(uid):
         return redirect(url_for('admin.user_detail', uid=uid))
 
     # Packs they own pass to someone else in them, or go when nobody else is.
+    # The files their documents name, released once they are gone (docs/DOCUMENTS.md §5.3).
+    document_hashes = document_files.hashes_held_by(uid)
     pack_support.release_account(uid)
     SavedRoute.query.filter_by(user_id=uid).delete()
+    SavedDocument.query.filter_by(user_id=uid).delete()
     SavedLZ.query.filter_by(user_id=uid).delete()
     SavedPointSet.query.filter_by(user_id=uid).delete()
     SavedOverlay.query.filter_by(user_id=uid).delete()
@@ -397,6 +402,7 @@ def delete_user(uid):
     SyncCounter.query.filter_by(user_id=uid).delete()
     db.session.delete(user)  # cascades local_credential + account_tokens
     db.session.commit()
+    document_files.release(document_hashes)
     flash('User deleted.', 'ok')
     return redirect(url_for('admin.users'))
 

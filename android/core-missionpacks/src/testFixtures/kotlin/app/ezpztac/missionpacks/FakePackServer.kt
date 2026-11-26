@@ -19,7 +19,8 @@ import kotlinx.serialization.json.JsonPrimitive
  * applied the batch, a refusal, a pack finished or a person removed while edits were on their way.
  *
  * Its operation stream checks a batch as the server does and in the same order (400 `invalid_batch`, 400 `invalid_op` with its
- * `index` and `reason`, then 404, then under the pack's lock 403 `pack_read_only` and 423 `pack_finished`, each with `taken`), answers
+ * `index` and `reason`, then 404, then under the pack's lock `bad_kind` for anything but a rename or removal of a document, 403
+ * `pack_read_only` and 423 `pack_finished`, each with `taken`), answers
  * an operation it has already logged from the log, applies the rest with [PackOps] as `pack_ops.py` does, rolls the whole batch back
  * with a 413 when an item grows past [maxItemBytes], and pages the log at [pageSize]. Refusals are the exceptions core-network
  * raises, with the body the server writes.
@@ -247,6 +248,8 @@ public class FakePackServer(public val liveUrl: String? = null) : PackApi {
             if (id == null || !CLIENT_OP_ID.matches(id) || !seen.add(id)) malformed("bad_client_op_id")
             if ((op["type"] as? JsonPrimitive)?.takeIf { it.isString }?.content !in PackOps.CLIENT_OP_TYPES) malformed("unknown_type")
             PackOps.validate(op)?.let { malformed(it) }
+            // The server makes a document, from a file it checked (docs/DOCUMENTS.md §7).
+            if (textOf(op["type"]) == "item.create" && textOf(op["kind"]) == "document") malformed("bad_kind")
             val summary = op["summary"]
             if (summary != null && !(summary is JsonPrimitive && summary.isString)) malformed("bad_summary")
         }
@@ -314,6 +317,13 @@ public class FakePackServer(public val liveUrl: String? = null) : PackApi {
         val ids = ops.map { textOf(it["client_op_id"]) }.toSet()
         val done = pack.events.filter { textOf(it["client_op_id"]) in ids }.associateBy { textOf(it["client_op_id"]) }
         val taken = JsonArray(done.values.sortedBy(::seqOf).filter { actorOf(it) == actor }.map(::result))
+        // A document's content is the files the server checked: a client renames and removes one, never edits what it names. Asked of
+        // the items stored, deleted ones too, before the pack's state is, and with no `taken`, as pack_routes.apply_ops asks it.
+        ops.forEachIndexed { index, op ->
+            if (pack.items[textOf(op["item"])]?.kind == "document" && textOf(op["type"]) !in DOCUMENT_CLIENT_OPS) {
+                throw refusal(400, "invalid_op", "index" to JsonPrimitive(index), "reason" to text("bad_kind"))
+            }
+        }
         // A batch whose every operation is on a brief is open to every member in every state of the pack (pack_routes._only_briefs).
         val briefs = onlyBriefs(pack, ops)
         if (pack.members[actor] !in EDIT_ROLES && !briefs) throw refusal(403, "pack_read_only", "taken" to taken)
@@ -428,7 +438,7 @@ public class FakePackServer(public val liveUrl: String? = null) : PackApi {
     private fun body(pack: Pack, asUser: Int): JsonObject {
         val items = pack.items.values.filter { !it.deleted }
         // pack_support.item_counts counts the library's kinds only: not briefs, yet.
-        val counts = listOf("lz", "route", "pointset", "threatset").associateWith { kind -> JsonPrimitive(items.count { it.kind == kind }) }
+        val counts = listOf("lz", "route", "pointset", "threatset", "document").associateWith { kind -> JsonPrimitive(items.count { it.kind == kind }) }
         return obj(
             "uuid" to text(pack.uuid),
             "name" to text(pack.name),
@@ -505,7 +515,10 @@ public class FakePackServer(public val liveUrl: String? = null) : PackApi {
         const val MAX_SUMMARY = 300
         val EDIT_ROLES = setOf("owner", "editor")
         val CLIENT_OP_ID = Regex("[\\x21-\\x7e]{1,64}")
-        val KIND_WORDS = mapOf("lz" to "LZ", "route" to "routes", "pointset" to "points", "threatset" to "threats", "brief" to "brief")
+        val KIND_WORDS = mapOf("lz" to "LZ", "route" to "routes", "pointset" to "points", "threatset" to "threats", "brief" to "brief", "document" to "document")
+
+        // pack_routes._DOCUMENT_CLIENT_OPS: what a client may do to a document, which the server made from a file it checked.
+        val DOCUMENT_CLIENT_OPS = setOf("item.rename", "item.delete")
 
         fun text(value: String): JsonPrimitive = JsonPrimitive(value)
 

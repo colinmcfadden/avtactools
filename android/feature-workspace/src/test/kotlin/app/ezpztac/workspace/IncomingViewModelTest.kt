@@ -1,9 +1,12 @@
 package app.ezpztac.workspace
 
+import app.ezpztac.data.DocumentOutcome
+import app.ezpztac.data.DocumentUploads
 import app.ezpztac.data.FileInspector
 import app.ezpztac.data.IncomingFiles
 import app.ezpztac.data.MapFocus
 import app.ezpztac.data.MissionImporter
+import app.ezpztac.data.PackDocuments
 import app.ezpztac.data.PointSetRepository
 import app.ezpztac.data.RouteRepository
 import app.ezpztac.data.RouteSession
@@ -25,6 +28,9 @@ import app.ezpztac.sync.InMemorySyncStore
 import app.ezpztac.sync.RecordKind
 import app.ezpztac.sync.RecordingScheduler
 import app.ezpztac.testing.Fixtures
+import java.io.ByteArrayOutputStream
+import java.util.zip.ZipEntry
+import java.util.zip.ZipOutputStream
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.first
@@ -71,7 +77,23 @@ class IncomingViewModelTest {
         override fun wipe() { picture = null }
     }
 
-    private class Rig(scope: TestScope, val pack: FakeOpenPack = FakeOpenPack()) {
+    /** Where documents go up: what each upload was asked, and what it answers ([answers] in turn, then Done). */
+    private class Uploads : DocumentUploads, PackDocuments {
+        val sent = mutableListOf<String>()
+        val answers = ArrayDeque<DocumentOutcome>()
+        override suspend fun upload(fileName: String, bytes: ByteArray, name: String?, uuid: String): DocumentOutcome {
+            sent += "library $fileName as $name, $uuid"
+            return answers.removeFirstOrNull() ?: DocumentOutcome.Done(null)
+        }
+        override suspend fun upload(pack: String, item: String, fileName: String, bytes: ByteArray, name: String?): DocumentOutcome {
+            sent += "pack $pack $fileName as $name, $item"
+            return answers.removeFirstOrNull() ?: DocumentOutcome.Done(null)
+        }
+        override suspend fun newVersion(pack: String, item: String, fileName: String, bytes: ByteArray) = error("not here")
+        override suspend fun saveToLibrary(pack: String, item: String, name: String) = error("not here")
+    }
+
+    private class Rig(scope: TestScope, val pack: FakeOpenPack = FakeOpenPack(), val uploads: Uploads = Uploads()) {
         val incoming = IncomingFiles()
         val selection = ThreatSelection()
         val threats = ThreatStore(Memory(), scope.backgroundScope, StandardTestDispatcher(scope.testScheduler)) { 1_000L }
@@ -84,7 +106,7 @@ class IncomingViewModelTest {
         val threatFiles = ThreatFileLog(threats)
         val model = IncomingViewModel(
             incoming, FileInspector(ThreatTransfer(ThsWriter { ByteArray(0) })), threats, selection, sets, MissionImporter(routes, routeSession, MapFocus()),
-            session, threatFiles, pack,
+            session, threatFiles, pack, documents = uploads, packDocuments = uploads,
         )
             .also { it.worker = StandardTestDispatcher(scope.testScheduler) }
             .also { it.allowThreats(true) }                                                      // the account has threats; one without them says so
@@ -224,6 +246,93 @@ class IncomingViewModelTest {
         assertEquals(pointCount, held.points.size)
         assertEquals(listOf("Showing TAXI for this session: ${points(pointCount)}, not saved."), r.said)
         assertFalse(r.state.visible)
+    }
+
+
+    private val pdfFile = "%PDF-1.7\n%\u00e2\u00e3\n1 0 obj\n<<>>\nendobj\n%%EOF\n".toByteArray()
+
+    private fun office(vararg parts: String): ByteArray = ByteArrayOutputStream().also { out ->
+        ZipOutputStream(out).use { zip -> parts.forEach { zip.putNextEntry(ZipEntry(it)); zip.write("<x/>".toByteArray()); zip.closeEntry() } }
+    }.toByteArray()
+
+    private val wordFile = office("[Content_Types].xml", "word/document.xml")
+
+    @Test
+    fun `a document is offered only with the feature, an Office file only where the server converts, and goes to the Library under its name`() = runTest(dispatcher) {
+        val r = rig()
+        r.incoming.offer("OPORD 24-03.pdf", pdfFile)
+        r.incoming.offer("ANNEX C.docx", wordFile)
+        advanceUntilIdle()
+        assertEquals(IncomingViewModel.DOCUMENTS_OFF, (r.state.items[0] as ImportItemUi.Problem).message)
+        assertEquals(IncomingViewModel.DOCUMENTS_OFF, (r.state.items[1] as ImportItemUi.Problem).message)
+
+        r.model.allowDocuments(DocumentRules(on = true, conversion = false, saved = true)); advanceUntilIdle()
+        val pdf = r.state.items[0] as ImportItemUi.Document
+        assertEquals("OPORD 24-03", pdf.name)
+        assertEquals("PDF", pdf.label)
+        assertEquals(ImportPlace.LIBRARY, pdf.place)
+        assertEquals(listOf(ImportPlace.LIBRARY), pdf.places)
+        assertEquals(IncomingViewModel.NO_CONVERSION, (r.state.items[1] as ImportItemUi.Problem).message)
+
+        r.model.allowDocuments(DocumentRules(on = true, conversion = true, saved = true)); advanceUntilIdle()
+        val word = r.state.items[1] as ImportItemUi.Document
+        assertEquals("Word document · turned into a PDF", word.label)
+        assertTrue(word.converted)
+        assertEquals("2 to Library", r.state.summary)
+    }
+
+    @Test
+    fun `in a pack this person can change a document goes there first, the Library the other choice, and with neither it has nowhere to go`() = runTest(dispatcher) {
+        val r = rig()
+        r.pack.state.value = FakeOpenPack.open(emptyList())
+        r.model.allowDocuments(DocumentRules(on = true, conversion = true, saved = true))
+        r.incoming.offer("OPORD.pdf", pdfFile)
+        advanceUntilIdle()
+        val item = r.state.items.single() as ImportItemUi.Document
+        assertEquals(ImportPlace.PACK, item.place)
+        assertEquals(listOf(ImportPlace.PACK, ImportPlace.LIBRARY), item.places)
+        assertEquals("OP DK", item.pack)
+        assertEquals(4, item.members)
+        assertEquals("1 to the pack", r.state.summary)
+        r.model.setPlace(1, ImportPlace.LIBRARY); advanceUntilIdle()
+        assertEquals("1 to Library", r.state.summary)
+
+        r.pack.state.value = FakeOpenPack.open(emptyList(), session = FakeOpenPack.viewing())               // a viewer's pack takes nothing
+        r.model.allowDocuments(DocumentRules(on = true, conversion = true, saved = false)); advanceUntilIdle()
+        assertTrue((r.state.items.single() as ImportItemUi.Problem).message.startsWith("Cloud save is off for this account"))
+    }
+
+    @Test
+    fun `a document that did not go stays with why, and is tried again as the same document`() = runTest(dispatcher) {
+        val r = rig()
+        r.model.allowDocuments(DocumentRules(on = true, conversion = true, saved = true))
+        r.incoming.offer("OPORD.pdf", pdfFile)
+        advanceUntilIdle()
+        r.model.setName(1, "OPORD 24-03")
+        r.uploads.answers += DocumentOutcome.Refused("There is no connection. Try again when you are online.")
+        r.model.importAll(); advanceUntilIdle()
+        assertEquals("There is no connection. Try again when you are online.", (r.state.items.single() as ImportItemUi.Document).error)
+        assertTrue(r.said.isEmpty())
+
+        r.model.importAll(); advanceUntilIdle()
+        val (first, second) = r.uploads.sent
+        assertTrue(first.startsWith("library OPORD.pdf as OPORD 24-03, "))
+        assertEquals("the same identity both times", first, second)
+        assertFalse(r.state.visible)
+        assertEquals(listOf("Uploaded “OPORD 24-03” to your Library."), r.said)
+    }
+
+    @Test
+    fun `a document for the pack goes up as an item of the open pack, and is said to be there`() = runTest(dispatcher) {
+        val r = rig()
+        r.pack.state.value = FakeOpenPack.open(emptyList())
+        r.model.allowDocuments(DocumentRules(on = true, conversion = true, saved = true))
+        r.incoming.offer("ANNEX C.docx", wordFile)
+        advanceUntilIdle()
+        r.model.importAll(); advanceUntilIdle()
+        val sent = r.uploads.sent.single()
+        assertTrue(sent, Regex("pack p ANNEX C\\.docx as ANNEX C, doc-[0-9a-f-]{36}").matches(sent))
+        assertEquals(listOf("Uploaded “ANNEX C” to OP DK."), r.said)
     }
 
     @Test

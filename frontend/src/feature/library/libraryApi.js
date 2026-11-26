@@ -21,6 +21,7 @@ export const renameRecord = async (kind, id, name) => {
   if (kind === "points") return (await api.put(`/pointsets/${id}`, { name })).data;
   if (kind === "threats") return (await api.put(`/threatsets/${id}`, { name })).data;
   if (kind === "overlays") return (await api.put(`/overlays/${id}`, { name })).data;
+  if (kind === "documents") return (await api.put(`/documents/${encodeURIComponent(id)}`, { name })).data;
   return (await api.put(`/routes/${id}`, routeForm({ name }))).data;
 };
 

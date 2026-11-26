@@ -18,8 +18,9 @@ class LibraryTabsTest {
 
     @Test
     fun `an account has the tabs of the panels it is offered`() {
-        assertEquals(LibraryTab.entries, libraryTabsFor(Panel.entries, threatsSaved = true))
-        assertEquals(LibraryTab.entries - LibraryTab.THREATS, libraryTabsFor(Panel.entries))
+        assertEquals(LibraryTab.entries, libraryTabsFor(Panel.entries, threatsSaved = true, documents = true))
+        assertEquals(LibraryTab.entries - LibraryTab.THREATS - LibraryTab.DOCUMENTS, libraryTabsFor(Panel.entries))
         assertEquals(listOf(LibraryTab.LZ, LibraryTab.POINTS), libraryTabsFor(listOf(Panel.Lz, Panel.Threats, Panel.Imports)))
+        assertEquals(listOf(LibraryTab.DOCUMENTS), libraryTabsFor(emptyList(), documents = true))       // documents are a feature of their own, not a panel's
     }
 }

@@ -92,6 +92,9 @@ import { whyPointStays } from "./feature/msnxImport/sketchOps";
 import useApiCompat from "./feature/apiCompat/useApiCompat";
 import useFilePicker from "./feature/imports/useFilePicker";
 import useImports, { movePointsToPack } from "./feature/imports/useImports";
+import useDocuments from "./feature/documents/useDocuments";
+import { acceptFor } from "./feature/documents/documentWords";
+import { getDocumentPdf } from "./feature/documents/documentsApi";
 import ImportsPanel from "./feature/imports/ImportsPanel";
 import { setSummary } from "./feature/saveDialog/useRouteSaves";
 import { ConfirmDialog } from "./feature/ui/Dialog";
@@ -202,7 +205,8 @@ function App() {
   } = lzWorkspace;
   const workspaceRef = useRef(lzWorkspace.workspace);
   const { show: toast } = useToast();
-  useApiCompat();
+  // Which of the server's optional services are up (/api/config): Office files are offered only where it converts them.
+  const { services } = useApiCompat();
   const dock = useDock("lz");
 
   useEffect(() => {
@@ -531,12 +535,24 @@ function App() {
     lz_surveys: Boolean(uf && uf.lz_surveys === true),
     // Airports, heliports, navaids and fixes in the map's search (docs/PLACE_SEARCH.md).
     place_search: Boolean(uf && uf.place_search === true),
+    // Documents (docs/DOCUMENTS.md): the papers of a mission, read as PDFs in the Library and in packs.
+    documents: Boolean(uf && uf.documents === true),
   };
   const { history, isLoadingHistory, historyError, fetchHistory, saveMap, loadMap, updateMap, deleteMap } =
     useSavedMaps();
   // The Library dialog: null when closed, else the tab it opens on.
   const [libraryTab, setLibraryTab] = useState(null);
   const openLibrary = useCallback((tab = "lz") => setLibraryTab(tab), []);
+  // The Library's documents, and the viewer and new-version dialog a pack's documents share (feature/documents). Office files are
+  // offered until the server is known not to convert them; it says so in words if it does not.
+  const documents = useDocuments({
+    enabled: feat.documents && user != null,
+    // A pack's documents are read by every member, the feature or not (docs/DOCUMENTS.md §9.3).
+    signedIn: user != null,
+    conversion: services ? Boolean(services.documentConversion) : true,
+    toast,
+  });
+  const documentsInLibrary = feat.documents && feat.cloud_save;
   // The top bar's workspace switcher, held here so the Library's footer can open it.
   const workspaceSwitcher = useMenu();
   const openWorkspaceSwitcher = () => {
@@ -790,13 +806,16 @@ function App() {
       savedPointSets: localPoints.savedPointSets,
       // No tab for an account that cannot keep threats in a Library, or copy them into a pack.
       savedThreatSets: threatSets.canSave ? threatSets.savedSets : undefined,
+      savedDocuments: documentsInLibrary ? documents.entries : undefined,
       refreshAll: () => {
         fetchHistory();
         fetchSavedRoutes();
         localPoints.fetchSavedPointSets();
         if (threatSets.canSave) threatSets.fetchSavedSets();
+        if (documentsInLibrary) documents.refresh();
       },
     },
+    documents,
     onOpenLibrary: () => openLibrary("lz"),
   });
   const inPack = Boolean(packs.open);
@@ -1573,6 +1592,7 @@ function App() {
     pack: packs.packForPanels,
     threatsSaved: threatSets.canSave,
     overlaysSaved: Boolean(feat.cloud_save),
+    documents: { on: feat.documents, saved: Boolean(feat.cloud_save), conversion: documents.conversion },
     importers: {
       msnx: importMission,
       lps: (file, options) => localPoints.importLpsFile(file, options),
@@ -1583,6 +1603,7 @@ function App() {
       },
       routefile: openRouteFile,
       overlay: (file, options) => overlayTools.importFile(file, options),
+      document: (file, options) => documents.upload(file, options),
     },
     destinations: {
       library: {
@@ -1607,9 +1628,22 @@ function App() {
           if (!packs.packThreats.createItem(name || setNameFromFile(file.name), parsed)) throw new Error("The pack did not take them.");
           return parsed.length;
         },
+        document: (file, options) => packs.uploadDocument(file, options),
       },
     },
-    onDone: (kinds, imported = []) => {
+    onDone: (allKinds, allImported = []) => {
+      // A document is read, not put on the map: one that went into the pack shows the Pack panel, and one kept in the Library says
+      // where it is (docs/DOCUMENTS.md §9.1). The rest go as they always have.
+      const docs = allImported.filter((item) => item.kind === "document");
+      if (docs.some((item) => item.destination === "library")) {
+        toast({ message: "Kept in your Library under Documents.", action: { label: "Open Library", onClick: () => openLibrary("documents") } });
+      }
+      const kinds = allKinds.filter((kind) => kind !== "document");
+      const imported = allImported.filter((item) => item.kind !== "document");
+      if (imported.length === 0) {
+        if (docs.some((item) => item.destination === "pack")) dock.show("pack");
+        return;
+      }
       // In a pack only the pack's own things are shown (docs/MISSION_PACKS.md §5a): say where a file that
       // went to the Library or stayed in this session is, and do not open an Imports panel that hides it.
       const elsewhere = inPack ? imported.filter((item) => item.kind === "msnx" || (["lps", "ths", "routefile"].includes(item.kind) && item.destination !== "pack")) : [];
@@ -1636,7 +1670,14 @@ function App() {
     ths: useFilePicker({ accept: ".ths,.THS", multiple: true, onFiles: imports.begin }),
     routefile: useFilePicker({ accept: ".fpl,.FPL,.gpx,.GPX", multiple: true, onFiles: imports.begin }),
     overlay: useFilePicker({ accept: ".kmz,.KMZ,.kml,.KML", multiple: true, onFiles: imports.begin }),
-    any: useFilePicker({ accept: ".msnx,.lps,.LPS,.ths,.THS,.fpl,.FPL,.gpx,.GPX,.kmz,.KMZ,.kml,.KML", multiple: true, onFiles: imports.begin }),
+    document: useFilePicker({ accept: acceptFor(documents.conversion), multiple: true, onFiles: imports.begin }),
+    // The Library's own Upload: to the Library unless the person chooses the pack in the review.
+    documentToLibrary: useFilePicker({ accept: acceptFor(documents.conversion), multiple: true, onFiles: (files) => imports.begin(files, { prefer: "library" }) }),
+    any: useFilePicker({
+      accept: `.msnx,.lps,.LPS,.ths,.THS,.fpl,.FPL,.gpx,.GPX,.kmz,.KMZ,.kml,.KML${feat.documents ? `,${acceptFor(documents.conversion)}` : ""}`,
+      multiple: true,
+      onFiles: imports.begin,
+    }),
   };
 
   // The Library's lists, loaded once signed in: the LZ/PZ panel offers the recent LZ/PZs, and the
@@ -1726,6 +1767,27 @@ function App() {
           },
         }
       : {}),
+    ...(documentsInLibrary
+      ? {
+          documents: {
+            entries: documents.entries,
+            loading: documents.loading,
+            error: documents.error,
+            openIds: documents.openIds,
+            refresh: documents.refresh,
+            onOpen: async (entry) => documents.openLibrary(entry),
+            onDelete: (entry) => documents.remove(entry),
+            onRenamed: () => documents.refresh(),
+            // Upload goes through the import review, as every file does (where it goes, its name).
+            action: { icon: "upload", label: "Upload document", onClick: () => pickers.documentToLibrary.open() },
+            menu: (entry) => [
+              { icon: "upload", title: "New version…", onSelect: () => documents.newLibraryVersion(entry) },
+              { icon: "download", title: "Download PDF", onSelect: () => documents.download(() => getDocumentPdf(entry.id), entry.name) },
+            ],
+            duplicable: false,
+          },
+        }
+      : {}),
     ...(threatSets.canSave
       ? {
           threats: {
@@ -1746,13 +1808,26 @@ function App() {
   };
   const recentLz = history.filter((entry) => !sessionLzIds.has(entry.id)).slice(0, 3);
   // In a pack, opening something from the Library adds a copy of it to the pack.
-  const PACK_KIND = { lz: "lz", routes: "route", points: "pointset", threats: "threatset" };
+  const PACK_KIND = { lz: "lz", routes: "route", points: "pointset", threats: "threatset", documents: "document" };
   const libraryView = inPack
     ? Object.fromEntries(
         Object.entries(librarySources).map(([tab, source]) => [
           tab,
-          // An overlay never goes in a pack: it is this person's own, opened as it is anywhere else.
-          PACK_KIND[tab] ? { ...source, openIds: new Set(), onOpen: (entry) => packs.copyIn(PACK_KIND[tab], entry) } : { ...source, openLabel: "Open", openingLabel: "Opening" },
+          // An overlay never goes in a pack: it is this person's own, opened as it is anywhere else. A document is read wherever it is,
+          // and offered to the pack from its menu.
+          tab === "documents"
+            ? {
+                ...source,
+                openLabel: "Open",
+                openingLabel: "Opening",
+                menu: (entry) => [
+                  ...source.menu(entry),
+                  { icon: "layers", title: `Add to ${packs.meta?.name ?? "the pack"}`, onSelect: () => packs.copyIn("document", entry).catch((err) => toast({ tone: "error", message: err.message })), hidden: packs.readOnly },
+                ],
+              }
+            : PACK_KIND[tab]
+              ? { ...source, openIds: new Set(), onOpen: (entry) => packs.copyIn(PACK_KIND[tab], entry) }
+              : { ...source, openLabel: "Open", openingLabel: "Opening" },
         ]),
       )
     : librarySources;
@@ -1987,7 +2062,14 @@ function App() {
           <BriefMenu packName={inPack ? packs.meta?.name ?? "the pack" : null} summary={brief.summary} onGenerate={() => setBriefOpen(true)} onPresent={presentBrief} />
         ) : null}
         onImport={(kind) => pickers[kind]?.open()}
-        canImport={{ msnx: feat.msnx_import && !inPack, ths: feat.threats, routefile: feat.routes }}
+        canImport={{
+          msnx: feat.msnx_import && !inPack,
+          ths: feat.threats,
+          routefile: feat.routes,
+          // Into the Library, or the open pack for an editor (documentRules says the same of a file dropped on the map); not offered
+          // at all to an account without documents.
+          document: feat.documents ? feat.cloud_save || (inPack && !packs.readOnly) : undefined,
+        }}
         exportKinds={exportKinds}
         onExport={(kind) => (kind === "overlay" ? setShowOverlay(true) : setShowThreatExport({ setId: null }))}
         pack={packs.topPack}
@@ -2342,7 +2424,8 @@ function App() {
               me={user?.id}
               newSince={packs.seen.newSince}
               readOnly={packs.readOnly}
-              actions={packs.actions}
+              // Every member reads a pack's documents; uploading one, or a new version, needs the feature (§9.3).
+              actions={feat.documents ? { ...packs.actions, uploadDocument: pickers.document.open } : { ...packs.actions, newVersion: undefined }}
               tab={packs.panelTab}
               setTab={packs.setPanelTab}
               dropped={packs.dropped}
@@ -2952,6 +3035,9 @@ function App() {
       {pickers.ths.element}
       {pickers.routefile.element}
       {pickers.overlay.element}
+      {pickers.document.element}
+      {pickers.documentToLibrary.element}
+      {documents.dialogs}
       {pickers.any.element}
 
       {exportSuccess && (

@@ -78,11 +78,13 @@ object EzpzIcons {
     @DrawableRes val moreVert: Int = R.drawable.ic_more_vert
     @DrawableRes val moveToInbox: Int = R.drawable.ic_move_to_inbox
     @DrawableRes val myLocation: Int = R.drawable.ic_my_location
+    @DrawableRes val offlinePin: Int = R.drawable.ic_offline_pin
     @DrawableRes val openInNew: Int = R.drawable.ic_open_in_new
     @DrawableRes val person: Int = R.drawable.ic_person
     @DrawableRes val personAdd: Int = R.drawable.ic_person_add
     @DrawableRes val personRemove: Int = R.drawable.ic_person_remove
     @DrawableRes val personSearch: Int = R.drawable.ic_person_search
+    @DrawableRes val pictureAsPdf: Int = R.drawable.ic_picture_as_pdf
     @DrawableRes val pinDrop: Int = R.drawable.ic_pin_drop
     @DrawableRes val playArrow: Int = R.drawable.ic_play_arrow
     @DrawableRes val refresh: Int = R.drawable.ic_refresh

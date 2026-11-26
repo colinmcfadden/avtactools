@@ -1,4 +1,4 @@
-"""Keeping saved LZs, routes, point sets and briefs in step between the web and the apps.
+"""Keeping saved LZs, routes, point sets, briefs, threats and documents in step between the web and the apps.
 
 The native apps work offline and edit their own copy, so the server has to cope
 with the same record being changed in two places. The rules, from
@@ -32,7 +32,7 @@ from datetime import datetime
 from flask import jsonify
 from sqlalchemy import select, update
 
-from models import AircraftProfile, SavedBrief, SavedLZ, SavedPointSet, SavedRoute, SavedThreatSet, SyncCounter, db
+from models import AircraftProfile, SavedBrief, SavedDocument, SavedLZ, SavedPointSet, SavedRoute, SavedThreatSet, SyncCounter, db
 
 IF_MATCH_ANY = '*'
 INVALID = object()
@@ -172,6 +172,7 @@ _KINDS = (
     ('aircraft', AircraftProfile),
     ('brief', SavedBrief),
     ('threatset', SavedThreatSet),
+    ('document', SavedDocument),
 )
 
 
@@ -242,6 +243,9 @@ def _change(kind, record):
         body['data'] = record.brief_data
     elif kind == 'threatset':
         body['data'] = record.threat_data
+    elif kind == 'document':
+        # What names the PDF and its text; the files themselves are fetched by the record (docs/DOCUMENTS.md §6).
+        body['data'] = record.doc_data
     else:
         body['data'] = record.points_data
     return body

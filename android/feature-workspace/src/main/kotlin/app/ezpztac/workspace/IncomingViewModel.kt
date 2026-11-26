@@ -2,6 +2,8 @@ package app.ezpztac.workspace
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import app.ezpztac.data.DocumentOutcome
+import app.ezpztac.data.DocumentUploads
 import app.ezpztac.data.FileInspector
 import app.ezpztac.data.FilePreview
 import app.ezpztac.data.ImportOutcome
@@ -10,6 +12,7 @@ import app.ezpztac.data.IncomingFiles
 import app.ezpztac.data.MissionImportOutcome
 import app.ezpztac.data.MissionImporter
 import app.ezpztac.data.OpenPack
+import app.ezpztac.data.PackDocuments
 import app.ezpztac.data.PackFacts
 import app.ezpztac.data.PackLock
 import app.ezpztac.data.PointSetRepository
@@ -38,8 +41,26 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
-/** Where a file goes (the design's ImportReview): saved to the Library, held for this session only, or kept on this device (threats, until step *T*). */
-enum class ImportPlace { LIBRARY, SESSION, DEVICE }
+/** Where a file goes (the design's ImportReview): saved to the Library, held for this session only, kept on this device, or into the open pack (a document). */
+enum class ImportPlace { LIBRARY, SESSION, DEVICE, PACK }
+
+/**
+ * What the signed-in account and the server allow of documents: [on], the account's `documents` feature; [conversion], the server turns Office files into PDFs
+ * (its config's `services.documentConversion`); [saved], the account has cloud save, without which a document can go only into the open pack.
+ */
+data class DocumentRules(val on: Boolean = false, val conversion: Boolean = false, val saved: Boolean = false)
+
+/** What a document is, in the web's words (`detectImport.js`' `DOCUMENT_LABELS`). */
+internal val DOCUMENT_LABELS = mapOf(
+    "pdf" to "PDF",
+    "docx" to "Word document · turned into a PDF",
+    "doc" to "Word document · turned into a PDF",
+    "xlsx" to "Excel workbook · turned into a PDF, a page a sheet",
+    "xls" to "Excel workbook · turned into a PDF, a page a sheet",
+    "pptx" to "PowerPoint presentation · turned into a PDF",
+    "ppt" to "PowerPoint presentation · turned into a PDF",
+    "office" to "Office file · turned into a PDF",
+)
 
 /** One file in the review: what it turned out to be, how much is in it, and where it would go. Nothing is imported until the person says so. */
 sealed interface ImportItemUi {
@@ -58,6 +79,30 @@ sealed interface ImportItemUi {
     /** An AMPS mission: [routes] routes and [namedPoints] named points, kept with its file in the Library. [aircraft] is what AMPS planned it for, if it says. */
     data class Mission(override val id: Long, override val fileName: String, val size: String, val routes: Int, val namedPoints: Int, val aircraft: String?) : ImportItemUi
 
+    /**
+     * A document (docs/DOCUMENTS.md §9.2): a PDF, or a Word, Excel or PowerPoint file the server turns into one ([type]: `pdf`, `docx`, …), uploaded as [name] to
+     * [place], the Library or the open pack ([pack], with [members] in it), as [places] allows. [error] is why the last try did not go: the file stays in the
+     * review, to be tried again under the same identity.
+     */
+    data class Document(
+        override val id: Long,
+        override val fileName: String,
+        val size: String,
+        val type: String,
+        val name: String,
+        val place: ImportPlace,
+        val places: List<ImportPlace>,
+        val pack: String? = null,
+        val members: Int = 0,
+        val error: String? = null,
+    ) : ImportItemUi {
+        /** What the file is, in the web's words: `PDF`, `Word document · turned into a PDF`. */
+        val label: String get() = DOCUMENT_LABELS[type] ?: DOCUMENT_LABELS.getValue("office")
+
+        /** The server turns it into a PDF. */
+        val converted: Boolean get() = type != "pdf"
+    }
+
     /** Not something that can be brought in, or could not be read; [message] says why, in words. Nothing is imported from it. */
     data class Problem(override val id: Long, override val fileName: String, val message: String) : ImportItemUi
 }
@@ -71,7 +116,10 @@ data class IncomingUiState(
     val visible: Boolean get() = items.isNotEmpty()
 
     /** How many of the files can be brought in. */
-    val importable: Int get() = items.count { it is ImportItemUi.Points || it is ImportItemUi.Threats || it is ImportItemUi.Mission }
+    val importable: Int get() = items.count { it is ImportItemUi.Points || it is ImportItemUi.Threats || it is ImportItemUi.Mission || it is ImportItemUi.Document }
+
+    /** An Office file is among those being brought in: the footer says the server takes a while to turn it into a PDF. */
+    val converting: Boolean get() = busy && items.any { it is ImportItemUi.Document && it.converted }
 
     /** A file is still being looked at: Import waits for it. */
     val reading: Boolean get() = items.any { it is ImportItemUi.Reading }
@@ -79,8 +127,11 @@ data class IncomingUiState(
     /** Where the files go, in a line under them (the design's): `1 to Library · 1 stays in this session · 2 stay on this device`. */
     val summary: String get() {
         if (reading) return "Looking at what is in the files…"
-        val library = items.count { (it is ImportItemUi.Points && it.place == ImportPlace.LIBRARY) || it is ImportItemUi.Mission || (it is ImportItemUi.Threats && it.saved && it.pack == null) }
-        val toPack = items.count { it is ImportItemUi.Threats && it.pack != null }
+        val library = items.count {
+            (it is ImportItemUi.Points && it.place == ImportPlace.LIBRARY) || it is ImportItemUi.Mission || (it is ImportItemUi.Threats && it.saved && it.pack == null) ||
+                (it is ImportItemUi.Document && it.place == ImportPlace.LIBRARY)
+        }
+        val toPack = items.count { (it is ImportItemUi.Threats && it.pack != null) || (it is ImportItemUi.Document && it.place == ImportPlace.PACK) }
         val session = items.count { it is ImportItemUi.Points && it.place == ImportPlace.SESSION }
         val device = items.count { it is ImportItemUi.Threats && !it.saved && it.pack == null }
         val parts = listOfNotNull(
@@ -110,6 +161,8 @@ class IncomingViewModel @Inject constructor(
     private val sessionPoints: SessionPointSets,
     private val threatFiles: ThreatFileLog,
     private val pack: OpenPack = OpenPack.None,
+    private val documents: DocumentUploads = DocumentUploads.None,
+    private val packDocuments: PackDocuments = PackDocuments.None,
 ) : ViewModel() {
     internal var worker: CoroutineDispatcher = Dispatchers.IO
 
@@ -119,6 +172,12 @@ class IncomingViewModel @Inject constructor(
     /** The person's choices for each file: a set's name, and where a set of points goes. */
     private val names = MutableStateFlow<Map<Long, String>>(emptyMap())
     private val places = MutableStateFlow<Map<Long, ImportPlace>>(emptyMap())
+
+    /** Each document's identity, made once for the file and kept for every try of it, so an upload tried again after a lost answer is the same document. */
+    private val uploadIds = HashMap<Long, String>()
+
+    /** Why a document's last upload did not go, by file. */
+    private val failures = MutableStateFlow<Map<Long, String>>(emptyMap())
     private val busy = MutableStateFlow(false)
     private val said = MutableSharedFlow<Pair<Int, String>>(extraBufferCapacity = 16)
 
@@ -145,17 +204,29 @@ class IncomingViewModel @Inject constructor(
         threatsAllowed.value = allowed
     }
 
-    private val choices = combine(names, places) { n, p -> n to p }
+    /** What the account and the server allow of documents (docs/DOCUMENTS.md §9.3): none without the feature, PDFs only where the server cannot convert. */
+    private val documentRules = MutableStateFlow(DocumentRules())
 
-    val state: StateFlow<IncomingUiState> = combine(incoming.files, looked, choices, busy, threatsAllowed) { files, seen, (named, placed), working, threatsOn ->
-        IncomingUiState(items = itemsOf(files, seen, named, placed, threatsOn), busy = working)
+    /** Says what the signed-in account and the server allow of documents ([DocumentRules]). */
+    fun allowDocuments(rules: DocumentRules) {
+        documentRules.value = rules
+    }
+
+    private val choices = combine(names, places, failures) { n, p, f -> Choices(n, p, f) }
+    private val allowed = combine(threatsAllowed, documentRules, pack.state) { threatsOn, rules, _ -> threatsOn to rules }
+
+    val state: StateFlow<IncomingUiState> = combine(incoming.files, looked, choices, busy, allowed) { files, seen, chosen, working, (threatsOn, rules) ->
+        IncomingUiState(items = itemsOf(files, seen, chosen, threatsOn, rules), busy = working)
     }.stateIn(viewModelScope, SharingStarted.Eagerly, IncomingUiState())
 
     /** The files as they are now, read from the sources and not from [state], which follows them a dispatch behind: what Import brings in is what was shown. */
-    private fun current(): List<ImportItemUi> = itemsOf(incoming.files.value, looked.value, names.value, places.value, threatsAllowed.value)
+    private fun current(): List<ImportItemUi> =
+        itemsOf(incoming.files.value, looked.value, Choices(names.value, places.value, failures.value), threatsAllowed.value, documentRules.value)
 
-    private fun itemsOf(files: List<IncomingFile>, seen: Map<Long, FilePreview>, named: Map<Long, String>, placed: Map<Long, ImportPlace>, threatsOn: Boolean) =
-        files.map { item(it, seen[it.id], named[it.id], placed[it.id], threatsOn) }
+    private fun itemsOf(files: List<IncomingFile>, seen: Map<Long, FilePreview>, chosen: Choices, threatsOn: Boolean, rules: DocumentRules) =
+        files.map { item(it, seen[it.id], chosen, threatsOn, rules) }
+
+    private data class Choices(val names: Map<Long, String>, val places: Map<Long, ImportPlace>, val failures: Map<Long, String>)
 
     init {
         // Look inside each file as it arrives, off the main thread: a large threat file or a set of thousands of points is not instant.
@@ -165,6 +236,8 @@ class IncomingViewModel @Inject constructor(
                 looked.update { seen -> seen.filterKeys { it in ids } }                                 // what has gone is forgotten
                 names.update { it.filterKeys { id -> id in ids } }
                 places.update { it.filterKeys { id -> id in ids } }
+                failures.update { it.filterKeys { id -> id in ids } }
+                uploadIds.keys.retainAll(ids)
                 for (file in files) {
                     if (file !is IncomingFile.Received || file.id in looked.value) continue
                     val result = try {
@@ -180,10 +253,12 @@ class IncomingViewModel @Inject constructor(
         }
     }
 
-    private fun item(file: IncomingFile, seen: FilePreview?, name: String?, place: ImportPlace?, threatsOn: Boolean): ImportItemUi = when (file) {
+    private fun item(file: IncomingFile, seen: FilePreview?, chosen: Choices, threatsOn: Boolean, rules: DocumentRules): ImportItemUi = when (file) {
         is IncomingFile.Unreadable -> ImportItemUi.Problem(file.id, file.name, file.reason)
         is IncomingFile.Received -> {
             val size = sizeOf(file.bytes.size.toLong())
+            val name = chosen.names[file.id]
+            val place = chosen.places[file.id]
             when (seen) {
                 null -> ImportItemUi.Reading(file.id, file.name)
                 is FilePreview.Threats ->
@@ -200,9 +275,38 @@ class IncomingViewModel @Inject constructor(
                     }
                 is FilePreview.Points -> ImportItemUi.Points(file.id, file.name, size, seen.count, name ?: seen.setName, place ?: ImportPlace.LIBRARY)
                 is FilePreview.Mission -> ImportItemUi.Mission(file.id, file.name, size, seen.routes, seen.namedPoints, seen.aircraft)
+                is FilePreview.Document -> documentItem(file, size, seen, name, place, chosen.failures[file.id], rules)
                 is FilePreview.Problem -> ImportItemUi.Problem(file.id, file.name, seen.message)
             }
         }
+    }
+
+    /**
+     * A document as the rules allow it (the web's `documentRules` and `destinationsFor`): none without the feature, an Office file only where the server converts,
+     * into the open pack for one who can change it, else the Library, which needs cloud save; with nowhere to go, why.
+     */
+    private fun documentItem(
+        file: IncomingFile.Received, size: String, seen: FilePreview.Document, name: String?, place: ImportPlace?, error: String?, rules: DocumentRules,
+    ): ImportItemUi {
+        if (!rules.on) return ImportItemUi.Problem(file.id, file.name, DOCUMENTS_OFF)
+        if (seen.type != "pdf" && !rules.conversion) return ImportItemUi.Problem(file.id, file.name, NO_CONVERSION)
+        val open = pack.state.value
+        val lock = open?.let(PackLock::of)
+        val packOk = open != null && lock == null && open.session != null
+        val places = listOfNotNull(ImportPlace.PACK.takeIf { packOk }, ImportPlace.LIBRARY.takeIf { rules.saved })
+        if (places.isEmpty()) {
+            val why = when {
+                open == null -> "Open a Mission Pack to upload it there."
+                lock != null -> lock.reason
+                else -> "The pack is still opening."
+            }
+            return ImportItemUi.Problem(file.id, file.name, "Cloud save is off for this account, so a document has nowhere to go. $why")
+        }
+        val session = open?.session
+        return ImportItemUi.Document(
+            file.id, file.name, size, seen.type, name ?: seen.name, place?.takeIf { it in places } ?: places.first(), places,
+            pack = if (packOk) open.let(PackFacts::name) else null, members = session?.let(PackFacts::audience) ?: 0, error = error,
+        )
     }
 
     // -- The person's choices -----------------------------------------------------------------------------------------------------------
@@ -210,10 +314,11 @@ class IncomingViewModel @Inject constructor(
     /** The name a set of points is brought in as. */
     fun setName(id: Long, name: String) = names.update { it + (id to name) }
 
-    /** Where a set of points goes: the Library or this session (the other kinds have one place only). */
+    /** Where a set of points goes (the Library or this session), or a document (the open pack or the Library); the other kinds have one place only. */
     fun setPlace(id: Long, place: ImportPlace) {
         if (place == ImportPlace.DEVICE) return
         places.update { it + (id to place) }
+        failures.update { it - id }
     }
 
     /** Takes one file out of the review: nothing is brought in from it. Not while the files are being brought in. */
@@ -242,6 +347,17 @@ class IncomingViewModel @Inject constructor(
                 for (item in items) {
                     if (incoming.generation != generation) break                                  // signed out meanwhile: the files went with the account
                     val file = incoming.files.value.firstOrNull { it.id == item.id } as? IncomingFile.Received
+                    if (item is ImportItemUi.Document && file != null) {
+                        // A document that did not go stays in the review with why, to be tried again as the same document; one that went is said.
+                        when (val outcome = upload(item, file)) {
+                            is DocumentOutcome.Done -> {
+                                said.tryEmit(generation to if (item.place == ImportPlace.PACK) "Uploaded “${item.name.trim().ifEmpty { item.fileName }}” to ${item.pack}." else "Uploaded “${item.name.trim().ifEmpty { item.fileName }}” to your Library.")
+                                incoming.dismiss(item.id)
+                            }
+                            is DocumentOutcome.Refused -> if (incoming.generation == generation) failures.update { it + (item.id to outcome.message) }
+                        }
+                        continue
+                    }
                     val outcome = if (file == null) null else bringIn(item, file, generation)
                     outcome?.let { said.tryEmit(generation to it) }
                     incoming.dismiss(item.id)
@@ -250,6 +366,28 @@ class IncomingViewModel @Inject constructor(
             } finally {
                 busy.value = false
             }
+        }
+    }
+
+    /** Uploads a document where it was chosen to go, under the identity kept for its file. */
+    private suspend fun upload(item: ImportItemUi.Document, file: IncomingFile.Received): DocumentOutcome {
+        val uuid = uploadIds.getOrPut(item.id) { java.util.UUID.randomUUID().toString() }
+        val name = item.name.trim().takeIf { it.isNotEmpty() }
+        return try {
+            if (item.place == ImportPlace.PACK) {
+                val open = pack.state.value
+                when {
+                    open == null -> DocumentOutcome.Refused(PackDocuments.NOT_OPEN)
+                    pack.lockNow() != null -> DocumentOutcome.Refused(pack.lockNow()!!.reason)             // it turned read-only with the review open
+                    else -> packDocuments.upload(open.uuid, "doc-$uuid", file.name, file.bytes, name)
+                }
+            } else {
+                documents.upload(file.name, file.bytes, name, uuid)
+            }
+        } catch (e: CancellationException) {
+            throw e
+        } catch (_: Exception) {
+            DocumentOutcome.Refused("${file.name} could not be uploaded. Try again.")
         }
     }
 
@@ -300,7 +438,7 @@ class IncomingViewModel @Inject constructor(
                     }
                 }
             }
-            is ImportItemUi.Reading, is ImportItemUi.Problem -> null
+            is ImportItemUi.Reading, is ImportItemUi.Problem, is ImportItemUi.Document -> null
         }
     } catch (e: CancellationException) {
         throw e
@@ -342,7 +480,9 @@ class IncomingViewModel @Inject constructor(
     private fun count(n: Int, one: String) = if (n == 1) "1 $one" else "${withCommas(n.toLong())} ${one}s"
 
     companion object {
-        const val TOO_BIG = "That file is too large to be a local points, threat or mission file."
+        const val TOO_BIG = "That file is too large to be a document, local points, threat or mission file."
+        const val DOCUMENTS_OFF = "Not supported. Nothing will be imported from this file."
+        const val NO_CONVERSION = "This server cannot turn Office files into PDFs. Save it as a PDF and upload that."
         const val FULL = "EZ/PZ is already holding as many files as it can. Deal with those first, then open this one again."
         const val NO_THREATS = "Threats are turned off for your account, so this threat file cannot be added."
 

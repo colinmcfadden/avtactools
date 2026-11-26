@@ -43,7 +43,7 @@ export const markSeen = (uuid, seq) => api.put(`${pack(uuid)}/seen`, { seq }).th
 // -- Items ---------------------------------------------------------------------------
 
 /**
- * Copies one of the person's library records in. `source`: { kind: "lz"|"route"|"pointset"|"threatset", id } or
+ * Copies one of the person's library records in. `source`: { kind: "lz"|"route"|"pointset"|"threatset"|"document", id } or
  * { kind, client_uuid }. Pass `item` (the new item's uuid) so a retry returns the first copy.
  */
 export const copyIntoPack = (uuid, { source, item: itemUuid, name, summary } = {}) =>
@@ -63,6 +63,32 @@ export const updateFromOriginal = (uuid, itemUuid, summary) =>
 
 export const saveItemToLibrary = (uuid, itemUuid, name) =>
   api.post(`${item(uuid, itemUuid)}/library`, name === undefined ? {} : { name }).then(body);
+
+// -- Documents (docs/DOCUMENTS.md §7) ---------------------------------------------------------
+// The server makes a document from the file sent: a client sends the file, never a document's content, and renames or
+// removes one with the ordinary item operations.
+
+const documentForm = (file, fields) => {
+  const form = new FormData();
+  form.append("file", file, file.name);
+  Object.entries(fields).forEach(([key, value]) => value !== undefined && form.append(key, value));
+  return form;
+};
+
+/** Uploads a file (a PDF, or a Word, Excel or PowerPoint file) into the pack. Pass `item` so a retry is the same item. */
+export const uploadDocument = (uuid, file, { item: itemUuid, name, summary } = {}) =>
+  api.post(`${pack(uuid)}/documents`, documentForm(file, { item: itemUuid, name, summary })).then(body);
+
+/** A new version of a pack's document, under the same name and item. */
+export const newDocumentVersion = (uuid, itemUuid, file, summary) =>
+  api.post(`${item(uuid, itemUuid)}/version`, documentForm(file, { summary })).then(body);
+
+/** The PDF's bytes, as an ArrayBuffer (the viewer reads it; the route needs the bearer token, so no plain link). */
+export const getDocumentPdf = (uuid, itemUuid) =>
+  api.get(`${item(uuid, itemUuid)}/pdf`, { responseType: "arraybuffer" }).then(body);
+
+/** `{version, pages, truncated}`: each page's text, for search. A scan has none (404 `no_text`). */
+export const getDocumentText = (uuid, itemUuid) => api.get(`${item(uuid, itemUuid)}/text`).then(body);
 
 // -- Members and invitations to a pack ---------------------------------------------------
 

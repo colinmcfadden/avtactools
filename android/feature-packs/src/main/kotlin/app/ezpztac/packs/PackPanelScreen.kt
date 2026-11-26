@@ -107,6 +107,12 @@ class PackPanelActions(
     val keepDropped: () -> Unit = {},
     /** Lets go of what pack [pack] would not take that [ids] names (those shown when asked). */
     val discardDropped: (pack: String, ids: Set<String>) -> Unit = { _, _ -> },
+    /** Reads a document of the pack in the viewer (docs/DOCUMENTS.md §7). */
+    val read: (String) -> Unit = {},
+    /** A new version of a document, from a file chosen (an editor with documents); none: not offered. */
+    val newVersion: ((String) -> Unit)? = null,
+    /** Uploads a document into the pack (an editor with documents): a file chosen and put in the import review. None: not offered. */
+    val upload: (() -> Unit)? = null,
 )
 
 /** The panel's actions over its view model. */
@@ -115,11 +121,16 @@ fun actionsOf(
     onMembers: (invite: Boolean) -> Unit = {},
     onUpdate: ((String) -> Unit)? = null,
     onSaveCopy: ((String) -> Unit)? = null,
+    documents: PackDocumentActions = PackDocumentActions(),
 ) = PackPanelActions(
     tab = viewModel::selectTab, open = viewModel::open, closeHere = viewModel::closeHere, rename = viewModel::rename, remove = viewModel::remove,
     person = viewModel::filterPerson, item = viewModel::filterItem, members = onMembers, update = onUpdate, saveCopy = onSaveCopy,
-    keepDropped = viewModel::keepDropped, discardDropped = viewModel::discardDropped,
+    keepDropped = viewModel::keepDropped, discardDropped = viewModel::discardDropped, read = documents.read, newVersion = documents.newVersion,
+    upload = documents.upload,
 )
+
+/** What the frame does with the pack's documents: reads one in the viewer, and, for an editor with documents, a new version or an upload. */
+class PackDocumentActions(val read: (String) -> Unit = {}, val newVersion: ((String) -> Unit)? = null, val upload: (() -> Unit)? = null)
 
 /**
  * The Pack panel in the frame (the design's PackItems and PackHistory). [looking] is whether it is the panel showing and in sight (not lowered on
@@ -132,6 +143,7 @@ fun PackPanelHost(
     onMembers: (invite: Boolean) -> Unit = {},
     onUpdate: ((String) -> Unit)? = null,
     onSaveCopy: ((String) -> Unit)? = null,
+    documents: PackDocumentActions = PackDocumentActions(),
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     val lifecycle by LocalLifecycleOwner.current.lifecycle.currentStateFlow.collectAsStateWithLifecycle()
@@ -139,7 +151,7 @@ fun PackPanelHost(
     LaunchedEffect(inSight) { viewModel.setLooking(inSight) }
     // The panel goes (the pack closed or gone): nobody is looking at what opens next until it is shown.
     DisposableEffect(viewModel) { onDispose { viewModel.setLooking(false) } }
-    PackPanelContent(state, actionsOf(viewModel, onMembers, onUpdate, onSaveCopy))
+    PackPanelContent(state, actionsOf(viewModel, onMembers, onUpdate, onSaveCopy, documents))
 }
 
 /**
@@ -321,6 +333,13 @@ private fun Items(state: PackPanelUi, actions: PackPanelActions, onRename: (Stri
             }
         }
     }
+    // An editor's way to put a document in the pack (docs/DOCUMENTS.md §7): the file goes to the import review, which offers the pack first.
+    actions.upload?.takeIf { state.canEdit && state.loaded }?.let { upload ->
+        TextButton(onClick = upload, modifier = Modifier.heightIn(min = 48.dp)) {
+            Icon(painterResource(EzpzIcons.uploadFile), contentDescription = null, modifier = Modifier.size(18.dp))
+            Text("Upload document", modifier = Modifier.padding(start = Tokens.Spacing.sm.dp))
+        }
+    }
 }
 
 /**
@@ -330,6 +349,8 @@ private fun Items(state: PackPanelUi, actions: PackPanelActions, onRename: (Stri
 @Composable
 private fun ItemRow(item: PackItemUi, canEdit: Boolean, actions: PackPanelActions, onRename: (String) -> Unit, onRemove: (String) -> Unit) {
     var menu by remember { mutableStateOf(false) }
+    // A document is read in the viewer, never opened in an editor; the server makes it, so a new version is the one change to it beyond its name.
+    val isDocument = item.kind == "document"
     // The design's *Update* beside the row, for whoever copied it in, while the original has changed and the pack can be changed; under the row's
     // words where beside them it would leave the words less than [ROW_WORDS_MIN] (a narrow phone, large text), rather than cut the name and its chips.
     val update = actions.update?.takeIf { item.original == "changed" && canEdit && !item.sending }
@@ -347,7 +368,9 @@ private fun ItemRow(item: PackItemUi, canEdit: Boolean, actions: PackPanelAction
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Row(
                     Modifier.weight(1f).heightIn(min = 60.dp)
-                        .clickable(role = Role.Button, onClickLabel = if (item.canOpen) "Show on the map" else null) { actions.open(item.uuid) }
+                        .clickable(role = Role.Button, onClickLabel = if (isDocument) "Read" else if (item.canOpen) "Show on the map" else null) {
+                            if (isDocument) actions.read(item.uuid) else actions.open(item.uuid)
+                        }
                         .semantics(mergeDescendants = true) { contentDescription = item.description; selected = item.openHere }
                         .padding(start = Tokens.Spacing.md.dp, top = Tokens.Spacing.sm.dp, bottom = Tokens.Spacing.sm.dp),
                     verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(Tokens.Spacing.lg.dp),
@@ -387,7 +410,18 @@ private fun ItemRow(item: PackItemUi, canEdit: Boolean, actions: PackPanelAction
                         Icon(painterResource(EzpzIcons.moreVert), contentDescription = "More actions for ${item.name}", tint = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                     DropdownMenu(expanded = menu, onDismissRequest = { menu = false }, containerColor = MaterialTheme.colorScheme.surfaceContainerHigh) {
-                        if (item.openHere) {
+                        if (isDocument) {
+                            DropdownMenuItem(
+                                text = { Text("Read") }, leadingIcon = { Icon(painterResource(EzpzIcons.visibility), contentDescription = null) },
+                                onClick = { menu = false; actions.read(item.uuid) },
+                            )
+                            actions.newVersion?.takeIf { canEdit && !item.sending }?.let { version ->
+                                DropdownMenuItem(
+                                    text = { Text("New version…") }, leadingIcon = { Icon(painterResource(EzpzIcons.uploadFile), contentDescription = null) },
+                                    onClick = { menu = false; version(item.uuid) },
+                                )
+                            }
+                        } else if (item.openHere) {
                             DropdownMenuItem(
                                 text = { Column { Text("Close here"); Text("It stays in the pack", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) } },
                                 leadingIcon = { Icon(painterResource(EzpzIcons.close), contentDescription = null) },
@@ -451,6 +485,7 @@ private fun kindIcon(kind: String): Int = when (kind) {
     "route" -> EzpzIcons.route
     "pointset" -> EzpzIcons.scatterPlot
     "threatset" -> EzpzIcons.crisisAlert
+    "document" -> EzpzIcons.pictureAsPdf
     else -> EzpzIcons.description
 }
 

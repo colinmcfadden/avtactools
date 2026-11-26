@@ -322,6 +322,36 @@ const THREAT_SET_CASES = [
   ["a set of threats cannot be replaced by a list", threatSets, { type: "item.replace", item: "ts-1", data: [] }],
 ];
 
+// The document kind (docs/DOCUMENTS.md §7) too. A document's content is a description of files the server keeps, never edited by
+// operations: the server makes one (item.create) and gives it a new version (item.replace) in events every client applies, and a
+// client renames and removes one. A client's edit of a document's data is refused by the server's route, not by these rules.
+const DOCUMENT = {
+  kind: "document",
+  name: "OPORD 24-03",
+  deleted: false,
+  data: {
+    version: 1,
+    pdf: { sha256: "a".repeat(64), bytes: 913442, pages: 14 },
+    text: { sha256: "b".repeat(64), chars: 48210 },
+    source: { type: "docx", name: "OPORD 24-03.docx", bytes: 482113 },
+    added_at: "2026-11-22T15:04:05Z",
+  },
+};
+const documents = { "doc-1": DOCUMENT };
+
+const DOCUMENT_CASES = [
+  ["a document is added (by the server's event)", {}, { type: "item.create", item: "doc-2", kind: "document", name: "ANNEX C", data: DOCUMENT.data }],
+  ["a document with no text (a scan) is added", {}, { type: "item.create", item: "doc-2", kind: "document", name: "SCAN", data: { ...DOCUMENT.data, text: null } }],
+  ["a document whose content is a list is malformed", {}, { type: "item.create", item: "doc-2", kind: "document", name: "X", data: [] }],
+  ["a document with no content is malformed", {}, { type: "item.create", item: "doc-2", kind: "document", name: "X" }],
+  ["a document with an id the pack has is skipped", documents, { type: "item.create", item: "doc-1", kind: "document", name: "AGAIN", data: DOCUMENT.data }],
+  ["a document is renamed", documents, { type: "item.rename", item: "doc-1", name: "OPORD 24-03 CHANGE 1" }],
+  ["a document someone removed cannot be renamed", documents, { type: "item.rename", item: "doc-9", name: "X" }],
+  ["a document is removed", documents, { type: "item.delete", item: "doc-1" }],
+  ["a document is given a new version", documents, { type: "item.replace", item: "doc-1", data: { ...DOCUMENT.data, pdf: { sha256: "c".repeat(64), bytes: 1002113, pages: 15 } } }],
+  ["a document cannot be replaced by a list", documents, { type: "item.replace", item: "doc-1", data: [] }],
+];
+
 const fixtureOf = (cases) => cases.map(([name, items, op]) => {
   const result = applyPackOp(items, op);
   return { name, items, op, status: result.status, reason: result.reason, expected: result.items };
@@ -343,6 +373,15 @@ const briefFixture = () => ({
   cases: fixtureOf(BRIEF_CASES),
 });
 
+const documentFixture = () => ({
+  description: "packs/ops.json's cases for the document item kind (docs/DOCUMENTS.md §7), in the same shape. A document holds an "
+    + "object naming the files the server keeps, {version, pdf, text, source, added_at}; the server makes one and gives it a new "
+    + "version in its own events, and a client renames and removes one. Apart so a client that has not ported the kind yet is still "
+    + "held to every case of ops.json; the server is held to all of them.",
+  generatedBy: GENERATED_BY,
+  cases: fixtureOf(DOCUMENT_CASES),
+});
+
 const threatSetFixture = () => ({
   description: "packs/ops.json's cases for the threatset item kind, in the same shape. A set of threats holds an object, "
     + "{version, threats: [...]}, each threat addressed by its id. Apart so a client that has not ported the kind yet is still "
@@ -355,11 +394,13 @@ describe("mission pack operations fixture", () => {
   it("packs/ops.json", () => settle("packs/ops.json", opsFixture()));
   it("packs/ops-brief.json", () => settle("packs/ops-brief.json", briefFixture()));
   it("packs/ops-threatset.json", () => settle("packs/ops-threatset.json", threatSetFixture()));
+  it("packs/ops-document.json", () => settle("packs/ops-document.json", documentFixture()));
 
   it("keeps the brief kind out of ops.json and in ops-brief.json", () => {
     const kinds = (fixture) => new Set(fixture.cases.flatMap((c) => [c.op && c.op.kind, ...Object.values(c.items).map((i) => i.kind)]));
     expect(kinds(opsFixture()).has("brief")).toBe(false);
     expect(kinds(opsFixture()).has("threatset")).toBe(false);
+    expect(kinds(opsFixture()).has("document")).toBe(false);
     const { cases } = briefFixture();
     expect(cases.filter((c) => c.status === "applied").length).toBeGreaterThanOrEqual(7);
     expect(cases.find((c) => c.name === "a brief whose content is a list is malformed").reason).toBe("bad_data");
@@ -392,7 +433,7 @@ describe("mission pack operations fixture", () => {
   });
 
   it("validates exactly what it refuses as malformed", () => {
-    [...opsFixture().cases, ...briefFixture().cases, ...threatSetFixture().cases].forEach((c) => {
+    [...opsFixture().cases, ...briefFixture().cases, ...threatSetFixture().cases, ...documentFixture().cases].forEach((c) => {
       expect(validatePackOp(c.op)).toBe(c.status === "invalid" ? c.reason : null);
     });
   });

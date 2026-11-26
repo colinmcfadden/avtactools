@@ -1,4 +1,4 @@
-import { isPriorityRequest, PRIORITY_PATHS } from "../feature/auth/requestPriority";
+import { isPriorityRequest, PRIORITY_PATHS, UPLOADS } from "../feature/auth/requestPriority";
 
 const fs = require("fs");
 const { UPDATE, compact, fixturePath, writeFixture } = require("./fixtureIO");
@@ -31,13 +31,33 @@ const URLS = [
   "",
 ];
 
+// An upload is heavy by its method too (docs/DOCUMENTS.md §5): the same paths read with a GET are not.
+const METHOD_CASES = [
+  { url: "/api/documents", method: "POST" },
+  { url: "/api/documents", method: "GET" },
+  { url: "/api/documents/12/version", method: "POST" },
+  { url: "/api/documents/12/pdf", method: "GET" },
+  { url: "/api/documents/12", method: "PUT" },
+  { url: "/api/packs/a4f7e2c9/documents", method: "POST" },
+  { url: "/api/packs/a4f7e2c9/items/doc-1/version", method: "POST" },
+  { url: "/api/packs/a4f7e2c9/items/doc-1/pdf", method: "GET" },
+  { url: "https://example.com/api/documents?x=1", method: "post" },
+  { url: "/api/documents/12/version/extra", method: "POST" },
+  { url: "/api/lz", method: "POST" },
+];
+
 const expected = () => ({
   description: "Whether each URL is heavy server work (isPriorityRequest in feature/auth/requestPriority.js): "
-    + "the end of the path, with any query string left off, is one of the listed paths. A native client holds "
+    + "the end of the path, with any query string left off, is one of the listed paths, or the request is a POST "
+    + "whose path matches one of the uploads (a case with no method is a GET). A native client holds "
     + "background requests back while a heavy one is in flight.",
   generatedBy: "frontend/src/contracts/networkFixtures.test.js (UPDATE_CONTRACTS=1)",
   heavyPaths: PRIORITY_PATHS,
-  cases: URLS.map((url) => ({ url, heavy: isPriorityRequest(url) })),
+  uploads: UPLOADS.map((upload) => upload.source),
+  cases: [
+    ...URLS.map((url) => ({ url, heavy: isPriorityRequest(url) })),
+    ...METHOD_CASES.map(({ url, method }) => ({ url, method, heavy: isPriorityRequest(url, method) })),
+  ],
 });
 
 describe("network fixtures (the web's request priority rule)", () => {
@@ -60,5 +80,7 @@ describe("network fixtures (the web's request priority rule)", () => {
     expect(cases.find((c) => c.url === "/api/analyze-field?debug=1").heavy).toBe(true);
     expect(cases.find((c) => c.url === "/api/analyze-fields").heavy).toBe(false);          // the path must end with it
     expect(cases.find((c) => c.url === "/api/not-analyze-field").heavy).toBe(false);       // ... as a whole segment
+    expect(cases.find((c) => c.url === "/api/documents" && c.method === "POST").heavy).toBe(true);
+    expect(cases.find((c) => c.url === "/api/documents" && c.method === "GET").heavy).toBe(false); // listing is not an upload
   });
 });

@@ -36,6 +36,8 @@ public fun content(kind: RecordKind, tag: String): JsonObject = when (kind) {
     RecordKind.BRIEF -> doc("version" to 1, "template" to "amb", "note" to tag)
     // The server refuses a set with no list of threats, counts them, and does not look inside one (an empty list is a set too).
     RecordKind.THREAT_SET -> JsonObject(doc("version" to 1, "note" to tag) + ("threats" to JsonArray(emptyList())))
+    // Only the server writes one, from a file it was sent; the scenarios make one elsewhere (`FakeServer.createElsewhere`), never on a device.
+    RecordKind.DOCUMENT -> doc("version" to 1, "note" to tag)
 }
 
 /** The file a record of [kind] carries when a scenario gives it [tag]: only a mission has one. The bytes say the tag, so a scenario can tell whose file it is looking at. */
@@ -85,6 +87,7 @@ public suspend fun Env.live(kind: RecordKind): List<SyncChange> = serverView().f
         RecordKind.POINT_SET -> it.type == "pointset"
         RecordKind.BRIEF -> it.type == "brief"
         RecordKind.THREAT_SET -> it.type == "threatset"
+        RecordKind.DOCUMENT -> it.type == "document"
     }
     matches && !it.deleted
 }
@@ -95,7 +98,8 @@ public class Scenario(
     public val perKind: Boolean,
     public val run: suspend (Env, RecordKind) -> Unit,
 ) {
-    public val kinds: List<RecordKind> get() = if (perKind) RecordKind.entries else listOf(RecordKind.LZ)
+    // A document is never made or changed on a device (RecordKind.DOCUMENT): the scenarios that write each kind leave it out.
+    public val kinds: List<RecordKind> get() = if (perKind) RecordKind.entries - RecordKind.DOCUMENT else listOf(RecordKind.LZ)
 }
 
 /**

@@ -6,6 +6,7 @@ vi.mock("../auth/api", () => ({
 }));
 
 const ANSWER = { ok: true };
+const FILE = new File(["%PDF-1.4"], "OPORD 24-03.pdf", { type: "application/pdf" });
 
 beforeEach(() => {
   ["get", "post", "put", "delete"].forEach((method) => {
@@ -58,6 +59,10 @@ const CASES = [
     { role: "admin", email: "a@army.mil" }],
   [() => packApi.revokeTeamInvite(2, 3), "delete", "/teams/2/invites/3"],
   [() => packApi.searchPeople("sam"), "get", "/users/search", { params: { q: "sam" } }],
+  [() => packApi.uploadDocument("p-1", FILE, { item: "doc-1" }), "post", "/packs/p-1/documents", expect.any(FormData)],
+  [() => packApi.newDocumentVersion("p-1", "doc 1", FILE), "post", "/packs/p-1/items/doc%201/version", expect.any(FormData)],
+  [() => packApi.getDocumentPdf("p-1", "doc-1"), "get", "/packs/p-1/items/doc-1/pdf", { responseType: "arraybuffer" }],
+  [() => packApi.getDocumentText("p-1", "doc-1"), "get", "/packs/p-1/items/doc-1/text"],
 ];
 
 describe("packApi", () => {
@@ -69,6 +74,26 @@ describe("packApi", () => {
     expect(args[0]).toBe(path);
     // The body, or the query (`{ params }`), or nothing at all.
     expect(args[1]).toEqual(rest.length ? rest[0] : undefined);
+  });
+});
+
+describe("a document's form", () => {
+  const sent = () => Object.fromEntries(api.post.mock.calls[0][1].entries());
+
+  it("carries the file and only the fields given", async () => {
+    await packApi.uploadDocument("p-1", FILE, { item: "doc-1", name: "ANNEX C" });
+    const form = sent();
+    expect(Object.keys(form).sort()).toEqual(["file", "item", "name"]);
+    expect(form.file.name).toBe("OPORD 24-03.pdf");
+    expect([form.item, form.name]).toEqual(["doc-1", "ANNEX C"]);
+  });
+
+  it("a new version is the file, and a summary when one is given", async () => {
+    await packApi.newDocumentVersion("p-1", "doc-1", FILE);
+    expect(Object.keys(sent())).toEqual(["file"]);
+    api.post.mockClear();
+    await packApi.newDocumentVersion("p-1", "doc-1", FILE, "Colin replaced it.");
+    expect(sent().summary).toBe("Colin replaced it.");
   });
 });
 
